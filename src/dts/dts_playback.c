@@ -166,7 +166,7 @@ static int trackMatches(DtsPlayback *p, const DtsTrack *t) {
       (!p->selected.channels || t->channels == p->selected.channels);
 }
 static double clockSeconds(clockid_t clock);
-static int prepare(DtsPlayback *p, int stream, int core, double target) {
+static int prepareMode(DtsPlayback *p, int stream, int core, double target,int reuse) {
   const DtsMediaInfo *info;
   /* A native Load is single-use. Retire its callbacks before reconfiguration. */
   pthread_mutex_lock(&p->lock);
@@ -183,12 +183,22 @@ static int prepare(DtsPlayback *p, int stream, int core, double target) {
   pthread_mutex_unlock(&p->lock);
   /* Reloading selects the exact same source stream and resets encoder delay. */
   double began = clockSeconds(CLOCK_MONOTONIC), opened;
-  nativeEvent(p,"{\"dtsStage\":{\"name\":\"source-open-requested\"}}");
-  if (dts_engine_open(p->engine, p->url, p->headers, stream, core, target) < 0) {
-    fail(p, dts_engine_error(p->engine)); return 0;
+  int reused=0;
+  info=dts_engine_info(p->engine);
+  if(reuse && info && info->audio_stream==stream) {
+    nativeEvent(p,"{\"dtsStage\":{\"name\":\"source-seek-requested\"}}");
+    reused=dts_engine_seek(p->engine,target)>=0;
+    if(!reused && stopped(p)) return 0;
+    if(!reused) nativeEvent(p,"{\"dtsStage\":{\"name\":\"source-seek-reopen\"}}");
+  }
+  if(!reused) {
+    nativeEvent(p,"{\"dtsStage\":{\"name\":\"source-open-requested\"}}");
+    if (dts_engine_open(p->engine, p->url, p->headers, stream, core, target) < 0) {
+      fail(p, dts_engine_error(p->engine)); return 0;
+    }
   }
   info = dts_engine_info(p->engine);
-  if (stream < 0 && info) {
+  if (stream < 0 && info && !reused) {
     int i, count = 0, desired = -1, matches = 0, first_audio = -1;
     for (i = 0; i < info->n_tracks; i++) {
       const DtsTrack *t = &info->tracks[i];
@@ -228,8 +238,8 @@ static int prepare(DtsPlayback *p, int stream, int core, double target) {
   opened = clockSeconds(CLOCK_MONOTONIC);
   {
     char event[128];
-    snprintf(event, sizeof event, "{\"dtsStage\":{\"name\":\"source-opened\",\"detail\":\"ms=%.0f\"}}",
-             (opened - began) * 1000);
+    snprintf(event, sizeof event, "{\"dtsStage\":{\"name\":\"%s\",\"detail\":\"ms=%.0f\"}}",
+             reused?"source-seeked":"source-opened",(opened - began) * 1000);
     nativeEvent(p, event);
   }
   p->pipeline = dts_pipeline_create(NV_APP_ID, p->window,
@@ -258,6 +268,9 @@ static int prepare(DtsPlayback *p, int stream, int core, double target) {
     if (!selectSubtitle(p, stream)) { fail(p, "DTS subtitle decoder unavailable"); return 0; }
   }
   return 1;
+}
+static int prepare(DtsPlayback *p,int stream,int core,double target) {
+  return prepareMode(p,stream,core,target,0);
 }
 /* Retry the same selected stream using its DTS core once, resuming at the
  * native presentation clock rather than a timestamp fed ahead of playback. */
@@ -395,7 +408,11 @@ static void *run(void *user) {
       /* BUFFERSTREAM flush leaves the old segment/decoder timeline in place
        * on these TVs. Every seek needs a fresh Load with ptsToDecode and new
        * codec preroll, including healthy playback and paused scrubbing. */
-      if (!prepare(p, stream, core, target)) break;
+      /* Healthy explicit seeks can keep the validated container/track
+       * metadata and reset demux/decoder/encoder through engine_seek. The LG
+       * native pipeline still receives a fresh Load and codec preroll. Error
+       * recovery keeps a full source reopen; a failed seek also falls back. */
+      if (!prepareMode(p, stream, core, target,seek_reload && !stall_seek)) break;
       char event[256];
       snprintf(event, sizeof event,
         "{\"dtsStage\":{\"name\":\"%s\",\"detail\":\"at=%.3f attempt=%u seek=%d blocked=%d pts=%.3f stale=%.1fs\"}}",

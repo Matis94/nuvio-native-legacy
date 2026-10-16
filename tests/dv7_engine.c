@@ -19,6 +19,12 @@ char *rede_baixar_trecho64_cab(const char *url,const char *headers,int64_t start
   if ((int64_t)n>*total-start) n=(size_t)(*total-start);
   char *p=malloc(n); assert(p); *size=(long)fread(p,1,n,f); fclose(f); *status=206; return p;
 }
+char *rede_baixar_trecho64_final(const char *,const char *,int64_t,int64_t,long *,int64_t *,int *,volatile int *,char *,int *);
+char *rede_baixar_trecho64_vigiado(const char *u,const char *h,int64_t s,int64_t e,long *n,
+ int64_t *t,int *status,volatile int *c,char *f,int *x,volatile int *urgent,unsigned idle,int *stalled) {
+ (void)urgent;(void)idle;if(stalled)*stalled=0;
+ return rede_baixar_trecho64_final(u,h,s,e,n,t,status,c,f,x);
+}
 char *rede_baixar_trecho64_final(const char *u,const char *h,int64_t s,int64_t e,long *n,
                                int64_t *t,int *status,volatile int *c,char *final,int *cross) {
   *final=0; *cross=0; return rede_baixar_trecho64_cab(u,h,s,e,n,t,status,c);

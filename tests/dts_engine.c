@@ -28,6 +28,12 @@ int rede_fluxo64(const char *url,const char *headers,int64_t start,
 }
 char *rede_baixar_trecho64_cab(const char *,const char *,int64_t,int64_t,long *,int64_t *,int *,volatile int *);
 /* The Dolby Vision path asks for the final address; the fixture has none. */
+char *rede_baixar_trecho64_final(const char *,const char *,int64_t,int64_t,long *,int64_t *,int *,volatile int *,char *,int *);
+char *rede_baixar_trecho64_vigiado(const char *u,const char *h,int64_t s,int64_t e,long *n,
+ int64_t *t,int *status,volatile int *c,char *f,int *x,volatile int *urgent,unsigned idle,int *stalled) {
+ (void)urgent;(void)idle;if(stalled)*stalled=0;
+ return rede_baixar_trecho64_final(u,h,s,e,n,t,status,c,f,x);
+}
 char *rede_baixar_trecho64_final(const char *url,const char *headers,int64_t start,int64_t end,long *size,int64_t *total,int *status,volatile int *cancelled,char *final,int *cross) {
   if(final) final[0]=0;
   if(cross) *cross=0;

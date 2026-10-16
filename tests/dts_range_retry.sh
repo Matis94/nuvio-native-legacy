@@ -18,7 +18,7 @@ flags=(-std=gnu11 -O1 -g -Wall -Wextra -Werror -Wno-misleading-indentation)
 if [[ ${SANITIZE:-0} == 1 ]];then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer);fi
 cc "${flags[@]}" -I"$prefix/include" tests/dts_range_retry.c src/rede.c src/redeurl.c -o "$task_tmp/test" \
  -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
-for mode in once twice short wrong hard exhaust cancel seek;do
+for mode in once twice short wrong hard exhaust cancel seek live-hang live-bodyhang live-hangall live-steady live-speculative live-boot live-cancel;do
  "$task_tmp/test" "http://127.0.0.1:$port/retry-$mode/range.bin"
 done
 "$task_tmp/test" "http://127.0.0.1:$port/retry-once/dv.bin"
@@ -49,6 +49,10 @@ for mode,want in [('once',2),('twice',3),('short',2),('wrong',2),('hard',1),('ex
  at=0 if mode in ('hard','exhaust','cancel') else 4*1024*1024
  assert counts[(f'/retry-{mode}/range.bin',at)]==want,(mode,counts)
 assert counts[('/retry-once/dv.bin',4*1024*1024-1)]==2
+for mode,want in [('hang',2),('bodyhang',2),('hangall',3),('steady',1),('speculative',1),('boot',1),('cancel',1)]:
+ at=0 if mode=='boot' else 4*1024*1024
+ assert counts[(f'/retry-live-{mode}/range.bin',at)]==want,(mode,counts)
+
 for mode in ('once','twice','short','wrong'):
  assert all(n==1 for (path,at),n in counts.items() if path==f'/retry-{mode}/range.bin' and at!=4*1024*1024)
 assert all(r['auth'] for r in rows)

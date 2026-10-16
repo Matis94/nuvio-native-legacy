@@ -17,7 +17,7 @@ static double last_seek, last_open_target;
 static int core_opens, volumes, last_volume, sub_decoded, sub_created, sub_destroyed, seek_rendered;
 static int64_t last_sub_pts;
 static atomic_int allow_decode_failure, transport_stalled, release_transport, stall_transport;
-static atomic_int jam_native, native_full;
+static atomic_int jam_native, native_full, seek_failure;
 static atomic_int timestamp_fault, timestamp_fail_open, timestamp_block_open, timestamp_open_entered;
 static int last_dv;
 static atomic_llong stall_wall_ns;
@@ -125,8 +125,9 @@ int dts_engine_next(DtsEngine *e,DtsFrame *f) {
  return 1;
 }
 int dts_engine_seek(DtsEngine *e,double target) {
- e->base=target;e->serial=0;
- pthread_mutex_lock(&fixture);seeks++;last_seek=target;pthread_mutex_unlock(&fixture);return 0;
+ pthread_mutex_lock(&fixture);seeks++;last_seek=target;pthread_mutex_unlock(&fixture);
+ if(atomic_load(&seek_failure)) return -1;
+ e->base=target;e->serial=0;return 0;
 }
 void dts_engine_cancel(DtsEngine *e) { atomic_store(&e->cancelled,1); }
 void dts_engine_destroy(DtsEngine *e) { free(e); }
@@ -296,7 +297,14 @@ int main(int argc,char **argv) {
  } else if(!strcmp(argv[1],"seek")) {
   p=start(0,4,NULL,0,0);wait_count(&accepted,2);
   dts_playback_seek(p,20);wait_count(&loads,2);dts_playback_seek(p,35);wait_count(&loads,3);
-  assert(count(&flushes)==0 && count(&seeks)==0);assert(count(&creates)==3 && last_open_target==35);dts_playback_close(p);
+  assert(count(&flushes)==0 && count(&seeks)==2 && count(&opens)==1);assert(count(&creates)==3 && last_seek==35);dts_playback_close(p);
+ } else if(!strcmp(argv[1],"seekfallback") || !strcmp(argv[1],"resumeseek")) {
+  p=start(0,4,NULL,0,0);wait_count(&accepted,2);
+  int fallback=!strcmp(argv[1],"seekfallback");atomic_store(&seek_failure,fallback);
+  dts_playback_seek(p,729.501);wait_count(&loads,2);wait_count(&plays,2);
+  assert(count(&creates)==2 && count(&seeks)==1 && count(&opens)==(fallback?2:1));
+  assert(fallback?last_open_target==729.501:last_seek==729.501);
+  dts_playback_status(p,&s);assert(!s.failed && s.revision==2);dts_playback_close(p);
  } else if(!strcmp(argv[1],"seeksegment")) {
   scenario=SEEK_SEGMENT;p=start(0,9,NULL,0,0);wait_count(&accepted,4);
   dts_playback_subtitle(p,20);wait_count(&sub_created,1);
@@ -304,8 +312,8 @@ int main(int argc,char **argv) {
   emit("{\"currentTime\":{\"currentTime\":1697863}}");
   int before=count(&accepted);dts_playback_seek(p,546.05);wait_count(&loads,2);
   wait_count(&accepted,before+4);wait_count(&plays,2);wait_count(&sub_created,2);wait_count(&volumes,5);
-  assert(count(&flushes)==0 && count(&seeks)==0 && count(&creates)==2);
-  assert(last_open_target==546.05 && last_stream==9 && last_volume==25);
+  assert(count(&flushes)==0 && count(&seeks)==1 && count(&opens)==1 && count(&creates)==2);
+  assert(last_seek==546.05 && last_stream==9 && last_volume==25);
   pthread_mutex_lock(&fixture);assert(frozen_clock>INT64_C(546050000000));pthread_mutex_unlock(&fixture);
   dts_playback_status(p,&s);assert(!s.failed && s.revision==2 && s.native_loaded);
   char queued[2048];while(dts_playback_event(p,queued,sizeof queued)) assert(!strstr(queued,"1697863"));
@@ -445,7 +453,7 @@ int main(int argc,char **argv) {
    atomic_store(&jam_native,1);
    for(int i=0;i<1500 && atomic_load(&native_full)<25;i++) { nap(); }assert(atomic_load(&native_full)>=25);
    if(!strcmp(argv[1],"stallpausedseek") || !strcmp(argv[1],"stallseeknoclock")) { dts_playback_pause(p,1);wait_count(&pauses,1); }
-   dts_playback_seek(p,42);wait_count(&loads,2);assert(count(&flushes)==0 && last_open_target==42);
+   dts_playback_seek(p,42);wait_count(&loads,2);assert(count(&flushes)==0 && (last_seek==42 || last_open_target==42));
    if(!strcmp(argv[1],"stallpausedseek") || !strcmp(argv[1],"stallseeknoclock")) { wait_count(&pauses,2);dts_playback_pause(p,0); }
    wait_count(&plays,2);
    if(!strcmp(argv[1],"stallseeknoclock")) { wait_count(&loads,3);wait_count(&loads,4);s=wait_status(p,1,0);assert(strstr(s.error,"two recovery")); }

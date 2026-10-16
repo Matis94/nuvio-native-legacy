@@ -21,7 +21,30 @@ int main(int argc,char **argv) {
  if(strstr(argv[1],"dv.bin")){e->dv=1;e->range_bytes=RANGE_BYTES_DV;}
  int64_t fault_at=e->dv?RANGE_BYTES_DV:4*1024*1024;
  uint64_t begun=clock_ns(CLOCK_MONOTONIC);
- if(strstr(argv[1],"retry-cancel")) {
+ if(strstr(argv[1],"retry-live-")) {
+  int boot=strstr(argv[1],"live-boot")!=NULL;
+  __atomic_store_n(&e->range_live,!boot,__ATOMIC_RELAXED);
+  bytes(e,65536);
+  if(strstr(argv[1],"live-speculative")) {
+   uint64_t until=clock_ns(CLOCK_MONOTONIC)+UINT64_C(11000000000);int done=0;
+   do {
+    pthread_mutex_lock(&e->range_lock);DtsRangeJob *j=job_at(e,fault_at);done=j && j->state==3 && j->data;
+    pthread_mutex_unlock(&e->range_lock);if(!done)usleep(10000);
+   } while(!done && clock_ns(CLOCK_MONOTONIC)<until);assert(done);
+  }
+  if(strstr(argv[1],"live-cancel")) {
+   bytes(e,4*1024*1024-65536);pthread_t t;assert(!pthread_create(&t,NULL,cancel_later,e));uint8_t b;
+   uint64_t t0=clock_ns(CLOCK_MONOTONIC);assert(read_range(e,&b,1)==AVERROR_EXIT);pthread_join(t,NULL);
+   assert(clock_ns(CLOCK_MONOTONIC)-t0<UINT64_C(1500000000));
+  } else bytes(e,(int)(9LL*e->range_bytes)-65536);
+  double seconds=(clock_ns(CLOCK_MONOTONIC)-begun)/1e9;
+  if(strstr(argv[1],"live-hangall")) assert(seconds>=8 && seconds<16);
+  else if(strstr(argv[1],"live-hang")||strstr(argv[1],"live-bodyhang")) assert(seconds<6);
+  else if(strstr(argv[1],"live-steady")) assert(seconds>=4 && seconds<9);
+  else if(strstr(argv[1],"live-speculative")) assert(seconds>=7);
+  else if(boot) assert(seconds>=3 && seconds<7);
+  printf("PASS: live range elapsed=%.3f s\n",seconds);
+ } else if(strstr(argv[1],"retry-cancel")) {
   pthread_t t;assert(!pthread_create(&t,NULL,cancel_later,e));uint8_t b;
   assert(read_range(e,&b,1)==AVERROR_EXIT);pthread_join(t,NULL);
   assert(clock_ns(CLOCK_MONOTONIC)-begun<UINT64_C(1500000000));

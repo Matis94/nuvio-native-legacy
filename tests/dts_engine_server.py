@@ -23,6 +23,8 @@ class Handler(BaseHTTPRequestHandler):
         assert 0 <= hi - lo < 4 * 1024 * 1024
         retry = re.match(r'/retry-([a-z-]+)/', self.path)
         mode = retry.group(1) if retry else ''
+        live = mode.startswith('live-')
+        if live: mode=mode.removeprefix('live-')
         slow = self.path.startswith('/slow/')
         parallel = self.path.startswith('/parallel/')
         prefetch = self.path.startswith('/prefetch/')
@@ -41,11 +43,13 @@ class Handler(BaseHTTPRequestHandler):
             log.write(json.dumps({'path':self.path, 'lo':lo, 'hi':hi, 'auth':authorized, 'active':active,
                                  'connection':self.client_address[1], 'attempt':attempt})+'\n')
         fault_at = (4*1024*1024-1 if path.endswith('dv.bin') else
-                    0 if mode in ('hard', 'exhaust', 'cancel') else
+                    0 if mode in ('hard', 'exhaust', 'boot') or (mode=='cancel' and not live) else
                     1024*1024 if path.endswith('.mkv') else 4*1024*1024)
         failing = bool(mode and lo == fault_at and
                        (mode in ('hard', 'exhaust', 'cancel') or attempt <= (2 if mode == 'twice' else 1)))
-        if failing and mode in ('once', 'twice', 'hard', 'exhaust', 'cancel', 'seek'):
+        if live and lo==fault_at and mode in ('hang','speculative','cancel','boot') and attempt==1: time.sleep(4 if mode=='boot' else 8)
+        if live and lo==fault_at and mode=='hangall': time.sleep(8 if attempt<3 else 4)
+        if failing and mode in ('once', 'twice', 'hard', 'exhaust', 'cancel', 'seek') and not live:
             if mode not in ('hard', 'exhaust', 'cancel'): time.sleep(.25)
             self.send_response(403 if mode == 'hard' else 503)
             self.send_header('Content-Length', '0'); self.end_headers()
@@ -65,7 +69,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Range', f'bytes {lo+wrong}-{hi+wrong}/{total}')
         self.send_header('Content-Length', str(len(body))); self.end_headers()
         try:
-            if failing and mode == 'short':
+            if live and lo==fault_at and mode=='bodyhang' and attempt==1:
+                self.wfile.write(body[:65536]); self.wfile.flush(); time.sleep(8); self.wfile.write(body[65536:])
+            elif live and lo==fault_at and mode=='steady':
+                for off in range(0,len(body),65536):
+                    self.wfile.write(body[off:off+65536]); self.wfile.flush(); time.sleep(.3)
+            elif failing and mode == 'short':
                 self.wfile.write(body[:len(body)//2]); self.wfile.flush()
                 self.close_connection = True; self.connection.shutdown(socket.SHUT_WR)
             else: self.wfile.write(body)
