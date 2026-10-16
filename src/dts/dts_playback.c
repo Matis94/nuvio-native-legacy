@@ -21,6 +21,9 @@
 #define DTS_STALL_SECONDS 8.0
 #define DTS_STALL_SEEK_SECONDS 2.0
 #define DTS_STALL_RETRIES 2
+#define DTS_TIMESTAMP_RETRIES 2
+/* Reset only after real presentation progress, not time spent reloading. */
+#define DTS_TIMESTAMP_PROGRESS_SECONDS 30.0
 typedef struct { DtsSubtitle cue; unsigned revision; } DtsQueuedSubtitle;
 #define DTS_DV_STARVED_WINDOWS 4
 struct DtsPlayback {
@@ -319,7 +322,8 @@ static void *run(void *user) {
   double fed_audio = position, fed_video = position;
   DtsRate rate = {.start = cpu_window};
   DtsStall stall;
-  unsigned stall_retries = 0;
+  unsigned stall_retries = 0, timestamp_retries = 0;
+  double timestamp_anchor = position;
   int native_unhealthy = 0;
   int recovery_waiting = 0;
   resetStall(&stall, position);
@@ -383,6 +387,7 @@ static void *run(void *user) {
         nativeEvent(p, event);
         fail(p, "DTS native playback stalled after two recovery attempts"); break;
       }
+      if (seek_reload) { timestamp_retries = 0; timestamp_anchor = target; }
       if (stall_reload) { target = presented; stall_retries++; }
       double stale_seconds = wall - stall.changed_at;
       int blocked_kind = have_frame ? frame.kind : 0;
@@ -411,6 +416,7 @@ static void *run(void *user) {
     } else if (audio) {
       seek_preroll = seek; seek_audio = seek_video = 0;
       stream = new_stream; core = core_tried = 0;
+      timestamp_retries = 0; timestamp_anchor = target;
       if (!prepare(p, stream, core, target)) break;
       position = preroll = presented = target; complete = clock_seen = 0;
       fed_audio = fed_video = target;
@@ -448,6 +454,45 @@ static void *run(void *user) {
       if (read_started >= 0 && now >= read_started) rate.read_wall += now - read_started;
       if (stopped(p)) break;
       const char *error = r < 0 ? dts_engine_error(p->engine) : "";
+      if (r < 0 && !strcmp(error, DTS_ENGINE_TIMESTAMP_DISCONTINUITY)) {
+        /* Use the latest presentation clock, never a packet fed ahead.
+         * Pending user seek/track requests are handled by the next iteration. */
+        int pending_control;
+        pthread_mutex_lock(&p->lock);
+        target = p->presented;
+        pending_control = p->seek_dirty || p->audio_dirty;
+        pthread_mutex_unlock(&p->lock);
+        if (pending_control) continue;
+        if (timestamp_retries && target >= timestamp_anchor + DTS_TIMESTAMP_PROGRESS_SECONDS)
+          timestamp_retries = 0;
+        if (timestamp_retries >= DTS_TIMESTAMP_RETRIES) {
+          char event[192];
+          snprintf(event, sizeof event,
+            "{\"dtsStage\":{\"name\":\"timestamp-recovery-exhausted\",\"detail\":\"at=%.3f attempts=%u\"}}",
+            target, timestamp_retries);
+          nativeEvent(p, event);
+          fail(p, "DTS timestamp recovery exhausted after two reload attempts");
+          break;
+        }
+        timestamp_retries++; timestamp_anchor = target;
+        printf("[dts] timestamp-recovery-request at=%.3f attempt=%u core=%d stream=%d dv=%d\n",
+               target, timestamp_retries, core, stream, p->dv);
+        fflush(stdout);
+        if (!prepare(p, stream, core, target)) break;
+        char event[192];
+        snprintf(event, sizeof event,
+          "{\"dtsStage\":{\"name\":\"timestamp-reload\",\"detail\":\"at=%.3f attempt=%u core=%d stream=%d dv=%d\"}}",
+          target, timestamp_retries, core, stream, p->dv);
+        nativeEvent(p, event);
+        position = fed_audio = fed_video = target;
+        have_frame = eof = seek_preroll = seek_audio = seek_video = 0;
+        resetStall(&stall, target);
+        recovery_waiting = stall.advanced = 1;
+        native_unhealthy = 0; p->starved = 0;
+        cpu_window = clockSeconds(CLOCK_MONOTONIC); cpu_used = 0;
+        rate = (DtsRate){.start = cpu_window};
+        continue;
+      }
       int decode_error = r < 0 && !strncmp(error, "DTS decode", 10);
       int encoder_error = r < 0 && (!strncmp(error, "Audio encode", 12) ||
                                    !strncmp(error, "Audio output", 12));
@@ -554,6 +599,8 @@ static void *run(void *user) {
     }
   }
 done:
+  /* Ignore closing callbacks after terminal failure, too. */
+  pthread_mutex_lock(&p->lock); p->suppress_events = 1; pthread_mutex_unlock(&p->lock);
   dts_subtitles_destroy(p->subtitle_decoder); p->subtitle_decoder = NULL;
   dts_pipeline_destroy(p->pipeline);
   p->pipeline = NULL;

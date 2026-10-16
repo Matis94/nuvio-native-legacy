@@ -18,6 +18,8 @@ static int core_opens, volumes, last_volume, sub_decoded, sub_created, sub_destr
 static int64_t last_sub_pts;
 static atomic_int allow_decode_failure, transport_stalled, release_transport, stall_transport;
 static atomic_int jam_native, native_full;
+static atomic_int timestamp_fault, timestamp_fail_open, timestamp_block_open, timestamp_open_entered;
+static int last_dv;
 static atomic_llong stall_wall_ns;
 static int64_t frozen_clock, original_stall_clock;
 static int64_t stall_audio_pts, stall_video_pts;
@@ -25,7 +27,8 @@ static int64_t fed_audio_pts, fed_video_pts;
 static long fake_wall=100, fake_thread_cpu;
 static void (*native_event)(void *,const char *);
 static void *native_user;
-enum { NORMAL, OPEN_FAIL, BACKPRESSURE, BLOCK_READ, EOF_MODE, MAPPING, MAPPING_BAD, SUBTITLES, CORE_RECOVERY, NO_CORE_FAIL, CPU_BUDGET, DELAYED_ID, PACING, SUSTAINED, SEEK_PREROLL, SEEK_SEGMENT, NATIVE_STALL, NATIVE_REPEAT, NATIVE_NO_CLOCK, NATIVE_TRANSIENT, NATIVE_RECOVERY_NO_CLOCK, NATIVE_RECOVERY_UNLOADED };
+enum { NORMAL, OPEN_FAIL, BACKPRESSURE, BLOCK_READ, EOF_MODE, MAPPING, MAPPING_BAD, SUBTITLES, CORE_RECOVERY, NO_CORE_FAIL, CPU_BUDGET, DELAYED_ID, PACING, SUSTAINED, SEEK_PREROLL, SEEK_SEGMENT, TIMESTAMP_ONCE, TIMESTAMP_REPEAT, TIMESTAMP_PAUSED, TIMESTAMP_CANCEL, NATIVE_STALL, NATIVE_REPEAT, NATIVE_NO_CLOCK, NATIVE_TRANSIENT, NATIVE_RECOVERY_NO_CLOCK, NATIVE_RECOVERY_UNLOADED };
+static int timestampScenario(void) { return scenario>=TIMESTAMP_ONCE && scenario<=TIMESTAMP_CANCEL; }
 struct DtsEngine { DtsMediaInfo info; atomic_int cancelled; unsigned char packet[98304]; int serial, core; double base; };
 struct DtsPipeline { void (*event)(void *,const char *); void *user; int loaded, completed, running, flushed, audio_ready, video_ready, generation, packets, broken_segment; double target; };
 static void nap(void) { struct timespec t={0,1000000};nanosleep(&t,NULL); }
@@ -34,13 +37,19 @@ static void emit(const char *json) {
  pthread_mutex_lock(&fixture);cb=native_event;u=native_user;pthread_mutex_unlock(&fixture);
  assert(cb);cb(u,json);
 }
+void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *out) { (void)e;memset(out,0,sizeof *out); }
 int dts_engine_available(void) { return 1; }
-void dts_engine_dv(DtsEngine *e,int on) { (void)e; (void)on; }
+void dts_engine_dv(DtsEngine *e,int on) { (void)e; last_dv=on; }
 DtsEngine *dts_engine_create(void) { return calloc(1,sizeof(DtsEngine)); }
 int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,int core,double target) {
  (void)headers;assert(!strcmp(url,"fixture://movie"));
  pthread_mutex_lock(&fixture);opens++;last_stream=stream;last_open_target=target;if(core)core_opens++;pthread_mutex_unlock(&fixture);
- if(scenario==OPEN_FAIL) return -1;
+ if(scenario==OPEN_FAIL || atomic_load(&timestamp_fail_open)) return -1;
+ if(atomic_load(&timestamp_block_open)) {
+  atomic_store(&timestamp_open_entered,1);
+  while(!atomic_load(&e->cancelled)) nap();
+  return -1;
+ }
  memset(&e->info,0,sizeof e->info);strcpy(e->info.video_codec,"hevc");strcpy(e->info.audio_codec,"aac");
  e->info.width=1920;e->info.height=1080;e->info.audio_stream=stream<0?4:stream;e->info.channels=2;e->info.sample_rate=48000;
  e->info.n_tracks=4;
@@ -49,7 +58,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,
  e->info.tracks[2]=(DtsTrack){.stream_index=4,.kind=DTS_AUDIO,.channels=6};strcpy(e->info.tracks[2].codec,"dts");strcpy(e->info.tracks[2].language,"pt");
  e->info.tracks[3]=(DtsTrack){.stream_index=9,.kind=DTS_AUDIO,.channels=2};strcpy(e->info.tracks[3].codec,"dts");strcpy(e->info.tracks[3].language,"ja");
  if(scenario==MAPPING_BAD) { e->info.tracks[4]=e->info.tracks[3];e->info.tracks[4].stream_index=10;e->info.n_tracks=5; }
- if(scenario==SUBTITLES || scenario==SEEK_SEGMENT) {
+ if(scenario==SUBTITLES || scenario==SEEK_SEGMENT || timestampScenario()) {
   e->info.tracks[4]=(DtsTrack){.stream_index=20,.kind=DTS_SUBTITLE};strcpy(e->info.tracks[4].codec,"srt");e->info.n_tracks=5;
  }
  e->core=core;e->base=target;e->serial=0;return 0;
@@ -74,6 +83,11 @@ void dts_subtitles_destroy(DtsSubtitles *s) {
 int dts_engine_next(DtsEngine *e,DtsFrame *f) {
  if(scenario==CPU_BUDGET) { fake_wall++;fake_thread_cpu++; }
  pthread_mutex_lock(&fixture);nexts++;pthread_mutex_unlock(&fixture);
+ if(timestampScenario()) {
+  if(scenario==TIMESTAMP_PAUSED && !e->serial && opens==1)
+   while(!atomic_load(&timestamp_fault) && !atomic_load(&e->cancelled)) nap();
+  if(atomic_exchange(&timestamp_fault,0)) return -1;
+ }
  if(scenario==BLOCK_READ) { while(!atomic_load(&e->cancelled)) nap();return -1; }
  if(scenario==CORE_RECOVERY && !e->core)
   while(!atomic_load(&allow_decode_failure) && !atomic_load(&e->cancelled)) nap();
@@ -117,7 +131,8 @@ int dts_engine_seek(DtsEngine *e,double target) {
 void dts_engine_cancel(DtsEngine *e) { atomic_store(&e->cancelled,1); }
 void dts_engine_destroy(DtsEngine *e) { free(e); }
 const char *dts_engine_error(DtsEngine *e) {
- (void)e;return scenario==CORE_RECOVERY || scenario==NO_CORE_FAIL ? "DTS decode fixture failure" : "fixture engine failure";
+ (void)e;if(timestampScenario()) return (opens>1 && atomic_load(&timestamp_fail_open)) ? "fixture reopen failure" : DTS_ENGINE_TIMESTAMP_DISCONTINUITY;
+return scenario==CORE_RECOVERY || scenario==NO_CORE_FAIL ? "DTS decode fixture failure" : "fixture engine failure";
 }
 int dts_pipeline_available(int major) { (void)major;return 1; }
 DtsPipeline *dts_pipeline_create(const char *a,const char *w,int m,void (*cb)(void *,const char *),void *u) {
@@ -200,7 +215,7 @@ int dts_pipeline_flush(DtsPipeline *p,double t) {
 int dts_pipeline_eos(DtsPipeline *p) { (void)p;pthread_mutex_lock(&fixture);eoses++;pthread_mutex_unlock(&fixture);return 1; }
 void dts_pipeline_destroy(DtsPipeline *p) {
  if(!p)return;
- if(scenario==SEEK_PREROLL || scenario==SEEK_SEGMENT) p->event(p->user,"{\"currentTime\":{\"currentTime\":1697863}}");
+ if(scenario==SEEK_PREROLL || scenario==SEEK_SEGMENT || timestampScenario()) p->event(p->user,"{\"currentTime\":{\"currentTime\":1697863}}");
  pthread_mutex_lock(&fixture);destroys++;native_event=NULL;pthread_mutex_unlock(&fixture);free(p);
 }
 const char *dts_pipeline_media_id(DtsPipeline *p) { return scenario==DELAYED_ID && !p->completed ? "" : "fixture-media"; }
@@ -225,7 +240,46 @@ static DtsPlayback *start(int paused,int stream,const DtsTrack *selected,int ord
 }
 int main(int argc,char **argv) {
  assert(argc==2);assert(!dts_playback_enabled());DtsPlayback *p;DtsPlaybackStatus s;
- if(!strcmp(argv[1],"preparefail")) {
+ if(!strncmp(argv[1],"timestamp",9)) {
+  int bounded=!strcmp(argv[1],"timestampbound"), progress=!strcmp(argv[1],"timestampprogress");
+  int reopen_fail=!strcmp(argv[1],"timestampopenfail"), cancel=!strcmp(argv[1],"timestampcancel");
+  int pause=!strcmp(argv[1],"timestamppause"), dv=!strcmp(argv[1],"timestampdv");
+  int manual_seek=!strcmp(argv[1],"timestampseek"), audio_switch=!strcmp(argv[1],"timestampaudio");
+  scenario=pause?TIMESTAMP_PAUSED:cancel?TIMESTAMP_CANCEL:bounded||progress||manual_seek||audio_switch?TIMESTAMP_REPEAT:TIMESTAMP_ONCE;
+  dts_playback_next_dv(dv);p=start(pause,9,NULL,0,0);
+  if(pause) wait_count(&nexts,1);else wait_count(&accepted,2);
+  if(!pause) {
+   dts_playback_subtitle(p,20);wait_count(&sub_created,1);
+   dts_playback_volume(p,25);wait_count(&volumes,2);
+  }
+  emit("{\"currentTime\":{\"currentTime\":259634}}");
+  if(reopen_fail) atomic_store(&timestamp_fail_open,1);
+  if(cancel) atomic_store(&timestamp_block_open,1);
+  atomic_store(&timestamp_fault,1);
+  if(cancel) {
+   for(int i=0;i<1500 && !atomic_load(&timestamp_open_entered);i++) nap();
+   assert(atomic_load(&timestamp_open_entered));dts_playback_close(p);assert(count(&loads)==1);
+  } else if(reopen_fail) {
+   s=wait_status(p,1,0);assert(strstr(s.error,"reopen failure"));
+   assert(count(&opens)==2 && count(&loads)==1);dts_playback_close(p);
+  } else {
+   wait_count(&loads,2);
+   if(pause) { wait_count(&accepted,1);wait_count(&pauses,2);wait_settled();assert(count(&accepted)==1); }
+   else { wait_count(&accepted,4);wait_count(&sub_created,2);wait_count(&volumes,4);assert(last_volume==25); }
+   assert(last_stream==9 && last_open_target==259.634 && count(&core_opens)==0 && last_dv==dv);
+   if(bounded || progress || manual_seek || audio_switch) {
+    emit("{\"currentTime\":{\"currentTime\":260000}}");atomic_store(&timestamp_fault,1);wait_count(&loads,3);
+    if(manual_seek) { dts_playback_seek(p,260);wait_count(&loads,4); }
+    if(audio_switch) { dts_playback_audio(p,4);wait_count(&loads,4); }
+    emit(progress?"{\"currentTime\":{\"currentTime\":291000}}":"{\"currentTime\":{\"currentTime\":260000}}");atomic_store(&timestamp_fault,1);
+    if(bounded) { s=wait_status(p,1,0);assert(strstr(s.error,"timestamp recovery exhausted"));assert(count(&opens)==3); }
+    else { wait_count(&loads,manual_seek||audio_switch?5:4);dts_playback_status(p,&s);assert(!s.failed); }
+   } else { dts_playback_status(p,&s);assert(!s.failed && s.revision==2); }
+   char event[2048];int saw_reload=0;
+   while(dts_playback_event(p,event,sizeof event)) { assert(!strstr(event,"1697863"));saw_reload|=strstr(event,"timestamp-reload")!=NULL; }
+   assert(saw_reload);dts_playback_close(p);assert(count(&sub_created)==count(&sub_destroyed));
+  }
+ } else if(!strcmp(argv[1],"preparefail")) {
   scenario=OPEN_FAIL;p=start(0,4,NULL,0,0);s=wait_status(p,1,0);assert(strstr(s.error,"engine failure"));assert(count(&loads)==0);dts_playback_close(p);
  } else if(!strcmp(argv[1],"pause")) {
   p=start(1,4,NULL,0,0);wait_status(p,0,0);wait_count(&accepted,1);wait_count(&pauses,1);

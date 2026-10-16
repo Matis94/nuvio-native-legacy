@@ -903,8 +903,17 @@ static int resample(DtsEngine *e,AVFrame *f) {
     int64_t incoming=av_rescale_q(f->best_effort_timestamp,e->dec->pkt_timebase,e->enc->time_base);
     int64_t expected=e->sample_pts+av_audio_fifo_size(e->fifo)
         +av_rescale_rnd(swr_get_delay(e->swr,e->input_rate),48000,e->input_rate,AV_ROUND_NEAR_INF);
-    if (incoming>expected+4800 || incoming<expected-4800)
-      return fail(e,"DTS timestamp discontinuity requires reload",0);
+    if (incoming>expected+4800 || incoming<expected-4800) {
+      /* Numeric diagnostics survive export redaction; no source/header data. */
+      printf("[dts] timestamp-gap incomingMs=%.3f expectedMs=%.3f deltaMs=%.3f "
+             "fifoSamples=%d delaySamples=%lld frameSamples=%d inputRate=%d targetMs=%.3f\n",
+             (double)incoming/48.0, (double)expected/48.0,
+             ((double)incoming-(double)expected)/48.0,
+             av_audio_fifo_size(e->fifo), (long long)swr_get_delay(e->swr,e->input_rate),
+             f->nb_samples,e->input_rate,(double)e->target_ns/1e6);
+      fflush(stdout);
+      return fail(e,DTS_ENGINE_TIMESTAMP_DISCONTINUITY,0);
+    }
   }
   int capacity=(int)av_rescale_rnd(swr_get_delay(e->swr,e->input_rate)+(f?f->nb_samples:0),48000,e->input_rate,AV_ROUND_UP)+32;
   uint8_t **data=NULL;
