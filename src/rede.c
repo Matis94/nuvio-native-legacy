@@ -3293,6 +3293,15 @@ char *rede_baixar_trecho64_final(const char *url, const char *headers,
       if (cross) *cross = public_only;
       return baldeFinal(&r.body);
     }
+    /* Numeric only: identify failed interval, response validation and discarded
+     * partial bytes without exposing URL, request headers or response payload. */
+    if(!cancelled || !__atomic_load_n(cancelled,__ATOMIC_RELAXED)) {
+      printf("[range-http] start=%lld end=%lld curl=%d http=%ld got=%llu "
+             "valid=%d overflow=%d responseStart=%lld responseEnd=%lld total=%lld\n",
+             (long long)start,(long long)end,result,http,(unsigned long long)r.body.n,
+             r.valid,r.overflow,(long long)r.start,(long long)r.end,(long long)r.total);
+      fflush(stdout);
+    }
     free(r.body.p);
     return NULL;
   }

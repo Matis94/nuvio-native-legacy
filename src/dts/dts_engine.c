@@ -177,6 +177,74 @@ static int cancelled(void *opaque) {
  * storage is at most 63 speculative 1 MiB ranges plus the 1 MiB active cache
  * (DV: 15 speculative ~4 MiB ranges plus one active range)
  * (each HTTP allocation also includes one terminating byte). */
+/* Retry the SAME validated byte interval before exposing an I/O error to
+ * libavformat. Other completed speculative ranges stay owned by their slots.
+ * A failed/partial HTTP body never enters the active cache. */
+#define RANGE_ATTEMPTS 3
+static int range_retryable(int status) {
+  return status==0 || status==206 || (status>=300 && status<400) ||
+         status==408 || status==425 || status==429 || (status>=500 && status<=599);
+}
+static int range_backoff(DtsEngine *e,DtsRangeJob *job,int ms) {
+  struct timespec until; clock_gettime(CLOCK_REALTIME,&until);
+  until.tv_nsec+=(long)ms*1000000L;
+  if(until.tv_nsec>=1000000000L) { until.tv_sec++; until.tv_nsec-=1000000000L; }
+  pthread_mutex_lock(&e->range_lock);
+  int r=0;
+  while(!e->range_stop && !cancelled(e) && !__atomic_load_n(&job->cancel,__ATOMIC_RELAXED) && r!=ETIMEDOUT) {
+    r=pthread_cond_timedwait(&e->range_wake,&e->range_lock,&until);
+    if(r && r!=ETIMEDOUT) break;
+  }
+  int ok=!e->range_stop && !cancelled(e) && !__atomic_load_n(&job->cancel,__ATOMIC_RELAXED);
+  pthread_mutex_unlock(&e->range_lock); return ok;
+}
+static void range_fetch(DtsEngine *e,DtsRangeJob *job) {
+  uint64_t begun=clock_ns(CLOCK_MONOTONIC);
+  if(!e->dv && !e->remux)
+    job->data=rede_baixar_trecho64_cab(e->url,e->headers,job->start,job->end,
+      &job->count,&job->total,&job->status,&job->cancel);
+  else {
+    /* After the first answer, go straight to the address behind the add-on
+     * redirects. Credential headers follow only on the same origin. A final
+     * link that stops answering (expired: 403/410, or any failure) is
+     * dropped and the request repeats through the original URL. */
+    char target[8192], fin[8192]; int direct, cross=0;
+    pthread_mutex_lock(&e->range_lock);
+    direct=e->final_url[0]!=0; cross=e->final_cross;
+    snprintf(target,sizeof target,"%s",direct?e->final_url:e->url);
+    pthread_mutex_unlock(&e->range_lock);
+    job->data=rede_baixar_trecho64_final(target,direct&&cross?"":e->headers,job->start,job->end,
+      &job->count,&job->total,&job->status,&job->cancel,fin,&cross);
+    uint64_t first=clock_ns(CLOCK_MONOTONIC);
+    int first_status=job->status, first_ok=job->data!=NULL;
+    if(direct && !job->data && !__atomic_load_n(&job->cancel,__ATOMIC_RELAXED)) {
+      pthread_mutex_lock(&e->range_lock);
+      if(!strcmp(e->final_url,target)) e->final_url[0]=0;
+      pthread_mutex_unlock(&e->range_lock);
+      job->data=rede_baixar_trecho64_final(e->url,e->headers,job->start,job->end,
+        &job->count,&job->total,&job->status,&job->cancel,fin,&cross);
+      direct=0;
+      /* #203 DV startup took ~19.5 s twice (LG C9): one stalled request
+       * hitting the 15 s curl deadline plus a ~4.5 s add-on re-resolve is
+       * the suspicion. Name it in the log: no URL, only timings/status. */
+      uint64_t done=clock_ns(CLOCK_MONOTONIC);
+      printf("[dts-range] direto falhou: at=%lldMiB ms=%llu http=%d; pelo addon: ms=%llu http=%d bytes=%ld\n",
+             (long long)(job->start>>20),(unsigned long long)((first-begun)/1000000),first_status,
+             (unsigned long long)((done-first)/1000000),job->status,job->count);
+      fflush(stdout);
+    } else if(!__atomic_load_n(&job->cancel,__ATOMIC_RELAXED) &&
+              ((!first_ok && !(e->remux && first_status==416)) || first-begun>=UINT64_C(3000000000))) {
+      printf("[dts-range] %s: at=%lldMiB ms=%llu http=%d bytes=%ld direto=%d\n",first_ok?"lento":"falhou",
+             (long long)(job->start>>20),(unsigned long long)((first-begun)/1000000),first_status,job->count,direct);
+      fflush(stdout);
+    }
+    if(!direct && job->data && fin[0]) {
+      pthread_mutex_lock(&e->range_lock);
+      snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross;
+      pthread_mutex_unlock(&e->range_lock);
+    }
+  }
+}
 static void *range_worker(void *opaque) {
   DtsEngine *e=((DtsRangeWorker *)opaque)->engine;
   pthread_mutex_lock(&e->range_lock);
@@ -196,49 +264,23 @@ static void *range_worker(void *opaque) {
     job->state=2;
     pthread_mutex_unlock(&e->range_lock);
     uint64_t begun=clock_ns(CLOCK_MONOTONIC);
-    if(!e->dv && !e->remux)
-      job->data=rede_baixar_trecho64_cab(e->url,e->headers,job->start,job->end,
-        &job->count,&job->total,&job->status,&job->cancel);
-    else {
-      /* After the first answer, go straight to the address behind the add-on
-       * redirects. Credential headers follow only on the same origin. A final
-       * link that stops answering (expired: 403/410, or any failure) is
-       * dropped and the request repeats through the original URL. */
-      char target[8192], fin[8192]; int direct, cross=0;
-      pthread_mutex_lock(&e->range_lock);
-      direct=e->final_url[0]!=0; cross=e->final_cross;
-      snprintf(target,sizeof target,"%s",direct?e->final_url:e->url);
-      pthread_mutex_unlock(&e->range_lock);
-      job->data=rede_baixar_trecho64_final(target,direct&&cross?"":e->headers,job->start,job->end,
-        &job->count,&job->total,&job->status,&job->cancel,fin,&cross);
-      uint64_t first=clock_ns(CLOCK_MONOTONIC);
-      int first_status=job->status, first_ok=job->data!=NULL;
-      if(direct && !job->data && !__atomic_load_n(&job->cancel,__ATOMIC_RELAXED)) {
-        pthread_mutex_lock(&e->range_lock);
-        if(!strcmp(e->final_url,target)) e->final_url[0]=0;
-        pthread_mutex_unlock(&e->range_lock);
-        job->data=rede_baixar_trecho64_final(e->url,e->headers,job->start,job->end,
-          &job->count,&job->total,&job->status,&job->cancel,fin,&cross);
-        direct=0;
-        /* #203 DV startup took ~19.5 s twice (LG C9): one stalled request
-         * hitting the 15 s curl deadline plus a ~4.5 s add-on re-resolve is
-         * the suspicion. Name it in the log: no URL, only timings/status. */
-        uint64_t done=clock_ns(CLOCK_MONOTONIC);
-        printf("[dts-range] direto falhou: at=%lldMiB ms=%llu http=%d; pelo addon: ms=%llu http=%d bytes=%ld\n",
-               (long long)(job->start>>20),(unsigned long long)((first-begun)/1000000),first_status,
-               (unsigned long long)((done-first)/1000000),job->status,job->count);
-        fflush(stdout);
-      } else if(!__atomic_load_n(&job->cancel,__ATOMIC_RELAXED) &&
-                ((!first_ok && !(e->remux && first_status==416)) || first-begun>=UINT64_C(3000000000))) {
-        printf("[dts-range] %s: at=%lldMiB ms=%llu http=%d bytes=%ld direto=%d\n",first_ok?"lento":"falhou",
-               (long long)(job->start>>20),(unsigned long long)((first-begun)/1000000),first_status,job->count,direct);
-        fflush(stdout);
-      }
-      if(!direct && job->data && fin[0]) {
-        pthread_mutex_lock(&e->range_lock);
-        snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross;
-        pthread_mutex_unlock(&e->range_lock);
-      }
+    int attempt=0;
+    for(;attempt<RANGE_ATTEMPTS;attempt++) {
+      if(cancelled(e) || __atomic_load_n(&job->cancel,__ATOMIC_RELAXED)) break;
+      range_fetch(e,job);
+      if(job->data || !range_retryable(job->status) || cancelled(e) ||
+         __atomic_load_n(&job->cancel,__ATOMIC_RELAXED)) break;
+      printf("[range-retry] start=%lld end=%lld attempt=%d/%d http=%d\n",
+             (long long)job->start,(long long)job->end,attempt+1,RANGE_ATTEMPTS,job->status);
+      fflush(stdout);
+      if(attempt+1==RANGE_ATTEMPTS || !range_backoff(e,job,150*(attempt+1))) break;
+    }
+    if(!cancelled(e) && !__atomic_load_n(&job->cancel,__ATOMIC_RELAXED) &&
+       (attempt || !job->data)) {
+      printf("[range-result] start=%lld end=%lld attempts=%d ok=%d http=%d bytes=%ld ms=%llu\n",
+             (long long)job->start,(long long)job->end,attempt+1,job->data!=NULL,
+             job->status,job->count,(unsigned long long)((clock_ns(CLOCK_MONOTONIC)-begun)/1000000));
+      fflush(stdout);
     }
     uint64_t ended=clock_ns(CLOCK_MONOTONIC);
     pthread_mutex_lock(&e->range_lock);
@@ -247,8 +289,17 @@ static void *range_worker(void *opaque) {
   }
   pthread_mutex_unlock(&e->range_lock); return NULL;
 }
-static void clear_ranges(DtsEngine *e) {
+static void clear_ranges(DtsEngine *e,const char *reason) {
   pthread_mutex_lock(&e->range_lock);
+  int ready=0, active=0; int64_t bytes=0;
+  for(int i=0;i<RANGE_SLOTS;i++) {
+    DtsRangeJob *j=&e->ranges[i]; active+=j->state==2;
+    if(j->state==3 && j->data && j->count>0) { ready++; bytes+=j->count; }
+  }
+  if(ready || active) {
+    printf("[range-reset] reason=%s pos=%lld ready=%d readyBytes=%lld active=%d\n",
+           reason,(long long)e->pos,ready,(long long)bytes,active); fflush(stdout);
+  }
   for(int i=0;i<RANGE_SLOTS;i++) {
     DtsRangeJob *job=&e->ranges[i];
     __atomic_store_n(&job->cancel,1,__ATOMIC_RELAXED);
@@ -485,7 +536,7 @@ static int read_range(void *opaque,uint8_t *dst,int n) {
       pthread_mutex_unlock(&e->range_lock);
       /* Seek or short 206: discard obsolete speculative ranges and restart
        * at the exact next byte. Never jump over a short response's tail. */
-      clear_ranges(e);
+      clear_ranges(e,"missing");
       pthread_mutex_lock(&e->range_lock); queue_ranges(e);
       for(int i=0;i<RANGE_SLOTS;i++)
         if(e->ranges[i].state && e->ranges[i].start==e->pos) job=&e->ranges[i];
@@ -497,6 +548,22 @@ static int read_range(void *opaque,uint8_t *dst,int n) {
     long count=job->count; int status=job->status; int64_t total=job->total, end=job->end;
     uint64_t ready_at=clock_ns(CLOCK_MONOTONIC);
     if(ready_at>=wait_started) e->metrics.range_blocked_ns+=ready_at-wait_started;
+    if(!job->data || (ready_at>=wait_started && ready_at-wait_started>=UINT64_C(500000000))) {
+      int64_t ready=0, contiguous=0, next=e->pos;
+      for(int i=0;i<e->range_slots;i++)
+        if(e->ranges[i].state==3 && e->ranges[i].data && e->ranges[i].count>0) ready+=e->ranges[i].count;
+      for(int k=0;k<e->range_slots;k++) {
+        DtsRangeJob *j=NULL;
+        for(int i=0;i<e->range_slots;i++)
+          if(e->ranges[i].state==3 && e->ranges[i].data && e->ranges[i].count>0 && e->ranges[i].start==next) { j=&e->ranges[i]; break; }
+        if(!j) break;
+        contiguous+=j->count; next+=j->count;
+        if(j->count<j->end-j->start+1) break;
+      }
+      printf("[range-read] pos=%lld waitMs=%llu http=%d ok=%d readyBytes=%lld contiguousBytes=%lld\n",
+             (long long)e->pos,(unsigned long long)((ready_at-wait_started)/1000000),
+             status,job->data!=NULL,(long long)ready,(long long)contiguous); fflush(stdout);
+    }
     free(e->cache); e->cache=NULL; e->cache_size=0;
     e->cache=job->data; job->data=NULL; job->state=0;
     uint64_t elapsed=job->elapsed;
@@ -545,7 +612,7 @@ static int64_t seek_range(void *opaque,int64_t offset,int whence) {
   if (base<0 || (offset>0 && base>INT64_MAX-offset) || (offset<0 && offset<-base)) return AVERROR(EINVAL);
   e->pos=base+offset;
   if(!e->cache || e->pos<e->cache_start || e->pos-e->cache_start>=e->cache_size)
-    clear_ranges(e);
+    clear_ranges(e,"seek");
   return e->pos;
 }
 static int64_t ns(int64_t value,AVRational tb) {

@@ -17,6 +17,14 @@ int main(void) {
   FILE *f = fdopen(fd, "wb"); assert(f);
   const char *safe = "[playback-diag] tick=123 generation=2 pos=123.456 readyBytes=268435456 availableKiB=245760";
   logexport_redact(safe, out, sizeof out); assert(!strcmp(safe, out));
+  const char *range_logs[]={
+    "[range-http] start=10737418240 end=10738466815 curl=28 http=206 got=524288 valid=1 overflow=0 responseStart=10737418240 responseEnd=10738466815 total=30000000000",
+    "[range-result] start=4194304 end=5242879 attempts=2 ok=1 http=206 bytes=1048576 ms=15020",
+    "[range-read] pos=4194304 waitMs=2150 http=206 ok=1 readyBytes=64000000 contiguousBytes=64000000",
+    "[range-reset] reason=seek pos=100000000 ready=32 readyBytes=33554432 active=4"};
+  for(size_t i=0;i<sizeof range_logs/sizeof range_logs[0];i++) {
+    logexport_redact(range_logs[i],out,sizeof out);assert(!strcmp(out,range_logs[i]));
+  }
   hides("[net] https://person:shortpw@host.example/key/movie?api=x#y", "person");
   hides("[net] HtTpS://private.example/shortpw", "shortpw");
   hides("[net] https:\\/\\/private.example/key", "private.example");
