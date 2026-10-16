@@ -145,6 +145,8 @@ struct DtsEngine {
   enum AVSampleFormat input_format;
   int input_rate, demux_eof, decoder_eof, resampler_eof, encoder_sent_eof;
   int64_t sample_pts, target_ns;
+  int64_t pad_anchor; /* Output samples; budget follows decoded media time. */
+  int pad_count, pad_samples;
   int timeline, has_core;
   DtsEngineMetrics metrics;
 #ifdef NV_DTS_DEBUG
@@ -912,7 +914,40 @@ static int resample(DtsEngine *e,AVFrame *f) {
              av_audio_fifo_size(e->fifo), (long long)swr_get_delay(e->swr,e->input_rate),
              f->nb_samples,e->input_rate,(double)e->target_ns/1e6);
       fflush(stdout);
-      return fail(e,DTS_ENGINE_TIMESTAMP_DISCONTINUITY,0);
+      /* A small FORWARD hole can be represented by silence without retiming
+       * video or restarting the native pipeline. Keep the 100 ms jitter guard;
+       * never conceal backward jumps, large gaps or a sustained broken clock.
+       * At most four holes / one second of silence per 30 s of media progress.
+       * swr_inject_silence takes INPUT samples; its buffered delay is included
+       * in the output capacity below (also at 44.1/96 kHz). */
+      int64_t gap=incoming-expected;
+      const char *reason=NULL;
+      if(gap<0) reason="backward";
+      else if(gap>24000) reason="too-large";
+      else {
+        if(e->pad_count && expected-e->pad_anchor>=30LL*48000)
+          e->pad_count=e->pad_samples=0;
+        if(e->pad_count>=4 || gap>48000-e->pad_samples) reason="budget";
+      }
+      if(reason) {
+        printf("[dts] timestamp-reject reason=%s pads=%d padMs=%.3f\n",
+               reason,e->pad_count,(double)e->pad_samples/48.0);
+        fflush(stdout);
+        return fail(e,DTS_ENGINE_TIMESTAMP_DISCONTINUITY,0);
+      }
+      int input=(int)av_rescale_rnd(gap,e->input_rate,48000,AV_ROUND_NEAR_INF);
+      r=swr_inject_silence(e->swr,input);
+      if(r<0) {
+        printf("[dts] timestamp-reject reason=inject code=%d\n",r);
+        fflush(stdout);
+        return fail(e,DTS_ENGINE_TIMESTAMP_DISCONTINUITY,0);
+      }
+      if(!e->pad_count) e->pad_anchor=expected;
+      e->pad_count++; e->pad_samples+=(int)gap;
+      printf("[dts] timestamp-pad deltaMs=%.3f inputSamples=%d rate=%d "
+             "pads=%d padMs=%.3f\n",(double)gap/48.0,input,e->input_rate,
+             e->pad_count,(double)e->pad_samples/48.0);
+      fflush(stdout);
     }
   }
   int capacity=(int)av_rescale_rnd(swr_get_delay(e->swr,e->input_rate)+(f?f->nb_samples:0),48000,e->input_rate,AV_ROUND_UP)+32;
@@ -924,6 +959,7 @@ static int resample(DtsEngine *e,AVFrame *f) {
     int64_t pts=f->best_effort_timestamp;
     if(pts==AV_NOPTS_VALUE) { av_freep(&data[0]); av_freep(&data); return fail(e,"DTS sample timestamp absent",0); }
     e->sample_pts=av_rescale_q(pts,e->dec->pkt_timebase,e->enc->time_base); e->timeline=1;
+    e->pad_anchor=e->sample_pts; e->pad_count=e->pad_samples=0;
   }
   if(count>0 && av_audio_fifo_write(e->fifo,(void **)data,count)!=count) count=AVERROR(ENOMEM);
   av_freep(&data[0]); av_freep(&data);
