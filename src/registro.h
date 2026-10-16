@@ -23,14 +23,10 @@
 //     window.__nvLinhas — e dali que este painel le. Mesma fonte, sem um
 //     segundo mecanismo de captura.
 //
-// O QUE E CORTADO NA EXIBICAO. O log de um app de video carrega titulo
-// assistido e URL de fonte, e as URLs de addon/debrid levam a chave do debrid
-// embutida no CAMINHO (ver debrid.c: "[debrid] %s -> %.60s"). Um painel na TV
-// da sala expoe isso para quem estiver na sala. Decisao: o TITULO fica (ele ja
-// esta na tela do app e e a informacao que faz o log servir para algo), a URL
-// e cortada no HOST — de "https://casa.exemplo/d/CHAVE/arquivo.mkv" sobra
-// "https://casa.exemplo/…". O host importa para diagnosticar ("qual addon
-// respondeu"), o caminho e credencial.
+// Privacy: on-screen lines and LAN exports use logexport_redact. It masks
+// complete URLs, recognized credentials/personal identifiers, JSON payloads,
+// and long opaque strings. Automatic masking is best effort; review before
+// publishing. The original private stdout/stderr file is never served by LAN.
 #ifndef NV_REGISTRO_H
 #define NV_REGISTRO_H
 #include <SDL2/SDL.h>

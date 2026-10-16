@@ -1417,6 +1417,8 @@ static void desenhaPainel(void) {
     else rgFiltroTags(t, sizeof t);
     rgRodape(d, 4, t);
   }
+  { TxtLinha exportHint = rgT(TXT_AJ_CHIP, "Blue / F10: export all app logs (QR)");
+    txt_desenhar_alpha(exportHint, 48, NV_TELA_H - 28, 0.85f); }
   // O inspetor pelo estado.
   if (RG_SEM_INSP) { /* tela virtual estreita: sem inspetor */ }
   else if (pausado && foco >= 0 && detalhe) inspLinha();

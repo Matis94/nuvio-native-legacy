@@ -23,6 +23,7 @@
 #include "velocidade.h"
 #include "cacheboost.h"
 #include "moviebuffer.h"
+#include "memlog.h"
 #include "dts/dts_playback.h"
 #include "dts_tv.h"
 #include "dts/dts_engine.h"
@@ -1373,6 +1374,11 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
   // esse campo em resposta NORMAL — os marcos encheram de
   // `pipeline erro: errorText":"No Error"`, que e ruido escondendo o sinal.
   if (strstr(p, "errorText") && !strstr(p, "\"No Error\"")) {
+    printf("[playback-diag] native-error tick=%u generation=%u code=%.0f network=%d "
+           "route=%s pos=%.3f\n", SDL_GetTicks(), sessao,
+           numeroDe(p, "\"errorCode\":"),
+           nv_recon_rede_ums(numeroDe(p, "\"errorCode\":")),
+           dtsSessao ? "conversion" : "native-uri", posSeg);
     const char *q = strstr(p, "errorText");
     char m[96];
     snprintf(m, sizeof m, "pipeline erro: %.60s", q);
@@ -2314,7 +2320,9 @@ static void mkvRetryBombear(void) {
   mkvPendente = 1;
   video_sondar_mkv_agora();
 }
+static void diagnosticoPlayback(void);
 void video_bombear(void) {
+  diagnosticoPlayback();
   ack_publicar();
   velBombear();
   mkvRetryBombear();
@@ -3451,6 +3459,31 @@ void video_download_buffer(long long *used,long long *capacity) {
   if(used)*used=b.ready_bytes;
   if(capacity)*capacity=b.capacity_bytes;
 }
+/* No per-frame I/O: only one numeric snapshot every five seconds while a
+ * source is active. Includes the conversion path, not just native URI cache. */
+static void diagnosticoPlayback(void) {
+  static Uint32 last;
+  static unsigned generation;
+  Uint32 now = SDL_GetTicks();
+  long long used = 0, capacity = 0;
+  MemlogInfo mem;
+  if (!urlAtual[0]) return;
+  if (generation == sessao && (Uint32)(now - last) < 5000) return;
+  generation = sessao; last = now;
+  video_download_buffer(&used, &capacity);
+  memlog_ler(&mem);
+  printf("[playback-diag] tick=%u generation=%u route=%s pos=%.3f duration=%.3f "
+         "nativeEnd=%.3f playing=%d ready=%d failed=%d bufferingMs=%u "
+         "dtsState=%d dvProfile=%d dtsPending=%d errorPending=%d dtsEnabled=%d dvEnabled=%d p7Enabled=%d "
+         "readyBytes=%lld capacityBytes=%lld rssKiB=%ld peakKiB=%ld availableKiB=%ld totalKiB=%ld\n",
+         now, sessao, dtsSessao ? (dtsModoDv ? "dv-conversion" : "dts-conversion") : "native-uri",
+         posSeg, durSeg, bufferSeg, tocando, pronto, falhou,
+         bufferandoDesde ? (Uint32)(now - bufferandoDesde) : 0,
+         dtsEstado, dvMkvPerfil, dtsNativePending, reconErroPend, dtsHabilitado, dvHabilitado, ajustes_dv7(),
+         used, capacity, mem.rss_kib, mem.peak_kib, mem.available_kib, mem.total_kib);
+  fflush(stdout);
+}
+
 double video_buffer_fim(void) {
   DtsBufferInfo b={0};double end=bufferSeg;
   if(dtsSessao) { DtsPlaybackStatus st;dts_playback_status(dtsSessao,&st);b=st.buffer;if(st.buffered_until>end)end=st.buffered_until; }
