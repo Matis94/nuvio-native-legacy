@@ -1,5 +1,7 @@
 #include "app_id.h"
 #include "registro.h"
+#include "celbotao.h"
+#include "logexport.h"
 #include "dados.h"
 #include "gfx.h"
 #include "text.h"
@@ -141,18 +143,11 @@ const char *registro_arquivo(void) {
 // mascara quando o caminho tem 4 bytes ou mais (o tamanho de "/…" em UTF-8):
 // a substituicao nunca cresce a linha.
 static void mascarar(char *s) {
-  char *p = s;
-  while ((p = strstr(p, "://")) != NULL) {
-    char *h = p + 3, *fim;
-    while (*h && *h != '/' && *h != '?' && *h != ' ') h++;
-    if (*h != '/' && *h != '?') { p = h; continue; }
-    fim = h;
-    while (*fim && *fim != ' ') fim++;
-    if (fim - h < 4) { p = fim; continue; }
-    memmove(h + 4, fim, strlen(fim) + 1);
-    memcpy(h, "/\xe2\x80\xa6", 4);
-    p = h + 4;
-  }
+  char safe[REG_JANELA + 128];
+  logexport_redact(s, safe, sizeof safe);
+  /* Existing line storage must not grow. */
+  size_t n = strlen(s);
+  snprintf(s, n + 1, "%s", safe);
 }
 
 // Corta lixo de UTF-8 no FIM: snprintf trunca por BYTE, e uma sequencia
@@ -198,7 +193,7 @@ static int ehAviso(const char *s) {
 }
 
 static const char *const AREA_VIDEO[] = {
-  "movie-buffer", "dts-range",
+  "movie-buffer", "dts-range", "dts", "playback-diag",
   "video", "player", "mkv", "mkvass", "legenda", "legendas", "ass", "serieaud",
   "posplay", "pg", "seekr", "trailer", "4k", "vazao", "proxy-ts", "livetv",
   "livetv-diag", "xtream", "xtepg", "stalker", "epg", "guia", "faixas", NULL };
@@ -609,6 +604,9 @@ int registro_evento(const SDL_Event *e) {
   // Daqui para baixo o painel e MODAL: nenhuma tecla chega a tela de tras.
   if (e->type == SDL_KEYDOWN) {
     SDL_Keycode k = e->key.keysym.sym;
+    if ((e->key.keysym.scancode == 489 || k == SDLK_F10) && !e->key.repeat) {
+      celb_abrir(CELB_LOG, "Export diagnostics"); engolirSoltura(e); return 1;
+    }
     if (nv_tecla_voltar(e)) { aberto = 0; engolirSoltura(e); return 1; }
     if (semFonte || !nLin) {
       if (ehOk(k)) { recarregar(); engolirSoltura(e); }

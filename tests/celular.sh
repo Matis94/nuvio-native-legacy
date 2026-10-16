@@ -8,6 +8,7 @@ cd "$(dirname "$0")/.."
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/nuvio-celular-XXXXXX")"
 trap 'rm -rf "$tmp" ${TMPDIR:-/tmp}/nv-celular-corpo.txt ${TMPDIR:-/tmp}/nv-celular-grande.txt' EXIT
 flags=(-O1 -g -Isrc -Wall -Wextra -Wno-unused-parameter)
+if [ "${CEL_TEST_LOOPBACK:-0}" = 1 ]; then flags+=(-DNV_CEL_TEST_LOOPBACK); fi
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 cc "${flags[@]}" src/celular.c tests/celular.c -o "$tmp/celular" -lpthread
 "$tmp/celular"

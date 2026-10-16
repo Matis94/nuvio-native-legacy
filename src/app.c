@@ -2703,6 +2703,15 @@ static void tentarProximaFonteVOD(void) {
   if (!motivo) return;
 
   atual = stream_atual();
+  { long long used = 0, capacity = 0;
+    video_download_buffer(&used, &capacity);
+    printf("[playback-diag] failover tick=%u sourceIndex=%d reason=%d "
+           "pos=%.3f bufferEnd=%.3f bufferingMs=%u videoFailed=%d playerFailed=%d "
+           "readyBytes=%lld capacityBytes=%lld\n",
+           SDL_GetTicks(), atual, motivo, video_pos(), video_buffer_fim(),
+           (unsigned)video_bufferando_ms(), video_falhou(), player_fonte_falhou(), used, capacity);
+    fflush(stdout);
+  }
   if (fonteFalha) {
 #ifdef NV_ANDROID
     if (atual >= 0 && motivo == 1)
@@ -3338,6 +3347,7 @@ void app_evento(const SDL_Event *e) {
   if (e->type == SDL_KEYDOWN && e->key.keysym.sym == SDLK_F9 && stream_folha_aberta() &&
       !registro_aberto()) { stream_folha_evento(e); return; }
 #endif
+  if (celb_dono() == CELB_LOG && celb_evento(e)) return;
   if (registro_evento(e)) return;
   // O painel de envio do registro (Ajustes > Enviar registro, ou o "Enviar
   // agora" do painel): modal, come o teclado enquanto aberto.
@@ -6401,6 +6411,7 @@ void app_desenhar(Uint32 agora) {
   // propria: e conteudo da ilha do relogio (ilha.c, plrilha.c; desempenho.h).
   CAMADA_SE(registro_aberto());
   registro_desenhar();
+  if (celb_dono() == CELB_LOG) { CAMADA_SE(celb_aberto()); celb_desenhar(); }
   // A ilha do relogio fica acima do painel de registro, no canto de sempre.
   if (registro_aberto() && sessao_logada()) {
     ilha_relogio_visivel(ajustes_relogio_ligado());
