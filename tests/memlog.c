@@ -36,6 +36,20 @@ static int logFake(const char *fmt, ...) {
 
 int main(void) {
   char s[96];
+  MemlogInfo info;
+  status = "VmRSS: 131072 kB\nVmHWM: 163840 kB\n";
+  meminfo = "MemTotal: 2097152 kB\nMemAvailable: 614400 kB\n";
+  memlog_ler(&info);
+#if defined(__linux__) && !defined(__EMSCRIPTEN__)
+  assert(info.rss_kib == 131072 && info.peak_kib == 163840);
+  assert(info.available_kib == 614400 && info.total_kib == 2097152);
+  status = "VmRSS: invalid kB\n"; meminfo = NULL;
+  memlog_ler(&info);
+  assert(info.rss_kib == -1 && info.peak_kib == -1 && info.available_kib == -1 && info.total_kib == -1);
+#else
+  assert(info.rss_kib == -1 && info.peak_kib == -1 && info.available_kib == -1 && info.total_kib == -1);
+#endif
+  leituras = 0;
   status = "Name:\tnuvio\nVmSize: 999999 kB\nVmRSS:\t235520 kB\nThreads: 8\n";
   meminfo = "MemTotal: 2012160 kB\nMemFree: 1024 kB\nMemAvailable: 307200 kB\n";
   memlog_amostra(s, sizeof s);

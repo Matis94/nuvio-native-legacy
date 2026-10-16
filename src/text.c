@@ -2,6 +2,7 @@
 #include <unistd.h>   // access (fontes de /system/fonts)
 #endif
 #include "text.h"
+#include "textwrap.h"
 #include "dobra.h"
 #include "idioma.h"
 #include "ajustes.h"
@@ -2199,6 +2200,26 @@ size_t txt_token_tam(const char *s) {
   return (size_t)((const char *)q - s);
 }
 
+static int medirIntegral(const char *s, void *ctx) {
+  return txt_largura(*(TxtEstilo *)ctx, s);
+}
+float txt_bloco_integral(TxtEstilo estilo, const char *s, int r, int g, int b,
+                        float x, float y, float larg, float leading, float alpha) {
+  return txt_bloco_integral_tom(estilo,s,r,g,b,x,y,larg,leading,1.0f,alpha);
+}
+float txt_bloco_integral_tom(TxtEstilo estilo, const char *s, int r, int g, int b,
+                            float x, float y, float larg, float leading, float tom, float alpha) {
+  char linha[512];
+  float h=0;
+  if (!s || larg<=0 || leading<=0) return 0;
+  while (*s) {
+    s=nv_wrap_line(s,linha,sizeof linha,larg,medirIntegral,&estilo);
+    if (alpha>0 && linha[0])
+      txt_desenhar_tom(txt_linha(estilo,linha,r,g,b,255),x,y+h,tom,tom,tom,alpha);
+    h+=leading;
+  }
+  return h;
+}
 static float txt_bloco_impl(TxtEstilo estilo, const char *s, int r, int g, int b,
                             float x, float y, float larg, float leading,
                             float alpha, int maxLinhas, int reticencias) {

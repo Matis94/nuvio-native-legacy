@@ -111,6 +111,7 @@ if [ -n "${NUVIO_DTS_ROOT:-}" ]; then DTS_ENV=(-e "NUVIO_DTS_ROOT=$NUVIO_DTS_ROO
   -e NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-}" \
   -e NUVIO_ASS_LIBASS="${NUVIO_ASS_LIBASS:-1}" \
   -e NUVIO_DTS_FFMPEG="$DTS_ENABLED" \
+  -e NUVIO_DV7="${NUVIO_DV7:-1}" \
   "${DTS_ENV[@]}" \
   -v "$PWD":/work:z "$SDK_IMAGE" bash -c '
   set -e
@@ -130,6 +131,13 @@ if [ -n "${NUVIO_DTS_ROOT:-}" ]; then DTS_ENV=(-e "NUVIO_DTS_ROOT=$NUVIO_DTS_ROO
     [ -f "$DTS/include/libavcodec/avcodec.h" ] || { echo "FFmpeg DTS ausente; reconstrua tools/Dockerfile ou use NUVIO_DTS_FFMPEG=0" >&2; exit 2; }
     DTS_CFLAGS="-DNV_DTS_FFMPEG -I$DTS/include"
     DTS_LIBS="-L$DTS/lib -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lpthread -lm"
+  fi
+  DV7_LIBS=""
+  if [ "${NUVIO_DV7:-1}" = 1 ] && [ "${NUVIO_DTS_FFMPEG:-1}" = 1 ]; then
+    export NUVIO_DV7_TARGET=armv7-unknown-linux-gnueabi
+    bash tools/build-dv7.sh
+    DTS_CFLAGS="$DTS_CFLAGS -DNV_DV7_CONVERSION"
+    DV7_LIBS="build/dv7/libnuvio_dv7.a -ldl -lpthread -lm -lrt -Wl,-Bstatic -latomic -Wl,-Bdynamic -static-libgcc"
   fi
   # -DNV_WEBOS: a identidade do alvo tem que vir daqui, porque o compilador
   # webos define __linux__ igual a qualquer Linux e a toolchain nao tem macro
@@ -185,7 +193,7 @@ if [ -n "${NUVIO_DTS_ROOT:-}" ]; then DTS_ENV=(-e "NUVIO_DTS_ROOT=$NUVIO_DTS_ROO
     -DNV_DISCORD_CLIENT_ID="\"${NV_DISCORD_CLIENT_ID:-}\"" \
     -DNV_VERSAO="\"$NV_VERSAO\"" \
     -I$SR/usr/include -I$SR/usr/include/SDL2 \
-    -lSDL2 -lSDL2_image -lSDL2_ttf -lGLESv2 -lEGL $P2P_LIBS -ldl -lpthread -lz -lm $ASS_LIBS $DTS_LIBS \
+    -lSDL2 -lSDL2_image -lSDL2_ttf -lGLESv2 -lEGL $P2P_LIBS -ldl -lpthread -lz -lm $ASS_LIBS $DTS_LIBS $DV7_LIBS \
     -Wl,--export-dynamic-symbol=pthread_create -Wl,--exclude-libs,ALL
   # #317: --exclude-libs,ALL tira da tabela dinamica tudo o que vem de arquivo
   # .a (FreeType/harfbuzz do libass, libstdc++ do P2P, FFmpeg). Sem ele o ld
@@ -199,6 +207,11 @@ if [ -n "${NUVIO_DTS_ROOT:-}" ]; then DTS_ENV=(-e "NUVIO_DTS_ROOT=$NUVIO_DTS_ROO
   # src/dts/rt_shim.c: the LG audio sink (KADP_OSA_CreateThread) must bind to
   # our pthread_create, which retries its real-time thread with default
   # attributes instead of letting the firmware crash on EINVAL (LG C9 core).
+  rm -rf deploy/app/licenses/dv7
+  if [ -n "$DV7_LIBS" ]; then
+    mkdir -p deploy/app/licenses/dv7
+    cp build/dv7/licenses/* build/dv7/SOURCE.txt build/dv7/Cargo.lock deploy/app/licenses/dv7/
+  fi
   mkdir -p deploy/app/lib
   find deploy/app/lib -maxdepth 1 -type f -name "dts-starfish-webos*.so" -delete
   if [ -d deploy/app/licenses/dts ]; then

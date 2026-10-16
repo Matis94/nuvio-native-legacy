@@ -22,6 +22,13 @@ void dts_engine_set_ac3(int on);
 /* Samsung remux only: ring of the single-connection reader, in MiB (8..32,
  * default 32), for rings allocated after the call. webOS never calls it. */
 void dts_engine_set_ring_mib(int mib);
+void dts_engine_set_buffer_mib(int mib);
+typedef struct { int64_t ready_bytes, capacity_bytes, position, total; } DtsBufferInfo;
+void dts_engine_buffer_info(DtsEngine *, DtsBufferInfo *);
+/* Byte-preserving input for the native URI player's loopback cache. */
+DtsEngine *dts_engine_source_create(const char *url, const char *headers, int mib);
+int dts_engine_source_read(DtsEngine *, int64_t offset, unsigned char *data, int n);
+int64_t dts_engine_source_total(DtsEngine *);
 DtsEngine *dts_engine_create(void);
 int dts_engine_available(void);
 /* Dolby Vision path, set before open: AC-3/E-AC-3 tracks are selectable and

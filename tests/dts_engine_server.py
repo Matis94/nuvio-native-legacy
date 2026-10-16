@@ -19,7 +19,7 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r'bytes=(\d+)-(\d+)', self.headers.get('Range', ''))
         if not match: self.send_error(400); return
         lo, hi = map(int, match.groups())
-        assert 0 <= hi - lo < 1024 * 1024
+        assert 0 <= hi - lo < 4 * 1024 * 1024
         slow = self.path.startswith('/slow/')
         parallel = self.path.startswith('/parallel/')
         prefetch = self.path.startswith('/prefetch/')

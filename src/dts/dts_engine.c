@@ -1,4 +1,5 @@
 #include "dts_engine.h"
+#include "dv7.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -9,6 +10,9 @@ struct DtsEngine;
 /* Output mode for the NEXT open: 0 = stereo AAC (default, the proven path),
  * 1 = AC3 5.1 at 640 kbps (falls back to AAC when the encoder is absent). */
 static volatile int g_surround_ac3;
+static int g_buffer_mib = 64;
+static int buffer_mib(int v) { return v == 128 || v == 256 ? v : 64; }
+void dts_engine_set_buffer_mib(int mib) { __atomic_store_n(&g_buffer_mib, buffer_mib(mib), __ATOMIC_RELAXED); }
 void dts_engine_set_ac3(int on) { g_surround_ac3 = on ? 1 : 0; }
 /* Samsung remux ring (read_fluxo) for engines created after this call, in MiB:
  * 32 by default; the .tpk asks for 16 on Tizen 6/6.5/7 (less RAM). */
@@ -25,6 +29,10 @@ void dts_engine_rings(DtsEngineRings *out, int reset_peak) {
 }
 #ifndef NV_DTS_FFMPEG
 struct DtsEngine { DtsMediaInfo info; };
+void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *b) { (void)e; if(b) memset(b,0,sizeof *b); }
+DtsEngine *dts_engine_source_create(const char *u,const char *h,int m) { (void)u;(void)h;(void)m;return NULL; }
+int dts_engine_source_read(DtsEngine *e,int64_t o,unsigned char *d,int n) { (void)e;(void)o;(void)d;(void)n;return -1; }
+int64_t dts_engine_source_total(DtsEngine *e) { (void)e;return -1; }
 DtsEngine *dts_engine_create(void) { return calloc(1, sizeof(DtsEngine)); }
 int dts_engine_available(void) { return 0; }
 void dts_engine_dv(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
@@ -56,17 +64,18 @@ void dts_engine_interrupt(DtsEngine *e,int on) { (void)e; (void)on; }
 #include <libavutil/opt.h>
 #include <libavutil/dovi_meta.h>
 #include <libswresample/swresample.h>
-#define RANGE_BYTES (1024 * 1024)
+#include "range_budget.h"
+#define RANGE_BYTES NV_RANGE_BYTES
 /* Dolby Vision path (dts_engine_dv): 4K sources of 25-30 Mbit/s starved on
  * 1 MiB requests that re-followed the add-on redirects every time (LG C9:
  * readMs 4953/5000, 0.9 s of video ahead). Larger requests sent straight to
- * the final address keep the native buffer full with the same 32 MiB cap. */
-#define RANGE_BYTES_DV (4 * 1024 * 1024 - 1)
-#define RANGE_SLOTS_DV 8
+ * the final address keep the native buffer full within the compressed-data budget below. */
+#define RANGE_BYTES_DV NV_RANGE_BYTES_DV
+#define RANGE_SLOTS_DV NV_RANGE_SLOTS_DV
 #ifndef RANGE_WORKERS
 #define RANGE_WORKERS 4
 #endif
-#define RANGE_SLOTS 32
+#define RANGE_SLOTS NV_RANGE_SLOTS
 typedef struct {
   pthread_t thread;
   struct DtsEngine *engine;
@@ -94,7 +103,7 @@ struct DtsEngine {
   int range_threads, range_stop;
   int64_t range_next;
   long range_bytes;
-  int dv, passthrough, range_slots, final_cross;
+  int dv, passthrough, range_slots, final_cross, budget_mib;
   /* Samsung remux (dts_engine_open_demux): container only, large ranges and
    * the final address reused, like the Dolby Vision path, because the whole
    * video also flows through this reader. Never set on webOS. */
@@ -114,6 +123,8 @@ struct DtsEngine {
   int64_t fx_req;            /* restart the read at this offset (-1: none) */
   int64_t fx_from;           /* where the current read started (read-ahead grows from it) */
   uint64_t fx_resolved_ms;   /* last time the final address was dropped for the add-on's */
+  int64_t snapshot_pos, snapshot_total;
+  long snapshot_cache;
   char final_url[8192];
   AVFormatContext *fmt;
   AVIOContext *io;
@@ -122,6 +133,9 @@ struct DtsEngine {
   SwrContext *swr;
   AVAudioFifo *fifo;
   AVPacket *in, *out;
+  int dv7;
+  uint8_t *dv7_buffer;
+  unsigned dv7_capacity;
   AVFrame *decoded, *encoded;
   AVChannelLayout input_layout;
   enum AVSampleFormat input_format;
@@ -154,7 +168,8 @@ static int cancelled(void *opaque) {
 /* Persistent HTTP lanes retain independent curl connection caches. The bounded
  * queue keeps fetching while native playback backpressures the demux consumer,
  * so a slow future request can finish before playback needs its bytes. Payload
- * storage is at most 32 speculative 1 MiB ranges plus the 1 MiB active cache
+ * storage is at most 63 speculative 1 MiB ranges plus the 1 MiB active cache
+ * (DV: 15 speculative ~4 MiB ranges plus one active range)
  * (each HTTP allocation also includes one terminating byte). */
 static void *range_worker(void *opaque) {
   DtsEngine *e=((DtsRangeWorker *)opaque)->engine;
@@ -496,6 +511,10 @@ static int read_range(void *opaque,uint8_t *dst,int n) {
   if (n>available) n=(int)available;
   if(e->pos>INT64_MAX-n) return AVERROR(EOVERFLOW);
   memcpy(dst,e->cache+(size_t)(e->pos-e->cache_start),n); e->pos+=n;
+  pthread_mutex_lock(&e->range_lock);
+  e->snapshot_pos=e->pos; e->snapshot_total=e->total;
+  e->snapshot_cache=e->cache_size-(long)(e->pos-e->cache_start);
+  pthread_mutex_unlock(&e->range_lock);
   return n;
 }
 static int64_t seek_range(void *opaque,int64_t offset,int whence) {
@@ -533,6 +552,7 @@ static void close_media(DtsEngine *e) {
   av_frame_free(&e->decoded); av_frame_free(&e->encoded);
   avcodec_free_context(&e->dec); avcodec_free_context(&e->enc);
   av_bsf_free(&e->bsf); swr_free(&e->swr); av_audio_fifo_free(e->fifo); e->fifo=NULL;
+  av_freep(&e->dv7_buffer); e->dv7_capacity=0; e->dv7=0;
   av_channel_layout_uninit(&e->input_layout);
   avformat_close_input(&e->fmt);
   if (e->io) { av_freep(&e->io->buffer); avio_context_free(&e->io); }
@@ -541,9 +561,36 @@ static void close_media(DtsEngine *e) {
 }
 DtsEngine *dts_engine_create(void) {
   DtsEngine *e=calloc(1,sizeof(*e));
-  if(e) { e->total=-1; e->range_bytes=RANGE_BYTES; e->range_slots=RANGE_SLOTS; pthread_mutex_init(&e->range_lock,NULL); pthread_cond_init(&e->range_wake,NULL); }
+  if(e) { e->total=-1; e->range_bytes=RANGE_BYTES; e->budget_mib=__atomic_load_n(&g_buffer_mib,__ATOMIC_RELAXED); e->range_slots=e->budget_mib-1; pthread_mutex_init(&e->range_lock,NULL); pthread_cond_init(&e->range_wake,NULL); }
   return e;
 }
+void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *b) {
+  if (!b) return;
+  memset(b,0,sizeof *b);
+  if (!e) return;
+  pthread_mutex_lock(&e->range_lock);
+  b->ready_bytes=e->snapshot_cache; b->position=e->snapshot_pos; b->total=e->snapshot_total;
+  b->capacity_bytes=(int64_t)e->budget_mib*1024*1024;
+  for(int i=0;i<e->range_slots;i++)
+    if(e->ranges[i].state==3 && e->ranges[i].data && e->ranges[i].count>0)
+      b->ready_bytes+=e->ranges[i].count;
+  pthread_mutex_unlock(&e->range_lock);
+}
+DtsEngine *dts_engine_source_create(const char *url,const char *headers,int mib) {
+  DtsEngine *e=dts_engine_create();
+  if (!e) return NULL;
+  e->url=strdup(url); e->headers=strdup(headers?headers:"");
+  e->dv=1; e->budget_mib=buffer_mib(mib); e->range_bytes=RANGE_BYTES_DV;
+  e->range_slots=e->budget_mib/4-1;
+  if(!e->url || !e->headers) { dts_engine_destroy(e); return NULL; }
+  return e;
+}
+int dts_engine_source_read(DtsEngine *e,int64_t offset,unsigned char *data,int n) {
+  if (!e || offset<0 || !data || n<1) return -1;
+  if(e->pos!=offset && seek_range(e,offset,SEEK_SET)<0) return -1;
+  return read_range(e,data,n);
+}
+int64_t dts_engine_source_total(DtsEngine *e) { return e?e->total:-1; }
 void dts_engine_dv(DtsEngine *e, int enabled) { if (e) e->dv = !!enabled; }
 int dts_engine_available(void) {
   return avcodec_find_decoder(AV_CODEC_ID_DTS) && avcodec_find_encoder(AV_CODEC_ID_AAC) && av_bsf_get_by_name("h264_mp4toannexb")
@@ -591,7 +638,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
   memset(&e->logged_metrics,0,sizeof(e->logged_metrics)); e->logged_at_ns=0;
 #endif
   e->pos=0; e->total=-1; e->cache_size=0; e->has_core=0;
-  e->range_bytes=e->dv?RANGE_BYTES_DV:RANGE_BYTES; e->range_slots=e->dv?RANGE_SLOTS_DV:RANGE_SLOTS;
+  e->range_bytes=e->dv?RANGE_BYTES_DV:RANGE_BYTES; e->range_slots=e->budget_mib/(e->dv?4:1)-1;
   e->final_url[0]=0; e->final_cross=0; e->passthrough=0; e->remux=0;
   e->demux_eof=e->decoder_eof=e->resampler_eof=e->encoder_sent_eof=e->timeline=0;
   if (cancelled(e)) return fail(e,"Cancelled",0);
@@ -651,9 +698,15 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
     e->info.dovi_el_present=conf->el_present_flag;
     e->info.dovi_bl_present=conf->bl_present_flag;
     e->info.dovi_bl_compatibility_id=conf->dv_bl_signal_compatibility_id;
-    if ((conf->dv_profile!=5 && conf->dv_profile!=8) || conf->el_present_flag
-        || !conf->bl_present_flag || !conf->rpu_present_flag || vp->codec_id!=AV_CODEC_ID_HEVC)
+    if (!nv_dv7_profile(conf->dv_profile,conf->el_present_flag,
+                       conf->bl_present_flag,conf->rpu_present_flag) || vp->codec_id!=AV_CODEC_ID_HEVC)
       return fail(e,"Dolby Vision layer/profile unsupported",0);
+    if (conf->dv_profile == 7) {
+      e->dv7=1;
+      e->info.dovi_profile=8; e->info.dovi_el_present=0;
+      e->info.dovi_bl_compatibility_id=1;
+      printf("[dv7] experimental P7 -> P8.1: RPU converted, enhancement layer discarded\n");
+    }
     /* mp4toannexb preserves HEVC RPU NAL units; no video re-encode occurs. */
   }
   e->info.width=vp->width; e->info.height=vp->height;
@@ -943,7 +996,21 @@ static int next_frame(DtsEngine *e,DtsFrame *f) {
   }
 }
 int dts_engine_next(DtsEngine *e,DtsFrame *f) {
-  int result=next_frame(e,f);
+  int result;
+  for (;;) {
+    result=next_frame(e,f);
+    if(result!=1 || !e->dv7 || f->kind!=DTS_VIDEO) break;
+    size_t size=0;
+    if(f->size>INT_MAX-8192) return fail(e,"DV7 packet too large",0);
+    av_fast_malloc(&e->dv7_buffer,&e->dv7_capacity,(size_t)f->size+8192);
+    if(!e->dv7_buffer) return fail(e,"DV7 conversion buffer",AVERROR(ENOMEM));
+    if(nv_dv7_packet(f->data,(size_t)f->size,e->dv7_buffer,e->dv7_capacity,&size)<0)
+      return fail(e,"DV7 RPU conversion failed",0);
+    /* An EL-only packet is discarded, not mistaken for end of stream. */
+    if(!size) continue;
+    f->data=e->dv7_buffer; f->size=(int)size;
+    break;
+  }
 #ifdef NV_DTS_DEBUG
   if(e) {
     uint64_t now=clock_ns(CLOCK_MONOTONIC);

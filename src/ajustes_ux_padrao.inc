@@ -305,3 +305,6 @@
   120, 0, 0, 0, 0, 3, 1, 0, 1, 0, 0, /* primary style views; player.txt is authoritative */
   0, 0, 0, 0, 0, 0, 0, /* secondary appearance inherits primary, manual delay0 */
   0, /* collection default view (#362): Automatic, existing layout */
+  1, /* playback RAM overlay (test): Desligado */
+  0, /* movie download buffer: 64 MiB, local */
+  0, /* independent P7 conversion: on, preserving the working custom build */
