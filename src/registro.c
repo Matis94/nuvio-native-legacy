@@ -198,6 +198,7 @@ static int ehAviso(const char *s) {
 }
 
 static const char *const AREA_VIDEO[] = {
+  "movie-buffer", "dts-range",
   "video", "player", "mkv", "mkvass", "legenda", "legendas", "ass", "serieaud",
   "posplay", "pg", "seekr", "trailer", "4k", "vazao", "proxy-ts", "livetv",
   "livetv-diag", "xtream", "xtepg", "stalker", "epg", "guia", "faixas", NULL };

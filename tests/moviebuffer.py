@@ -10,21 +10,47 @@ class Origin(http.server.BaseHTTPRequestHandler):
     protocol_version='HTTP/1.1'
     def log_message(self,*a): pass
     def do_GET(self):
-        if self.headers.get('Authorization')!='Bearer fixture':
+        public=self.path=='/public'
+        if public:
+            assert not self.headers.get('Authorization')
+            assert self.headers.get('Referer')=='https://fixture.invalid/'
+            assert self.headers.get('User-Agent')=='FixturePlayer'
+        if not public and self.headers.get('Authorization')!='Bearer fixture':
             self.send_response(401);self.send_header('Content-Length','0');self.end_headers();return
         if self.path=='/unsupported':
             self.send_response(200);self.send_header('Content-Length','7');self.end_headers();self.wfile.write(b'#EXTM3U');return
         if self.path=='/finite-playlist':
             body=b'#EXTM3U\n#EXT-X-ENDLIST\n'
             self.send_response(206);self.send_header('Content-Range',f'bytes 0-{len(body)-1}/{len(body)}');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
-        m=re.fullmatch(r'bytes=(\d+)-(\d+)',self.headers.get('Range',''))
+        if self.path=='/redirect':
+            self.send_response(307);self.send_header('Location','/movie.mkv');self.send_header('Content-Length','0');self.end_headers();return
+        if self.path=='/cross':
+            self.send_response(307);self.send_header('Location',f'http://127.0.0.1:{self.server.server_port}/public');self.send_header('Content-Length','0');self.end_headers();return
+        m=re.fullmatch(r'bytes=(\d+)-(\d*)',self.headers.get('Range',''))
         if not m:self.send_error(400);return
-        start,end=map(int,m.groups());assert 0<=end-start<4*1024*1024
+        start=int(m[1]);bounded=bool(m[2]);end=int(m[2]) if bounded else TOTAL-1
+        if bounded:assert 0<=end-start<4*1024*1024
         if start>=TOTAL:
             self.send_response(416);self.send_header('Content-Range',f'bytes */{TOTAL}');self.send_header('Content-Length','0');self.end_headers();return
-        end=min(end,TOTAL-1);body=content(start,end-start+1)
-        self.send_response(206);self.send_header('Content-Range',f'bytes {start}-{end}/{TOTAL}');self.send_header('Content-Length',str(len(body)));self.end_headers()
-        try:self.wfile.write(body)
+        end=min(end,TOTAL-1)
+        if self.path=='/capped' and not bounded:end=min(end,start+262143)
+        length=end-start+1
+        self.send_response(206);self.send_header('Content-Range',f'bytes {start}-{end}/{TOTAL}');self.send_header('Content-Length',str(length));self.end_headers()
+        try:
+            if self.path=='/stall' and not bounded:
+                self.wfile.flush();time.sleep(20);return
+            # Short writes on an extensionless URL must still produce a MIME
+            # type before the native player receives its response headers.
+            if self.path=='/opaque' and start==0:
+                self.wfile.write(b'\x1a');self.wfile.flush();time.sleep(.01)
+            for at in range(start,end+1,65536):
+                body=bytearray(content(at,min(65536,end-at+1)))
+                magic=b'\x1a\x45\xdf\xa3' if self.path=='/opaque' else b'\x00\x00\x00\x18ftyp' if self.path=='/opaque-mp4' else b''
+                if magic and at<len(magic):body[:len(magic)-at]=magic[at:]
+                if self.path=='/opaque' and at==0:body=body[1:]
+                self.wfile.write(body)
+                if self.path=='/broken' and not bounded:
+                    self.wfile.flush();self.close_connection=True;return
         except (BrokenPipeError,ConnectionResetError):pass
 class Server(http.server.ThreadingHTTPServer):
     daemon_threads=True
@@ -92,4 +118,23 @@ try:
     assert stats(p)[0]==-1
 finally:close(p)
 print('PASS native URI: playlists/off bypass and unsupported-origin redirect before media bytes')
+for path in ['/capped','/broken','/redirect','/cross','/opaque','/opaque-mp4']:
+    p,url=daemon(path,64)
+    try:
+        status,h,b=request(url,0,131071)
+        expected=bytearray(content(0,131072))
+        magic=b'\x1a\x45\xdf\xa3' if path=='/opaque' else b'\x00\x00\x00\x18ftyp' if path=='/opaque-mp4' else b''
+        if magic:expected[:len(magic)]=magic
+        assert status==206 and b==expected,(path,len(b))
+        if magic:assert h['Content-Type']==('video/mp4' if path.endswith('mp4') else 'video/x-matroska')
+        status,h,b=request(url,91*1024*1024+7,91*1024*1024+1006)
+        assert b==content(91*1024*1024+7,1000),path
+        print(f'PASS single connection: {path}, exact bytes and seek',flush=True)
+    finally:close(p)
+p,url=daemon('/stall',64)
+try:
+    try:urllib.request.urlopen(url,timeout=2);assert False
+    except TimeoutError:pass
+finally:close(p)
+print('PASS single connection: stalled origin cancellation stays below 8 seconds',flush=True)
 server.shutdown()

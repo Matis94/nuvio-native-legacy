@@ -4,7 +4,7 @@
 #include <stdlib.h>
 int main(int argc,char **argv) {
   assert(argc==3);char url[512],line[64];setvbuf(stdout,NULL,_IOLBF,0);
-  int ok=moviebuffer_url(argv[1],"Authorization: Bearer fixture",atoi(argv[2]),url,sizeof url);
+  int ok=moviebuffer_url(argv[1],"Authorization: Bearer fixture\nReferer: https://fixture.invalid/\nUser-Agent: FixturePlayer",atoi(argv[2]),url,sizeof url);
   printf("URL %s\n",ok?url:"OFF");
   while(fgets(line,sizeof line,stdin)) {
     if(line[0]!='s')break;
