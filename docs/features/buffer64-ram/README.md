@@ -8,6 +8,13 @@ preserves upstream settings and Samsung streaming/remux support, and adapts
 full-name wrapping to the parsed source-text cache (#479). See PORTING.md
 for validation specific to this source port.
 
+The buffer test 3 follow-up uses one upstream connection for the native URI
+cache and invalidates native callbacks before shutting that cache down. A
+queued error from the old pipeline is cleared during teardown, so it cannot
+mark a newly started DTS/DV pipeline as failed. Errors from the new session
+remain enabled. The owner confirmed that the previously failing source plays
+and the false source-failed dialog is resolved on LG OLED C5 / webOS 26.
+
 ## Settings and remote
 
 Open **Settings > Playback > More options > Sound and video on this TV**.
@@ -33,7 +40,15 @@ The selected limit applies to the shared DTS/Dolby Vision HTTP range reader
 and to ordinary progressive HTTP(S) movies, including files without DTS or DV.
 The latter use a loopback HTTP byte cache; video and audio remain unchanged
 and are decoded by the native player. Authenticated requests retain the
-original source headers. Seeking and closing discard obsolete cached ranges.
+original source headers. The URI cache now uses one sequential upstream
+connection and a ring buffer, rather than the DTS/DV parallel range queue.
+An initial 256-byte bounded probe discovers the finite file size before that
+connection starts. Large seeks restart at the requested byte; interrupted or
+capped transfers resume at the next byte without dropping received payload.
+Two MiB of the ring can retain recent history for short backward seeks.
+Cached cross-origin CDN URLs retain public Referer, Origin and User-Agent
+headers while dropping credentials. MKV/MP4 response types are detected from
+file bytes, including when the add-on URL has no file extension.
 
 HLS/DASH playlists, live playback and existing loopback/P2P sources retain
 system or their existing buffering. Origins without valid finite HTTP Range
@@ -44,10 +59,11 @@ Adaptive/DRM playback is not given a new custom download cache.
 System (off) disables the ordinary URI cache. DTS/DV processing still requires
 its internal reader and uses the 64 MiB default in that mode.
 
-The limit counts compressed range payload, including the active read cache;
-it is not a limit on the app's total RAM. Four HTTP workers are retained.
-Ordinary DTS requests use 1 MiB ranges; DV and the raw URI cache use ranges of
-4 MiB minus one byte. Additional memory is needed for network/TLS, decoders,
+The limit counts compressed payload, not the app's total RAM. The native URI
+ring allocates the selected budget; ready bytes count unread buffered data,
+excluding retained history. DTS/DV retain their existing four HTTP workers:
+ordinary DTS requests use 1 MiB ranges and DV uses approximately 4 MiB ranges.
+Additional memory is needed for network/TLS, decoders,
 demuxing, graphics, subtitles, packet copies and allocation overhead. Small
 files and origins returning short ranges can fill less than the selected limit.
 With approximately 260 MiB system memory available, the 256 MiB option can
@@ -83,12 +99,23 @@ Full focused filenames and UTF-8-safe wrapping work in both source-text modes.
 
 The original 2.0.5 ARMv7 application was compiled with P2P, ASS subtitles,
 FFmpeg and libdovi, with runtime assets/adapters from the working IPK. This
-2.0.6 pull request contains source changes only; it does not publish a new IPK
-or service credentials. Build/retest an ARM package before installing this port.
+2.0.6 follow-up was also compiled into an ARMv7 test IPK with all 337 C sources.
+Its dynamic dependencies match the previous custom IPK and its maximum glibc
+reference is 2.12. This repository change contains source only; no IPK or
+service credentials are committed.
 
 Tests cover all three URI budgets, payload equality, authenticated HTTP,
 range requests, parallel clients, pause/resume, seeking, cancellation and
-unsupported-origin fallback. DTS/DV engine tests, independent profile selection,
+unsupported-origin fallback. The single-connection tests additionally cover
+capped replies, deliberately truncated bodies, same-origin and cross-origin
+redirects, credential stripping with public-header preservation, extensionless
+MKV/MP4 signatures, and cancellation while the origin stalls. The URI suite
+also passes with address/undefined-behavior sanitizers (leak checking disabled
+for the host runtime). Buffer diagnostics appear in the Video log category.
+The focused native teardown regression verifies invalidation before socket
+shutdown, removal of an already pending old error, and normal handling of a
+genuine new-session error. It fails on the previous teardown order.
+DTS/DV engine tests, independent profile selection,
 settings persistence, RAM toggling and full filename rendering are also checked.
 Desktop renderer captures verify the buffer label and green-button handler.
 The settings catalog test passes on the 2.0.6 port; see PORTING.md for

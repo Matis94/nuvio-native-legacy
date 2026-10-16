@@ -11,6 +11,24 @@ static int fake_sleep(const struct timespec *, struct timespec *);
 #undef nanosleep
 
 static DtsPlaybackStatus pump_status;
+static unsigned closing_session;
+static int buffer_stops;
+int ajustes_movie_buffer_mib(void) { return 64; }
+int moviebuffer_url(const char *s,const char *h,int mib,char *out,size_t n) {
+  (void)s;(void)h;(void)mib;(void)out;(void)n;assert(0);return 0;
+}
+void dts_playback_pause(DtsPlayback *p,int pause) { (void)p;(void)pause;assert(0); }
+void moviebuffer_stop(void) {
+  buffer_stops++;
+  /* Closing the HTTP socket can synchronously deliver a native network
+   * error. The old callback must already be invalid before that happens. */
+  assert(sessao != closing_session);
+  int pending=reconErroPend;
+  double pos=posSeg;
+  eventoPayload("{\"error\":{\"errorCode\":300,\"errorText\":\"Network Error\"}}",closing_session);
+  eventoPayload("{\"currentTime\":999000}",closing_session);
+  assert(reconErroPend==pending && posSeg==pos);
+}
 static const char *pump_events[8];
 static int pump_read, pump_count;
 void dts_playback_status(DtsPlayback *p, DtsPlaybackStatus *out) { (void)p;*out=pump_status; }

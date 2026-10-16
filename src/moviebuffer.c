@@ -29,7 +29,7 @@ struct MovieBuffer {
   pthread_t threads[MB_CLIENTS];
   Client clients[MB_CLIENTS];
   int fd, sockets[MB_CLIENTS], threads_n, stop, fallback;
-  char source[8192], path[96];
+  char source[8192], path[96], mime[40]; /* mime guarded by read_lock */
 };
 static MovieBuffer *current;
 static int stopped(MovieBuffer *s) { return __atomic_load_n(&s->stop,__ATOMIC_RELAXED); }
@@ -72,25 +72,38 @@ static void serve(MovieBuffer *s,int fd) {
   if(strcmp(path,s->path)) { respond(s,fd,404,"Not Found");return; }
   int head=!strcmp(method,"HEAD");
   if(!head && strcmp(method,"GET")) { respond(s,fd,405,"Method Not Allowed");return; }
+  char mime[40];
   pthread_mutex_lock(&s->read_lock);
   int64_t total=dts_engine_source_total(s->input);
   if(total<0 && !__atomic_load_n(&s->fallback,__ATOMIC_RELAXED)) {
-    unsigned char probe[257]={0};int got=dts_engine_source_read(s->input,0,probe,256);
+    unsigned char probe[257]={0};int got=0;
+    while(got<256) {
+      int part=dts_engine_source_read(s->input,got,probe+got,256-got);
+      if(part<=0)break;
+      got+=part;
+    }
     if(got>0) {
       total=dts_engine_source_total(s->input);
+      if(got>=4 && !memcmp(probe,"\x1a\x45\xdf\xa3",4))
+        snprintf(s->mime,sizeof s->mime,"video/x-matroska");
+      else if(got>=8 && !memcmp(probe+4,"ftyp",4))
+        snprintf(s->mime,sizeof s->mime,"video/mp4");
       const char *text=(const char *)probe;
       if(got>=3 && probe[0]==0xef && probe[1]==0xbb && probe[2]==0xbf)text+=3;
       while(*text==' ' || *text=='\r' || *text=='\n' || *text=='\t')text++;
       if(!strncmp(text,"#EXTM3U",7) || !strncmp(text,"<?xml",5) || !strncmp(text,"<MPD",4))
         __atomic_store_n(&s->fallback,1,__ATOMIC_RELAXED);
     }
+    printf("[movie-buffer] probe: bytes=%d total=%"PRId64" type=%s\n",got,total,s->mime);fflush(stdout);
   }
+  snprintf(mime,sizeof mime,"%s",s->mime);
   pthread_mutex_unlock(&s->read_lock);
   if(stopped(s)) return;
   if(total<=0 || __atomic_load_n(&s->fallback,__ATOMIC_RELAXED)) {
     /* No authenticated, finite HTTP range stream: let webOS handle the source.
      * Redirect before emitting any media bytes; never forward partial data. */
     __atomic_store_n(&s->fallback,1,__ATOMIC_RELAXED);
+    printf("[movie-buffer] fallback: no finite supported range stream\n");fflush(stdout);
     char redirect[8704];
     int n=snprintf(redirect,sizeof redirect,"HTTP/1.1 302 Found\r\nLocation: %s\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",s->source);
     if(n>0 && (size_t)n<sizeof redirect) send_all(s,fd,redirect,(size_t)n);
@@ -114,7 +127,7 @@ static void serve(MovieBuffer *s,int fd) {
     if(end>=total)end=total-1;
   }
   int h;
-  const char *mime=strstr(s->path,".mp4")?"video/mp4":strstr(s->path,".mkv")?"video/x-matroska":"application/octet-stream";
+  printf("[movie-buffer] %s: bytes=%"PRId64"-%"PRId64" total=%"PRId64" type=%s\n",method,start,end,total,mime);fflush(stdout);
   if(partial) h=snprintf(header,sizeof header,"HTTP/1.1 206 Partial Content\r\nContent-Type: %s\r\nAccept-Ranges: bytes\r\nContent-Range: bytes %"PRId64"-%"PRId64"/%"PRId64"\r\nContent-Length: %"PRId64"\r\nConnection: close\r\n\r\n",mime,start,end,total,end-start+1);
   else h=snprintf(header,sizeof header,"HTTP/1.1 200 OK\r\nContent-Type: %s\r\nAccept-Ranges: bytes\r\nContent-Length: %"PRId64"\r\nConnection: close\r\n\r\n",mime,total);
   if(!send_all(s,fd,header,(size_t)h)||head)return;
@@ -124,7 +137,11 @@ static void serve(MovieBuffer *s,int fd) {
     pthread_mutex_lock(&s->read_lock);
     int got=dts_engine_source_read(s->input,start,data,want);
     pthread_mutex_unlock(&s->read_lock);
-    if(got<=0 || !send_all(s,fd,data,(size_t)got)) return;
+    if(got<=0) {
+      if(!stopped(s)) { printf("[movie-buffer] read failed at byte=%"PRId64" result=%d\n",start,got);fflush(stdout); }
+      return;
+    }
+    if(!send_all(s,fd,data,(size_t)got)) return;
     start+=got;
   }
 }
@@ -182,15 +199,16 @@ int moviebuffer_url(const char *source,const char *headers,int mib,char *out,siz
   int random_ok=random && fread(nonce,1,sizeof nonce,random)==sizeof nonce;if(random)fclose(random);
   if(!random_ok) {moviebuffer_stop();return 0;}
   char token[33];for(int i=0;i<16;i++)snprintf(token+i*2,3,"%02x",nonce[i]);
-  const char *ext="bin";
+  const char *ext="";
   if(path_n>=4&&!strncasecmp(source+path_n-4,".mkv",4))ext="mkv";
   else if(path_n>=4&&!strncasecmp(source+path_n-4,".mp4",4))ext="mp4";
-  snprintf(s->source,sizeof s->source,"%s",source);snprintf(s->path,sizeof s->path,"/%s/movie.%s",token,ext);
+  snprintf(s->mime,sizeof s->mime,"%s",!strcmp(ext,"mkv")?"video/x-matroska":!strcmp(ext,"mp4")?"video/mp4":"application/octet-stream");
+  snprintf(s->source,sizeof s->source,"%s",source);snprintf(s->path,sizeof s->path,"/%s/movie%s%s",token,*ext?".":"",ext);
   int count=snprintf(out,n,"http://127.0.0.1:%u%s",ntohs(addr.sin_port),s->path);
   if(count<0||(size_t)count>=n) {moviebuffer_stop();return 0;}
   for(int i=0;i<MB_CLIENTS;i++) {s->clients[i]=(Client){s,i};if(pthread_create(&s->threads[i],NULL,worker,&s->clients[i]))break;s->threads_n++;}
   if(!s->threads_n) {moviebuffer_stop();return 0;}
-  printf("[movie-buffer] native URI cache enabled: %d MiB\n",mib);fflush(stdout);
+  printf("[movie-buffer] single-connection native URI cache enabled: %d MiB (test 2)\n",mib);fflush(stdout);
   return 1;
 }
 #endif
