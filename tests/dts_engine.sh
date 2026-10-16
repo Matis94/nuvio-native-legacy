@@ -88,7 +88,7 @@ with open(sys.argv[1],'wb') as out:
     count=16*1024*1024
     out.write((pattern*((count+250)//251))[:count])
 with open(sys.argv[1].replace("range.bin", "prefetch.bin"),"wb") as out:
-    count=48*1024*1024
+    count=96*1024*1024
     out.write((pattern*((count+250)//251))[:count])
 PY
 ${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation -I"$PREFIX/include" \
@@ -97,6 +97,8 @@ ${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation -I"$PREF
 "$TMP/range" "http://127.0.0.1:$PORT/parallel/range.bin"
 "$TMP/range" "http://127.0.0.1:$PORT/slow/range.bin"
 "$TMP/range" "http://127.0.0.1:$PORT/prefetch/prefetch.bin"
+cp "$TMP/prefetch.bin" "$TMP/dv-prefetch.bin"
+"$TMP/range" "http://127.0.0.1:$PORT/prefetch/dv-prefetch.bin"
 ${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation -DRANGE_WORKERS=1 -I"$PREFIX/include" \
   tests/dts_engine_avio.c src/rede.c src/redeurl.c -o "$TMP/serial-range" \
   -L"$PREFIX/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
@@ -113,7 +115,8 @@ cmp "$TMP/mp4.aac" "$TMP/sparse.aac"
 python3 - "$TMP/requests" <<'PY'
 import json,sys
 rows=[json.loads(line) for line in open(sys.argv[1])]
-assert rows and all(r['auth'] and r['hi']-r['lo']<1024*1024 for r in rows)
+assert rows and all(r['auth'] and r['hi']-r['lo']<4*1024*1024 for r in rows)
+assert all(r['hi']-r['lo']<1024*1024 for r in rows if 'dv-prefetch' not in r['path'])
 assert any(r['path']=='/sparse.mp4' and r['lo']>2**31 for r in rows)
 parallel=[r for r in rows if r['path']=='/parallel/range.bin']
 assert max(r['active'] for r in parallel)>=3, parallel

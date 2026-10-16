@@ -287,6 +287,12 @@ static void reportRate(DtsPlayback *p, DtsRate *rate, double presented,
                        double audio_pts, double video_pts, int clock_seen,
                        int pause, int complete, int preroll) {
   double now = clockSeconds(CLOCK_MONOTONIC);
+  DtsBufferInfo cached;
+  dts_engine_buffer_info(p->engine,&cached);
+  pthread_mutex_lock(&p->lock);
+  p->status.buffer=cached;
+  p->status.buffered_until=fmin(audio_pts,video_pts);
+  pthread_mutex_unlock(&p->lock);
   if (now < 0 || now - rate->start < 5.0) return;
   char event[512];
   snprintf(event, sizeof event,

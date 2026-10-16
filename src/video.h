@@ -116,6 +116,7 @@ double video_duracao(void);  // 0 enquanto desconhecida
 // baixado para descobrir o idioma das faixas — ver mkv.h. Vale so para MKV com
 // capitulos; quem chama precisa de um plano B.
 double video_creditos(void);
+void video_download_buffer(long long *used, long long *capacity);
 double video_buffer_fim(void); // ate onde o buffer cobre (s); 0 se desconhecido
 // Ha quanto tempo (ms) o pipeline esta parado esperando dados, do par de
 // eventos bufferingStart/bufferingEnd do uMS; 0 quando NAO esta bufferizando.
@@ -215,7 +216,8 @@ enum {
   VIDEO_DV_NAO_LENTO,     // o caminho abriu e a fonte nao acompanhou
   VIDEO_DV_NAO_FALHOU,    // o caminho nao abriu
   VIDEO_DV_NAO_PESSOA,    // a pessoa escolheu HDR10
-  VIDEO_DV_NAO_CONTENTOR  // o arquivo nao e Matroska (MP4/TS sem extensao na URL)
+  VIDEO_DV_NAO_CONTENTOR, // o arquivo nao e Matroska (MP4/TS sem extensao na URL)
+  VIDEO_DV_NAO_NATIVE     // selected profile stays on the native player
 };
 typedef struct {
   int sessao;          // muda a cada video_tocar (fonte nova)
@@ -308,6 +310,7 @@ static inline void video_stats_vazio(VideoStats *s) {
 }
 void video_estatisticas(VideoStats *s);
 #if defined(__APPLE__) || defined(NV_LINUX_DESKTOP)
+void video_simular_download_buffer(long long used,long long capacity);
 void video_simular_estatisticas(const VideoStats *s);   // capturas; NULL zera
 #endif
 

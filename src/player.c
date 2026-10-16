@@ -27,6 +27,7 @@
 #include "horafmt.h"
 #include "player.h"
 #include "memlog.h"
+#include "ramoverlay.h"
 #include "dvtela.h"
 #include "abrecine.h"
 #include "ilhacart.h"
@@ -3553,6 +3554,15 @@ void player_evento(const SDL_Event *e) {
   if (e->key.repeat && confirmacaoTransporteRetida &&
       (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE)) return;
 
+  /* webOS SDL_GREEN scancode 487; G is the desktop test equivalent. */
+  if (e->key.keysym.scancode == (SDL_Scancode)NV_SCANCODE_GREEN || k == SDLK_g) {
+    if (!e->key.repeat) {
+      int on=ajustes_player_ram_toggle();
+      player_toast(on?"RAM display: ON (green button)":"RAM display: OFF",2000);
+    }
+    return;
+  }
+
   if (durFonteAcaoAte && durFonteAcaoAte == toastAte && SDL_GetTicks() < durFonteAcaoAte &&
       (k == SDLK_RETURN || k == SDLK_KP_ENTER)) { durFonteTentar(0, 0); return; }
 
@@ -5964,6 +5974,7 @@ void player_desenhar(Uint32 agora) {
     } else {
       desenharLegendaExterna();
     }
+    ramoverlay_desenhar(agora, ajustes_player_ram());
     return;
   }
   if (a <= 0.005f) {
@@ -5971,7 +5982,9 @@ void player_desenhar(Uint32 agora) {
     // e conteudo do filme. Desenha-la antes do retorno preserva ASS/SRT/VTT
     // durante a maior parte da reproducao, quando a barra nao esta na tela.
     desenharLegendaExterna();
-    desenharAcoesEpisodio(); return;
+    desenharAcoesEpisodio();
+    ramoverlay_desenhar(agora, ajustes_player_ram());
+    return;
   }   // tocando limpo
 
   // OS VEUS DO GLASS UI (mockup aprovado em 03/10): so dois degrades, o de
@@ -5998,6 +6011,7 @@ void player_desenhar(Uint32 agora) {
    */
   desenharLegendaExterna();
   desenharOsd(agora, a, ac, c);
+  ramoverlay_desenhar(agora, ajustes_player_ram());
 }
 
 // O CORPO DO OSD (barra, titulo, Seekr, botoes, tempo, selos e o botao de
@@ -6055,6 +6069,13 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
       for (i = 0; i < nCaps; i++) if (caps[i] <= 0.0f || caps[i] >= 1.0f) caps[i--] = caps[--nCaps];
     }
     plrui_barra(bx, yBarra, bw, frac, bufFrac, barraFoco, caps, nCaps, a); }
+  { long long used=0,capacity=0;char b[96];
+    video_download_buffer(&used,&capacity);
+    if(capacity>0)snprintf(b,sizeof b,"Buffer: %.1f / %.0f MiB",used/1048576.0,capacity/1048576.0);
+    else snprintf(b,sizeof b,"Buffer: system");
+    TxtLinha l=txt_linha(TXT_G19M,b,230,230,230,210);
+    txt_desenhar_alpha(l,bx+bw-l.w,yBarra-l.h-14.0f,a);
+  }
 
   // --- O TITULO: o LOGO, e o texto so na falta dele -------------------------
   // (O dono tinha pedido texto em 2026-09; o mockup aprovado em 03/10 volta ao

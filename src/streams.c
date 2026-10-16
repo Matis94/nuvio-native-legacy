@@ -92,7 +92,6 @@ static float folhaOY, folhaBase;
 static void medirCabecalho(void);
 #define FOLHA_LINHA_H  112.0f  // linha sem marca e sem arquivo
 #define FOLHA_MARCA_H   30.0f  // "SUA ESCOLHA ANTERIOR" / "REPRODUZINDO AGORA"
-#define FOLHA_ARQ_H     34.0f  // nome do arquivo, so na linha em foco
 #define FOLHA_FIT_H     32.0f  // StreamFit: evidencia da conexao, so na linha em foco
 #define FOLHA_FAIXA_H   28.0f  // idiomas declarados pelo addon, antes de reproduzir
 #define FOLHA_LINHA_GAP  4.0f
@@ -3187,11 +3186,9 @@ static int linhaAnt = -1, focoVisto = -1;
 // veio — o AIOStreams do dono manda "11.1 GB | 30.1 Mbps |", o grupo, os
 // idiomas e o arquivo, cada um numa linha. Glifo que a Inter nao tem (o ⚡ e o
 // ⚑ do formatador) cai fora em text.c, sem virar quadrado.
-#define FOLHA_ADDON_LINHAS 5
 // Fora do foco a linha mostra so as 2 primeiras linhas do addon; a linha em
-// foco abre (mola abreFoco) e mostra todas, ate FOLHA_ADDON_LINHAS. Com 5
-// linhas em todas as fontes a lista caberia em 3 telas; assim ela continua
-// densa e a que se esta lendo abre inteira.
+// foco abre (mola abreFoco) e mostra o texto inteiro, com quebra de linhas.
+// As outras fontes continuam compactas.
 #define FOLHA_ADDON_FECHADA 2
 #define FOLHA_ADDON_LD     28.0f
 static void linhaLimpa(char *d, size_t tam, const char *ini, size_t n) {
@@ -3219,8 +3216,23 @@ static const struct { const char *emoji, *icone; } EMOJI_ICONE[] = {
   { "\xF0\x9F\x8F\xB7", "aj_tag" },          // 🏷
   { "\xE2\x8F\xB1",     "aj_clock" },       // ⏱
 };
-#define ADDON_PECAS 6
-typedef struct { int n; const char *ic[ADDON_PECAS]; char tx[ADDON_PECAS][96]; } LinhaAddon;
+#define ADDON_PECAS 128
+// The whole description is at most 2047 bytes; share its storage between
+// pieces instead of silently truncating every release name to 95 bytes.
+typedef struct {
+  int n;
+  const char *ic[ADDON_PECAS];
+  char *tx[ADDON_PECAS];
+  char texto[sizeof(((Stream *)0)->descricao)];
+} LinhaAddon;
+// The per-source cache owns line storage separately: reallocating its index
+// must not invalidate the text pointers inside parsed lines (#479).
+typedef struct {
+  char titulo[96];
+  int nl;
+  LinhaAddon *linhas;
+} TextoAddon;
+static const TextoAddon *textoAddonDa(int i);
 static const char *emojiIcone(const char *p, size_t *len) {
   for (size_t k = 0; k < sizeof EMOJI_ICONE / sizeof EMOJI_ICONE[0]; k++) {
     size_t n = strlen(EMOJI_ICONE[k].emoji);
@@ -3235,25 +3247,30 @@ static const char *emojiIcone(const char *p, size_t *len) {
 // passa pelo limpador do #144 (versalete, subscrito, glifo que a fonte nao
 // tem) antes de ir para a tela, como o resto da folha.
 static void pecasAddon(const char *ini, size_t n, LinhaAddon *L) {
-  char cru[1024];
+  char cru[sizeof L->texto];
   const char *p, *ate;
-  size_t len;
+  size_t len, usado = 0;
   L->n = 0;
   linhaLimpa(cru, sizeof cru, ini, n);
   p = cru;
   ate = cru + strlen(cru);
   while (p < ate && L->n < ADDON_PECAS) {
     const char *ic = NULL, *q = p;
-    char seg[512];
+    char seg[sizeof L->texto];
     size_t k;
     // O icone (se a peca abre com um) e o texto ate o proximo emoji conhecido.
     if (!(ic = emojiIcone(p, &len))) len = 0;
     q = p + len;
     for (k = 0; q + k < ate; k++) { size_t l2; if (emojiIcone(q + k, &l2)) break; }
     snprintf(seg, sizeof seg, "%.*s", (int)(k < sizeof seg - 1 ? k : sizeof seg - 1), q);
-    nv_limpar_texto(seg, L->tx[L->n], sizeof L->tx[0], NV_LIMPA_UMA_LINHA);
+    if (usado + 1 >= sizeof L->texto) break;
+    L->tx[L->n] = L->texto + usado;
+    nv_limpar_texto(seg, L->tx[L->n], sizeof L->texto - usado, NV_LIMPA_UMA_LINHA);
     nv_aparar_separadores(L->tx[L->n]);   // "31.4 GB | 43.2 Mbps |" -> sem o | solto
-    if (ic || L->tx[L->n][0]) L->ic[L->n++] = ic;
+    if (ic || L->tx[L->n][0]) {
+      usado += strlen(L->tx[L->n]) + 1;
+      L->ic[L->n++] = ic;
+    }
     p = q + k;
   }
 }
@@ -3261,14 +3278,59 @@ static int linhasAddon(const Stream *s, LinhaAddon *out, int max) {
   const char *p = s->descricao;
   int nl = 0;
   while (*p && nl < max) {
-    const char *f = strchr(p, '\n');
-    size_t n = f ? (size_t)(f - p) : strlen(p);
-    pecasAddon(p, n, &out[nl]);
+    const char *fim = strchr(p, '\n');
+    pecasAddon(p, fim ? (size_t)(fim-p) : strlen(p), &out[nl]);
     if (out[nl].n) nl++;
-    if (!f) break;
-    p = f + 1;
+    if (!fim) break;
+    p = fim + 1;
   }
   return nl;
+}
+// Measure and draw from the same parsed cache. Expanded text is measured
+// only for the focused row and its closing predecessor.
+static float corpoAddon(int index, float x, float y, float w,
+                        int inteiro, int sel, float alpha) {
+  const Stream *s=&lista[index];
+  const TextoAddon *t=textoAddonDa(index);
+  float h=0;
+  for (int linha=0;linha<t->nl;linha++) {
+    const LinhaAddon *L=&t->linhas[linha];
+    if (!inteiro && linha>=FOLHA_ADDON_FECHADA) break;
+    if (!inteiro && alpha<=0) { h+=FOLHA_ADDON_LD; continue; }
+    float px=x, lh=FOLHA_ADDON_LD;
+    int c=linha==0?(sel?215:180):(sel?170:130);
+    int base=linha==0?215:170;
+    for (int pc=0;pc<L->n;pc++) {
+      float iw=L->ic[pc]?30:0;
+      float tw=inteiro?txt_largura(TXT_PG_FIM,L->tx[pc]):0;
+      if (inteiro && px>x && px-x+iw+tw>w) {
+        h+=lh; px=x; lh=FOLHA_ADDON_LD;
+      }
+      if (!inteiro && w-(px-x)<=30) break;
+      if (L->ic[pc]) {
+        if (alpha>0) gfx_icone((GfxRect){px,y+h+3,22,22},L->ic[pc],c/255.f,c/255.f,c/255.f,alpha);
+        px+=iw;
+      }
+      if (L->tx[pc][0]) {
+        if (inteiro) {
+          float th=txt_bloco_integral_tom(TXT_PG_FIM,L->tx[pc],base,base,base,px,y+h,w-(px-x),FOLHA_ADDON_LD,(float)c/base,alpha);
+          if (th>lh) lh=th;
+          if (th>FOLHA_ADDON_LD) px=x+w;
+          else px+=tw+18;
+        } else if (alpha>0) {
+          TxtLinha l=txt_linha_corta(TXT_PG_FIM,L->tx[pc],base,base,base,255,w-(px-x));
+          txt_desenhar_tom(l,px,y+h,(float)c/base,(float)c/base,(float)c/base,alpha); px+=l.w+18;
+        }
+      }
+    }
+    h+=lh;
+  }
+  if (inteiro && s->arquivo[0] && !strstr(s->descricao,s->arquivo)) {
+    char arq[sizeof s->arquivo];
+    nv_limpar_texto(s->arquivo,arq,sizeof arq,NV_LIMPA_UMA_LINHA);
+    h+=txt_bloco_integral(TXT_PG_FIM,arq,170,170,170,x,y+h,w,FOLHA_ADDON_LD,alpha);
+  }
+  return h;
 }
 static void tituloAddon(const Stream *s, char *buf, size_t tam) {
   char t[sizeof s->rotulo], lim[sizeof s->rotulo];
@@ -3295,14 +3357,17 @@ static void tituloAddon(const Stream *s, char *buf, size_t tam) {
 // O texto cru nao muda com foco/altura; cada indice e limpo uma vez. Acrescentar
 // preserva as cartas prontas, trocar a lista libera tudo. Texturas continuam
 // no cache de text.c (nao guardar GLuint que o LRU pode despejar).
-typedef struct {
-  char titulo[96];
-  int nl;
-  LinhaAddon linhas[FOLHA_ADDON_LINHAS];
-} TextoAddon;
 static TextoAddon *textoAddon;
 static int textoAddonN, textoAddonCap;
+static void textoAddonMontar(TextoAddon *t, const Stream *s) {
+  int max=1;
+  for (const char *p=s->descricao;*p;p++) if(*p=='\n')max++;
+  t->linhas=calloc((size_t)max,sizeof *t->linhas);
+  t->nl=t->linhas?linhasAddon(s,t->linhas,max):0;
+  tituloAddon(s,t->titulo,sizeof t->titulo);
+}
 static void textoAddonLimpar(void) {
+  for(int i=0;i<textoAddonN;i++)free(textoAddon[i].linhas);
   free(textoAddon); textoAddon = NULL; textoAddonN = textoAddonCap = 0;
 }
 static const TextoAddon *textoAddonDa(int i) {
@@ -3310,16 +3375,13 @@ static const TextoAddon *textoAddonDa(int i) {
   if (textoAddonCap < n) {
     TextoAddon *t = realloc(textoAddon, (size_t)n * sizeof *t);
     if (!t) {
-      reserva.nl = linhasAddon(&lista[i], reserva.linhas, FOLHA_ADDON_LINHAS);
-      tituloAddon(&lista[i], reserva.titulo, sizeof reserva.titulo);
+      free(reserva.linhas);textoAddonMontar(&reserva,&lista[i]);
       return &reserva;
     }
     textoAddon = t; textoAddonCap = n;
   }
   while (textoAddonN <= i) {
-    TextoAddon *t = &textoAddon[textoAddonN];
-    t->nl = linhasAddon(&lista[textoAddonN], t->linhas, FOLHA_ADDON_LINHAS);
-    tituloAddon(&lista[textoAddonN], t->titulo, sizeof t->titulo);
+    textoAddonMontar(&textoAddon[textoAddonN],&lista[textoAddonN]);
     textoAddonN++;
   }
   return &textoAddon[i];
@@ -3735,19 +3797,39 @@ static uint64_t logosDa(const Stream *s, uint64_t tira) {
 // repetia os numeros que a coluna da direita ja mostra. Buffer estatico: so
 // o fio principal chama, e cada chamador usa o texto antes da seguinte.
 static const char *arquivoDa(const Stream *s) {
-  static char ult[192];
+  static char ult[sizeof s->descricao];
+  static char nome[sizeof s->descricao];
   const char *p, *f;
   if (s->arquivo[0]) return s->arquivo;
-  if (!logosDa(s, 0) && !selosPacoteVisiveis((Stream *)s) && strcmp(containerDa(s), "MP4") && !idiomaDa(s)) return "";
-  ult[0] = 0;
+  ult[0] = nome[0] = 0;
   for (p = s->descricao; *p; p = f + 1) {
     f = strchr(p, '\n');
-    char l[192];
+    char l[sizeof s->descricao];
     linhaLimpa(l, sizeof l, p, f ? (size_t)(f - p) : strlen(p));
     if (l[0]) snprintf(ult, sizeof ult, "%s", l);
+    // Torrentio often puts the release name FIRST, followed by seed/audio
+    // lines, and omits behaviorHints.filename. Do not show the last flag as
+    // the filename or lose a release name already consumed by the badge row.
+    if ((acha(l,".mkv") || acha(l,".mp4") || acha(l,".m4v") || acha(l,".webm") ||
+         ((strchr(l,'.') || strchr(l,'-') || strchr(l,'_')) &&
+          (acha(l,"web-dl") || acha(l,"1080p") || acha(l,"2160p") || acha(l,"720p")))) &&
+        strlen(l)>strlen(nome)) snprintf(nome,sizeof nome,"%s",l);
     if (!f) break;
   }
+  if (nome[0]) return nome;
+  if (!logosDa(s, 0) && !selosPacoteVisiveis((Stream *)s) && strcmp(containerDa(s), "MP4") && !idiomaDa(s)) return "";
   return ult;
+}
+
+// Full filename in the standard Nuvio layout; measure and draw identically.
+static float corpoArquivo(const Stream *s, float x, float y, float w, float alpha) {
+  char lim[sizeof s->descricao];
+  nv_limpar_texto(arquivoDa(s),lim,sizeof lim,NV_LIMPA_UMA_LINHA);
+  if (!lim[0]) return 0;
+  return txt_bloco_integral(TXT_PG_FIM,lim,125,125,123,x,y,w,FOLHA_ADDON_LD,alpha)+6;
+}
+static float fonteTextoLargura(void) {
+  return FOLHA_W-FOLHA_PAD_E-FOLHA_PAD_D-2*FOLHA_TXT;
 }
 
 // A linha de marca e so para o que esta tocando e para a escolha anterior.
@@ -3765,14 +3847,15 @@ static int temMarca(int i, int automatica) {
 static float alturaLinha(int i, int automatica) {
   float h = FOLHA_LINHA_H + (temMarca(i, automatica) ? FOLHA_MARCA_H : 0);
   if (ajustes_fonte_texto_addon()) {
-    int nl = textoAddonDa(i)->nl;
     float ab = grupo == 1 && nOrdem == foco ? abreFoco : nOrdem == linhaAnt ? abreAnt : 0.0f;
-    float vis = nl > FOLHA_ADDON_FECHADA ? FOLHA_ADDON_FECHADA + (nl - FOLHA_ADDON_FECHADA) * ab : (float)nl;
-    h = 20 + 40 + vis * FOLHA_ADDON_LD + 18 + (temMarca(i, automatica) ? FOLHA_MARCA_H : 0);
+    float fechada=corpoAddon(i,0,0,fonteTextoLargura(),0,0,0);
+    float aberta=ab>0?corpoAddon(i,0,0,fonteTextoLargura(),1,0,0):fechada;
+    h = 20 + 40 + fechada + (aberta-fechada)*ab + 18 + (temMarca(i, automatica) ? FOLHA_MARCA_H : 0);
     if (h < 96) h = 96;
   } else {
     // The connection line opens with the focused row even without a file name.
-    float extra = (arquivoDa(&lista[i])[0] ? FOLHA_ARQ_H : 0) + FOLHA_FIT_H * fitLinhas(i);
+    float ab = grupo == 1 && nOrdem == foco ? abreFoco : nOrdem == linhaAnt ? abreAnt : 0.0f;
+    float extra = (ab>0 ? corpoArquivo(&lista[i],0,0,fonteTextoLargura(),0) : 0) + FOLHA_FIT_H * fitLinhas(i);
     if (grupo == 1 && nOrdem == foco) h += extra * abreFoco;
     else if (nOrdem == linhaAnt)      h += extra * abreAnt;
   }
@@ -4927,32 +5010,13 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     cy+=40;
     if(ajustes_fonte_texto_addon()) {
       cy+=desenharFaixas(s,tx,cy,tr-tx,sel,anim);
-      const TextoAddon *t=textoAddonDa(i);
-      const LinhaAddon *ls=t->linhas;
-      int nl=t->nl;
-      // abertura da linha: a mesma mola da altura (alturaLinha)
       float abr = grupo==1 && row==foco ? abreFoco : row==linhaAnt ? abreAnt : 0.0f;
-      for(int k=0;k<nl;k++){
-        float ak = anim;
-        if(k>=FOLHA_ADDON_FECHADA){ if(abr<.02f) break; ak = anim*abr; }
-        // A primeira linha do addon costuma ser a de numeros (tamanho, taxa):
-        // um degrau mais clara. As outras no cinza da especificacao.
-        int c = k==0 ? (sel?215:180) : (sel?170:130);
-        float px=tx, maxw=k==0?txtW:tr-tx, ly=cy+k*FOLHA_ADDON_LD;
-        for(int pc=0;pc<ls[k].n && maxw-(px-tx)>30;pc++){
-          if(ls[k].ic[pc]){
-            // O icone na altura do texto, na mesma tinta; so vale se couber.
-            gfx_icone((GfxRect){px,ly+3,22,22},ls[k].ic[pc],c/255.0f,c/255.0f,c/255.0f,ak);
-            px+=22+8;
-          }
-          if(ls[k].tx[pc][0] && maxw-(px-tx)>30){
-            int base=k==0?215:170;
-            TxtLinha lp=txt_linha_corta(TXT_PG_FIM,ls[k].tx[pc],base,base,base,255,maxw-(px-tx));
-            txt_desenhar_tom(lp,px,ly,(float)c/base,(float)c/base,(float)c/base,ak);
-            px+=lp.w+18;
-          }
-        }
-      }
+      // Clip the expanding body to its animated row and the list viewport.
+      float top=fmaxf(cy,FOLHA_TOPO-8), bottom=fminf(y+h-18,folhaBase);
+      gfx_recorte(tx,top,tr-tx,fmaxf(0,bottom-top));
+      if (abr<.99f) corpoAddon(i,tx,cy,tr-tx,0,sel,anim*(1-abr));
+      if (abr>.01f) corpoAddon(i,tx,cy,tr-tx,1,sel,anim*abr);
+      gfx_recorte(x,FOLHA_TOPO-8,w,folhaBase-(FOLHA_TOPO-8));
       continue;
     }
     // FILEIRA DE LOGOS: o pacote branco que o app ja embarca (deploy/app/art/
@@ -5018,21 +5082,20 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     cy+=desenharFaixas(s,tx,cy,tr-tx,sel,anim);
     // O ARQUIVO, so na linha em foco: e o que distingue duas fontes iguais
     // (grupo de release, versao), e em toda linha era ruido.
+    { float top=fmaxf(cy,FOLHA_TOPO-8), bottom=fminf(y+h-8,folhaBase);
+      gfx_recorte(tx,top,tr-tx,fmaxf(0,bottom-top)); }
     { float a=(sel?abreFoco:row==linhaAnt?abreAnt:0);
-      const char *arq=arquivoDa(s);
-      if(a>.02f && arq[0]){ char d[512];
-        snprintf(d,sizeof d,"%s",arq);
-        for(char *p=d;*p;p++)if((unsigned char)*p<32)*p=' ';
-        txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,d,125,125,123,255,tr-tx),tx,cy,anim*a); }
+      float arqH=a>.02f?corpoArquivo(s,tx,cy,tr-tx,anim*a):0;
       if(a>.02f){ char f1[160], f2[128]; StreamfitClasse fc=fitTexto2(i,f1,sizeof f1,f2,sizeof f2);
         if(f1[0]){
-        float fy=cy+(arq[0]?FOLHA_ARQ_H:0);
+        float fy=cy+arqH;
         int c=fc==SF_DESCONHECIDA?118:150;
         txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,f1,c,c,c-2,255,tr-tx),tx,fy,anim*a);
         if(f2[0]){
           TxtLinha l2=fc==SF_PESADA ? txt_linha_corta(TXT_PG_FIM,f2,204,178,132,255,tr-tx)
                                     : txt_linha_corta(TXT_PG_FIM,f2,c,c,c-2,255,tr-tx);
           txt_desenhar_alpha(l2,tx,fy+FOLHA_FIT_H,anim*a); } } } }
+    gfx_recorte(x,FOLHA_TOPO-8,w,folhaBase-(FOLHA_TOPO-8));
   }
   // O TOPO DA LISTA ESMAECE em vez de cortar seco embaixo do seletor: a linha
   // que sobe some aos poucos, na cor da folha. So com a lista rolada: parada

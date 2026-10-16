@@ -350,6 +350,14 @@ size_t txt_token_tam(const char *s);
 float txt_bloco(TxtEstilo estilo, const char *s, int r, int g, int b,
                 float x, float y, float larg, float leading, float alpha, int maxLinhas);
 
+// Full text, including long filenames without spaces. No ellipsis or line cap.
+// alpha=0 measures only, using exactly the same UTF-8 wrapping as drawing.
+float txt_bloco_integral(TxtEstilo estilo, const char *s, int r, int g, int b,
+                        float x, float y, float larg, float leading, float alpha);
+// Apply brightness while reusing the same cached text texture across focus changes.
+float txt_bloco_integral_tom(TxtEstilo estilo, const char *s, int r, int g, int b,
+                            float x, float y, float larg, float leading, float tom, float alpha);
+
 // Igual a txt_bloco, mas indica com reticencias quando `maxLinhas` omite texto.
 // Uma palavra maior que a linha tambem e cortada com reticencias sem estourar
 // a largura. maxLinhas <= 0 mantem o comportamento sem limite de linhas.

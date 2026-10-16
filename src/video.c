@@ -22,9 +22,11 @@
 #include "rede.h"
 #include "velocidade.h"
 #include "cacheboost.h"
+#include "moviebuffer.h"
 #include "dts/dts_playback.h"
 #include "dts_tv.h"
 #include "dts/dts_engine.h"
+#include "dts/dv7.h"
 #include "ajustes.h"
 #include "dts/dts_overlay.h"
 #include "legenda.h"
@@ -316,6 +318,9 @@ double video_duracao(void) { return SIM.duracao; }
 // no plano B dos ultimos minutos, que e o mesmo caminho de um MKV sem
 // capitulos. Melhor um stub honesto que um numero inventado.
 double video_creditos(void) { return 0.0; }
+static long long simDownloadUsed,simDownloadCapacity;
+void video_simular_download_buffer(long long used,long long capacity) {simDownloadUsed=used;simDownloadCapacity=capacity;}
+void video_download_buffer(long long *used,long long *capacity) { if(used)*used=simDownloadUsed;if(capacity)*capacity=simDownloadCapacity; }
 double video_buffer_fim(void) { return SIM.bufferFim; }
 static VideoStats simStats;
 static int simStatsDef;
@@ -2635,6 +2640,9 @@ static int tocarInterno(const char *url, int comDV) {
       dvNaCarga = 1;
     }
   }
+  char buffered_url[256];
+  const char *load_url=url;
+  if (modoLoad!=2 && moviebuffer_url(url,cabsHttp,ajustes_movie_buffer_mib(),buffered_url,sizeof buffered_url)) load_url=buffered_url;
   { char hh[768];
     montarHttpHeader(hh, sizeof hh);
   if (modoLoad == 2) {
@@ -2650,7 +2658,7 @@ static int tocarInterno(const char *url, int comDV) {
         "\"windowId\":\"%s\"}},"
         "\"uri\":\"%s\",\"type\":\"media\"}",
         dolby, hh, hls ? "HLS" : "URI",
-        expWin[0] ? expWin : "window_id_dummy", url);
+        expWin[0] ? expWin : "window_id_dummy", load_url);
   } else
   snprintf(carga, sizeof carga,
       "{\"payload\":{\"option\":{\"useSeekableRanges\":true,"
@@ -2664,7 +2672,7 @@ static int tocarInterno(const char *url, int comDV) {
       // ver acima); no da webOS 5 ele e o endereco REAL do plano exportado e um
       // valor errado aqui deixa o video sem para onde ir.
       expWin[0] ? expWin : "window_id_dummy",
-      url);
+      load_url);
     if (strlen(carga) >= sizeof carga - 1) {
       printf("[video] carga do load nao coube em %zu bytes (URL de %zu): recusando\n",
              sizeof carga, strlen(url));
@@ -2733,6 +2741,7 @@ static void pararSessao(void) {
   DtsPlayback *antigoDts = dtsSessao;
   dtsSessao = NULL;
   if (antigoDts) dts_playback_close(antigoDts);
+  moviebuffer_stop();
   dtsSaida[0] = 0;
 
   // Invalida tambem a sessao que ainda esta esperando o retorno de load. Esse
@@ -2824,7 +2833,7 @@ static int dvLiberadoNestaTv(void) {
 #ifdef NV_DTS_DEBUG
   forcado = access("/tmp/nuvio-dv-forcar", F_OK) == 0;
 #endif
-  if (!dts_playback_enabled() || (!ajustes_dv_mkv() && !forcado)) return 0;
+  if (!dts_playback_enabled() || (!ajustes_dv_mkv() && !ajustes_dv7() && !forcado)) return 0;
   if (!dvVersaoLiberada(webosMaior())) {
     printf("[dv] Dolby Vision in MKV unavailable on webOS %d\n", webosMaior()); fflush(stdout);
     return 0;
@@ -2847,8 +2856,8 @@ static void dvVoltarEntrada(void) {
   marco(m);
   video_buscar(dvEntradaSeg);
 }
-// The file decides: single-layer profile 5 or 8 (base layer + RPU, no
-// enhancement layer) and a selected audio track the path can feed (E-AC-3 and
+// The file decides: single-layer profile 5/8, or P7 with the experimental
+// converter built in; and audio the path can feed (E-AC-3 and
 // AC-3 pass through, DTS is converted). Anything else stays with the TV player.
 static int dvPronto(void) {
   if (fonteMp4) { dvHabilitado = 0; dvNao = VIDEO_DV_NAO_SEM_DV; return 0; }
@@ -2856,7 +2865,10 @@ static int dvPronto(void) {
     if (mkvPendente && !fioMkvVivo) video_sondar_mkv_agora();
     return 0;
   }
-  if (!(dvMkvPerfil == 5 || dvMkvPerfil == 8) || dvMkvEl || !dvMkvBl || !dvMkvRpu) {
+  if (dvMkvPerfil && !nv_dv7_selected(dvMkvPerfil,ajustes_dv_mkv(),ajustes_dv7())) {
+    dvNao=VIDEO_DV_NAO_NATIVE;dvHabilitado=0;return 0;
+  }
+  if (!nv_dv7_profile(dvMkvPerfil, dvMkvEl, dvMkvBl, dvMkvRpu)) {
     if (dvMkvPerfil) {
       printf("[dv] profile %d (el=%d): stays on the TV player\n", dvMkvPerfil, dvMkvEl);
       fflush(stdout);
@@ -2984,6 +2996,7 @@ static int iniciarDts(int stream) {
   }
   dtsMarcarAbertas(dtsAbertasSemFechar() + 1);
   dts_engine_set_ac3(ajustes_dts_ac3());
+  dts_engine_set_buffer_mib(ajustes_movie_buffer_mib());
   dts_playback_next_dv(dtsModoDv);
   dtsSessao = dts_playback_start(urlAtual, cabsHttp, stream, alvo,
                                paused, expWin, 0, (a || trocada) ? &selected : NULL, ordinal, count);
@@ -3424,7 +3437,25 @@ void video_janela_fonte(int sx, int sy, int sw, int sh,
 
 double video_pos(void)      { return posSeg; }
 double video_duracao(void)  { return durSeg; }
-double video_buffer_fim(void) { return bufferSeg; }
+void video_download_buffer(long long *used,long long *capacity) {
+  DtsBufferInfo b={0};
+  if(dtsSessao) { DtsPlaybackStatus st;dts_playback_status(dtsSessao,&st);b=st.buffer; }
+  else moviebuffer_info(&b);
+  if(used)*used=b.ready_bytes;
+  if(capacity)*capacity=b.capacity_bytes;
+}
+double video_buffer_fim(void) {
+  DtsBufferInfo b={0};double end=bufferSeg;
+  if(dtsSessao) { DtsPlaybackStatus st;dts_playback_status(dtsSessao,&st);b=st.buffer;if(st.buffered_until>end)end=st.buffered_until; }
+  else moviebuffer_info(&b);
+  /* Prefetch time is an estimate from average file bitrate (VBR varies).
+   * The numeric MiB counter is the measured payload, not this estimate. */
+  if(b.total>0 && b.ready_bytes>0 && durSeg>0) {
+    double estimate=posSeg+(double)b.ready_bytes*durSeg/(double)b.total;
+    if(estimate>end)end=estimate>durSeg?durSeg:estimate;
+  }
+  return end;
+}
 // webOS: so o buffer em SEGUNDOS e real (bufferRange do uMS); bytes, conexoes
 // e quadros o uMS nao conta. O host e o do link pedido (o uMS nao diz o final).
 void video_estatisticas(VideoStats *s) {

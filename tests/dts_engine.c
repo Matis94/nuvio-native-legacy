@@ -14,6 +14,18 @@ static void *cancel_later(void *opaque) { usleep(200000); dts_engine_cancel(opaq
 static const char *HEADERS="X-Fixture: yes\nAuthorization: Bearer engine-test";
 static unsigned requests;
 #ifndef DTS_ENGINE_HTTP
+/* 2.0.6 also links the Samsung streaming reader; the webOS DV fixture
+ * must continue to use authenticated ranges, never the Samsung ring path. */
+int rede_fluxo64(const char *url,const char *headers,int64_t start,
+                 int (*sink)(void *,const char *,size_t),void *opaque,
+                 int64_t *total,int *status,volatile int *cancel,
+                 char *final,int *cross,long stall_ms,int64_t *bytes) {
+  (void)url;(void)headers;(void)start;(void)sink;(void)opaque;
+  (void)total;(void)status;(void)cancel;(void)final;(void)cross;
+  (void)stall_ms;(void)bytes;
+  assert(!"webOS DV must not enter the Samsung streaming reader");
+  return -1;
+}
 char *rede_baixar_trecho64_cab(const char *,const char *,int64_t,int64_t,long *,int64_t *,int *,volatile int *);
 /* The Dolby Vision path asks for the final address; the fixture has none. */
 char *rede_baixar_trecho64_final(const char *url,const char *headers,int64_t start,int64_t end,long *size,int64_t *total,int *status,volatile int *cancelled,char *final,int *cross) {

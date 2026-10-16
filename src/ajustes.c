@@ -630,6 +630,9 @@ typedef enum {
   AJ_LEG2_FONTE, AJ_LEG2_OPACIDADE, AJ_LEG2_POSICAO, AJ_LEG2_ATRASO,
   AJ_LEG2_NEGRITO, AJ_LEG2_COR_BORDA, AJ_LEG2_RESTAURAR,
   AJ_COLECAO_EXIBICAO, // #362: padrao das colecoes, por perfil neste aparelho
+  AJ_PLAYER_RAM, // local test overlay; append-only
+  AJ_MOVIE_BUFFER, // local compressed download budget; append-only
+  AJ_DV7, // independent P7 conversion, append-only
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1190,6 +1193,8 @@ static const char *JF_ALFA_SENHA =
 
 static const char *V_MANTER_PRAZO[] = { "2 min", "5 min", "10 min", "30 min", "Sem limite" };
 static const char *V_AMIGOS_ESTILO[] = { "Feed de cartões", "Ao vivo em destaque", "Histórias com cartaz", "Faixa de presença", "Cartaz primeiro", "Rostos clássicos" };
+static const char *V_MOVIE_BUFFER[] = { "64 MiB", "128 MiB", "256 MiB", "System (off)" };
+
 static const Opcao OPCOES[AJ_N] = {
   ESC("Qualidade máxima",           V_QUALIDADE, 4),
   ESC("Dolby Vision",               V_LIGA, 2),
@@ -1622,6 +1627,9 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Cor da borda", V_LEG2_COR_BORDA, VIDEO_LEG_NCORES + 1),
   ACAO("Restaurar padrão"),
   ESC("Exibição padrão das coleções", V_COLECAO_EXIBICAO, VT_LAY_N),
+  ESC("Show RAM usage during playback (test)", V_LIGA, 2),
+  ESC("Movie download buffer (test)", V_MOVIE_BUFFER, 4),
+  ESC("Dolby Vision P7 to P8.1 (experimental)", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -1908,6 +1916,9 @@ static const char *CHAVE[] = {
   "legenda2FonteLocal", "legenda2OpacidadeLocal", "legenda2PosicaoLocal", "legenda2AtrasoLocal",
   "legenda2NegritoLocal", "legenda2CorBordaLocal", "-legenda2Restaurar",
   "colecaoExibicaoPadraoLocal",
+  "playerRamOverlayLocal",
+  "movieDownloadBufferLocal",
+  "dv7ConversionLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3148,6 +3159,10 @@ int ajustes_dts_tpk_modo(void) {
 #endif
 }
 int ajustes_dv_mkv(void)              { return lig(AJ_DV_MKV); }
+int ajustes_player_ram(void)          { return lig(AJ_PLAYER_RAM); }
+int ajustes_dv7(void) { return lig(AJ_DV7); }
+int ajustes_movie_buffer_mib(void) { static const int mb[] = {64,128,256,0}; int i=valor[AJ_MOVIE_BUFFER]; return mb[i>=0&&i<4?i:0]; }
+int ajustes_player_ram_toggle(void) { valor[AJ_PLAYER_RAM]=!valor[AJ_PLAYER_RAM]; gravar(); return ajustes_player_ram(); }
 int ajustes_hist_conta(void)          { return lig(AJ_HIST_CONTA); }
 int ajustes_social(void)              { return lig(AJ_SOCIAL); }
 int ajustes_amigos_estilo(void)       { return valor[AJ_AMIGOS_ESTILO]; }
@@ -5167,6 +5182,9 @@ static int somenteDesteAparelho(int op) {
     case AJ_PS_CONTINUAR:   /* o web nao tem este cartao; escolha desta TV */
     case AJ_DTS_AC3:        /* o conversor de DTS e desta TV */
     case AJ_DV_MKV:         /* o demux e o decoder sao desta TV */
+    case AJ_DV7:
+    case AJ_MOVIE_BUFFER:
+    case AJ_PLAYER_RAM:     /* local test diagnostics, never account/profile */
     case AJ_HIST_CONTA: case AJ_SOCIAL: /* por perfil desta TV (perfilLocal); o web nao tem */
     case AJ_TAM_MAX: case AJ_TAM_MIN: /* o web nao tem a faixa de tamanho */
     case AJ_ESPACO_FILEIRAS: case AJ_ESPACO_TITULOS: /* o web nao tem espacamento */
@@ -5554,6 +5572,7 @@ static int foraDestaPlataforma(int op) {
 #endif
 #if defined(NV_TPK) || defined(NV_ANDROID)
   if (op == AJ_DV_MKV) return 1;
+  if (op == AJ_PLAYER_RAM || op == AJ_MOVIE_BUFFER || op == AJ_DV7) return 1;
 #else
   if (op == AJ_GPU_EFEITOS) return 1;
 #endif
@@ -6733,6 +6752,9 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_HIST_CONTA: return "Ligado (padrão): o que você assiste neste perfil sobe para a conta Nuvio, com o progresso e os vistos. Desligado: nada disso é enviado à conta; o Trakt e o Simkl vinculados a este perfil continuam recebendo. Vale só para este perfil.";
     case AJ_SOCIAL: return "Ligado (padrão): amigos, atividade deles e recomendações. Desligado: tudo isso some, com a fileira de amigos da Home, e o app para de falar com o serviço social. Salvos e Avisos continuam. Vale só para este perfil.";
     case AJ_DV_MKV: return "Arquivos MKV em Dolby Vision perfil 5 ou 8 tocam com o Dolby Vision ligado, em vez de HDR10. O áudio Dolby Digital e Dolby Digital Plus vai direto para a TV. Se a conexão não acompanhar, o vídeo continua em HDR10. Só em TVs LG com webOS 4 ou mais novo.";
+    case AJ_DV7: return "Convert only Dolby Vision Profile 7 MKV to Profile 8.1. Independent of the existing P5/P8 MKV option. Keeps base video and dynamic metadata; discards the enhancement layer, including FEL. Applies to the next video.";
+    case AJ_MOVIE_BUFFER: return "Compressed download cache for HTTP movie files, including ordinary native playback, DTS and MKV Dolby Vision. Applies to the next video. Streaming playlists/live/DRM use system buffering. Larger values use more RAM. System (off) disables the native URI cache.";
+    case AJ_PLAYER_RAM: return "Green remote button toggles this display during playback. Shows app RAM (RSS), the process peak and available system RAM while playing. Updates once per second. GPU/decoder memory outside the app is not included in RSS. Turn off to hide the overlay.";
     case AJ_CW_RETIDO_TAMBEM: return "Quando o título está na ilha ou em Retomar agora, mostra também na fileira Continuar assistindo.";
     case AJ_EP_TAMANHO: return "Pequeno, Médio (padrão) ou Grande. Só vale no layout Moderno, na página de séries. Vale só nesta TV.";
     case AJ_ABERTURA_ADDON: return "Desligado (padrão): a tela Cinema mostra só a arte, o logo e a barra. Ligado: o nome do add-on aparece sob a barra. Vale só nesta TV.";
