@@ -1,5 +1,32 @@
 # Early blocking-range retry and source reuse — 2.0.6 test 8
 
+## Latest real-TV diagnostics — Test Build 8 (2026-10-17)
+
+A diagnostic run on an **LG OLED C5** confirmed **4K Dolby Vision Profile 7 →
+Profile 8.1 playback alongside DTS-to-AAC stereo conversion**, including over
+**48 minutes of continuous playback after the last seek**.
+
+- LG reported the output as `DolbyVision`. P7 conversion retained the base layer
+  and converted RPU metadata; the enhancement layer was discarded.
+- During that continuous playback period, the log recorded **no recovery
+  restarts, timestamp errors or download retries**. Queued audio/video generally
+  stayed around **2 seconds ahead**, without falling below one second in the
+  recorded samples.
+- At the end of the snapshot, the download buffer held approximately
+  **249/256 MiB**, application RAM usage was **533 MiB**, and available system
+  memory was **220 MiB**. During the main session, available system memory
+  reached a minimum of approximately **168 MiB**, with no indication of memory
+  exhaustion.
+
+Later pipeline reloads were associated with seeking and track changes.
+**Subsequent P7 playback with the DTS track remained stable.**
+
+These results describe this recorded test run, rather than the entire film or
+a guarantee for every TV and source. The tested IPK is available in the
+[LG webOS 2.0.6 Test Build 8 release](https://github.com/Matis94/nuvio-native-legacy/releases/tag/2.0.6.2).
+
+---
+
 The owner's test-7 log confirms recovery of a 1 MiB interval after a 15 s timeout,
 with the remaining prefetch retained and no timestamp pad/reload. However, the
 consumer waited 4.086 s for that interval and fed-ahead audio/video shrank to
