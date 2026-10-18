@@ -1627,8 +1627,8 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Cor da borda", V_LEG2_COR_BORDA, VIDEO_LEG_NCORES + 1),
   ACAO("Restaurar padrão"),
   ESC("Exibição padrão das coleções", V_COLECAO_EXIBICAO, VT_LAY_N),
-  ESC("Show RAM usage during playback (test)", V_LIGA, 2),
-  ESC("Movie download buffer (test)", V_MOVIE_BUFFER, 4),
+  ESC("Show RAM usage during playback", V_LIGA, 2),
+  ESC("Stream buffer size", V_MOVIE_BUFFER, 4),
   ESC("Dolby Vision P7 to P8.1 (experimental)", V_LIGA, 2),
 };
 
@@ -6752,8 +6752,8 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_HIST_CONTA: return "Ligado (padrão): o que você assiste neste perfil sobe para a conta Nuvio, com o progresso e os vistos. Desligado: nada disso é enviado à conta; o Trakt e o Simkl vinculados a este perfil continuam recebendo. Vale só para este perfil.";
     case AJ_SOCIAL: return "Ligado (padrão): amigos, atividade deles e recomendações. Desligado: tudo isso some, com a fileira de amigos da Home, e o app para de falar com o serviço social. Salvos e Avisos continuam. Vale só para este perfil.";
     case AJ_DV_MKV: return "Arquivos MKV em Dolby Vision perfil 5 ou 8 tocam com o Dolby Vision ligado, em vez de HDR10. O áudio Dolby Digital e Dolby Digital Plus vai direto para a TV. Se a conexão não acompanhar, o vídeo continua em HDR10. Só em TVs LG com webOS 4 ou mais novo.";
-    case AJ_DV7: return "Convert only Dolby Vision Profile 7 MKV to Profile 8.1. Independent of the existing P5/P8 MKV option. Keeps base video and dynamic metadata; discards the enhancement layer, including FEL. Applies to the next video.";
-    case AJ_MOVIE_BUFFER: return "Compressed download cache for HTTP movie files, including ordinary native playback, DTS and MKV Dolby Vision. Applies to the next video. Streaming playlists/live/DRM use system buffering. Larger values use more RAM. System (off) disables the native URI cache.";
+    case AJ_DV7: return "Convert Dolby Vision Profile 7 MKV to Profile 8.1. Keeps base video and dynamic metadata; discards the enhancement layer, including FEL. Applies to the next video.";
+    case AJ_MOVIE_BUFFER: return "Compressed download cache for HTTP movie files. Streaming playlists/live/DRM use system buffering. Larger values use more RAM. System (off) disables the native URI cache.";
     case AJ_PLAYER_RAM: return "Green remote button toggles this display during playback. Shows app RAM (RSS), the process peak and available system RAM while playing. Updates once per second. GPU/decoder memory outside the app is not included in RSS. Turn off to hide the overlay.";
     case AJ_CW_RETIDO_TAMBEM: return "Quando o título está na ilha ou em Retomar agora, mostra também na fileira Continuar assistindo.";
     case AJ_EP_TAMANHO: return "Pequeno, Médio (padrão) ou Grande. Só vale no layout Moderno, na página de séries. Vale só nesta TV.";
