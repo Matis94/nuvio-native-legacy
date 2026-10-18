@@ -170,6 +170,23 @@ static void aparaUtf8(char *s) {
 // vermelho. Falso positivo custa uma linha colorida; falso negativo, o
 // defeito passar batido numa foto da tela).
 static int ehFalha(const char *s) {
+  // Periodic snapshots contain errorPending=0 even during healthy playback.
+  // Read their numeric status instead of matching "erro" in the field name;
+  // native-error and other event lines still use the existing heuristic below.
+  if (!strncmp(s, "[playback-diag] tick=", sizeof "[playback-diag] tick=" - 1)) {
+    static const char *const campos[] = { " failed=", " errorPending=" };
+    for (size_t i = 0; i < sizeof campos / sizeof *campos; i++) {
+      const char *p = strstr(s, campos[i]);
+      if (p) {
+        char *fim;
+        p += strlen(campos[i]);
+        long valor = strtol(p, &fim, 10);
+        if (fim != p && (!*fim || *fim == ' ' || *fim == '\t' ||
+                         *fim == '\r' || *fim == '\n') && valor != 0) return 1;
+      }
+    }
+    return 0;
+  }
   return strstr(s, "<<<") || strstr(s, "FALH") || strstr(s, "falh") ||
          strstr(s, "erro") || strstr(s, "Erro") || strstr(s, "ERRO");
 }
