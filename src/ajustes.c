@@ -1628,7 +1628,7 @@ static const Opcao OPCOES[AJ_N] = {
   ACAO("Restaurar padrão"),
   ESC("Exibição padrão das coleções", V_COLECAO_EXIBICAO, VT_LAY_N),
   ESC("Show RAM usage during playback", V_LIGA, 2),
-  ESC("Movie download buffer", V_MOVIE_BUFFER, 4),
+  ESC("Stream buffer size", V_MOVIE_BUFFER, 4),
   ESC("Dolby Vision P7 to P8.1 (experimental)", V_LIGA, 2),
 };
 
