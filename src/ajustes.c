@@ -1685,7 +1685,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Brilho da interface em HDR", V_HDR_UI, 2),   // local: hdrUiLocal (#205)
   ESC("Tela de abertura do vídeo", V_TELA_ABERTURA, 2),   // local: telaAberturaLocal (#205)
   NUM("Mínimo para entrar no Continuar", 1, 20, 1, "%"),   // local: cwMinimoLocal
-  ESC("Stream buffer size", V_BUFFER, 4),                 // local: bufferPlayerLocal
+  ESC("Tamanho do buffer", V_BUFFER, 4),                 // local: bufferPlayerLocal
   ESC("Pular a abertura automaticamente", V_LIGA, 2),   // local: pularAberturaLocal
   ESC("Pular o resumo automaticamente", V_LIGA, 2),   // local: pularResumoLocal
   ESC("Tocar o próximo episódio automaticamente", V_LIGA, 2),   // local: proximoAutoLocal

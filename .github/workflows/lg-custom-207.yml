@@ -71,5 +71,5 @@ jobs:
           bash tests/dv7_engine.sh
           export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
           export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
-          bash tests/rust_mkvcore.sh
+          cargo test --manifest-path rust/mkvcore/Cargo.toml --locked
           bash tests/dv7_mkvcore_link.sh
