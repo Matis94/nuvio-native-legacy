@@ -39,15 +39,44 @@ jobs:
           curl -fsSL --retry 3 https://github.com/iqui27/nuvio-native-legacy/releases/download/v2.0.7/space.nuvio.native.legacy_2.0.7_arm.ipk -o .build-private/official.ipk
           curl -fsSL --retry 3 https://github.com/iqui27/nuvio-native-legacy/releases/download/v2.0.7/SHA256SUMS -o .build-private/SHA256SUMS
           python3 .github/build/release_config.py .build-private/official.ipk .build-private/SHA256SUMS local.properties
+      - name: Restore SDK cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .build-cache/sdk.tar.zst
+          key: custom207-sdk-amd64-${{ hashFiles('tools/Dockerfile', 'tools/build-ass-arm.sh', 'tools/build-dts-ffmpeg.sh') }}
       - name: Build webOS SDK, libass, FFmpeg and Rust
         run: |
-          docker build --platform linux/amd64 --build-arg SDK_URL=https://github.com/openlgtv/buildroot-nc4/releases/download/webos-a38c582/arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz -t nuvio-webos-sdk tools/
+          if [ -f .build-cache/sdk.tar.zst ]; then
+            zstd -dc .build-cache/sdk.tar.zst | docker load
+          else
+            docker build --platform linux/amd64 --build-arg SDK_URL=https://github.com/openlgtv/buildroot-nc4/releases/download/webos-a38c582/arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz -t nuvio-webos-sdk tools/
+            mkdir -p .build-cache
+            docker save nuvio-webos-sdk | zstd -T2 -3 -o .build-cache/sdk.tar.zst
+          fi
+      - name: Save SDK cache
+        uses: actions/cache/save@v4
+        with:
+          path: .build-cache/sdk.tar.zst
+          key: custom207-sdk-amd64-${{ hashFiles('tools/Dockerfile', 'tools/build-ass-arm.sh', 'tools/build-dts-ffmpeg.sh') }}
+      - name: Restore P2P cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .build-p2p
+          key: custom207-p2p-amd64-${{ hashFiles('tools/p2p-motor/build-arm.sh', 'tools/p2p-motor/pasta.sh', 'tools/p2p-motor/janela-334.patch') }}
       - name: Build official pinned P2P engine for ARM
         run: |
           export NUVIO_P2P_MOTOR="$GITHUB_WORKSPACE/.build-p2p"
+          mkdir -p "$NUVIO_P2P_MOTOR/arm"
+          cp tests/nvtmp.h "$NUVIO_P2P_MOTOR/arm/nvtmp.h"
+          sed -i 's#../../tests/nvtmp.h#nvtmp.h#' tools/p2p-motor/poc.c
           sed -i 's#--platform linux/arm64#--platform linux/amd64#g' tools/p2p-motor/build-arm.sh
           NV_JOBS=2 bash tools/p2p-motor/build-arm.sh "$NUVIO_P2P_MOTOR/arm"
-          git checkout -- tools/p2p-motor/build-arm.sh
+          git checkout -- tools/p2p-motor/build-arm.sh tools/p2p-motor/poc.c
+      - name: Save P2P cache
+        uses: actions/cache/save@v4
+        with:
+          path: .build-p2p
+          key: custom207-p2p-amd64-${{ hashFiles('tools/p2p-motor/build-arm.sh', 'tools/p2p-motor/pasta.sh', 'tools/p2p-motor/janela-334.patch') }}
       - name: Compile and package custom test
         run: |
           export RUSTUP_HOME="$HOME/.rustup"
