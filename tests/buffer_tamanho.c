@@ -40,6 +40,15 @@ int main(void) {
   // Unknown memory or out-of-range option -> Auto.
   assert(cacheboost_buffer_mb(3, -1) == 0);
   assert(cacheboost_buffer_mb(4, 4096) == 0 && cacheboost_buffer_mb(-1, 4096) == 0);
+  // Explicit RAM opt-out respects supported choices even with low/unknown RAM.
+  const long tight[] = {-1, 0, 160, 255, 300, 451, 452};
+  for (size_t i = 0; i < sizeof tight / sizeof tight[0]; i++) {
+    for (int option = -1; option <= 4; option++) {
+      int requested = option >= 1 && option <= 3 ? 32 << option : 0;
+      assert(cacheboost_buffer_mb_policy(option, tight[i], 0) == requested);
+      assert(cacheboost_buffer_mb_policy(option, tight[i], 1) == cacheboost_buffer_mb(option, tight[i]));
+    }
+  }
   // The setting is queued read-ahead. Measured DTS/DV capacity also includes
   // its active range, and the official RAM clamp can lower the queue.
   const long long MiB = 1048576;

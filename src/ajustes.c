@@ -695,6 +695,7 @@ typedef enum {
   AJ_HDR_INTERFACE,    // Experimental Android HDR output; device-local
   AJ_PLAYER_RAM, // local test overlay; append-only
   AJ_DV7, // independent P7 conversion, append-only
+  AJ_BUFFER_RAM_AUTO, // webOS local RAM reduction opt-out, append-only
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1814,6 +1815,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Interface em HDR (teste)", V_VIDRO_FOSCO, 2),
   ESC("Show RAM usage during playback", V_LIGA, 2),
   ESC("Dolby Vision P7 to P8.1 (experimental)", V_LIGA, 2),
+  ESC("Automatically reduce buffer when RAM is low", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2135,6 +2137,7 @@ static const char *CHAVE[] = {
   "hdrInterfaceLocal",
   "playerRamOverlayLocal",
   "dv7ConversionLocal",
+  "bufferRamAutoReduceLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3120,6 +3123,14 @@ const char *ajustes_player_pacote(int anime) { return ppPkg[anime ? 1 : 0]; }
 int ajustes_buffer_preset(void) {
   int v = valor[AJ_BUFFER];
   return v >= 0 && v < 4 ? v : 0;
+}
+int ajustes_buffer_ram_auto(void) {
+#ifdef NV_WEBOS
+  // Only the explicit Off value disables the guard; missing/invalid stays On.
+  return valor[AJ_BUFFER_RAM_AUTO] != 1;
+#else
+  return 1;
+#endif
 }
 int ajustes_fonte_idioma_audio(void) { return valor[AJ_FONTE_IDIOMA_AUDIO] == 0; }
 int ajustes_cache_seek_mb(void) {
@@ -5882,6 +5893,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_DTS_AC3:        /* o conversor de DTS e desta TV */
     case AJ_DV_MKV:         /* o demux e o decoder sao desta TV */
     case AJ_DV7:
+    case AJ_BUFFER_RAM_AUTO:
     case AJ_PLAYER_RAM:     /* local test diagnostics, never account/profile */
     case AJ_HIST_CONTA: case AJ_SOCIAL: /* por perfil desta TV (perfilLocal); o web nao tem */
     case AJ_TAM_MAX: case AJ_TAM_MIN: /* o web nao tem a faixa de tamanho */
@@ -6345,6 +6357,9 @@ static int foraDestaPlataforma(int op) {
 #if defined(NV_TPK) || defined(NV_ANDROID)
   if (op == AJ_DV_MKV) return 1;
   if (op == AJ_PLAYER_RAM || op == AJ_DV7) return 1;
+#endif
+#ifndef NV_WEBOS
+  if (op == AJ_BUFFER_RAM_AUTO) return 1;
 #endif
 #ifndef NV_ANDROID
   if (op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO) return 1;
@@ -7640,6 +7655,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_ESTAT_LADO: return "O lado do player onde as Estatísticas ao vivo ficam, com a mesma margem das listas de Áudio e Legendas. Direita é o padrão. Com o painel aberto, Esquerda/Direita trocam o lado. Vale só nesta TV.";
     case AJ_PLAYER_EXTERNO: return "Escolha onde o vídeo toca: neste app, em um player instalado (VLC, MX Player...) ou perguntando a cada vez. O player externo não sincroniza o progresso.";
     case AJ_PLAYER_ANIME: return "Player só para anime (kitsu, MAL, AniList, ou animação japonesa). Igual ao Player usa a escolha acima. O player externo não sincroniza o progresso.";
+    case AJ_BUFFER_RAM_AUTO: return "On: automatically lowers the selected buffer size when available RAM is low. Off: requests the selected 64, 128 or 256 MiB without this RAM check. Low memory may cause playback to fail or the app to close. Auto keeps the default buffering behavior. Applies to the next video.";
     case AJ_BUFFER: return "Quanto vídeo o app guarda à frente. Automático é o de sempre; 64, 128 ou 256 MB ajudam arquivos 4K pesados e caem sozinhos se faltar memória na TV. No webOS vale para a conversão de DTS e Dolby Vision. Vale a partir do próximo vídeo.";
     case AJ_FONTE_IDIOMA_AUDIO: return "Na escolha automática, fontes com o seu Idioma do áudio ou áudio duplo passam na frente na mesma resolução. Não é filtro: sem elas, a melhor das outras toca.";
     case AJ_CACHE_SEEK: return "Com retomada rápida, guarda só o último título por até 3 horas. Trocar de perfil ou pouco espaço apagam o trecho.";
@@ -10236,7 +10252,7 @@ static AjPreview familiaPreviaOpcao(int op) {
   switch (op) {
     case AJ_LEG_CONTORNO_COR:
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA:
-    case AJ_QUALIDADE: case AJ_DV: case AJ_ATMOS: case AJ_LEG_LINGUA: case AJ_LEG_LINGUA2: case AJ_CACHE_SEEK: case AJ_BUFFER: case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: case AJ_ESTAT_TAMANHO: case AJ_ESTAT_LADO:
+    case AJ_QUALIDADE: case AJ_DV: case AJ_ATMOS: case AJ_LEG_LINGUA: case AJ_LEG_LINGUA2: case AJ_CACHE_SEEK: case AJ_BUFFER: case AJ_BUFFER_RAM_AUTO: case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: case AJ_ESTAT_TAMANHO: case AJ_ESTAT_LADO:
     case AJ_DV_MKV:
     case AJ_LEG_FORCADA:
     case AJ_AUD_LINGUA: case AJ_AUD_LINGUA2: case AJ_PAUSA_OVERLAY: case AJ_PLR_CLASSIF: case AJ_TELA_ABERTURA: case AJ_ABERTURA_ADDON: case AJ_ABERTURA_FUNDO: case AJ_ABERTURA_ESTILO: case AJ_FONTE_MANUAL:
