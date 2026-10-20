@@ -1,0 +1,92 @@
+name: Build custom 2.0.7 webOS test IPK
+on:
+  push:
+    branches: [build/custom-2.0.7-test]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: custom-207-ipk
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      NUVIO_BUILD_PLATFORM: linux/amd64
+      NUVIO_CONTAINER_RUNTIME: docker
+      NUVIO_BUILD_JOBS: '3'
+      NUVIO_DTS_FFMPEG: '1'
+      NUVIO_DV7: '1'
+      NUVIO_RUST_MKVCORE: '1'
+      NUVIO_REQUIRE_ALL: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify application source
+        run: |
+          git fetch --no-tags --depth=1 origin 446e614edb7f41b092151915a8e96f749f49c630
+          git diff --exit-code 446e614edb7f41b092151915a8e96f749f49c630 HEAD -- src rust tools deploy
+      - name: Install package tool and Rust target
+        run: |
+          npm install --prefix .build-tools --no-audit --no-fund @webosose/ares-cli@2.4.0
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup target add --toolchain 1.88.0 armv7-unknown-linux-gnueabi
+      - name: Restore application configuration from verified official release
+        run: |
+          mkdir -p .build-private
+          curl -fsSL --retry 3 https://github.com/iqui27/nuvio-native-legacy/releases/download/v2.0.7/space.nuvio.native.legacy_2.0.7_arm.ipk -o .build-private/official.ipk
+          curl -fsSL --retry 3 https://github.com/iqui27/nuvio-native-legacy/releases/download/v2.0.7/SHA256SUMS -o .build-private/SHA256SUMS
+          python3 .github/build/release_config.py .build-private/official.ipk .build-private/SHA256SUMS local.properties
+      - name: Build webOS SDK, libass, FFmpeg and Rust
+        run: |
+          docker build --platform linux/amd64 --build-arg SDK_URL=https://github.com/openlgtv/buildroot-nc4/releases/download/webos-a38c582/arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz -t nuvio-webos-sdk tools/
+      - name: Build official pinned P2P engine for ARM
+        run: |
+          export NUVIO_P2P_MOTOR="$GITHUB_WORKSPACE/.build-p2p"
+          sed -i 's#--platform linux/arm64#--platform linux/amd64#g' tools/p2p-motor/build-arm.sh
+          NV_JOBS=2 bash tools/p2p-motor/build-arm.sh "$NUVIO_P2P_MOTOR/arm"
+          git checkout -- tools/p2p-motor/build-arm.sh
+      - name: Compile and package custom test
+        run: |
+          export RUSTUP_HOME="$HOME/.rustup"
+          export CARGO_HOME="$HOME/.cargo"
+          export RUSTUP_TOOLCHAIN=1.88.0
+          export NUVIO_P2P_MOTOR="$GITHUB_WORKSPACE/.build-p2p"
+          export NUVIO_ARES_PACKAGE="$GITHUB_WORKSPACE/.build-tools/node_modules/.bin/ares-package"
+          export NUVIO_RELEASE_OUT="$GITHUB_WORKSPACE/output"
+          python3 - <<'PY'
+          import json, pathlib
+          p = pathlib.Path("deploy/app/appinfo.json")
+          data = json.loads(p.read_text())
+          assert data["version"] == "2.0.7"
+          assert data["id"] == "space.nuvio.native.legacy"
+          data["title"] = "Nuvio Legacy (custom 2.0.7 test)"
+          p.write_text(json.dumps(data, indent=2)+"\n")
+          PY
+          bash tools/arm.sh --ipk --build
+          mv output/space.nuvio.native.legacy_2.0.7_arm.ipk output/space.nuvio.native.legacy_2.0.7_arm-custom-test.ipk
+      - name: Check ARM dynamic dependencies
+        run: |
+          readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
+          readelf -d nuvio-proto.arm | grep NEEDED
+          python3 - <<'PY'
+          import re, subprocess
+          versions = re.findall(r"GLIBC_(\d+)\.(\d+)", subprocess.check_output(["readelf", "--version-info", "nuvio-proto.arm"], text=True))
+          assert versions and max(tuple(map(int,v)) for v in versions) <= (2,12), "Unexpected minimum glibc"
+          dependencies = subprocess.check_output(["readelf", "-d", "nuvio-proto.arm"], text=True)
+          assert "libcurl" not in dependencies
+          print("ARM ABI and glibc requirements verified.")
+          PY
+      - name: Upload IPK
+        uses: actions/upload-artifact@v4
+        with:
+          name: custom-2.0.7-webos-ipk
+          path: output/*.ipk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Remove temporary configuration
+        if: always()
+        run: rm -rf local.properties .build-private
