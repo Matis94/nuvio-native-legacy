@@ -7,7 +7,9 @@ Custom source: `7a38138f1643302123ab9160c5cfcb3921a01097` (working 2.0.6 test 8 
 
 - Keep the official Auto/64/128/256 MiB setting, free-memory clamp and backend API.
   Display one setting with the official 2.0.7 name and values (`Tamanho do buffer`
-  / **Buffer size**, Auto/64/128/256 MB), using the upstream translations. Auto keeps native LG buffering for
+  / **Buffer size**, Auto/64/128/256 MB), using the upstream translations.
+  Preserve the official translated help as well; the native HTTP extension is
+  described below. Auto keeps native LG buffering for
   ordinary HTTP files and the official default for the DTS/DV range reader.
 - Extend that same effective setting to the native HTTP(S) movie/episode loopback
   cache. It uses one continuous upstream transfer. HLS/DASH, live and existing
