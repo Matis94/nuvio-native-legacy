@@ -66,12 +66,17 @@ jobs:
       - name: Build official pinned P2P engine for ARM
         run: |
           export NUVIO_P2P_MOTOR="$GITHUB_WORKSPACE/.build-p2p"
-          mkdir -p "$NUVIO_P2P_MOTOR/arm"
-          cp tests/nvtmp.h "$NUVIO_P2P_MOTOR/arm/nvtmp.h"
-          sed -i 's#../../tests/nvtmp.h#nvtmp.h#' tools/p2p-motor/poc.c
-          sed -i 's#--platform linux/arm64#--platform linux/amd64#g' tools/p2p-motor/build-arm.sh
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path("tools/p2p-motor/build-arm.sh")
+          script = p.read_text().replace("--platform linux/arm64", "--platform linux/amd64")
+          # The standalone PoC is not part of the IPK. Link and ABI checks are
+          # performed on the actual application, using the same engine archives.
+          script = script[:script.index("  SR=$NUVIO_SYSROOT")] + "'\n"
+          p.write_text(script)
+          PY
           NV_JOBS=2 bash tools/p2p-motor/build-arm.sh "$NUVIO_P2P_MOTOR/arm"
-          git checkout -- tools/p2p-motor/build-arm.sh tools/p2p-motor/poc.c
+          git checkout -- tools/p2p-motor/build-arm.sh
       - name: Save P2P cache
         uses: actions/cache/save@v4
         with:
