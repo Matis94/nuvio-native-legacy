@@ -8,9 +8,11 @@ int main(void) {
    * not to the DTS/DV pipeline which will be created immediately after it. */
   sessao=41;closing_session=sessao;reconErroPend=reconErroRede=1;
   dtsSessao=NULL;ligado=0;posSeg=5;
+  bufferandoDesde=1;bufferSeg=100;
   pararSessao();
   assert(buffer_stops==1 && sessao==42);
   assert(!reconErroPend && !reconErroRede && !falhou);
+  assert(!bufferandoDesde && !bufferSeg && !video_bufferando_ms());
   /* Genuine errors from the replacement session must still be handled. */
   eventoPayload("{\"error\":{\"errorCode\":300,\"errorText\":\"Network Error\"}}",sessao);
   assert(reconErroPend && reconErroRede);

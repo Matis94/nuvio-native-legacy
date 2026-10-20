@@ -26,8 +26,15 @@ jobs:
           persist-credentials: false
       - name: Verify application source
         run: |
-          git fetch --no-tags --depth=1 origin 446e614edb7f41b092151915a8e96f749f49c630
-          git diff --exit-code 446e614edb7f41b092151915a8e96f749f49c630 HEAD -- src rust tools deploy
+          git fetch --no-tags --depth=1 origin 6109bb898abbb45f83025640774b839ef11190b7
+          git diff --exit-code 6109bb898abbb45f83025640774b839ef11190b7 HEAD -- src rust tools deploy
+      - name: Buffer labels and webOS buffering lifecycle regressions
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential pkg-config libsdl2-dev libgles-dev libegl-dev
+          bash tests/buffer_tamanho.sh
+          bash tests/video_acb_lg.sh
+          bash tests/video_buffer_teardown.sh
       - name: Install package tool and Rust target
         run: |
           npm install --prefix .build-tools --no-audit --no-fund @webosose/ares-cli@2.4.0
@@ -96,11 +103,20 @@ jobs:
           data = json.loads(p.read_text())
           assert data["version"] == "2.0.7"
           assert data["id"] == "space.nuvio.native.legacy"
-          data["title"] = "Nuvio Legacy (custom 2.0.7 test)"
+          data["title"] = "Nuvio Legacy (custom 2.0.7 test 2)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path("tools/arm.sh")
+          source = p.read_text()
+          hook = "cp nuvio-proto.arm deploy/app/nuvio-proto"
+          assert source.count(hook) == 1
+          p.write_text(source.replace(hook, "python3 .github/build/strip_app.py\n" + hook))
+          PY
           bash tools/arm.sh --ipk --build
-          mv output/space.nuvio.native.legacy_2.0.7_arm.ipk output/space.nuvio.native.legacy_2.0.7_arm-custom-test.ipk
+          git checkout -- tools/arm.sh
+          mv output/space.nuvio.native.legacy_2.0.7_arm.ipk output/space.nuvio.native.legacy_2.0.7_arm-custom-test2.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'

@@ -6585,8 +6585,7 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
     plrui_barra(bx, yBarra, bw, frac, bufFrac, barraFoco, caps, nCaps, a); }
   { long long used=0,capacity=0;char b[96];
     video_download_buffer(&used,&capacity);
-    if(capacity>0)snprintf(b,sizeof b,"Buffer: %.1f / %.0f MiB",used/1048576.0,capacity/1048576.0);
-    else snprintf(b,sizeof b,"Buffer: system");
+    cacheboost_buffer_texto(b, sizeof b, used, capacity, ajustes_buffer_preset());
     TxtLinha l=txt_linha(TXT_G19M,b,230,230,230,210);
     txt_desenhar_alpha(l,bx+bw-l.w,yBarra-l.h-14.0f,a);
   }
