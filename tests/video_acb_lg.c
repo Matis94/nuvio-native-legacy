@@ -14,6 +14,7 @@ static DtsPlaybackStatus pump_status;
 static unsigned closing_session;
 static int buffer_stops;
 int cacheboost_backend_buffer_mb(void) { return 64; }
+void mkvass_aceitar_imagem(int sim) { assert(sim == 1); }
 int moviebuffer_url(const char *s,const char *h,int mib,char *out,size_t n) {
   (void)s;(void)h;(void)mib;(void)out;(void)n;assert(0);return 0;
 }
