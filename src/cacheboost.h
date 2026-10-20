@@ -90,6 +90,9 @@ void cacheboost_backend_buffer(int mb);
 // buffer plus the DTS active range (4 MiB); nothing fits or unknown -> 0 (Auto). Logs any cut.
 #define CB_BUFFER_PISO_MB 192
 int cacheboost_buffer_mb(int opcao, long livreMb);
+// Measured total includes the active DTS/DV range; the setting is read-ahead.
+// Show both when they differ, without hiding the working range or RAM clamp.
+void cacheboost_buffer_texto(char *dst, size_t n, long long used, long long capacity, int opcao);
 // Off Android: the last cacheboost_backend_buffer value (webOS DTS/DV read-ahead).
 int cacheboost_backend_buffer_mb(void);
 

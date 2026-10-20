@@ -1360,6 +1360,9 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
     marco(m);
   }
   if (strstr(p, "playing")) {
+    // Some firmware resumes without bufferingEnd. An explicit new
+    // bufferingStart in the same payload still takes precedence.
+    if (js_tem(p, NULL, "playing") && !js_tem(p, NULL, "bufferingStart")) bufferandoDesde = 0;
     pausaConfirmada = 0;
     tocando = 1;
     dvSilenciarTv();
@@ -2807,6 +2810,9 @@ static void pararSessao(void) {
    * Accepting it here leaves a pending error for the replacement DTS/DV load,
    * which can play normally behind a false source-failed dialog. */
   __atomic_add_fetch(&sessao, 1, __ATOMIC_ACQ_REL);
+  // Buffering belongs to the native pipeline being retired, not its DTS/DV
+  // replacement. Invalidate first so closing callbacks cannot restore it.
+  bufferandoDesde = 0; bufferSeg = 0;
   int tinhaDts = dtsSessao != NULL;
   DtsPlayback *antigoDts = dtsSessao;
   dtsSessao = NULL;
@@ -3147,6 +3153,9 @@ static void bombearDts(void) {
     int selectedSub = initial ? -1 : (video_legenda(legAtual) ? video_legenda(legAtual)->stream_index : -1);
     dtsRevisao = st.revision;
     pronto = 0; tocando = 0; bindPendente = 0;
+    // Each converter Load has its own buffering state, including seeks and
+    // recovery within one source session. Drain its fresh events afterwards.
+    bufferandoDesde = 0; bufferSeg = 0;
     if (!st.media_id[0]) { midia[0] = 0; ackMidia = 0; }
     ack_publicar();
     printf("[dts] prepared revision=%d video=%s %dx%d audio=%s channels=%d stream=%d\n",
