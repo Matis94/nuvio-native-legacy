@@ -28,15 +28,21 @@ Custom source: `7a38138f1643302123ab9160c5cfcb3921a01097` (working 2.0.6 test 8 
 - Preserve official P8.1 RPU admission checks, version-scoped crash guard,
   PGS/ASS support, audio selection memory, low-memory cleanup/reopen protection,
   source filters/languages, multipart playback and the soft-float Rust MKV core.
-- Relinking the official Rust MKV core must also retain the custom libdovi
-  wrapper and its licenses. The abandoned LG frame-counter experiment is excluded.
+- Keep DV7 and RAM overlay toggles local, including the new 2.0.7 portable
+  preferences/device-backup paths. They cannot be changed through account sync.
+- Link the official Rust MKV core together with the custom libdovi wrapper and
+  its licenses. In the combined ARM build, the core's `external-personality`
+  feature uses the personality supplied by libdovi's Rust standard library;
+  standalone builds retain the official no_std stub. No duplicate-symbol
+  suppression or removal of the official Rust core is used.
+- The abandoned LG frame-counter experiment is excluded.
 
 ## Validation status
 
-This port was prepared through the GitHub API while the local execution
-environment was unavailable. No local C/ARM compilation, host tests or TV run
-has been performed. A host-check workflow is included; its actual run results,
-not the older test-8 reports, determine readiness. No IPK is included.
+Host checks run in [GitHub Actions](https://github.com/Matis94/nuvio-native-legacy/actions/workflows/lg-custom-207.yml).
+The local execution environment was unavailable during this port. Current PR
+checks, rather than the older test-8 reports, determine host validation status.
+No ARM package or TV run has been completed for this port. No IPK is included.
 
 Checks cover official version/buffer policy, legacy setting migration,
 controller recovery, real HTTP faults/byte continuity, native cache, timestamp

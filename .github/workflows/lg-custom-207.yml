@@ -49,7 +49,7 @@ jobs:
           bash tests/playback_ram_settings.sh
           xvfb-run -a bash tests/fontes_formatter.sh
       - name: Build minimal host FFmpeg
-        if: ${{ !cancelled() && matrix.group == 'engine' }}
+        if: ${{ !cancelled() && (matrix.group == 'engine' || matrix.group == 'dv') }}
         env:
           NUVIO_DTS_HOST: '1'
           CC: gcc
@@ -69,4 +69,7 @@ jobs:
         run: |
           bash tests/dv7.sh
           bash tests/dv7_engine.sh
+          export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+          export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+          bash tests/rust_mkvcore.sh
           bash tests/dv7_mkvcore_link.sh
