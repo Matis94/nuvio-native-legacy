@@ -1,6 +1,8 @@
 #include "dts_engine.h"
+#include "dv7.h"
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <stdio.h>
 #include <math.h>
 #include <time.h>
@@ -9,6 +11,7 @@ struct DtsEngine;
 /* Output mode for the NEXT open: 0 = stereo AAC (default, the proven path),
  * 1 = AC3 5.1 at 640 kbps (falls back to AAC when the encoder is absent). */
 static volatile int g_surround_ac3;
+static int buffer_mib(int v) { return v == 128 || v == 256 ? v : 64; }
 void dts_engine_set_ac3(int on) { g_surround_ac3 = on ? 1 : 0; }
 /* Samsung remux ring (read_fluxo) for engines created after this call, in MiB:
  * 32 by default; the .tpk asks for 16 on Tizen 6/6.5/7 (less RAM). */
@@ -27,6 +30,10 @@ void dts_engine_rings(DtsEngineRings *out, int reset_peak) {
 }
 #ifndef NV_DTS_FFMPEG
 struct DtsEngine { DtsMediaInfo info; };
+void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *b) { (void)e; if(b) memset(b,0,sizeof *b); }
+DtsEngine *dts_engine_source_create(const char *u,const char *h,int m) { (void)u;(void)h;(void)m;return NULL; }
+int dts_engine_source_read(DtsEngine *e,int64_t o,unsigned char *d,int n) { (void)e;(void)o;(void)d;(void)n;return -1; }
+int64_t dts_engine_source_total(DtsEngine *e) { (void)e;return -1; }
 DtsEngine *dts_engine_create(void) { return calloc(1, sizeof(DtsEngine)); }
 int dts_engine_available(void) { return 0; }
 void dts_engine_dv(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
@@ -62,7 +69,7 @@ void dts_engine_interrupt(DtsEngine *e,int on) { (void)e; (void)on; }
 /* Dolby Vision path (dts_engine_dv): 4K sources of 25-30 Mbit/s starved on
  * 1 MiB requests that re-followed the add-on redirects every time (LG C9:
  * readMs 4953/5000, 0.9 s of video ahead). Larger requests sent straight to
- * the final address keep the native buffer full with the same 32 MiB cap. */
+ * the final address keep the native buffer full within the compressed-data budget below. */
 #define RANGE_BYTES_DV (4 * 1024 * 1024 - 1)
 #define RANGE_SLOTS_DV 8
 #ifndef RANGE_WORKERS
@@ -76,7 +83,7 @@ typedef struct {
 } DtsRangeWorker;
 typedef struct {
   int state; /* 0 idle, 1 queued, 2 fetching, 3 complete */
-  volatile int cancel;
+  volatile int cancel, urgent;
   int64_t start, end, total;
   char *data;
   long count;
@@ -87,6 +94,7 @@ static const AVRational NS = {1,1000000000};
 struct DtsEngine {
   DtsMediaInfo info;
   char error[160], *url, *headers, *cache;
+  char *source_public_headers;
   int64_t pos, total, cache_start;
   long cache_size;
   volatile int cancelled;
@@ -95,9 +103,12 @@ struct DtsEngine {
   DtsRangeJob ranges[RANGE_SLOTS_MAX];
   DtsRangeWorker workers[RANGE_WORKERS];
   int range_threads, range_stop;
+  volatile int range_live;
   int64_t range_next;
   long range_bytes;
-  int dv, passthrough, range_slots, final_cross;
+  int dv, passthrough, range_slots, final_cross, budget_mib;
+  int source_stream; /* Native URI cache only; DTS/DV keep their range reader. */
+  volatile int source_cancel;
   /* Samsung remux (dts_engine_open_demux): container only, large ranges and
    * the final address reused, like the Dolby Vision path, because the whole
    * video also flows through this reader. Never set on webOS. */
@@ -117,6 +128,8 @@ struct DtsEngine {
   int64_t fx_req;            /* restart the read at this offset (-1: none) */
   int64_t fx_from;           /* where the current read started (read-ahead grows from it) */
   uint64_t fx_resolved_ms;   /* last time the final address was dropped for the add-on's */
+  int64_t snapshot_pos, snapshot_total;
+  long snapshot_cache;
   char final_url[8192];
   AVFormatContext *fmt;
   AVIOContext *io;
@@ -125,11 +138,16 @@ struct DtsEngine {
   SwrContext *swr;
   AVAudioFifo *fifo;
   AVPacket *in, *out;
+  int dv7;
+  uint8_t *dv7_buffer;
+  unsigned dv7_capacity;
   AVFrame *decoded, *encoded;
   AVChannelLayout input_layout;
   enum AVSampleFormat input_format;
   int input_rate, demux_eof, decoder_eof, resampler_eof, encoder_sent_eof;
   int64_t sample_pts, target_ns;
+  int64_t pad_anchor; /* Output samples; budget follows decoded media time. */
+  int pad_count, pad_samples;
   int timeline, has_core;
   DtsEngineMetrics metrics;
 #ifdef NV_DTS_DEBUG
@@ -157,8 +175,80 @@ static int cancelled(void *opaque) {
 /* Persistent HTTP lanes retain independent curl connection caches. The bounded
  * queue keeps fetching while native playback backpressures the demux consumer,
  * so a slow future request can finish before playback needs its bytes. Payload
- * storage is at most 32 speculative 1 MiB ranges plus the 1 MiB active cache
+ * storage follows the official queue: up to 64 ~4 MiB ranges plus one
+ * active range. The caller reserves that active range in the RAM clamp.
  * (each HTTP allocation also includes one terminating byte). */
+/* Retry the SAME validated byte interval before exposing an I/O error to
+ * libavformat. Other completed speculative ranges stay owned by their slots.
+ * A failed/partial HTTP body never enters the active cache. */
+#define RANGE_ATTEMPTS 3
+static int range_retryable(int status) {
+  return status==0 || status==206 || (status>=300 && status<400) ||
+         status==408 || status==425 || status==429 || (status>=500 && status<=599);
+}
+static int range_backoff(DtsEngine *e,DtsRangeJob *job,int ms) {
+  struct timespec until; clock_gettime(CLOCK_REALTIME,&until);
+  until.tv_nsec+=(long)ms*1000000L;
+  if(until.tv_nsec>=1000000000L) { until.tv_sec++; until.tv_nsec-=1000000000L; }
+  pthread_mutex_lock(&e->range_lock);
+  int r=0;
+  while(!e->range_stop && !cancelled(e) && !__atomic_load_n(&job->cancel,__ATOMIC_RELAXED) && r!=ETIMEDOUT) {
+    r=pthread_cond_timedwait(&e->range_wake,&e->range_lock,&until);
+    if(r && r!=ETIMEDOUT) break;
+  }
+  int ok=!e->range_stop && !cancelled(e) && !__atomic_load_n(&job->cancel,__ATOMIC_RELAXED);
+  pthread_mutex_unlock(&e->range_lock); return ok;
+}
+static void range_fetch(DtsEngine *e,DtsRangeJob *job,int fast,int *stalled) {
+  uint64_t begun=clock_ns(CLOCK_MONOTONIC);
+  if(!e->dv && !e->remux)
+    job->data=rede_baixar_trecho64_vigiado(e->url,e->headers,job->start,job->end,
+      &job->count,&job->total,&job->status,&job->cancel,NULL,NULL,
+      fast?&job->urgent:NULL,2500,stalled);
+  else {
+    /* After the first answer, go straight to the address behind the add-on
+     * redirects. Credential headers follow only on the same origin. A final
+     * link that stops answering (expired: 403/410, or any failure) is
+     * dropped and the request repeats through the original URL. */
+    char target[8192], fin[8192]; int direct, cross=0;
+    pthread_mutex_lock(&e->range_lock);
+    direct=e->final_url[0]!=0; cross=e->final_cross;
+    snprintf(target,sizeof target,"%s",direct?e->final_url:e->url);
+    pthread_mutex_unlock(&e->range_lock);
+    job->data=rede_baixar_trecho64_vigiado(target,direct&&cross?"":e->headers,job->start,job->end,
+      &job->count,&job->total,&job->status,&job->cancel,fin,&cross,
+      fast?&job->urgent:NULL,2500,stalled);
+    uint64_t first=clock_ns(CLOCK_MONOTONIC);
+    int first_status=job->status, first_ok=job->data!=NULL;
+    if(direct && !job->data && !*stalled && !__atomic_load_n(&job->cancel,__ATOMIC_RELAXED)) {
+      pthread_mutex_lock(&e->range_lock);
+      if(!strcmp(e->final_url,target)) e->final_url[0]=0;
+      pthread_mutex_unlock(&e->range_lock);
+      job->data=rede_baixar_trecho64_vigiado(e->url,e->headers,job->start,job->end,
+        &job->count,&job->total,&job->status,&job->cancel,fin,&cross,
+        fast?&job->urgent:NULL,2500,stalled);
+      direct=0;
+      /* #203 DV startup took ~19.5 s twice (LG C9): one stalled request
+       * hitting the 15 s curl deadline plus a ~4.5 s add-on re-resolve is
+       * the suspicion. Name it in the log: no URL, only timings/status. */
+      uint64_t done=clock_ns(CLOCK_MONOTONIC);
+      printf("[dts-range] direto falhou: at=%lldMiB ms=%llu http=%d; pelo addon: ms=%llu http=%d bytes=%ld\n",
+             (long long)(job->start>>20),(unsigned long long)((first-begun)/1000000),first_status,
+             (unsigned long long)((done-first)/1000000),job->status,job->count);
+      fflush(stdout);
+    } else if(!__atomic_load_n(&job->cancel,__ATOMIC_RELAXED) &&
+              ((!first_ok && !(e->remux && first_status==416)) || first-begun>=UINT64_C(3000000000))) {
+      printf("[dts-range] %s: at=%lldMiB ms=%llu http=%d bytes=%ld direto=%d\n",first_ok?"lento":"falhou",
+             (long long)(job->start>>20),(unsigned long long)((first-begun)/1000000),first_status,job->count,direct);
+      fflush(stdout);
+    }
+    if(!direct && job->data && fin[0]) {
+      pthread_mutex_lock(&e->range_lock);
+      snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross;
+      pthread_mutex_unlock(&e->range_lock);
+    }
+  }
+}
 static void *range_worker(void *opaque) {
   DtsEngine *e=((DtsRangeWorker *)opaque)->engine;
   pthread_mutex_lock(&e->range_lock);
@@ -178,49 +268,24 @@ static void *range_worker(void *opaque) {
     job->state=2;
     pthread_mutex_unlock(&e->range_lock);
     uint64_t begun=clock_ns(CLOCK_MONOTONIC);
-    if(!e->dv && !e->remux)
-      job->data=rede_baixar_trecho64_cab(e->url,e->headers,job->start,job->end,
-        &job->count,&job->total,&job->status,&job->cancel);
-    else {
-      /* After the first answer, go straight to the address behind the add-on
-       * redirects. Credential headers follow only on the same origin. A final
-       * link that stops answering (expired: 403/410, or any failure) is
-       * dropped and the request repeats through the original URL. */
-      char target[8192], fin[8192]; int direct, cross=0;
-      pthread_mutex_lock(&e->range_lock);
-      direct=e->final_url[0]!=0; cross=e->final_cross;
-      snprintf(target,sizeof target,"%s",direct?e->final_url:e->url);
-      pthread_mutex_unlock(&e->range_lock);
-      job->data=rede_baixar_trecho64_final(target,direct&&cross?"":e->headers,job->start,job->end,
-        &job->count,&job->total,&job->status,&job->cancel,fin,&cross);
-      uint64_t first=clock_ns(CLOCK_MONOTONIC);
-      int first_status=job->status, first_ok=job->data!=NULL;
-      if(direct && !job->data && !__atomic_load_n(&job->cancel,__ATOMIC_RELAXED)) {
-        pthread_mutex_lock(&e->range_lock);
-        if(!strcmp(e->final_url,target)) e->final_url[0]=0;
-        pthread_mutex_unlock(&e->range_lock);
-        job->data=rede_baixar_trecho64_final(e->url,e->headers,job->start,job->end,
-          &job->count,&job->total,&job->status,&job->cancel,fin,&cross);
-        direct=0;
-        /* #203 DV startup took ~19.5 s twice (LG C9): one stalled request
-         * hitting the 15 s curl deadline plus a ~4.5 s add-on re-resolve is
-         * the suspicion. Name it in the log: no URL, only timings/status. */
-        uint64_t done=clock_ns(CLOCK_MONOTONIC);
-        printf("[dts-range] direto falhou: at=%lldMiB ms=%llu http=%d; pelo addon: ms=%llu http=%d bytes=%ld\n",
-               (long long)(job->start>>20),(unsigned long long)((first-begun)/1000000),first_status,
-               (unsigned long long)((done-first)/1000000),job->status,job->count);
-        fflush(stdout);
-      } else if(!__atomic_load_n(&job->cancel,__ATOMIC_RELAXED) &&
-                ((!first_ok && !(e->remux && first_status==416)) || first-begun>=UINT64_C(3000000000))) {
-        printf("[dts-range] %s: at=%lldMiB ms=%llu http=%d bytes=%ld direto=%d\n",first_ok?"lento":"falhou",
-               (long long)(job->start>>20),(unsigned long long)((first-begun)/1000000),first_status,job->count,direct);
-        fflush(stdout);
-      }
-      if(!direct && job->data && fin[0]) {
-        pthread_mutex_lock(&e->range_lock);
-        snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross;
-        pthread_mutex_unlock(&e->range_lock);
-      }
+    int attempt=0;
+    for(;attempt<RANGE_ATTEMPTS;attempt++) {
+      if(cancelled(e) || __atomic_load_n(&job->cancel,__ATOMIC_RELAXED)) break;
+      int stalled=0;
+      range_fetch(e,job,attempt+1<RANGE_ATTEMPTS,&stalled);
+      if(job->data || !range_retryable(job->status) || cancelled(e) ||
+         __atomic_load_n(&job->cancel,__ATOMIC_RELAXED)) break;
+      printf("[range-retry] start=%lld end=%lld attempt=%d/%d http=%d\n",
+             (long long)job->start,(long long)job->end,attempt+1,RANGE_ATTEMPTS,job->status);
+      fflush(stdout);
+      if(attempt+1==RANGE_ATTEMPTS || (!stalled && !range_backoff(e,job,150*(attempt+1)))) break;
+    }
+    if(!cancelled(e) && !__atomic_load_n(&job->cancel,__ATOMIC_RELAXED) &&
+       (attempt || !job->data)) {
+      printf("[range-result] start=%lld end=%lld attempts=%d ok=%d http=%d bytes=%ld ms=%llu\n",
+             (long long)job->start,(long long)job->end,attempt+1,job->data!=NULL,
+             job->status,job->count,(unsigned long long)((clock_ns(CLOCK_MONOTONIC)-begun)/1000000));
+      fflush(stdout);
     }
     uint64_t ended=clock_ns(CLOCK_MONOTONIC);
     pthread_mutex_lock(&e->range_lock);
@@ -229,8 +294,17 @@ static void *range_worker(void *opaque) {
   }
   pthread_mutex_unlock(&e->range_lock); return NULL;
 }
-static void clear_ranges(DtsEngine *e) {
+static void clear_ranges(DtsEngine *e,const char *reason) {
   pthread_mutex_lock(&e->range_lock);
+  int ready=0, active=0; int64_t bytes=0;
+  for(int i=0;i<RANGE_SLOTS_MAX;i++) {
+    DtsRangeJob *j=&e->ranges[i]; active+=j->state==2;
+    if(j->state==3 && j->data && j->count>0) { ready++; bytes+=j->count; }
+  }
+  if(ready || active) {
+    printf("[range-reset] reason=%s pos=%lld ready=%d readyBytes=%lld active=%d\n",
+           reason,(long long)e->pos,ready,(long long)bytes,active); fflush(stdout);
+  }
   for(int i=0;i<RANGE_SLOTS_MAX;i++) {
     DtsRangeJob *job=&e->ranges[i];
     __atomic_store_n(&job->cancel,1,__ATOMIC_RELAXED);
@@ -265,6 +339,7 @@ static void queue_ranges(DtsEngine *e) {
     job->end=job->start>INT64_MAX-e->range_bytes?INT64_MAX:job->start+e->range_bytes-1;
     job->count=0; job->status=0; job->total=-1;
     __atomic_store_n(&job->cancel,0,__ATOMIC_RELAXED);
+    __atomic_store_n(&job->urgent,0,__ATOMIC_RELAXED);
     job->state=1;
     e->range_next=job->end==INT64_MAX?INT64_MAX:job->end+1;
   }
@@ -287,6 +362,7 @@ static uint64_t fx_now_ms(void) { return clock_ns(CLOCK_MONOTONIC)/1000000u; }
  * started, at least 2 MiB. A probe that only needs the header and the Cues
  * then costs a few MiB, not a full ring, at each jump. */
 static int64_t fx_ahead(DtsEngine *e) {
+  if(e->source_stream) return FX_CAP-FX_HIST;
   int64_t used=e->pos>e->fx_from?e->pos-e->fx_from:0, a=2*used;
   if(a<2*1024*1024) a=2*1024*1024;
   if(a>FX_CAP-FX_HIST) a=FX_CAP-FX_HIST;
@@ -338,15 +414,17 @@ static void *fx_worker(void *opaque) {
     direct=e->final_url[0]!=0;
     snprintf(target,sizeof target,"%s",direct?e->final_url:e->url);
     int strip=direct&&e->final_cross;
+    if(e->source_stream)__atomic_store_n(&e->source_cancel,0,__ATOMIC_RELAXED);
     pthread_mutex_unlock(&e->range_lock);
     uint64_t t0=fx_now_ms();
-    int r=rede_fluxo64(target,strip?"":e->headers,at,fx_sink,e,&total,&status,&e->cancelled,fin,&cross,FX_STALL_MS,&got);
+    int r=rede_fluxo64(target,strip?(e->source_stream?e->source_public_headers:""):e->headers,at,fx_sink,e,&total,&status,
+      e->source_stream?&e->source_cancel:&e->cancelled,fin,&cross,FX_STALL_MS,&got);
     uint64_t ms=fx_now_ms()-t0;
     pthread_mutex_lock(&e->range_lock);
     e->metrics.range_requests++;
     if(total>=0) e->total=total;
     if(!direct && got>0 && fin[0]) { snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross; }
-    if(r==1 || e->fx_stop || cancelled(e)) continue;          /* restart asked, or closing */
+    if(r==1 || e->fx_stop || cancelled(e) || e->fx_req>=0) continue; /* seek/closing */
     if(r==0) {                                                /* body ended */
       e->fx_attempts=0;
       if(status==200) { e->total=e->fx_hi; e->fx_eof=1; continue; }   /* whole file, no Range */
@@ -390,7 +468,7 @@ static int read_fluxo(void *opaque,uint8_t *dst,int n) {
   uint64_t wait_started=0;
   pthread_mutex_lock(&e->range_lock);
   if(!e->fx_thread_ok && !e->fx_stop) {
-    if(!e->fx_buf) { e->fx_cap=(int64_t)g_fx_cap_mib*1024*1024; e->fx_buf=malloc((size_t)e->fx_cap); if(e->fx_buf) rings_add(e->fx_cap); }
+    if(!e->fx_buf) { if(!e->source_stream)e->fx_cap=(int64_t)g_fx_cap_mib*1024*1024; e->fx_buf=malloc((size_t)e->fx_cap); if(e->fx_buf) rings_add(e->fx_cap); }
     if(!e->fx_buf) { pthread_mutex_unlock(&e->range_lock); return AVERROR(ENOMEM); }
     e->fx_req=e->pos;
     if(pthread_create(&e->fx_thread,NULL,fx_worker,e)) { pthread_mutex_unlock(&e->range_lock); return AVERROR(ENOMEM); }
@@ -411,7 +489,11 @@ static int read_fluxo(void *opaque,uint8_t *dst,int n) {
     if(e->fx_req<0 && e->fx_eof && e->pos>=e->fx_hi) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EOF; }
     if(e->fx_req<0 && e->fx_err) { pthread_mutex_unlock(&e->range_lock); return AVERROR(EIO); }
     /* Outside what the stream has or will soon have: start over there. */
-    if(e->fx_req<0 && (e->pos<e->fx_lo || e->pos>e->fx_hi+FX_SKIP)) { e->fx_req=e->pos; pthread_cond_broadcast(&e->range_wake); }
+    if(e->fx_req<0 && (e->pos<e->fx_lo || e->pos>e->fx_hi+FX_SKIP)) {
+      e->fx_req=e->pos;
+      if(e->source_stream)__atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
+      pthread_cond_broadcast(&e->range_wake);
+    }
     if(!wait_started) wait_started=clock_ns(CLOCK_MONOTONIC);
     struct timespec ts; clock_gettime(CLOCK_REALTIME,&ts); ts.tv_sec+=1;
     pthread_cond_timedwait(&e->range_wake,&e->range_lock,&ts);
@@ -426,6 +508,11 @@ static int64_t seek_fluxo(void *opaque,int64_t offset,int whence) {
   int64_t base=whence==SEEK_SET?0:whence==SEEK_CUR?e->pos:whence==SEEK_END?e->total:-1;
   if (base<0 || (offset>0 && base>INT64_MAX-offset) || (offset<0 && offset<-base)) { pthread_mutex_unlock(&e->range_lock); return AVERROR(EINVAL); }
   e->pos=base+offset;
+  if(e->source_stream && e->fx_thread_ok &&
+     (e->pos<e->fx_lo || e->pos>e->fx_hi+FX_SKIP)) {
+    e->fx_req=e->pos;
+    __atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
+  }
   pthread_cond_broadcast(&e->range_wake);
   pthread_mutex_unlock(&e->range_lock);
   return e->pos;
@@ -433,6 +520,7 @@ static int64_t seek_fluxo(void *opaque,int64_t offset,int whence) {
 static void fx_close(DtsEngine *e) {
   pthread_mutex_lock(&e->range_lock);
   e->fx_stop=1; pthread_cond_broadcast(&e->range_wake);
+  if(e->source_stream)__atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
   pthread_mutex_unlock(&e->range_lock);
   if(e->fx_thread_ok) pthread_join(e->fx_thread,NULL);
   e->fx_thread_ok=0; e->fx_stop=0; e->fx_req=-1; e->fx_eof=e->fx_err=0; e->fx_lo=e->fx_hi=0;
@@ -454,18 +542,36 @@ static int read_range(void *opaque,uint8_t *dst,int n) {
       pthread_mutex_unlock(&e->range_lock);
       /* Seek or short 206: discard obsolete speculative ranges and restart
        * at the exact next byte. Never jump over a short response's tail. */
-      clear_ranges(e);
+      clear_ranges(e,"missing");
       pthread_mutex_lock(&e->range_lock); queue_ranges(e);
       for(int i=0;i<RANGE_SLOTS_MAX;i++)
         if(e->ranges[i].state && e->ranges[i].start==e->pos) job=&e->ranges[i];
     }
     if(!job) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EXIT; }
+    if(__atomic_load_n(&e->range_live,__ATOMIC_RELAXED))
+      __atomic_store_n(&job->urgent,1,__ATOMIC_RELAXED);
     while(job->state!=3 && !cancelled(e) && !__atomic_load_n(&e->interrupt,__ATOMIC_RELAXED))
       pthread_cond_wait(&e->range_wake,&e->range_lock);
     if(cancelled(e) || __atomic_load_n(&e->interrupt,__ATOMIC_RELAXED)) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EXIT; }
     long count=job->count; int status=job->status; int64_t total=job->total, end=job->end;
     uint64_t ready_at=clock_ns(CLOCK_MONOTONIC);
     if(ready_at>=wait_started) e->metrics.range_blocked_ns+=ready_at-wait_started;
+    if(!job->data || (ready_at>=wait_started && ready_at-wait_started>=UINT64_C(500000000))) {
+      int64_t ready=0, contiguous=0, next=e->pos;
+      for(int i=0;i<e->range_slots;i++)
+        if(e->ranges[i].state==3 && e->ranges[i].data && e->ranges[i].count>0) ready+=e->ranges[i].count;
+      for(int k=0;k<e->range_slots;k++) {
+        DtsRangeJob *j=NULL;
+        for(int i=0;i<e->range_slots;i++)
+          if(e->ranges[i].state==3 && e->ranges[i].data && e->ranges[i].count>0 && e->ranges[i].start==next) { j=&e->ranges[i]; break; }
+        if(!j) break;
+        contiguous+=j->count; next+=j->count;
+        if(j->count<j->end-j->start+1) break;
+      }
+      printf("[range-read] pos=%lld waitMs=%llu http=%d ok=%d readyBytes=%lld contiguousBytes=%lld\n",
+             (long long)e->pos,(unsigned long long)((ready_at-wait_started)/1000000),
+             status,job->data!=NULL,(long long)ready,(long long)contiguous); fflush(stdout);
+    }
     free(e->cache); e->cache=NULL; e->cache_size=0;
     e->cache=job->data; job->data=NULL; job->state=0;
     uint64_t elapsed=job->elapsed;
@@ -499,6 +605,10 @@ static int read_range(void *opaque,uint8_t *dst,int n) {
   if (n>available) n=(int)available;
   if(e->pos>INT64_MAX-n) return AVERROR(EOVERFLOW);
   memcpy(dst,e->cache+(size_t)(e->pos-e->cache_start),n); e->pos+=n;
+  pthread_mutex_lock(&e->range_lock);
+  e->snapshot_pos=e->pos; e->snapshot_total=e->total;
+  e->snapshot_cache=e->cache_size-(long)(e->pos-e->cache_start);
+  pthread_mutex_unlock(&e->range_lock);
   return n;
 }
 static int64_t seek_range(void *opaque,int64_t offset,int whence) {
@@ -510,7 +620,7 @@ static int64_t seek_range(void *opaque,int64_t offset,int whence) {
   if (base<0 || (offset>0 && base>INT64_MAX-offset) || (offset<0 && offset<-base)) return AVERROR(EINVAL);
   e->pos=base+offset;
   if(!e->cache || e->pos<e->cache_start || e->pos-e->cache_start>=e->cache_size)
-    clear_ranges(e);
+    clear_ranges(e,"seek");
   return e->pos;
 }
 static int64_t ns(int64_t value,AVRational tb) {
@@ -536,16 +646,89 @@ static void close_media(DtsEngine *e) {
   av_frame_free(&e->decoded); av_frame_free(&e->encoded);
   avcodec_free_context(&e->dec); avcodec_free_context(&e->enc);
   av_bsf_free(&e->bsf); swr_free(&e->swr); av_audio_fifo_free(e->fifo); e->fifo=NULL;
+  av_freep(&e->dv7_buffer); e->dv7_capacity=0; e->dv7=0;
   av_channel_layout_uninit(&e->input_layout);
   avformat_close_input(&e->fmt);
   if (e->io) { av_freep(&e->io->buffer); avio_context_free(&e->io); }
   free(e->cache); e->cache=NULL; free(e->url); e->url=NULL;
   free(e->headers); e->headers=NULL;
+  free(e->source_public_headers); e->source_public_headers=NULL;
 }
 DtsEngine *dts_engine_create(void) {
   DtsEngine *e=calloc(1,sizeof(*e));
   if(e) { e->total=-1; e->range_bytes=RANGE_BYTES; e->range_slots=RANGE_SLOTS; pthread_mutex_init(&e->range_lock,NULL); pthread_cond_init(&e->range_wake,NULL); }
   return e;
+}
+void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *b) {
+  if (!b) return;
+  memset(b,0,sizeof *b);
+  if (!e) return;
+  pthread_mutex_lock(&e->range_lock);
+  if(e->source_stream) {
+    b->position=e->pos; b->total=e->total; b->capacity_bytes=e->fx_cap;
+    if(e->fx_req<0 && e->pos>=e->fx_lo && e->pos<=e->fx_hi)
+      b->ready_bytes=e->fx_hi-e->pos;
+    pthread_mutex_unlock(&e->range_lock);
+    return;
+  }
+  b->ready_bytes=e->snapshot_cache; b->position=e->snapshot_pos; b->total=e->snapshot_total;
+  b->capacity_bytes=(int64_t)(e->range_slots+1)*e->range_bytes;
+  for(int i=0;i<e->range_slots;i++)
+    if(e->ranges[i].state==3 && e->ranges[i].data && e->ranges[i].count>0)
+      b->ready_bytes+=e->ranges[i].count;
+  pthread_mutex_unlock(&e->range_lock);
+}
+/* Preserve only the same public headers allowed by rede.c on a cross-origin
+ * redirect. Cached CDN addresses must not lose Referer/Origin/User-Agent, nor
+ * receive the add-on's Authorization/Cookie headers. */
+static char *source_public_headers(const char *raw) {
+  size_t used=0; char *out=malloc(strlen(raw)+2);
+  if(!out)return NULL;
+  for(const char *p=raw;*p;) {
+    size_t n=strcspn(p,"\n"),k=n;
+    if(k && p[k-1]=='\r')k--;
+    if((k>=8 && !strncasecmp(p,"Referer:",8)) ||
+       (k>=7 && !strncasecmp(p,"Origin:",7)) ||
+       (k>=11 && !strncasecmp(p,"User-Agent:",11))) {
+      memcpy(out+used,p,k);used+=k;out[used++]='\n';
+    }
+    p+=n;if(*p=='\n')p++;
+  }
+  out[used]=0;return out;
+}
+DtsEngine *dts_engine_source_create(const char *url,const char *headers,int mib) {
+  DtsEngine *e=dts_engine_create();
+  if (!e) return NULL;
+  e->url=strdup(url); e->headers=strdup(headers?headers:"");
+  e->source_public_headers=source_public_headers(headers?headers:"");
+  e->source_stream=1; e->budget_mib=buffer_mib(mib);
+  e->fx_cap=(int64_t)e->budget_mib*1024*1024; e->fx_req=-1;
+  if(!e->url || !e->headers || !e->source_public_headers) { dts_engine_destroy(e); return NULL; }
+  return e;
+}
+int dts_engine_source_read(DtsEngine *e,int64_t offset,unsigned char *data,int n) {
+  if (!e || offset<0 || !data || n<1) return -1;
+  /* One bounded probe discovers the finite file size before the loopback
+   * response is sent. It finishes before the single streaming lane starts.
+   * Do not start the old speculative four-lane queue just to inspect a header. */
+  if(e->total<0 && !e->fx_thread_ok) {
+    long got=0; int status=0,cross=0; int64_t total=-1; char fin[8192];
+    char *probe=rede_baixar_trecho64_final(e->url,e->headers,0,255,
+      &got,&total,&status,&e->cancelled,fin,&cross);
+    if(!probe || total<=0) { free(probe); return -1; }
+    free(probe);
+    pthread_mutex_lock(&e->range_lock);
+    e->total=total;
+    if(fin[0]) { snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross; }
+    pthread_mutex_unlock(&e->range_lock);
+  }
+  if(seek_fluxo(e,offset,SEEK_SET)<0) return -1;
+  return read_fluxo(e,data,n);
+}
+int64_t dts_engine_source_total(DtsEngine *e) {
+  if(!e)return -1;
+  pthread_mutex_lock(&e->range_lock); int64_t total=e->total; pthread_mutex_unlock(&e->range_lock);
+  return total;
 }
 void dts_engine_dv(DtsEngine *e, int enabled) { if (e) e->dv = !!enabled; }
 int dts_engine_available(void) {
@@ -564,6 +747,7 @@ void dts_engine_cancel(DtsEngine *e) {
   if(!e) return;
   __atomic_store_n(&e->cancelled,1,__ATOMIC_RELAXED);
   pthread_mutex_lock(&e->range_lock);
+  __atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
   for(int i=0;i<RANGE_SLOTS_MAX;i++) __atomic_store_n(&e->ranges[i].cancel,1,__ATOMIC_RELAXED);
   pthread_cond_broadcast(&e->range_wake); pthread_mutex_unlock(&e->range_lock);
 }
@@ -588,6 +772,7 @@ static int reset_encoder(DtsEngine *e) {
 }
 int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,int core,double start) {
   if (!e || !url || !*url) return -1;
+  __atomic_store_n(&e->range_live,0,__ATOMIC_RELAXED);
   close_media(e); memset(&e->info,0,sizeof(e->info)); e->error[0]=0;
   memset(&e->metrics,0,sizeof(e->metrics));
 #ifdef NV_DTS_DEBUG
@@ -655,9 +840,15 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
     e->info.dovi_el_present=conf->el_present_flag;
     e->info.dovi_bl_present=conf->bl_present_flag;
     e->info.dovi_bl_compatibility_id=conf->dv_bl_signal_compatibility_id;
-    if ((conf->dv_profile!=5 && conf->dv_profile!=8) || conf->el_present_flag
-        || !conf->bl_present_flag || !conf->rpu_present_flag || vp->codec_id!=AV_CODEC_ID_HEVC)
+    if (!nv_dv7_profile(conf->dv_profile,conf->el_present_flag,
+                       conf->bl_present_flag,conf->rpu_present_flag) || vp->codec_id!=AV_CODEC_ID_HEVC)
       return fail(e,"Dolby Vision layer/profile unsupported",0);
+    if (conf->dv_profile == 7) {
+      e->dv7=1;
+      e->info.dovi_profile=8; e->info.dovi_el_present=0;
+      e->info.dovi_bl_compatibility_id=1;
+      printf("[dv7] experimental P7 -> P8.1: RPU converted, enhancement layer discarded\n");
+    }
     /* mp4toannexb preserves HEVC RPU NAL units; no video re-encode occurs. */
   }
   e->info.width=vp->width; e->info.height=vp->height;
@@ -726,6 +917,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
  * out), no codec, no track choice: the caller reads dts_engine_avformat(). */
 int dts_engine_open_demux(DtsEngine *e,const char *url,const char *headers) {
   if (!e || !url || !*url) return -1;
+  __atomic_store_n(&e->range_live,0,__ATOMIC_RELAXED);
   close_media(e); memset(&e->info,0,sizeof(e->info)); e->error[0]=0;
   memset(&e->metrics,0,sizeof(e->metrics));
   e->pos=0; e->total=-1; e->cache_size=0; e->has_core=0;
@@ -791,8 +983,50 @@ static int resample(DtsEngine *e,AVFrame *f) {
     int64_t incoming=av_rescale_q(f->best_effort_timestamp,e->dec->pkt_timebase,e->enc->time_base);
     int64_t expected=e->sample_pts+av_audio_fifo_size(e->fifo)
         +av_rescale_rnd(swr_get_delay(e->swr,e->input_rate),48000,e->input_rate,AV_ROUND_NEAR_INF);
-    if (incoming>expected+4800 || incoming<expected-4800)
-      return fail(e,"DTS timestamp discontinuity requires reload",0);
+    if (incoming>expected+4800 || incoming<expected-4800) {
+      /* Numeric diagnostics survive export redaction; no source/header data. */
+      printf("[dts] timestamp-gap incomingMs=%.3f expectedMs=%.3f deltaMs=%.3f "
+             "fifoSamples=%d delaySamples=%lld frameSamples=%d inputRate=%d targetMs=%.3f\n",
+             (double)incoming/48.0, (double)expected/48.0,
+             ((double)incoming-(double)expected)/48.0,
+             av_audio_fifo_size(e->fifo), (long long)swr_get_delay(e->swr,e->input_rate),
+             f->nb_samples,e->input_rate,(double)e->target_ns/1e6);
+      fflush(stdout);
+      /* A small FORWARD hole can be represented by silence without retiming
+       * video or restarting the native pipeline. Keep the 100 ms jitter guard;
+       * never conceal backward jumps, large gaps or a sustained broken clock.
+       * At most four holes / one second of silence per 30 s of media progress.
+       * swr_inject_silence takes INPUT samples; its buffered delay is included
+       * in the output capacity below (also at 44.1/96 kHz). */
+      int64_t gap=incoming-expected;
+      const char *reason=NULL;
+      if(gap<0) reason="backward";
+      else if(gap>24000) reason="too-large";
+      else {
+        if(e->pad_count && expected-e->pad_anchor>=30LL*48000)
+          e->pad_count=e->pad_samples=0;
+        if(e->pad_count>=4 || gap>48000-e->pad_samples) reason="budget";
+      }
+      if(reason) {
+        printf("[dts] timestamp-reject reason=%s pads=%d padMs=%.3f\n",
+               reason,e->pad_count,(double)e->pad_samples/48.0);
+        fflush(stdout);
+        return fail(e,DTS_ENGINE_TIMESTAMP_DISCONTINUITY,0);
+      }
+      int input=(int)av_rescale_rnd(gap,e->input_rate,48000,AV_ROUND_NEAR_INF);
+      r=swr_inject_silence(e->swr,input);
+      if(r<0) {
+        printf("[dts] timestamp-reject reason=inject code=%d\n",r);
+        fflush(stdout);
+        return fail(e,DTS_ENGINE_TIMESTAMP_DISCONTINUITY,0);
+      }
+      if(!e->pad_count) e->pad_anchor=expected;
+      e->pad_count++; e->pad_samples+=(int)gap;
+      printf("[dts] timestamp-pad deltaMs=%.3f inputSamples=%d rate=%d "
+             "pads=%d padMs=%.3f\n",(double)gap/48.0,input,e->input_rate,
+             e->pad_count,(double)e->pad_samples/48.0);
+      fflush(stdout);
+    }
   }
   int capacity=(int)av_rescale_rnd(swr_get_delay(e->swr,e->input_rate)+(f?f->nb_samples:0),48000,e->input_rate,AV_ROUND_UP)+32;
   uint8_t **data=NULL;
@@ -803,6 +1037,7 @@ static int resample(DtsEngine *e,AVFrame *f) {
     int64_t pts=f->best_effort_timestamp;
     if(pts==AV_NOPTS_VALUE) { av_freep(&data[0]); av_freep(&data); return fail(e,"DTS sample timestamp absent",0); }
     e->sample_pts=av_rescale_q(pts,e->dec->pkt_timebase,e->enc->time_base); e->timeline=1;
+    e->pad_anchor=e->sample_pts; e->pad_count=e->pad_samples=0;
   }
   if(count>0 && av_audio_fifo_write(e->fifo,(void **)data,count)!=count) count=AVERROR(ENOMEM);
   av_freep(&data[0]); av_freep(&data);
@@ -947,7 +1182,23 @@ static int next_frame(DtsEngine *e,DtsFrame *f) {
   }
 }
 int dts_engine_next(DtsEngine *e,DtsFrame *f) {
-  int result=next_frame(e,f);
+  int result;
+  for (;;) {
+    result=next_frame(e,f);
+    if(result==1 && (f->kind==DTS_AUDIO || f->kind==DTS_VIDEO))
+      __atomic_store_n(&e->range_live,1,__ATOMIC_RELAXED);
+    if(result!=1 || !e->dv7 || f->kind!=DTS_VIDEO) break;
+    size_t size=0;
+    if(f->size>INT_MAX-8192) return fail(e,"DV7 packet too large",0);
+    av_fast_malloc(&e->dv7_buffer,&e->dv7_capacity,(size_t)f->size+8192);
+    if(!e->dv7_buffer) return fail(e,"DV7 conversion buffer",AVERROR(ENOMEM));
+    if(nv_dv7_packet(f->data,(size_t)f->size,e->dv7_buffer,e->dv7_capacity,&size)<0)
+      return fail(e,"DV7 RPU conversion failed",0);
+    /* An EL-only packet is discarded, not mistaken for end of stream. */
+    if(!size) continue;
+    f->data=e->dv7_buffer; f->size=(int)size;
+    break;
+  }
 #ifdef NV_DTS_DEBUG
   if(e) {
     uint64_t now=clock_ns(CLOCK_MONOTONIC);
@@ -981,6 +1232,7 @@ int dts_engine_next(DtsEngine *e,DtsFrame *f) {
 int dts_engine_seek(DtsEngine *e,double seconds) {
   if(!e || !e->fmt || !isfinite(seconds) || seconds<0 || seconds>INT64_MAX/1000000000.0) return -1;
   if(cancelled(e)) return fail(e,"Cancelled",0);
+  __atomic_store_n(&e->range_live,0,__ATOMIC_RELAXED);
   int64_t timestamp=(int64_t)(seconds*1000000.0);
   int r=avformat_seek_file(e->fmt,-1,INT64_MIN,timestamp,timestamp,AVSEEK_FLAG_BACKWARD);
   if(r<0) return fail(e,"Container seek",r);

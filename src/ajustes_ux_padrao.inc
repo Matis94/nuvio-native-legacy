@@ -339,3 +339,5 @@
   0, /* upscaling algorithm: Automatic (default) */
   2, /* upscaling RCAS sharpness, 0..4 */
   0, /* experimental HDR menus: Off */
+  1, /* playback RAM overlay (test): Desligado */
+  0, /* independent P7 conversion: on, preserving the working custom build */

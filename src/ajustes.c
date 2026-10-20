@@ -693,6 +693,8 @@ typedef enum {
   AJ_AMPLIACAO_ALGO,  // Device-local upscaling algorithm, append-only; automatic by default.
   AJ_AMPLIACAO_NITIDEZ, // Device-local RCAS sharpness for SGSR sharp / FSR 1, append-only.
   AJ_HDR_INTERFACE,    // Experimental Android HDR output; device-local
+  AJ_PLAYER_RAM, // local test overlay; append-only
+  AJ_DV7, // independent P7 conversion, append-only
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1322,6 +1324,7 @@ static const char *V_MANTER_PRAZO[] = { "2 min", "5 min", "10 min", "30 min", "S
 static const char *V_AMIGOS_ESTILO[] = { "Feed de cartões", "Ao vivo em destaque", "Histórias com cartaz", "Faixa de presença", "Cartaz primeiro", "Rostos clássicos" };
 static const char *V_CONEXOES[] = { "Automático", "Ligado", "Desligado" };
 static const char *V_GUIA_FONTE[] = { "Todas as fontes", "Xtream", "M3U", "Stalker", "Addons" };
+
 static const Opcao OPCOES[AJ_N] = {
   ESC("Qualidade máxima",           V_QUALIDADE, 4),
   ESC("Dolby Vision",               V_LIGA, 2),
@@ -1682,7 +1685,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Brilho da interface em HDR", V_HDR_UI, 2),   // local: hdrUiLocal (#205)
   ESC("Tela de abertura do vídeo", V_TELA_ABERTURA, 2),   // local: telaAberturaLocal (#205)
   NUM("Mínimo para entrar no Continuar", 1, 20, 1, "%"),   // local: cwMinimoLocal
-  ESC("Tamanho do buffer", V_BUFFER, 4),                 // local: bufferPlayerLocal
+  ESC("Stream buffer size", V_BUFFER, 4),                 // local: bufferPlayerLocal
   ESC("Pular a abertura automaticamente", V_LIGA, 2),   // local: pularAberturaLocal
   ESC("Pular o resumo automaticamente", V_LIGA, 2),   // local: pularResumoLocal
   ESC("Tocar o próximo episódio automaticamente", V_LIGA, 2),   // local: proximoAutoLocal
@@ -1809,6 +1812,8 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Algoritmo de ampliação", V_AMPLIACAO_ALGO, 6),
   NUM("Nitidez", 0, 4, 1, NULL),
   ESC("Interface em HDR (teste)", V_VIDRO_FOSCO, 2),
+  ESC("Show RAM usage during playback", V_LIGA, 2),
+  ESC("Dolby Vision P7 to P8.1 (experimental)", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2128,6 +2133,8 @@ static const char *CHAVE[] = {
   "ampliarAlgoLocal",
   "ampliarNitidezLocal",
   "hdrInterfaceLocal",
+  "playerRamOverlayLocal",
+  "dv7ConversionLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3635,6 +3642,9 @@ int ajustes_dts_tpk_modo(void) {
 #endif
 }
 int ajustes_dv_mkv(void)              { return lig(AJ_DV_MKV); }
+int ajustes_player_ram(void)          { return lig(AJ_PLAYER_RAM); }
+int ajustes_dv7(void) { return lig(AJ_DV7); }
+int ajustes_player_ram_toggle(void) { valor[AJ_PLAYER_RAM]=!valor[AJ_PLAYER_RAM]; gravar(); return ajustes_player_ram(); }
 int ajustes_hist_conta(void)          { return lig(AJ_HIST_CONTA); }
 int ajustes_social(void)              { return lig(AJ_SOCIAL); }
 int ajustes_amigos_estilo(void)       { return valor[AJ_AMIGOS_ESTILO]; }
@@ -4586,6 +4596,7 @@ void ajustes_dir(const char *dir) {
   char caminho[600], linha[96];
   int viuLingua[3] = { 0, 0, 0 };
   int escalaVersao = 0;
+  int movieBufferLegacy = -1;
   /* viuLingua: [AJ_LEG_LINGUA, AJ_LEG_LINGUA2, AJ_AUD_LINGUA] vistos no
      ajustes.txt — a migracao idiomas-206 so pode tocar o que o arquivo
      trouxe, nunca o padrao de valor[] */
@@ -4673,6 +4684,12 @@ void ajustes_dir(const char *dir) {
       continue;
     }
     if (sscanf(linha, "%63s %d", chave, &v) != 2) continue;
+    // Custom 2.0.6 used 0/1/2/3 = 64/128/256/System off. Save only the
+    // official key from now on, so migration cannot override later choices.
+    if (!strcmp(chave, "movieDownloadBufferLocal")) {
+      if (v >= 0 && v <= 3) movieBufferLegacy = v;
+      continue;
+    }
     if (!strcmp(chave, "notaTituloOrdem")) { valor[AJ_NT_ORDEM] = v == 1; continue; }
     // O idioma nao passa pelo laco: o numero do disco e um IDIOMA_*, e o
     // indice da lista da tela e outro (ver "IDIOMA AUTOMATICO").
@@ -4737,6 +4754,10 @@ void ajustes_dir(const char *dir) {
       if (i == AJ_LEG2_TAMANHO && v >= 0 && v < 27) viuLeg2Escala = 1;
       break;
     }
+  }
+  if (movieBufferLegacy >= 0) {
+    static const int toOfficial[] = {1, 2, 3, 0};
+    valor[AJ_BUFFER] = toOfficial[movieBufferLegacy];
   }
   // Prefer the new default for ambiguous legacy 100% records: old saves
   // cannot distinguish factory defaults from explicit choices. Versioned
@@ -5860,6 +5881,8 @@ static int somenteDesteAparelho(int op) {
     case AJ_AUDIO_OFFSET:   /* audio presentation calibration belongs to this TV */
     case AJ_DTS_AC3:        /* o conversor de DTS e desta TV */
     case AJ_DV_MKV:         /* o demux e o decoder sao desta TV */
+    case AJ_DV7:
+    case AJ_PLAYER_RAM:     /* local test diagnostics, never account/profile */
     case AJ_HIST_CONTA: case AJ_SOCIAL: /* por perfil desta TV (perfilLocal); o web nao tem */
     case AJ_TAM_MAX: case AJ_TAM_MIN: /* o web nao tem a faixa de tamanho */
     case AJ_ESPACO_FILEIRAS: case AJ_ESPACO_TITULOS: /* o web nao tem espacamento */
@@ -6321,6 +6344,7 @@ static int foraDestaPlataforma(int op) {
 #endif
 #if defined(NV_TPK) || defined(NV_ANDROID)
   if (op == AJ_DV_MKV) return 1;
+  if (op == AJ_PLAYER_RAM || op == AJ_DV7) return 1;
 #endif
 #ifndef NV_ANDROID
   if (op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO) return 1;
@@ -7593,6 +7617,8 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_HIST_CONTA: return "Ligado (padrão): o que você assiste neste perfil sobe para a conta Nuvio, com o progresso e os vistos. Desligado: nada disso é enviado à conta; o Trakt e o Simkl vinculados a este perfil continuam recebendo. Vale só para este perfil.";
     case AJ_SOCIAL: return "Ligado (padrão): amigos, atividade deles e recomendações. Desligado: tudo isso some, com a fileira de amigos da Home, e o app para de falar com o serviço social. Salvos e Avisos continuam. Vale só para este perfil.";
     case AJ_DV_MKV: return "Arquivos MKV em Dolby Vision perfil 5 ou 8 tocam com o Dolby Vision ligado, em vez de HDR10. O áudio Dolby Digital e Dolby Digital Plus vai direto para a TV. Se a conexão não acompanhar, o vídeo continua em HDR10. Só em TVs LG com webOS 4 ou mais novo.";
+    case AJ_DV7: return "Convert Dolby Vision Profile 7 MKV to Profile 8.1. Keeps base video and dynamic metadata; discards the enhancement layer, including FEL. Applies to the next video.";
+    case AJ_PLAYER_RAM: return "Green remote button toggles this display during playback. Shows app RAM (RSS), the process peak and available system RAM while playing. Updates once per second. GPU/decoder memory outside the app is not included in RSS. Turn off to hide the overlay.";
     case AJ_CW_RETIDO_TAMBEM: return "Quando o título está na ilha ou em Retomar agora, mostra também na fileira Continuar assistindo.";
     case AJ_EP_TAMANHO: return "Pequeno, Médio (padrão) ou Grande. Só vale no layout Moderno, na página de séries. Vale só nesta TV.";
     case AJ_ABERTURA_ADDON: return "Desligado (padrão): a tela Cinema mostra só a arte, o logo e a barra. Ligado: o nome do add-on aparece sob a barra. Vale só nesta TV.";
@@ -7614,7 +7640,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_ESTAT_LADO: return "O lado do player onde as Estatísticas ao vivo ficam, com a mesma margem das listas de Áudio e Legendas. Direita é o padrão. Com o painel aberto, Esquerda/Direita trocam o lado. Vale só nesta TV.";
     case AJ_PLAYER_EXTERNO: return "Escolha onde o vídeo toca: neste app, em um player instalado (VLC, MX Player...) ou perguntando a cada vez. O player externo não sincroniza o progresso.";
     case AJ_PLAYER_ANIME: return "Player só para anime (kitsu, MAL, AniList, ou animação japonesa). Igual ao Player usa a escolha acima. O player externo não sincroniza o progresso.";
-    case AJ_BUFFER: return "Quanto vídeo o app guarda à frente. Automático é o de sempre; 64, 128 ou 256 MB ajudam arquivos 4K pesados e caem sozinhos se faltar memória na TV. No webOS vale para a conversão de DTS e Dolby Vision. Vale a partir do próximo vídeo.";
+    case AJ_BUFFER: return "Quanto vídeo o app guarda à frente. Automático é o de sempre; 64, 128 ou 256 MB ajudam arquivos 4K pesados e caem sozinhos se faltar memória na TV. No webOS vale para arquivos HTTP de filmes e episódios e para a conversão de DTS e Dolby Vision. HLS/DASH e TV ao vivo usam o buffer do sistema. Vale a partir do próximo vídeo.";
     case AJ_FONTE_IDIOMA_AUDIO: return "Na escolha automática, fontes com o seu Idioma do áudio ou áudio duplo passam na frente na mesma resolução. Não é filtro: sem elas, a melhor das outras toca.";
     case AJ_CACHE_SEEK: return "Com retomada rápida, guarda só o último título por até 3 horas. Trocar de perfil ou pouco espaço apagam o trecho.";
     case AJ_ANIM: return "Use Reduzidas para movimentos mais discretos ao navegar pela interface.";
@@ -9125,7 +9151,7 @@ static int definirValorDireto(int op, int novo) {
   if (novo == 0) notaLigarPar(op);
   { int ok; ajOrigem = ajOrigemDireto; ok = gravar(); ajOrigem = 0;
     if (!ok) { valor[op] = antes; valor[AJ_LEG2_POSICAO] = posicaoAntes; memoriaEscolhida = memoriaAntes; bibliotecaFonteEscolhida = bibliotecaAntes; return 0; } }
-  if (op == AJ_DV_MKV && antes != 0 && novo == 0) video_dv_guard_reiniciar();
+  if ((op == AJ_DV_MKV || op == AJ_DV7) && antes != 0 && novo == 0) video_dv_guard_reiniciar();
   if (op == AJ_LIVETV_SUGERIR) guia_sugestoes_mudaram();
   if (op == AJ_FIL_LIMITE) {
     fil_ajustar_limite(novo);

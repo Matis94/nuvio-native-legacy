@@ -45,7 +45,8 @@ static const Item TELA[] = {
     ROT("Som e vídeo desta TV"),
       OPC(AJ_DTS_AC3),
 #if !defined(NV_TPK) && !defined(NV_ANDROID)
-      OPC(AJ_DV_MKV),
+      OPC(AJ_DV_MKV), OPC(AJ_DV7),
+      OPC(AJ_PLAYER_RAM),
 #endif
       OPC(AJ_CACHE_SEEK), OPC(AJ_MANTER_VIDEO), OPC(AJ_RETOMADA_MORNA), OPC(AJ_MANTER_PRAZO), OPC(AJ_SEEKR_AJUSTE),
 #if defined(NV_ANDROID) || (!defined(NV_TPK) && !defined(__EMSCRIPTEN__))
