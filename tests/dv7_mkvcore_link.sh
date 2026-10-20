@@ -6,7 +6,7 @@ task_tmp=$(mktemp -d)
 trap 'rm -rf "$task_tmp"' EXIT
 export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
 export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
-mkv_lib=$(bash tools/rust-mkvcore.sh)
+mkv_lib=$(NUVIO_RUST_EXTERNAL_PERSONALITY=1 bash tools/rust-mkvcore.sh)
 NUVIO_DV7_ROOT="$PWD/build/dv7-host" bash tools/build-dv7.sh
 cat > "$task_tmp/main.c" <<'C'
 #include <stddef.h>

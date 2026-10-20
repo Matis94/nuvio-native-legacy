@@ -130,7 +130,7 @@ int main(void) {
   snprintf(faixaAudio[0].codec,sizeof faixaAudio[0].codec,"eac3");
   snprintf(faixaAudio[1].codec,sizeof faixaAudio[1].codec,"dts");
   faixaAudio[0].numero=0;faixaAudio[1].numero=1;dtsHabilitado=1;
-  lsCall=fake_native_audio;
+  bus=(LSHandle *)(uintptr_t)1;lsCall=fake_native_audio;
   eventoPayload("{\"errorCode\":200,\"errorText\":\"Audio Codec Not Supported\"}",sessao);
   assert(audioNaoSup && !dtsSessao);
   video_escolher_audio(0);assert(audioNaoSup); /* same rejected track */
@@ -140,7 +140,7 @@ int main(void) {
   assert(video_tocando() && !audioNaoSup && !dtsSessao);
   eventoPayload("{\"errorCode\":200,\"errorText\":\"Audio Codec Not Supported\"}",sessao);
   assert(audioNaoSup); /* a fresh DTS failure still permits fallback */
-  audioNaoSup=0;dtsHabilitado=0;ligado=0;nAudio=0;midia[0]=0;posSeg=0;tocando=0;lsCall=NULL;
+  audioNaoSup=0;dtsHabilitado=0;ligado=0;nAudio=0;midia[0]=0;posSeg=0;tocando=0;lsCall=NULL;bus=NULL;
 
   /* Source stages have no detail field. Logging them must not read or print
    * uninitialized stack data, as seen in the full TV startup log. */

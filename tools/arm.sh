@@ -86,7 +86,9 @@ trap limpar EXIT
 RUST_MKVCORE="${NUVIO_RUST_MKVCORE:-1}"
 RUST_VOL=()
 if [ "$RUST_MKVCORE" = 1 ]; then
-  RUST_LIB=$(CARGO_NET_OFFLINE=true bash tools/rust-mkvcore.sh armv7-unknown-linux-gnueabi)
+  RUST_PERSONALITY=0
+  if [ "${NUVIO_DV7:-1}" = 1 ] && [ "$DTS_ENABLED" = 1 ]; then RUST_PERSONALITY=1; fi
+  RUST_LIB=$(NUVIO_RUST_EXTERNAL_PERSONALITY="$RUST_PERSONALITY" CARGO_NET_OFFLINE=true bash tools/rust-mkvcore.sh armv7-unknown-linux-gnueabi)
   RUST_VOL=(-v "$RUST_LIB:/tmp/libmkvcore.a:ro")
   export NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-} -DNV_RUST_MKVCORE"
 fi

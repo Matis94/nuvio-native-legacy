@@ -29,6 +29,10 @@ int main(void) {
   assert(ajustes_player_ram());
   ajustes_mesclar_blob("{}", &blob);
   assert(!blob || !strstr(blob, "playerRamOverlayLocal"));
+  assert(!ajustePortavel(AJ_DV7) && !ajusteAparelho(AJ_DV7));
+  assert(!ajustePortavel(AJ_PLAYER_RAM) && !ajusteAparelho(AJ_PLAYER_RAM));
+  assert(!ajustes_aplicar_blob("{\"c_settings_v1\":{\"values\":{\"c_playerRamOverlayLocal\":1}}}"));
+  assert(ajustes_player_ram());
   free(blob);
   valor[AJ_PLAYER_RAM] = 1;
   assert(gravar());

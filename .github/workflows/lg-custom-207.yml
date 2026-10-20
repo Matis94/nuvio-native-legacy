@@ -9,6 +9,11 @@ concurrency:
   cancel-in-progress: true
 jobs:
   host:
+    name: Host ${{ matrix.group }}
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [core, ui, engine, dv]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -24,7 +29,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config ffmpeg curl python3 xvfb xauth libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev libgles2-mesa-dev libegl1-mesa-dev zlib1g-dev libssl-dev
       - name: Version, text, RAM, diagnostics and controller
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.group == 'core' }}
         run: |
           git diff --check
           bash tests/versao_207.sh
@@ -39,18 +44,18 @@ jobs:
           bash tests/video_acb_lg.sh
           bash tests/video_buffer_teardown.sh
       - name: Settings migration and source list rendering
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.group == 'ui' }}
         run: |
           bash tests/playback_ram_settings.sh
           xvfb-run -a bash tests/fontes_formatter.sh
       - name: Build minimal host FFmpeg
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.group == 'engine' }}
         env:
           NUVIO_DTS_HOST: '1'
           CC: gcc
         run: bash tools/build-dts-ffmpeg.sh
       - name: HTTP, conversion and buffer recovery
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.group == 'engine' }}
         run: |
           bash tests/moviebuffer.sh
           bash tests/dts_buffer64.sh
@@ -60,7 +65,7 @@ jobs:
           SANITIZE=1 bash tests/dts_timestamp_engine.sh
           bash tests/dts_engine.sh
       - name: Dolby Vision MEL and FEL metadata conversion
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.group == 'dv' }}
         run: |
           bash tests/dv7.sh
           bash tests/dv7_engine.sh
