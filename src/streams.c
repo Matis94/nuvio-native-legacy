@@ -6117,7 +6117,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     }
     // COLUNA DA DIREITA: tamanho grande, addon embaixo. Medida primeiro: o
     // titulo e a fileira de logos param antes dela.
-    { char gb[24]="";
+    { char gb[24]="", pv[160];
       TxtLinha lg, lu, lp;
       int cg=sel?250:218;
       // No modo do addon o tamanho ja vem no texto dele; so o addon fica.
@@ -6128,11 +6128,16 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       // diz se a fonte abre (log da 2.0.0 no Android: "metadados nao chegaram
       // em 30 s"); a pessoa escolhia as cegas. "seeds" fica sem traducao: e o
       // termo que quem usa torrent conhece em qualquer idioma.
-      { char pv[160];
-        legendaProvedor(s,pv,sizeof pv);
-        lp=txt_linha_corta(TXT_PG_FIM,pv,150,150,148,255,340); }
+      legendaProvedor(s,pv,sizeof pv);
+      lp=txt_linha_corta(TXT_PG_FIM,pv,150,150,148,255,340);
       colW=lp.w;
       if(gb[0] && lg.w+6+lu.w>colW) colW=lg.w+6+lu.w;
+      // Native badges keep the same width as focus moves. Fit Info inside
+      // the provider column instead of taking another 30 px from the badges.
+      if(!ajustes_fonte_texto_addon()) {
+        colW=fmaxf(colW,30);
+        if(sel) lp=txt_linha_corta(TXT_PG_FIM,pv,150,150,148,255,colW-30);
+      }
       cy=y+20+(temMarca(i,automatica)?FOLHA_MARCA_H:0);
       if(gb[0]){
         txt_desenhar_alpha(lu,tr-lu.w,cy+(lg.h-lu.h)-3,anim);
@@ -6140,7 +6145,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       txt_desenhar_tom(lp,tr-lp.w,gb[0]?cy+40:cy+6,sel?1:110.0f/150,sel?1:110.0f/150,sel?1:108.0f/148,anim);
       // Dica da tecla Info/Amarela: so na linha em foco, no canto do addon.
       if(sel) gfx_icone((GfxRect){tr-lp.w-30,(gb[0]?cy+40:cy+6)+3,20,20},"aj_info",.62f,.62f,.62f,anim*.85f); }
-    txtW=tr-tx-colW-16-(sel?30:0);
+    txtW=tr-tx-colW-16-(sel && ajustes_fonte_texto_addon()?30:0);
     cy=y+20;
     // A MARCA: o que esta tocando (com o equalizador), a escolha anterior e a
     // automatica. Texto espacado no acento, e nao pilula: a pilula cheia era a

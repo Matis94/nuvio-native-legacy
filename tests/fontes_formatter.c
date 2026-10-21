@@ -31,9 +31,24 @@ static float trackedColored(uint64_t mask,float x,float y,float w,float h,float 
 }
 #define badges_desenhar_fonte trackedBadges
 #define badges_desenhar_selos trackedColored
+#include <math.h>
+typedef struct { GLuint texture; float x,y,w,h; } PackageDraw;
+static PackageDraw packageDraws[32];
+static int packageDrawCount, recordPackage;
+static float packageY;
+static void trackedRect(GfxRect r,GLuint t,GfxModo mode,float focus,
+                        float px,float py,float radius,float cr,float cg,float cb,float ca) {
+  if(recordPackage && t && r.y>=packageY-.1f && r.y+r.h<=packageY+25 && packageDrawCount<32) {
+    PackageDraw *d=&packageDraws[packageDrawCount++];
+    d->texture=t;d->x=r.x;d->y=r.y-packageY;d->w=r.w;d->h=r.h;
+  }
+  gfx_rect(r,t,mode,focus,px,py,radius,cr,cg,cb,ca);
+}
+#define gfx_rect trackedRect
 #define nv_limpar_texto countedClean
 #include "../src/streams.c"
 #undef nv_limpar_texto
+#undef gfx_rect
 #undef badges_desenhar_fonte
 #undef badges_desenhar_selos
 #undef badges_bandeira
@@ -140,6 +155,52 @@ static void nativeWithoutFlags(const char *dir) {
   }
   puts("native presentation: no audio flags in either focus/color state; badges and audio text retained");
 }
+static void nativeFocusRoundTrip(const char *dir) {
+  selospacote_dir_embutidos("deploy/app/art");assert(selospacote_embutidos_ok());
+  Stream sources[2]={fixtures[1],fixtures[1]};
+  for(int i=0;i<2;i++) {
+    snprintf(sources[i].url,sizeof sources[i].url,"https://fixture.invalid/focus-%d.mkv",i);
+    snprintf(sources[i].provedor,sizeof sources[i].provedor,"AIOStreams long provider name");
+    snprintf(sources[i].descricao,sizeof sources[i].descricao,
+             "2160p REMUX BluRay WEB-DL DV HDR10 IMAX HEVC AV1 TrueHD Atmos DTS-HD MA 7.1 Netflix Amazon Disney");
+    sources[i].mp4=0;sources[i].badges=badges_detectar(sources[i].descricao);
+  }
+  for(int colored=0;colored<=1;colored++) {
+    char path[512];snprintf(path,sizeof path,"%s/ajustes.txt",dir);
+    FILE *f=fopen(path,"w");assert(f);
+    fprintf(f,"fonteTextoLocal 0\nselosColoridosLocal %d\n",!colored);fclose(f);ajustes_dir(dir);
+    stream_definir_lista(sources,2);stream_folha_abrir();
+    grupo=1;foco=0;focoVisto=0;focoFixo=-1;linhaAnt=-1;abreAnt=0;abreFoco=1;anim=1;rolagem=0;
+    for(int i=0;i<n;i++)selosCalcular(&lista[i]);
+    assert(selosPacoteVisiveis(&lista[ordem[0]])>3);
+    for(int k=0;k<160;k++){tex_bombear(64);txt_novo_quadro();montar(automaticaDaFolha());corpoFolha(0,1920,1,SDL_GetTicks(),0);SDL_Delay(2);}
+    for(int width=1000;width<=1920;width+=20) {
+      PackageDraw before[32];int count=0;
+      for(int state=0;state<3;state++) {
+        if(state) {
+          SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=state==1?SDLK_DOWN:SDLK_UP;
+          stream_folha_evento(&e);
+          for(int k=0;k<20;k++)stream_folha_atualizar(1.0f/60,SDL_GetTicks());
+        }
+        if(foco!=(state==1?1:0))fprintf(stderr,"unexpected focus=%d group=%d state=%d nf=%d\n",foco,grupo,state,nOrdem);
+        assert(foco==(state==1?1:0));rolagem=0;montar(automaticaDaFolha());
+        int i=ordem[0];
+        packageY=FOLHA_TOPO+linhaPosicao(0)+20+(temMarca(i,automaticaDaFolha())?FOLHA_MARCA_H:0)+40;
+        packageDrawCount=0;recordPackage=1;
+        txt_novo_quadro();corpoFolha(0,width,1,SDL_GetTicks(),0);recordPackage=0;
+        assert(packageDrawCount>0 && "test must draw real bundled badge images");
+        if(!state){count=packageDrawCount;memcpy(before,packageDraws,sizeof before);}
+        else {
+          if(packageDrawCount!=count || memcmp(before,packageDraws,count*sizeof *before))
+            fprintf(stderr,"badge focus mismatch color=%d width=%d state=%d counts=%d/%d\n",colored,width,state,count,packageDrawCount);
+          assert(packageDrawCount==count && !memcmp(before,packageDraws,count*sizeof *before) &&
+                 "native badge images and geometry must survive Down/Up navigation");
+        }
+      }
+    }
+  }
+  puts("native focus: real bundled badge images unchanged across Down/Up, 47 widths and both color settings");
+}
 static void colorEmoji(void) {
   GLuint image=0;
   for(int tries=0;tries<200 && !image;tries++) {
@@ -201,6 +262,7 @@ static void pixels(const char *dir) {
     }
   fflush(stdout);
   assert(ok && "unfocused text and icons must preserve the previous RGB and alpha");
+  nativeFocusRoundTrip(dir);
   tex_encerrar();
 }
 static void formatterPresentation(const char *dir) {
