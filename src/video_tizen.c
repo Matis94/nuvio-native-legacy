@@ -1622,6 +1622,11 @@ void video_janela_fonte(int sx, int sy, int sw, int sh,
 const char *video_url_atual(void) { return urlAtual; }
 double video_pos(void)        { return posSeg; }
 double video_duracao(void)    { return durSeg; }
+// AVPlay does not expose download-cache byte counts.
+void video_download_buffer(long long *used, long long *capacity) {
+  if (used) *used = 0;
+  if (capacity) *capacity = 0;
+}
 // O AVPlay so informa PORCENTAGEM de buffering (onbufferingprogress), nunca um
 // instante. 0 e o que video.h define como "desconhecido"; quem chama ja trata.
 double video_buffer_fim(void) { return 0; }

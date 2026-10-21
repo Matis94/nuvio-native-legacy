@@ -1964,6 +1964,11 @@ double video_duracao(void) {
 }
 // Capitulos do MKV lidos por um fio lateral (capmkv.c, 203-capitulos).
 double video_creditos(void) { return capmkv_creditos(video_duracao()); }
+// The host exposes buffering percentage, not download-cache byte counts.
+void video_download_buffer(long long *used, long long *capacity) {
+  if (used) *used = 0;
+  if (capacity) *capacity = 0;
+}
 double video_buffer_fim(void) { return 0; }
 // SAMSUNG (.tpk): o host so repassa a PORCENTAGEM do buffering (evento 7);
 // nada de bytes, segundos, conexoes ou quadros. O host e o do link pedido.
