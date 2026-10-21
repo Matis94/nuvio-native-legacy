@@ -1,0 +1,150 @@
+name: Build custom 2.0.7 formatter badges IPK
+on:
+  push:
+    branches: [build/formatter-badges-207]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: custom-207-formatter-ipk
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      NUVIO_BUILD_PLATFORM: linux/amd64
+      NUVIO_CONTAINER_RUNTIME: docker
+      NUVIO_BUILD_JOBS: '3'
+      NUVIO_DTS_FFMPEG: '1'
+      NUVIO_DV7: '1'
+      NUVIO_RUST_MKVCORE: '1'
+      NUVIO_REQUIRE_ALL: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify application source
+        run: |
+          git fetch --no-tags --depth=1 origin b1806237874bf7879ed1814ef5593aa49ae578d1
+          git diff --exit-code b1806237874bf7879ed1814ef5593aa49ae578d1 HEAD -- src rust tools deploy
+      - name: Buffer labels and webOS buffering lifecycle regressions
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential pkg-config libsdl2-dev libgles-dev libegl-dev
+          bash tests/audio_flags.sh
+          ASAN_OPTIONS=detect_leaks=0 SANITIZE=1 bash tests/audio_flags.sh
+          bash tests/stream_parser.sh
+          bash tests/fontesmortas_version.sh
+          ASAN_OPTIONS=detect_leaks=0 SANITIZE=1 bash tests/fontesmortas_version.sh
+          bash tests/buffer_tamanho.sh
+          bash tests/buffer_overlay.sh
+          bash tests/dts_playback.sh
+          ASAN_OPTIONS=detect_leaks=0 SANITIZE=1 bash tests/dts_playback.sh
+          bash tests/video_acb_lg.sh
+          bash tests/video_buffer_teardown.sh
+      - name: Install package tool and Rust target
+        run: |
+          npm install --prefix .build-tools --no-audit --no-fund @webosose/ares-cli@2.4.0
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup target add --toolchain 1.88.0 armv7-unknown-linux-gnueabi
+      - name: Restore application configuration from verified official release
+        run: |
+          mkdir -p .build-private
+          curl -fsSL --retry 3 https://github.com/iqui27/nuvio-native-legacy/releases/download/v2.0.7/space.nuvio.native.legacy_2.0.7_arm.ipk -o .build-private/official.ipk
+          curl -fsSL --retry 3 https://github.com/iqui27/nuvio-native-legacy/releases/download/v2.0.7/SHA256SUMS -o .build-private/SHA256SUMS
+          python3 .github/build/release_config.py .build-private/official.ipk .build-private/SHA256SUMS local.properties
+      - name: Restore SDK cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .build-cache/sdk.tar.zst
+          key: custom207-sdk-amd64-${{ hashFiles('tools/Dockerfile', 'tools/build-ass-arm.sh', 'tools/build-dts-ffmpeg.sh') }}
+      - name: Build webOS SDK, libass, FFmpeg and Rust
+        run: |
+          if [ -f .build-cache/sdk.tar.zst ]; then
+            zstd -dc .build-cache/sdk.tar.zst | docker load
+          else
+            docker build --platform linux/amd64 --build-arg SDK_URL=https://github.com/openlgtv/buildroot-nc4/releases/download/webos-a38c582/arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz -t nuvio-webos-sdk tools/
+            mkdir -p .build-cache
+            docker save nuvio-webos-sdk | zstd -T2 -3 -o .build-cache/sdk.tar.zst
+          fi
+      - name: Save SDK cache
+        uses: actions/cache/save@v4
+        with:
+          path: .build-cache/sdk.tar.zst
+          key: custom207-sdk-amd64-${{ hashFiles('tools/Dockerfile', 'tools/build-ass-arm.sh', 'tools/build-dts-ffmpeg.sh') }}
+      - name: Restore P2P cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .build-p2p
+          key: custom207-p2p-amd64-${{ hashFiles('tools/p2p-motor/build-arm.sh', 'tools/p2p-motor/pasta.sh', 'tools/p2p-motor/janela-334.patch') }}
+      - name: Build official pinned P2P engine for ARM
+        run: |
+          export NUVIO_P2P_MOTOR="$GITHUB_WORKSPACE/.build-p2p"
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path("tools/p2p-motor/build-arm.sh")
+          script = p.read_text().replace("--platform linux/arm64", "--platform linux/amd64")
+          # The standalone PoC is not part of the IPK. Link and ABI checks are
+          # performed on the actual application, using the same engine archives.
+          script = script[:script.index("  SR=$NUVIO_SYSROOT")] + "'\n"
+          p.write_text(script)
+          PY
+          NV_JOBS=2 bash tools/p2p-motor/build-arm.sh "$NUVIO_P2P_MOTOR/arm"
+          git checkout -- tools/p2p-motor/build-arm.sh
+      - name: Save P2P cache
+        uses: actions/cache/save@v4
+        with:
+          path: .build-p2p
+          key: custom207-p2p-amd64-${{ hashFiles('tools/p2p-motor/build-arm.sh', 'tools/p2p-motor/pasta.sh', 'tools/p2p-motor/janela-334.patch') }}
+      - name: Compile and package custom test
+        run: |
+          export RUSTUP_HOME="$HOME/.rustup"
+          export CARGO_HOME="$HOME/.cargo"
+          export RUSTUP_TOOLCHAIN=1.88.0
+          export NUVIO_P2P_MOTOR="$GITHUB_WORKSPACE/.build-p2p"
+          export NUVIO_ARES_PACKAGE="$GITHUB_WORKSPACE/.build-tools/node_modules/.bin/ares-package"
+          export NUVIO_RELEASE_OUT="$GITHUB_WORKSPACE/output"
+          python3 - <<'PY'
+          import json, pathlib
+          p = pathlib.Path("deploy/app/appinfo.json")
+          data = json.loads(p.read_text())
+          assert data["version"] == "2.0.7"
+          assert data["id"] == "space.nuvio.native.legacy"
+          data["title"] = "Nuvio Legacy (custom 2.0.7 formatter badges v1)"
+          p.write_text(json.dumps(data, indent=2)+"\n")
+          PY
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path("tools/arm.sh")
+          source = p.read_text()
+          hook = "cp nuvio-proto.arm deploy/app/nuvio-proto"
+          assert source.count(hook) == 1
+          p.write_text(source.replace(hook, "python3 .github/build/strip_app.py\n" + hook))
+          PY
+          bash tools/arm.sh --ipk --build
+          git checkout -- tools/arm.sh
+          mv output/space.nuvio.native.legacy_2.0.7_arm.ipk output/space.nuvio.native.legacy_2.0.7_arm-custom-formatter-badges-v1.ipk
+      - name: Check ARM dynamic dependencies
+        run: |
+          readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
+          readelf -d nuvio-proto.arm | grep NEEDED
+          python3 - <<'PY'
+          import re, subprocess
+          versions = re.findall(r"GLIBC_(\d+)\.(\d+)", subprocess.check_output(["readelf", "--version-info", "nuvio-proto.arm"], text=True))
+          assert versions and max(tuple(map(int,v)) for v in versions) <= (2,12), "Unexpected minimum glibc"
+          dependencies = subprocess.check_output(["readelf", "-d", "nuvio-proto.arm"], text=True)
+          assert "libcurl" not in dependencies
+          print("ARM ABI and glibc requirements verified.")
+          PY
+      - name: Upload IPK
+        uses: actions/upload-artifact@v4
+        with:
+          name: custom-2.0.7-webos-ipk
+          path: output/*.ipk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Remove temporary configuration
+        if: always()
+        run: rm -rf local.properties .build-private
