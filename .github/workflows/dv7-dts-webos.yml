@@ -42,7 +42,7 @@ jobs:
           bash tests/rede_dns.sh
           bash tests/dts_playback.sh
           SANITIZE=1 bash tests/dts_playback.sh
-      - name: Independent device-local DV7 option
+      - name: Independent device-local DV7 and DTS recovery settings
         if: ${{ !cancelled() && matrix.group == 'settings' }}
         run: bash tests/dv7_settings.sh
       - name: Build minimal host FFmpeg

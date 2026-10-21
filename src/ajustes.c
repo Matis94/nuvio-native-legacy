@@ -696,6 +696,7 @@ typedef enum {
   AJ_HDR_INTERFACE,    // Experimental Android HDR output; device-local
   AJ_LIMPAR_CACHE,
   AJ_DV7, // independent P7 conversion, append-only
+  AJ_DTS_RECOVERY, // webOS recovery, independent of P7, append-only
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1814,6 +1815,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Interface em HDR (teste)", V_VIDRO_FOSCO, 2),
   ACAO("Limpar cache"),
   ESC("Dolby Vision P7 to P8.1 (experimental)", V_LIGA, 2),
+  ESC("DTS playback recovery", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2135,6 +2137,7 @@ static const char *CHAVE[] = {
   "hdrInterfaceLocal",
   "-limparCache",
   "dv7ConversionLocal",
+  "dtsRecoveryLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3643,6 +3646,13 @@ int ajustes_dts_tpk_modo(void) {
 }
 int ajustes_dv_mkv(void)              { return lig(AJ_DV_MKV); }
 int ajustes_dv7(void) { return lig(AJ_DV7); }
+int ajustes_dts_recovery(void) {
+#if defined(NV_DTS_WEBOS_RECOVERY) && !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
+  return valor[AJ_DTS_RECOVERY] != 1;
+#else
+  return 0;
+#endif
+}
 int ajustes_hist_conta(void)          { return lig(AJ_HIST_CONTA); }
 int ajustes_social(void)              { return lig(AJ_SOCIAL); }
 int ajustes_amigos_estilo(void)       { return valor[AJ_AMIGOS_ESTILO]; }
@@ -5868,7 +5878,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_AUDIO_OFFSET:   /* audio presentation calibration belongs to this TV */
     case AJ_DTS_AC3:        /* o conversor de DTS e desta TV */
     case AJ_DV_MKV:         /* o demux e o decoder sao desta TV */
-    case AJ_DV7:
+    case AJ_DV7: case AJ_DTS_RECOVERY:
     case AJ_HIST_CONTA: case AJ_SOCIAL: /* por perfil desta TV (perfilLocal); o web nao tem */
     case AJ_TAM_MAX: case AJ_TAM_MIN: /* o web nao tem a faixa de tamanho */
     case AJ_ESPACO_FILEIRAS: case AJ_ESPACO_TITULOS: /* o web nao tem espacamento */
@@ -6331,6 +6341,9 @@ static int foraDestaPlataforma(int op) {
 #if defined(NV_TPK) || defined(NV_ANDROID)
   if (op == AJ_DV_MKV) return 1;
   if (op == AJ_DV7) return 1;
+#endif
+#if !defined(NV_DTS_WEBOS_RECOVERY) || defined(NV_TPK) || defined(NV_ANDROID) || defined(__EMSCRIPTEN__)
+  if (op == AJ_DTS_RECOVERY) return 1;
 #endif
 #ifndef NV_ANDROID
   if (op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO) return 1;
@@ -7614,6 +7627,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_HIST_CONTA: return "Ligado (padrão): o que você assiste neste perfil sobe para a conta Nuvio, com o progresso e os vistos. Desligado: nada disso é enviado à conta; o Trakt e o Simkl vinculados a este perfil continuam recebendo. Vale só para este perfil.";
     case AJ_SOCIAL: return "Ligado (padrão): amigos, atividade deles e recomendações. Desligado: tudo isso some, com a fileira de amigos da Home, e o app para de falar com o serviço social. Salvos e Avisos continuam. Vale só para este perfil.";
     case AJ_DV_MKV: return "Arquivos MKV em Dolby Vision perfil 5 ou 8 tocam com o Dolby Vision ligado, em vez de HDR10. O áudio Dolby Digital e Dolby Digital Plus vai direto para a TV. Se a conexão não acompanhar, o vídeo continua em HDR10. Só em TVs LG com webOS 4 ou mais novo.";
+    case AJ_DTS_RECOVERY: return "Retries failed or stalled downloads, corrects bounded short forward audio timestamp gaps and attempts bounded playback recovery during DTS/DV conversion. Also works with SDR movies and DTS audio. Independent of Dolby Vision P7 conversion. Turn off to disable these recovery mechanisms. Applies to the next video.";
     case AJ_DV7: return "Convert Dolby Vision Profile 7 MKV to Profile 8.1. Keeps base video and dynamic metadata; discards the enhancement layer, including FEL. Applies to the next video.";
     case AJ_CW_RETIDO_TAMBEM: return "Quando o título está na ilha ou em Retomar agora, mostra também na fileira Continuar assistindo.";
     case AJ_EP_TAMANHO: return "Pequeno, Médio (padrão) ou Grande. Só vale no layout Moderno, na página de séries. Vale só nesta TV.";
@@ -10241,7 +10255,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_LEG_CONTORNO_COR:
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA:
     case AJ_QUALIDADE: case AJ_DV: case AJ_ATMOS: case AJ_LEG_LINGUA: case AJ_LEG_LINGUA2: case AJ_CACHE_SEEK: case AJ_BUFFER: case AJ_PLAYER_EXTERNO: case AJ_PLAYER_ANIME: case AJ_ESTAT_TAMANHO: case AJ_ESTAT_LADO:
-    case AJ_DV_MKV:
+    case AJ_DV_MKV: case AJ_DTS_RECOVERY:
     case AJ_LEG_FORCADA:
     case AJ_AUD_LINGUA: case AJ_AUD_LINGUA2: case AJ_PAUSA_OVERLAY: case AJ_PLR_CLASSIF: case AJ_TELA_ABERTURA: case AJ_ABERTURA_ADDON: case AJ_ABERTURA_FUNDO: case AJ_ABERTURA_ESTILO: case AJ_FONTE_MANUAL:
     case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_TEXTO: case AJ_FONTE_ORDEM_ADDON: case AJ_SELOS_CORES: case AJ_FONTE_TOCAR_CONFERINDO: case AJ_FONTE_AQUECER: case AJ_FONTE_CONFERIR_VARIAS: case AJ_FONTE_PREPARAR: case AJ_FONTE_PRECARREGAR:

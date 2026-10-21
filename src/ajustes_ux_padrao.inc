@@ -341,3 +341,4 @@
   0, /* experimental HDR menus: Off */
   0, /* clear cache action */
   1, /* experimental P7 conversion: Off until explicitly enabled */
+  0, /* DTS playback recovery: On, independent of DV7 */

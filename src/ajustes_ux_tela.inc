@@ -49,6 +49,9 @@ static const Item TELA[] = {
 #ifdef NV_DV7_CONVERSION
       OPC(AJ_DV7),
 #endif
+#ifdef NV_DTS_WEBOS_RECOVERY
+      OPC(AJ_DTS_RECOVERY),
+#endif
 #endif
       OPC(AJ_CACHE_SEEK), OPC(AJ_MANTER_VIDEO), OPC(AJ_RETOMADA_MORNA), OPC(AJ_MANTER_PRAZO), OPC(AJ_SEEKR_AJUSTE),
 #if defined(NV_ANDROID) || (!defined(NV_TPK) && !defined(__EMSCRIPTEN__))

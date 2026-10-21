@@ -28,6 +28,27 @@ builds retain their original personality stub.
 - Reuse a healthy open source for explicit seeks, with full-reopen fallback.
 - Invalidate closing native callbacks before replacing a DTS session.
 
+### Independent recovery setting
+
+**DTS playback recovery** defaults to **On** on webOS builds compiled with
+`NV_DTS_WEBOS_RECOVERY`. It controls failed-range retries, early retry of an
+actively awaited stalled range, bounded forward-gap padding and bounded automatic
+native stall/timestamp reloads. It applies to the next converter session and
+works for SDR/HDR DTS sources with P7 conversion disabled as well as DV paths.
+
+The independent P7 switch controls only image-profile conversion. Recovery Off
+keeps P7 conversion available, stops the added HTTP retries/early watchdog,
+rejects discontinuities without silence padding and does not automatically
+reload a stalled/broken timestamp timeline. Explicit seeks (including healthy
+source reuse), pause, subtitles, audio-track switching, core fallback and
+credential/range validation are unchanged. Both preferences stay on this TV;
+they are excluded from account sync and device backup.
+
+This topic branch already kept recovery independent of P7. The upstream
+`febd70a` integration added `allow_p7` gates to recovery; when applying this
+change there, use the recovery policy instead of `allow_p7` for transport,
+padding and automatic reload decisions. Never derive recovery from a DV profile.
+
 New HTTP retry/padding behavior is enabled by `NV_DTS_WEBOS_RECOVERY`, added
 by the webOS ARM build. Without this flag, failed range reads receive the
 original single fetch and timestamp discontinuities retain the original

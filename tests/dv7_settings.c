@@ -19,5 +19,34 @@ int main(void) {
 #else
   assert(n==0);
 #endif
-  puts("PASS: DV7 defaults off, stays local, independent and build-gated; upstream settings retain their indexes");
+  assert(AJ_DTS_RECOVERY==AJ_DV7+1);
+  assert(valorPadrao[AJ_DTS_RECOVERY]==0 && !strcmp(CHAVE[AJ_DTS_RECOVERY],"dtsRecoveryLocal"));
+  assert(somenteDesteAparelho(AJ_DTS_RECOVERY) && !dePerfil(AJ_DTS_RECOVERY));
+  assert(!ajustePortavel(AJ_DTS_RECOVERY) && !ajusteAparelho(AJ_DTS_RECOVERY));
+  int recoveryRows=0;
+  for(int i=0;i<AJ_N_TELA;i++) if(TELA[i].tipo==IT_OPC && TELA[i].op==AJ_DTS_RECOVERY) recoveryRows++;
+#ifdef NV_DTS_WEBOS_RECOVERY
+  assert(recoveryRows==1 && ajustes_dts_recovery());
+  // All four preference combinations: P7 never changes recovery and vice versa.
+  for(int p7=0;p7<2;p7++) for(int recovery=0;recovery<2;recovery++) {
+    valor[AJ_DV7]=!p7;valor[AJ_DTS_RECOVERY]=!recovery;
+    assert(ajustes_dv7()==p7 && ajustes_dts_recovery()==recovery);
+  }
+  char dir[]="/tmp/nuvio-independent-dts-settings-XXXXXX";assert(mkdtemp(dir));ajustes_dir(dir);
+  valor[AJ_DV7]=1;valor[AJ_DTS_RECOVERY]=0;assert(gravar());
+  valor[AJ_DV7]=0;valor[AJ_DTS_RECOVERY]=1;ajustes_dir(dir);
+  assert(!ajustes_dv7() && ajustes_dts_recovery());
+  valor[AJ_DV7]=0;valor[AJ_DTS_RECOVERY]=1;assert(gravar());
+  valor[AJ_DV7]=1;valor[AJ_DTS_RECOVERY]=0;ajustes_dir(dir);
+  assert(ajustes_dv7() && !ajustes_dts_recovery());
+  assert(!ajustes_aplicar_blob("{\"dtsRecoveryLocal\":0}"));
+  assert(!ajustes_aplicar_blob("{\"c_settings_v1\":{\"values\":{\"c_dtsRecoveryLocal\":0}}}"));
+  assert(!ajustes_dts_recovery());
+  char *blob=NULL;ajustes_mesclar_blob("{}",&blob);assert(!blob || !strstr(blob,"dtsRecoveryLocal"));free(blob);
+  char path[512];snprintf(path,sizeof path,"%s/ajustes.txt",dir);unlink(path);rmdir(dir);
+#else
+  assert(!recoveryRows && !ajustes_dts_recovery());
+  valor[AJ_DTS_RECOVERY]=0;assert(!ajustes_dts_recovery());
+#endif
+  puts("PASS: independent DV7/recovery preferences, local persistence, sync isolation and compile-time boundaries");
 }
