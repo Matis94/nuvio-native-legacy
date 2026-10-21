@@ -3320,6 +3320,9 @@ static int automaticoDaFolhaModo(void) {
   unsigned novaRev = atomic_load(&folhaDadosRev);
   uint64_t novaConfig = folhaConfigMarca();
   if (!folhaAutoValido || rev != novaRev || ger != listaGeracao || total != n || config != novaConfig) {
+    // Channel resolution/codec metadata used to be filled lazily by drawing.
+    // Complete it before caching the recommendation, once per source change.
+    if (canalFolha) for (int i=0;i<n;i++) stream_canal_enriquecer(&lista[i]);
     rev = novaRev; ger = listaGeracao; total = n; config = novaConfig;
     folhaAutoCalculos++;
     folhaAutoEscolha = !canalFolha && ajustes_fonte_primeira() ? automaticoPrimeira() : automaticoCom(!canalFolha);
