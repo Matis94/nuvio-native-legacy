@@ -7,9 +7,30 @@ static size_t countedClean(const char *s, char *d, size_t n, int flags) {
   cleanCalls++;
   return nv_limpar_texto(s, d, n, flags);
 }
+#include "badges.h"
+static struct { uint64_t mask; float x,y,budget,width; } badgeDraws[32];
+static int badgeDrawCount, recordBadges;
+static float rememberBadges(uint64_t mask,float x,float y,float budget,float width) {
+  if(recordBadges && badgeDrawCount<32) {
+    int i=badgeDrawCount++;
+    badgeDraws[i].mask=mask;badgeDraws[i].x=x;badgeDraws[i].y=y;
+    badgeDraws[i].budget=budget;badgeDraws[i].width=width;
+  }
+  return width;
+}
+static float trackedBadges(uint64_t mask,float x,float y,float w,float h,float r,float g,float b,float a) {
+  return rememberBadges(mask,x,y,w,badges_desenhar_fonte(mask,x,y,w,h,r,g,b,a));
+}
+static float trackedColored(uint64_t mask,float x,float y,float w,float h,float a) {
+  return rememberBadges(mask,x,y,w,badges_desenhar_selos(mask,x,y,w,h,a));
+}
+#define badges_desenhar_fonte trackedBadges
+#define badges_desenhar_selos trackedColored
 #define nv_limpar_texto countedClean
 #include "../src/streams.c"
 #undef nv_limpar_texto
+#undef badges_desenhar_fonte
+#undef badges_desenhar_selos
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 #include <unistd.h>
@@ -70,7 +91,7 @@ static int pixelLine(const char *label, TxtEstilo style, const char *s,
   glClearColor(background/255.0f,background/255.0f,background/255.0f,1);
   glClear(GL_COLOR_BUFFER_BIT);
   if(icon) {
-    gfx_icone((GfxRect){x,y+3,22,22},icon,r/255.0f,g/255.0f,b/255.0f,alpha);
+    badges_emoji(icon,x,y+3,22,alpha);
     x+=30;
   }
   TxtLinha l=txt_linha(style,s,r,g,b,255);
@@ -84,9 +105,51 @@ static int pixelLine(const char *label, TxtEstilo style, const char *s,
   printf("pixels %s bg=%d alpha=%.1f mismatches=%d ink=%d\n",label,background,alpha,mismatches,ink);
   return mismatches==0 && ink>0 && (!icon || iconInk>0);
 }
+static void focusBadges(const char *dir) {
+  Stream s=fixtures[1];
+  snprintf(s.provedor,sizeof s.provedor,"AIOStreams very long provider name");
+  snprintf(s.descricao,sizeof s.descricao,"4K REMUX DV HDR10 HEVC TrueHD Atmos DTS-HD MA 7.1");
+  snprintf(s.audioIdiomas,sizeof s.audioIdiomas,"Polish,English,German,French");
+  s.badges=badges_detectar(s.descricao);s.audioDescritores=STREAM_AUDIO_MULTI;
+  for(int colored=0;colored<=1;colored++) for(int flags=0;flags<=1;flags++) {
+    char path[512];snprintf(path,sizeof path,"%s/ajustes.txt",dir);
+    FILE *f=fopen(path,"w");assert(f);
+    fprintf(f,"fonteTextoLocal 0\naudioFlagsLocal %d\nselosColoridosLocal %d\n",!flags,!colored);
+    fclose(f);ajustes_dir(dir);
+    assert(ajustes_selos_coloridos()==colored && ajustes_audio_flags()==flags);
+    stream_definir_lista(&s,1);stream_folha_abrir();
+    for(int w=1100;w<=1920;w+=205) {
+      grupo=0;linhaAnt=-1;abreAnt=abreFoco=0;rolagem=0;montar(-1);
+      for(int j=0;j<40;j++){tex_bombear(32);txt_novo_quadro();corpoFolha(0,w,1,SDL_GetTicks(),0);SDL_Delay(2);}
+      badgeDrawCount=0;recordBadges=1;txt_novo_quadro();corpoFolha(0,w,1,SDL_GetTicks(),0);
+      assert(badgeDrawCount>0);
+      unsigned char before[sizeof badgeDraws];memcpy(before,badgeDraws,sizeof before);
+      int count=badgeDrawCount;
+      grupo=1;foco=0;badgeDrawCount=0;txt_novo_quadro();corpoFolha(0,w,1,SDL_GetTicks(),0);recordBadges=0;
+      assert(badgeDrawCount==count);
+      assert(!memcmp(before,badgeDraws,count*sizeof badgeDraws[0]) &&
+             "focus must preserve badge positions, available budget and rendered width with inline flags");
+    }
+  }
+  puts("focus regression: crowded badges retain geometry/width with flags on/off and both badge colors");
+}
+static void colorEmoji(void) {
+  GLuint image=0;
+  for(int tries=0;tries<200 && !image;tries++) {
+    tex_bombear(8);image=tex_obter_larg("deploy/app/art/formatter-emoji/1f3ac.png",22);
+    if(!image)SDL_Delay(5);
+  }
+  assert(image);glClearColor(.2,.2,.2,1);glClear(GL_COLOR_BUFFER_BIT);
+  badges_emoji("1f3ac",20,20,22,1);
+  unsigned char pixels[22*22*4];glReadPixels(20,1080-42,22,22,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+  int colored=0;
+  for(size_t p=0;p<sizeof pixels;p+=4)
+    if(abs(pixels[p]-pixels[p+1])>15 || abs(pixels[p+1]-pixels[p+2])>15)colored++;
+  assert(colored>10 && "formatter emoji must preserve colored RGB artwork");
+}
 static void pixels(const char *dir) {
-  assert(tex_iniciar(64)); gfx_icones_dir("deploy/app/art");
-  const char *paths[]={"deploy/app/art/icones/aj_hard-drive.png","deploy/app/art/icones/aj_volume-2.png"};
+  assert(tex_iniciar(128)); gfx_icones_dir("deploy/app/art");badges_carregar("deploy/app/art");
+  const char *paths[]={"deploy/app/art/formatter-emoji/1f4be.png","deploy/app/art/formatter-emoji/1f50a.png"};
   for(int i=0;i<2;i++) {
     GLuint icon=0;
     for(int tries=0;tries<200 && !icon;tries++) {
@@ -95,6 +158,7 @@ static void pixels(const char *dir) {
     }
     assert(icon && "pixel assertion must draw real icons");
   }
+  focusBadges(dir);colorEmoji();
   int ok=1;
   for(int addon=0;addon<=1;addon++) for(int failed=0;failed<=1;failed++)
     for(int bg=77;bg<=220;bg+=143) for(int fade=0;fade<=1;fade++) {
@@ -137,11 +201,11 @@ static void formatterPresentation(const char *dir) {
   LinhaAddon line;
   const char *text="🗣️🌍 🇵🇱🇬🇧 DUAL Dubbed";
   pecasAddon(text,strlen(text),&line);
-  assert(line.n==4 && !strcmp(line.ic[0],"aj_languages") && !strcmp(line.ic[1],"aj_globe"));
+  assert(line.n==4 && !strcmp(line.ic[0],"1f5e3") && !strcmp(line.ic[1],"1f30d"));
   assert(!strcmp(line.pais[2],"pl") && !strcmp(line.pais[3],"gb"));
   assert(!strcmp(line.tx[3],"DUAL Dubbed"));
   for(size_t k=0;k<sizeof EMOJI_ICONE/sizeof *EMOJI_ICONE;k++) {
-    char path[512]; snprintf(path,sizeof path,"deploy/app/art/icones/%s.png",EMOJI_ICONE[k].icone);
+    char path[512]; snprintf(path,sizeof path,"deploy/app/art/formatter-emoji/%s.png",EMOJI_ICONE[k].icone);
     assert(access(path,R_OK)==0 && "formatter icons must ship offline");
   }
   Stream s=fixtures[0];

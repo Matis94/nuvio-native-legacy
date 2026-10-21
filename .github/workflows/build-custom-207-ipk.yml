@@ -26,8 +26,8 @@ jobs:
           persist-credentials: false
       - name: Verify application source
         run: |
-          git fetch --no-tags --depth=1 origin b1806237874bf7879ed1814ef5593aa49ae578d1
-          git diff --exit-code b1806237874bf7879ed1814ef5593aa49ae578d1 HEAD -- src rust tools deploy
+          git fetch --no-tags --depth=1 origin cf1c16146c18574b40fb091b82b0a909aebe8d9b
+          git diff --exit-code cf1c16146c18574b40fb091b82b0a909aebe8d9b HEAD -- src rust tools deploy
       - name: Buffer labels and webOS buffering lifecycle regressions
         run: |
           sudo apt-get update -qq
@@ -111,7 +111,7 @@ jobs:
           data = json.loads(p.read_text())
           assert data["version"] == "2.0.7"
           assert data["id"] == "space.nuvio.native.legacy"
-          data["title"] = "Nuvio Legacy (custom 2.0.7 formatter badges v1)"
+          data["title"] = "Nuvio Legacy (custom 2.0.7 formatter badges v2)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -124,7 +124,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.7_arm.ipk output/space.nuvio.native.legacy_2.0.7_arm-custom-formatter-badges-v1.ipk
+          mv output/space.nuvio.native.legacy_2.0.7_arm.ipk output/space.nuvio.native.legacy_2.0.7_arm-custom-formatter-badges-v2.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
