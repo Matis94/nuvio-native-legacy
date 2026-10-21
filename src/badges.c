@@ -13,7 +13,7 @@
 static const char *ids[]={"r-4k","r-1080","r-720","r-sd","q-remux","q-bluray","q-webdl","q-webrip","q-seadex","v-dv","v-hdr10plus","v-hdr10","v-hdr","v-hlg","v-imax-enhanced","v-imax","v-sdr","a-atmos-dv","a-atmos","a-truehd-dv","a-truehd","a-dtsx","a-dtshdma","a-dtshd","a-dts","a-dd-dv","a-ddp","a-dd","c-71","c-51","co-x265","co-x264","co-av1","p-netflix","p-prime","p-appletv","p-disney","p-max","p-hulu","p-peacock","p-paramount","p-crave","p-crunchyroll"};
 #define NB (sizeof ids/sizeof ids[0])
 static struct {char image[700],name[64];} art[NB];
-static char bandeirasDir[600];
+static char bandeirasDir[600], emojiDir[600];
 // BUSCA DO BIT LEMBRADA PELO ENDERECO DO TEXTO. Quem chama passa literal
 // ("r-4k", "v-dv"...), e a folha de Fontes chama isto milhares de vezes por
 // quadro (grupoRes/ehHdr/nivelHdr por fonte, 2-3 montagens por quadro):
@@ -171,6 +171,7 @@ float marca_formato(FormatoMarca f, float x, float y, float altura,
     return (float)l.w; }
 }
 void badges_carregar(const char *dir) {
+  snprintf(emojiDir, sizeof emojiDir, "%s/formatter-emoji", dir);
   snprintf(bandeirasDir, sizeof bandeirasDir, "%s/flags", dir);
   char path[700];snprintf(path,sizeof path,"%s/badges/index.json",dir);FILE *f=fopen(path,"rb");if(!f)return;
   char body[24000];size_t n=fread(body,1,sizeof body-1,f);body[n]=0;fclose(f);
@@ -178,6 +179,17 @@ void badges_carregar(const char *dir) {
     js_texto(p,e,"id",id,sizeof id);js_texto(p,e,"name",name,sizeof name);js_texto(p,e,"image",file,sizeof file);
     if(strchr(file,'/')||strstr(file,".."))continue;
     for(size_t i=0;i<NB;i++)if(!strcmp(ids[i],id)){snprintf(art[i].image,sizeof art[i].image,"%s/badges/%s",dir,file);snprintf(art[i].name,sizeof art[i].name,"%s",name);}
+  }
+}
+void badges_emoji(const char *id, float x, float y, float size, float alpha) {
+  char path[640];
+  if (!id || !*id || strlen(id)>48 || !emojiDir[0]) return;
+  for (const char *p=id; *p; p++) if (!isxdigit((unsigned char)*p) && *p!='-') return;
+  snprintf(path,sizeof path,"%s/%s.png",emojiDir,id);
+  GLuint tex=tex_obter_larg(path,size);
+  if (tex) {
+    gfx_tex_aspect_atual=0;
+    gfx_rect((GfxRect){x,y,size,size},tex,GFX_ARTE,0,0,0,0,1,1,1,alpha);
   }
 }
 void badges_bandeira(const char *pais, float x, float y, float w, float h, float alpha) {

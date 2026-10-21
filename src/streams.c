@@ -3632,31 +3632,30 @@ static void linhaLimpa(char *d, size_t tam, const char *ini, size_t n) {
   }
   d[k] = 0;
 }
-// Emoji do formatador -> icone Lucide (aj_<nome>.png). A TV nao tem emoji
-// colorido; o que nao esta aqui sai limpo em nv_limpar_texto (sem quadrado).
-// Um emoji pode vir com o seletor de variacao U+FE0F (EF B8 8F) colado.
+// Bundled color emoji keep formatter symbols visible on TVs without an emoji font.
+// Optional U+FE0F variation selectors are consumed with the base symbol.
 static const struct { const char *emoji, *icone; } EMOJI_ICONE[] = {
-  { "🎬", "aj_clapperboard" },
-  { "🎨", "aj_palette" },
-  { "🎧", "aj_headphones" },
-  { "🗣", "aj_languages" },
-  { "🌍", "aj_globe" }, { "🌎", "aj_globe" }, { "🌏", "aj_globe" },
-  { "📀", "aj_disc-3" }, { "💿", "aj_disc-3" }, { "💽", "aj_disc-3" },
-  { "🖥", "aj_monitor-play" }, { "💻", "aj_monitor-play" },
-  { "📺", "aj_tv-minimal-play" },
-  { "📁", "aj_folders" }, { "🌱", "aj_sprout" },
-  { "🔎", "aj_search" }, { "📅", "aj_calendar" },
-  { "ℹ", "aj_info" }, { "☁", "aj_cloud" }, { "⌛", "aj_clock" },
-  { "\xF0\x9F\x92\xBE", "aj_hard-drive" },   // 💾
-  { "\xF0\x9F\x91\xA4", "aj_users" },        // 👤
-  { "\xF0\x9F\x8E\x9E", "aj_film" },         // 🎞
-  { "\xF0\x9F\x94\x8A", "aj_volume-2" },     // 🔊
-  { "\xF0\x9F\x8C\x90", "aj_globe" },        // 🌐
-  { "\xE2\x9A\x99",     "aj_settings-2" },  // ⚙
-  { "\xE2\x9A\xA1",     "aj_zap" },         // ⚡
-  { "\xF0\x9F\x93\xA6", "aj_package" },      // 📦
-  { "\xF0\x9F\x8F\xB7", "aj_tag" },          // 🏷
-  { "\xE2\x8F\xB1",     "aj_clock" },       // ⏱
+  { "🎬", "1f3ac" },
+  { "🎨", "1f3a8" },
+  { "🎧", "1f3a7" },
+  { "🗣", "1f5e3" },
+  { "🌍", "1f30d" }, { "🌎", "1f30e" }, { "🌏", "1f30f" },
+  { "📀", "1f4c0" }, { "💿", "1f4bf" }, { "💽", "1f4bd" },
+  { "🖥", "1f5a5" }, { "💻", "1f4bb" },
+  { "📺", "1f4fa" },
+  { "📁", "1f4c1" }, { "🌱", "1f331" },
+  { "🔎", "1f50e" }, { "📅", "1f4c5" },
+  { "ℹ", "2139" }, { "☁", "2601" }, { "⌛", "231b" },
+  { "\xF0\x9F\x92\xBE", "1f4be" },   // 💾
+  { "\xF0\x9F\x91\xA4", "1f464" },        // 👤
+  { "\xF0\x9F\x8E\x9E", "1f39e" },         // 🎞
+  { "\xF0\x9F\x94\x8A", "1f50a" },     // 🔊
+  { "\xF0\x9F\x8C\x90", "1f310" },        // 🌐
+  { "\xE2\x9A\x99",     "2699" },  // ⚙
+  { "\xE2\x9A\xA1",     "26a1" },         // ⚡
+  { "\xF0\x9F\x93\xA6", "1f4e6" },      // 📦
+  { "\xF0\x9F\x8F\xB7", "1f3f7" },          // 🏷
+  { "\xE2\x8F\xB1",     "23f1" },       // ⏱
 };
 #define ADDON_PECAS 128
 // The whole description is at most 2047 bytes; share its storage between
@@ -3682,6 +3681,7 @@ typedef struct {
 static const TextoAddon *textoAddonDa(int i);
 static float textoAddonFechada(int i);
 static const char *emojiIcone(const char *p, size_t *len) {
+  if ((unsigned char)*p < 0x80) return NULL;
   for (size_t k = 0; k < sizeof EMOJI_ICONE / sizeof EMOJI_ICONE[0]; k++) {
     size_t n = strlen(EMOJI_ICONE[k].emoji);
     if (strncmp(p, EMOJI_ICONE[k].emoji, n)) continue;
@@ -3775,7 +3775,7 @@ static float corpoAddon(int index, float x, float y, float w,
         if (alpha>0) badges_bandeira(L->pais[pc],px,y+h+5,28,21,alpha);
         px+=iw;
       } else if (L->ic[pc]) {
-        if (alpha>0) gfx_icone((GfxRect){px,y+h+3,22,22},L->ic[pc],c/255.f,c/255.f,c/255.f,alpha);
+        if (alpha>0) badges_emoji(L->ic[pc],px,y+h+3,22,alpha);
         px+=iw;
       }
       if (L->tx[pc][0]) {
@@ -3913,7 +3913,7 @@ static float desenharTituloAddon(int i, float x, float y, float w, int c, float 
     if(iw) {
       if(px+iw>x+w)break;
       if(l->pais[j][0])badges_bandeira(l->pais[j],px,y+8,28,21,a);
-      else gfx_icone((GfxRect){px,y+7,22,22},l->ic[j],c/255.f,c/255.f,(c-2)/255.f,a);
+      else badges_emoji(l->ic[j],px,y+7,22,a);
       px+=iw+(l->tx[j][0]?6:4);
     }
     if(l->tx[j][0] && px<x+w) {
@@ -6178,7 +6178,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     }
     // COLUNA DA DIREITA: tamanho grande, addon embaixo. Medida primeiro: o
     // titulo e a fileira de logos param antes dela.
-    { char gb[24]="";
+    { char gb[24]="", pv[160];
       TxtLinha lg, lu, lp;
       int cg=sel?250:218;
       // No modo do addon o tamanho ja vem no texto dele; so o addon fica.
@@ -6189,11 +6189,13 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       // diz se a fonte abre (log da 2.0.0 no Android: "metadados nao chegaram
       // em 30 s"); a pessoa escolhia as cegas. "seeds" fica sem traducao: e o
       // termo que quem usa torrent conhece em qualquer idioma.
-      { char pv[160];
-        legendaProvedor(s,pv,sizeof pv);
-        lp=txt_linha_corta(TXT_PG_FIM,pv,150,150,148,255,340); }
+      legendaProvedor(s,pv,sizeof pv);
+      lp=txt_linha_corta(TXT_PG_FIM,pv,150,150,148,255,340);
       colW=lp.w;
       if(gb[0] && lg.w+6+lu.w>colW) colW=lg.w+6+lu.w;
+      // Info occupies the provider column, never the badge/flag row.
+      colW=fmaxf(colW,30);
+      if(sel) lp=txt_linha_corta(TXT_PG_FIM,pv,150,150,148,255,colW-30);
       cy=y+20+(temMarca(i,automatica)?FOLHA_MARCA_H:0);
       if(gb[0]){
         txt_desenhar_alpha(lu,tr-lu.w,cy+(lg.h-lu.h)-3,anim);
@@ -6201,7 +6203,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       txt_desenhar_tom(lp,tr-lp.w,gb[0]?cy+40:cy+6,sel?1:110.0f/150,sel?1:110.0f/150,sel?1:108.0f/148,anim);
       // Dica da tecla Info/Amarela: so na linha em foco, no canto do addon.
       if(sel) gfx_icone((GfxRect){tr-lp.w-30,(gb[0]?cy+40:cy+6)+3,20,20},"aj_info",.62f,.62f,.62f,anim*.85f); }
-    txtW=tr-tx-colW-16-(sel?30:0);
+    txtW=tr-tx-colW-16;
     cy=y+20;
     // A MARCA: o que esta tocando (com o equalizador), a escolha anterior e a
     // automatica. Texto espacado no acento, e nao pilula: a pilula cheia era a

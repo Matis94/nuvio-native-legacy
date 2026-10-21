@@ -11,6 +11,8 @@ void badges_check_disco(float cx, float cy, float d, float a);
 float badges_check_cartao(GfxRect card, int redondo, float a);
 void badges_progresso(GfxRect card, float frac, float a);
 void badges_carregar(const char *dir);
+// Bundled formatter emoji preserve RGB and animation alpha.
+void badges_emoji(const char *id, float x, float y, float size, float alpha);
 // Bundled country artwork; keeps its RGB, independent of badge tint settings.
 void badges_bandeira(const char *pais, float x, float y, float w, float h, float alpha);
 uint64_t badges_detectar(const char *metadata);
