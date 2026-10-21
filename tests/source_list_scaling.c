@@ -196,6 +196,19 @@ int main(void) {
   assert(nFiltrados()==2121 && nOrdem==2121);
   soDub=0;ling_local_audio("");
   ranking(v);
+  Stream *live=calloc(2,sizeof *live);assert(live);
+  for(int i=0;i<2;i++) {
+    strcpy(live[i].provedor,"Live fixture");
+    snprintf(live[i].url,sizeof live[i].url,"https://fixture.invalid/live/%d",i);
+    strcpy(live[i].rotulo,i?"Channel UHD H.265":"Channel SD H.264");
+  }
+  stream_folha_canal(1);stream_definir_lista(live,2);stream_folha_abrir();anim=1;
+  stream_folha_atualizar(1.f/60,SDL_GetTicks());
+  assert(lista[1].altura==2160 && automaticoDaFolhaModo()==stream_automatico_canal());
+  unsigned liveChoices=folhaAutoCalculos,liveVisits=folhaLayoutVisitas;
+  for(int j=0;j<3;j++) {stream_folha_atualizar(1.f/60,SDL_GetTicks());stream_folha_desenhar(SDL_GetTicks());}
+  assert(liveChoices==folhaAutoCalculos && liveVisits==folhaLayoutVisitas);
+  stream_folha_canal(0);free(live);
   stream_definir_lista(NULL,0);free(v);tex_encerrar();txt_encerrar();gfx_encerrar();SDL_GL_DeleteContext(gl);SDL_DestroyWindow(win);SDL_Quit();
   puts("source list: cold/warm scrolling, both styles/orders, layout equivalence, filters, append, replacement, fonts, flags and bounded parsed cache OK");
 }
