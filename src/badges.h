@@ -20,6 +20,8 @@ uint64_t badges_bit(const char *id);
 // Fileira de logos tingidos (r,g,b em 0..1), para a linha de selos da folha
 // de Fontes. Devolve a largura usada.
 float badges_desenhar_tom(uint64_t mask,float x,float y,float maxW,float h,float r,float g,float b,float a);
+// Source-sheet spacing, excluding the trailing gap so flags can follow directly.
+float badges_desenhar_fonte(uint64_t mask,float x,float y,float maxW,float h,float r,float g,float b,float a);
 
 // --- MARCA DE FORMATO (29/09/2026) -------------------------------------------
 // HDR, Dolby Vision, Atmos, DTS, 4K...: onde o app cita um formato de video ou

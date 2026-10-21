@@ -132,6 +132,41 @@ static void pixels(const char *dir) {
   assert(ok && "unfocused text and icons must preserve the previous RGB and alpha");
   tex_encerrar();
 }
+static void formatterPresentation(const char *dir) {
+  // Exact custom-formatter symbols, compound heading and in-place flag order.
+  LinhaAddon line;
+  const char *text="🗣️🌍 🇵🇱🇬🇧 DUAL Dubbed";
+  pecasAddon(text,strlen(text),&line);
+  assert(line.n==4 && !strcmp(line.ic[0],"aj_languages") && !strcmp(line.ic[1],"aj_globe"));
+  assert(!strcmp(line.pais[2],"pl") && !strcmp(line.pais[3],"gb"));
+  assert(!strcmp(line.tx[3],"DUAL Dubbed"));
+  for(size_t k=0;k<sizeof EMOJI_ICONE/sizeof *EMOJI_ICONE;k++) {
+    char path[512]; snprintf(path,sizeof path,"deploy/app/art/icones/%s.png",EMOJI_ICONE[k].icone);
+    assert(access(path,R_OK)==0 && "formatter icons must ship offline");
+  }
+  Stream s=fixtures[0];
+  snprintf(s.rotulo,sizeof s.rotulo,"🇵🇱 ☁️ [TB⚡️] Torrentio 4K");
+  snprintf(s.descricao,sizeof s.descricao,"🎬 Movie.2160p.REMUX.mkv\n📀 REMUX\n🎨 HEVC HDR DV\n🎧 TrueHD 7.1\n🗣️🌍 🇵🇱  🇬🇧 DUAL Dubbed\n💾 52.6 GB / 📁 60 GB 🌱 12 🔎 Index 🏷️ Group 📅 2d\nℹ️ Message");
+  snprintf(s.audioIdiomas,sizeof s.audioIdiomas,"Polish,English");
+  snprintf(s.legendaIdiomas,sizeof s.legendaIdiomas,"French");
+  s.audioDescritores=STREAM_AUDIO_DUAL;
+  setting(dir,1);stream_definir_lista(&s,1);stream_folha_abrir();
+  grupo=0;linhaAnt=-1;montar(-1);
+  float h=alturaLinha(0,-1);
+  const TextoAddon *t=textoAddonDa(0);
+  assert(t->nl==7 && t->cabecalho && !strcmp(t->cabecalho->pais[0],"pl"));
+  assert(t->linhas[4].n==4 && !strcmp(t->linhas[4].pais[2],"pl"));
+  s.audioIdiomas[0]=s.legendaIdiomas[0]=s.audioBandeiras[0]=0;s.audioDescritores=0;
+  stream_definir_lista(&s,1);montar(-1);
+  assert(fabsf(alturaLinha(0,-1)-h)<.01f && "addon layout must not append metadata rows");
+  setting(dir,0);stream_definir_lista(&s,1);montar(-1);h=alturaLinha(0,-1);
+  snprintf(s.audioIdiomas,sizeof s.audioIdiomas,"Polish,English");
+  stream_definir_lista(&s,1);montar(-1);
+  assert(fabsf(alturaLinha(0,-1)-h-FOLHA_FAIXA_H)<.01f && "Nuvio audio text remains visible");
+  assert(desenharAudioFlags(&lista[0],0,0,220,0)>0);
+  assert(desenharAudioFlags(&lista[0],0,0,20,0)==0);
+  puts("formatter presentation: shipped icons, inline flags, title symbols, addon metadata isolation and Nuvio audio row OK");
+}
 int main(int argc,char **argv) {
   int verify=argc==1 || strcmp(argv[1],"--measure");
   char dir[NVT_MAX]; nvt_set(dir, sizeof dir, "/nuvio-formatter479-XXXXXX"); assert(mkdtemp(dir));
@@ -188,6 +223,7 @@ int main(int argc,char **argv) {
   assert(!strcmp(textoAddonDa(1)->linhas[0].tx[0],release));
   assert(corpoAddon(0,0,0,600,1,1,0)>FOLHA_ADDON_LD);
   puts("formatter cache: long filenames, growth and wrapped measurement OK");
+  formatterPresentation(dir);
   pixels(dir);
   txt_encerrar(); stream_definir_lista(NULL,0);
   SDL_GL_DeleteContext(gl); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit();
