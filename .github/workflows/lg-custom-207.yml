@@ -48,7 +48,12 @@ jobs:
         if: ${{ !cancelled() && matrix.group == 'ui' }}
         run: |
           bash tests/playback_ram_settings.sh
+          bash tests/audio_flags.sh
+          SANITIZE=1 bash tests/audio_flags.sh
+          bash tests/fonte_ordem_addon.sh
           xvfb-run -a bash tests/fontes_formatter.sh
+          xvfb-run -a bash tests/source_list_scaling.sh
+          bash tests/fonte_lg_mp4.sh
       - name: Build minimal host FFmpeg
         if: ${{ !cancelled() && (matrix.group == 'engine' || matrix.group == 'dv') }}
         env:

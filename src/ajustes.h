@@ -166,6 +166,7 @@ int ajustes_fonte_primeira(void);
 int ajustes_fonte_ordem_addon(void);
 // 1 = a folha de Fontes mostra o nome e a descricao do addon como vieram.
 int ajustes_fonte_texto_addon(void);
+int ajustes_audio_flags(void);
 int ajustes_fonte_texto_logo(void);
 // "Outra fonte se falhar": quantas OUTRAS fontes o automatico tenta quando a
 // escolhida nao abre (0..3; 0 = nenhuma). Nao vale para escolha manual nem

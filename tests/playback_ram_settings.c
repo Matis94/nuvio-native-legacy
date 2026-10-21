@@ -21,6 +21,16 @@ int main(void) {
   assert(ajustes_buffer_ram_auto() && valorPadrao[AJ_BUFFER_RAM_AUTO] == 0);
   assert(AJ_BUFFER_RAM_AUTO == AJ_DV7 + 1); // persisted IDs are append-only
   assert(AJ_DTS_RECOVERY == AJ_BUFFER_RAM_AUTO + 1);
+  assert(AJ_AUDIO_FLAGS == AJ_DTS_RECOVERY + 1);
+  assert(ajustes_audio_flags() && valorPadrao[AJ_AUDIO_FLAGS] == 0);
+  assert(somenteDesteAparelho(AJ_AUDIO_FLAGS) && !dePerfil(AJ_AUDIO_FLAGS));
+  assert(!ajustePortavel(AJ_AUDIO_FLAGS) && !ajusteAparelho(AJ_AUDIO_FLAGS));
+  int sourceTextRow = -1, flagsRow = -1;
+  for (int i = 0; i < AJ_N_TELA; i++) if (TELA[i].tipo == IT_OPC) {
+    if (TELA[i].op == AJ_FONTE_TEXTO) sourceTextRow = i;
+    if (TELA[i].op == AJ_AUDIO_FLAGS) { assert(flagsRow == -1); flagsRow = i; }
+  }
+  assert(sourceTextRow >= 0 && flagsRow == sourceTextRow + 1);
   assert(valorPadrao[AJ_DTS_RECOVERY] == 0);
   assert(!strcmp(CHAVE[AJ_DTS_RECOVERY], "dtsRecoveryLocal"));
   assert(somenteDesteAparelho(AJ_DTS_RECOVERY) && !dePerfil(AJ_DTS_RECOVERY));
@@ -107,6 +117,13 @@ int main(void) {
   blob = NULL; ajustes_mesclar_blob("{}", &blob);
   assert(!blob || !strstr(blob, "dtsRecoveryLocal")); free(blob);
 #endif
+  for (int on = 0; on < 2; on++) {
+    valor[AJ_AUDIO_FLAGS] = !on; assert(gravar());
+    valor[AJ_AUDIO_FLAGS] = on; ajustes_dir(dir);
+    assert(ajustes_audio_flags() == on);
+    assert(!ajustes_aplicar_blob("{\"audioFlagsLocal\":0}"));
+    assert(ajustes_audio_flags() == on);
+  }
   // The legacy custom setting is consumed once and no longer serialized.
   char path[512]; snprintf(path,sizeof path,"%s/ajustes.txt",dir);
   for(int old=0;old<4;old++) {

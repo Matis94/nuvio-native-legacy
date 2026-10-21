@@ -697,6 +697,7 @@ typedef enum {
   AJ_DV7, // independent P7 conversion, append-only
   AJ_BUFFER_RAM_AUTO, // webOS local RAM reduction opt-out, append-only
   AJ_DTS_RECOVERY, // webOS recovery, independent of P7, append-only
+  AJ_AUDIO_FLAGS, // source audio flags; device-local, append-only
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1818,6 +1819,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Dolby Vision P7 to P8.1 (experimental)", V_LIGA, 2),
   ESC("Automatically reduce buffer when RAM is low", V_LIGA, 2),
   ESC("DTS playback recovery", V_LIGA, 2),
+  ESC("Audio language flags", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2141,6 +2143,7 @@ static const char *CHAVE[] = {
   "dv7ConversionLocal",
   "bufferRamAutoReduceLocal",
   "dtsRecoveryLocal",
+  "audioFlagsLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2786,6 +2789,7 @@ void ajustes_espelhar_enquetes(int ligado) { int n = ligado ? 0 : 1; if (valor[A
 int ajustes_fonte_hdr(void)        { int v = valor[AJ_FONTE_HDR]; return v < 0 || v > 2 ? 0 : v; }
 int ajustes_fonte_ordem_addon(void)   { return valor[AJ_FONTE_ORDEM_ADDON] == 1; }
 int ajustes_fonte_texto_addon(void)   { return valor[AJ_FONTE_TEXTO] == 1; }
+int ajustes_audio_flags(void)         { return lig(AJ_AUDIO_FLAGS); }
 // "Logo do titulo" (dono, 03/10, em teste): o layout do Nuvio com a logo do
 // conteudo no lugar do nome escrito em cada linha. Indice 2: o 0 e o 1 ja
 // estavam gravados em fonteTextoLocal.
@@ -5841,7 +5845,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_FONTE_PRECARREGAR:
     case AJ_FONTE_GRUPO: case AJ_FONTE_GRUPO_SESSOES:
     case AJ_LINK_REUSAR: case AJ_LINK_PRAZO:
-    case AJ_FONTE_TEXTO: case AJ_FONTE_ORDEM_ADDON:
+    case AJ_FONTE_TEXTO: case AJ_FONTE_ORDEM_ADDON: case AJ_AUDIO_FLAGS:
     case AJ_SALVOS_DEST:
     case AJ_EPG_PAIS:       /* pais da grade: por aparelho, o web nao tem */
     // Arte do destaque: o web nao tem as chaves (heroFundoLocal,
@@ -7367,6 +7371,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_FONTE_HDR: return "Preferir: fontes com HDR ou Dolby Vision vêm na frente. Indiferente: o formato não conta. Evitar: prefere SDR na mesma resolução. O Dolby Vision só entra se estiver ligado em Imagem e som; perfil 5 sem HDR10 fica atrás do HDR10, porque sai com cores erradas fora de TV Dolby Vision. Só vale para a escolha automática.";
     case AJ_FONTE_ORDEM_ADDON: return "Por qualidade: as fontes vêm agrupadas por resolução, da maior para a menor, e do maior arquivo para o menor. Do addon: cada addon na ordem em que você o instalou, e as fontes de cada um na ordem em que ele mandou — para quem já ordena no AIOStreams. A escolha automática não muda.";
     case AJ_FONTE_TEXTO: return "Do Nuvio: o nome do título em cima e os logos de qualidade embaixo. Do addon: o nome e a descrição exatamente como o addon manda — para quem já formata o texto no AIOStreams. Logo do título: a logo do título no lugar do nome escrito.";
+    case AJ_AUDIO_FLAGS: return "Show flags for audio languages declared by the addon or AIOStreams formatter. Dual/Multi labels are kept even when the languages are unknown. Subtitle languages are separate; flags do not verify the actual audio tracks.";
     case AJ_FONTE_PRAZO: return "As fontes aparecem na lista assim que cada add-on responde. A escolha automática não espera o mais lento: sai quando já há uma fonte boa ou depois deste tempo. Com uma fonte escolhida antes neste título, o add-on dela é sempre esperado.";
     case AJ_FONTE_TOCAR_CONFERINDO: return "Abre o player com a primeira fonte do automático na hora em que a conferência dela começa, em vez de esperar o resultado. Se a conferência reprovar a fonte, volta a esperar e segue para a próxima, sem baixar a qualidade. Torrent e fonte que precisa ser resolvida antes seguem o caminho de sempre.";
     case AJ_FONTE_AQUECER: return "Ao abrir a página de um título e quando as fontes chegam, abre antes a conexão com o debrid e com os hosts das primeiras fontes, para o Play não gastar esse tempo. Não resolve nenhum link e não cria arquivo no debrid.";
@@ -10270,7 +10275,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_DTS_RECOVERY: case AJ_DV_MKV:
     case AJ_LEG_FORCADA:
     case AJ_AUD_LINGUA: case AJ_AUD_LINGUA2: case AJ_PAUSA_OVERLAY: case AJ_PLR_CLASSIF: case AJ_TELA_ABERTURA: case AJ_ABERTURA_ADDON: case AJ_ABERTURA_FUNDO: case AJ_ABERTURA_ESTILO: case AJ_FONTE_MANUAL:
-    case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_TEXTO: case AJ_FONTE_ORDEM_ADDON: case AJ_SELOS_CORES: case AJ_FONTE_TOCAR_CONFERINDO: case AJ_FONTE_AQUECER: case AJ_FONTE_CONFERIR_VARIAS: case AJ_FONTE_PREPARAR: case AJ_FONTE_PRECARREGAR:
+    case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_TEXTO: case AJ_AUDIO_FLAGS: case AJ_FONTE_ORDEM_ADDON: case AJ_SELOS_CORES: case AJ_FONTE_TOCAR_CONFERINDO: case AJ_FONTE_AQUECER: case AJ_FONTE_CONFERIR_VARIAS: case AJ_FONTE_PREPARAR: case AJ_FONTE_PRECARREGAR:
     case AJ_FONTE_GRUPO: case AJ_FONTE_GRUPO_SESSOES:
     case AJ_LINK_REUSAR: case AJ_LINK_PRAZO:
     case AJ_FONTE_PRIORIDADE: case AJ_FONTE_HDR: case AJ_FONTE_IDIOMA_AUDIO:

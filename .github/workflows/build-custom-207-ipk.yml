@@ -26,12 +26,15 @@ jobs:
           persist-credentials: false
       - name: Verify application source
         run: |
-          git fetch --no-tags --depth=1 origin 67e0d6686bf5453c98c7e73e039620ce1b2f31f4
-          git diff --exit-code 67e0d6686bf5453c98c7e73e039620ce1b2f31f4 HEAD -- src rust tools deploy
+          git fetch --no-tags --depth=1 origin f9afe0169256a3957a490df3b27227d7d56b13b7
+          git diff --exit-code f9afe0169256a3957a490df3b27227d7d56b13b7 HEAD -- src rust tools deploy
       - name: Buffer labels and webOS buffering lifecycle regressions
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq build-essential pkg-config libsdl2-dev libgles-dev libegl-dev
+          bash tests/audio_flags.sh
+          ASAN_OPTIONS=detect_leaks=0 SANITIZE=1 bash tests/audio_flags.sh
+          bash tests/stream_parser.sh
           bash tests/buffer_tamanho.sh
           bash tests/buffer_overlay.sh
           bash tests/dts_playback.sh
@@ -106,7 +109,7 @@ jobs:
           data = json.loads(p.read_text())
           assert data["version"] == "2.0.7"
           assert data["id"] == "space.nuvio.native.legacy"
-          data["title"] = "Nuvio Legacy (custom 2.0.7 DTS recovery)"
+          data["title"] = "Nuvio Legacy (custom 2.0.7 audio flags)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -119,7 +122,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.7_arm.ipk output/space.nuvio.native.legacy_2.0.7_arm-custom-dts-recovery.ipk
+          mv output/space.nuvio.native.legacy_2.0.7_arm.ipk output/space.nuvio.native.legacy_2.0.7_arm-custom-audio-flags.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
