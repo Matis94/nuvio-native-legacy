@@ -3062,11 +3062,11 @@ int stream_canal_primeira_viva_sessao(int tentativas, uint64_t sessao) {
     for (q = c.n; q < c.total && canalOrdemN < CANAL_ORDEM_MAX; q++) {
       canalOrdemClasse[canalOrdemN] = 0; canalOrdem[canalOrdemN++] = q;
     }
-    folhaDadosMudaram();
     canalOrdemGeracao = c.geracao; canalOrdemSessao = c.sessao; canalInformativa = 0;
     for (q = 0; q < c.n; q++) if (c.classes[q] == 1) canalInformativa = 1;
     if (canalOrdemN && canalOrdemClasse[0] != 2) escolhida = canalOrdem[0];
     classeEscolhida = escolhida >= 0 ? c.classes[escolhida] : 0;
+    folhaDadosMudaram();
   }
   pthread_mutex_unlock(&verTrava);
   if (atual) nv_perfil_sessao_destravar();
@@ -3511,7 +3511,7 @@ static int nFiltrados(void) {
   if (montagemContagem >= 0) return montagemContagem;
   if (filtro == -1) return ondever_n(alvoPedido);
   contarFontes();
-  return filtro >= 0 && filtro < nProvedores ? folhaContagens[filtro] : 0;
+  return filtro == 0 ? folhaContagens[0] : filtro > 0 && filtro < nProvedores ? folhaContagens[filtro] : 0;
 }
 
 // A FONTE QUE O AUTOMATICO ESCOLHERIA. E a resposta a "se eu nao escolher
