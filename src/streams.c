@@ -10,7 +10,6 @@
 #include "idioma.h"
 #include "linguas.h"
 #include "badges.h"
-#include "audio_flags.h"
 #include "selospacote.h"
 #include "logotitulo.h"
 #include "tex_cache.h"
@@ -4093,66 +4092,6 @@ int stream_faixas_texto(const Stream *s, int legendas, char *saida, unsigned tam
   return (int)usado;
 }
 #define FOLHA_SELO_GAP 8.0f
-static const AudioFlags *audioFlagsDa(const Stream *s) {
-  typedef struct { AudioFlags flags; int pronta; } Entrada;
-  static Entrada *cache;
-  static int cap;
-  static unsigned ger = ~0u;
-  static AudioFlags reserva;
-  uintptr_t ptr = (uintptr_t)s, ini = (uintptr_t)lista;
-  if (!s || ptr < ini || ptr >= ini + (size_t)n * sizeof *lista) {
-    audio_flags_ler(s,&reserva); return &reserva;
-  }
-  if (ger != listaGeracao) { free(cache); cache=NULL; cap=0; ger=listaGeracao; }
-  if (cap < n) {
-    int novo = n + 32;
-    Entrada *p = realloc(cache,(size_t)novo*sizeof *p);
-    if (!p) { audio_flags_ler(s,&reserva); return &reserva; }
-    memset(p+cap,0,(size_t)(novo-cap)*sizeof *p); cache=p; cap=novo;
-  }
-  int i = (int)((ptr-ini)/sizeof *lista);
-  if (!cache[i].pronta) { audio_flags_ler(s,&cache[i].flags); cache[i].pronta=1; }
-  return &cache[i].flags;
-}
-static int temAudioFlags(const Stream *s) {
-  if (!ajustes_audio_flags()) return 0;
-  const AudioFlags *f=audioFlagsDa(s);
-  return s->audioDescritores || f->n || f->outros;
-}
-// Measure and draw the same bounded strip; full languages remain in the audio
-// text/details. No emoji font, network request, or per-source image allocation.
-static float desenharAudioFlags(const Stream *s, float x, float y, float maxW, float alpha) {
-  if (!temAudioFlags(s) || maxW < 32) return 0;
-  const AudioFlags *f=audioFlagsDa(s);
-  const char *label = (s->audioDescritores & STREAM_AUDIO_MULTI) ? "MULTI" :
-                      (s->audioDescritores & STREAM_AUDIO_DUAL) ? "DUAL" : NULL;
-  if ((s->audioDescritores & (STREAM_AUDIO_DUAL|STREAM_AUDIO_MULTI)) == (STREAM_AUDIO_DUAL|STREAM_AUDIO_MULTI)) label="DUAL/MULTI";
-  TxtLinha l={0}, more={0};
-  if(label)l=txt_linha(TXT_MINI,label,205,205,205,255);
-  float labelW=label?l.w:0;
-  unsigned vis=f->n<4?f->n:4, ocultas;
-  float largura;
-  for (;;) {
-    ocultas=f->n-vis+f->outros;
-    if(ocultas) { char b[24]; snprintf(b,sizeof b,"+%u",ocultas); more=txt_linha(TXT_MINI,b,175,175,175,255); }
-    unsigned pecas=vis+(ocultas>0)+(label!=NULL);
-    if(!pecas)return 0;
-    largura=12+vis*24.0f+(ocultas?more.w:0)+labelW+(pecas?pecas-1:0)*4.0f;
-    if(largura<=maxW)break;
-    if(vis)vis--;
-    else if(label) { label=NULL; labelW=0; }
-    else return 0;
-  }
-  if(alpha<=0)return largura;
-  GfxRect box={x,y-3,largura,FOLHA_SELO_H+6};
-  gfx_cor(box,6.0f/box.h,.10f,.11f,.13f,.88f*alpha);
-  gfx_anel(box,6.0f/box.h,1.5f,.62f,.64f,.68f,.60f*alpha);
-  x+=6;
-  for(unsigned k=0;k<vis;k++) { badges_bandeira(f->pais[k],x,y+(FOLHA_SELO_H-18)*.5f,24,18,alpha); x+=28; }
-  if(ocultas) { txt_desenhar_alpha(more,x,y+(FOLHA_SELO_H-more.h)*.5f,alpha); x+=more.w+4; }
-  if(label) txt_desenhar_alpha(l,x,y+(FOLHA_SELO_H-l.h)*.5f,alpha);
-  return largura;
-}
 static int linhasFaixas(const Stream *s) {
   int n = 0;
   if (!s) return 0;
@@ -6178,7 +6117,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     }
     // COLUNA DA DIREITA: tamanho grande, addon embaixo. Medida primeiro: o
     // titulo e a fileira de logos param antes dela.
-    { char gb[24]="", pv[160];
+    { char gb[24]="";
       TxtLinha lg, lu, lp;
       int cg=sel?250:218;
       // No modo do addon o tamanho ja vem no texto dele; so o addon fica.
@@ -6189,13 +6128,11 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       // diz se a fonte abre (log da 2.0.0 no Android: "metadados nao chegaram
       // em 30 s"); a pessoa escolhia as cegas. "seeds" fica sem traducao: e o
       // termo que quem usa torrent conhece em qualquer idioma.
-      legendaProvedor(s,pv,sizeof pv);
-      lp=txt_linha_corta(TXT_PG_FIM,pv,150,150,148,255,340);
+      { char pv[160];
+        legendaProvedor(s,pv,sizeof pv);
+        lp=txt_linha_corta(TXT_PG_FIM,pv,150,150,148,255,340); }
       colW=lp.w;
       if(gb[0] && lg.w+6+lu.w>colW) colW=lg.w+6+lu.w;
-      // Info occupies the provider column, never the badge/flag row.
-      colW=fmaxf(colW,30);
-      if(sel) lp=txt_linha_corta(TXT_PG_FIM,pv,150,150,148,255,colW-30);
       cy=y+20+(temMarca(i,automatica)?FOLHA_MARCA_H:0);
       if(gb[0]){
         txt_desenhar_alpha(lu,tr-lu.w,cy+(lg.h-lu.h)-3,anim);
@@ -6203,7 +6140,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       txt_desenhar_tom(lp,tr-lp.w,gb[0]?cy+40:cy+6,sel?1:110.0f/150,sel?1:110.0f/150,sel?1:108.0f/148,anim);
       // Dica da tecla Info/Amarela: so na linha em foco, no canto do addon.
       if(sel) gfx_icone((GfxRect){tr-lp.w-30,(gb[0]?cy+40:cy+6)+3,20,20},"aj_info",.62f,.62f,.62f,anim*.85f); }
-    txtW=tr-tx-colW-16;
+    txtW=tr-tx-colW-16-(sel?30:0);
     cy=y+20;
     // A MARCA: o que esta tocando (com o equalizador), a escolha anterior e a
     // automatica. Texto espacado no acento, e nao pilula: a pilula cheia era a
@@ -6337,8 +6274,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       int ehMp4=!strcmp(containerDa(s),"MP4");
       TxtLinha mp;
       if(ehMp4){ mp=txt_linha(TXT_HERO_META,"MP4",ai,(int)(ag*255),(int)(ab*255),255); mpW=mp.w+FOLHA_SELO_GAP; }
-      float audioW=desenharAudioFlags(s,0,0,fminf(220,txtW0*.65f),0);
-      float selosW=fmaxf(0,txtW0-mpW-(audioW>0?audioW+FOLHA_SELO_GAP:0));
+      float selosW=fmaxf(0,txtW0-mpW);
       // TODOS OS LOGOS NA MESMA TINTA (dono, 02/10: "podemos deixar elas
       // todas brancas"). A rodada de "cor so no premium" deixava uns logos no
       // acento e outros brancos, e na TV isso lia como inconsistencia, nao
@@ -6368,11 +6304,10 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       { const char *id=idiomaDa(s);
         if(id){ int c=sel?230:190;
           TxtLinha li=txt_linha(TXT_HERO_META,id,c,c,c,255);
-          if(lw+FOLHA_SELO_GAP+li.w<=txtW0-(audioW>0?audioW+FOLHA_SELO_GAP:0)){ txt_desenhar_alpha(li,tx0+(lw>0?lw+FOLHA_SELO_GAP:0),cy+(FOLHA_SELO_H-li.h)*.5f,anim); lw+=(lw>0?FOLHA_SELO_GAP:0)+li.w; } } }
+          if(lw+FOLHA_SELO_GAP+li.w<=txtW0){ txt_desenhar_alpha(li,tx0+(lw>0?lw+FOLHA_SELO_GAP:0),cy+(FOLHA_SELO_H-li.h)*.5f,anim); lw+=(lw>0?FOLHA_SELO_GAP:0)+li.w; } } }
       if(s->naoVideo){ int c=sel?185:140;
         TxtLinha ln=txt_linha(TXT_HERO_META,"Não é vídeo",c,c-6,c-14,255);
-        if(lw+FOLHA_SELO_GAP+ln.w<=txtW0-(audioW>0?audioW+FOLHA_SELO_GAP:0)) { txt_desenhar_alpha(ln,tx0+(lw>0?lw+FOLHA_SELO_GAP:0),cy+(FOLHA_SELO_H-ln.h)*.5f,anim); lw+=(lw>0?FOLHA_SELO_GAP:0)+ln.w; } }
-      if(audioW>0) desenharAudioFlags(s,tx0+(lw>0?lw+FOLHA_SELO_GAP:0),cy,audioW+.1f,anim);
+        if(lw+FOLHA_SELO_GAP+ln.w<=txtW0) { txt_desenhar_alpha(ln,tx0+(lw>0?lw+FOLHA_SELO_GAP:0),cy+(FOLHA_SELO_H-ln.h)*.5f,anim); lw+=(lw>0?FOLHA_SELO_GAP:0)+ln.w; } }
       }
     cy+=FOLHA_SELO_H+12;
     cy+=desenharFaixas(s,tx,cy,tr-tx,sel,anim);

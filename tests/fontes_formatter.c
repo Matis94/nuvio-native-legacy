@@ -9,7 +9,12 @@ static size_t countedClean(const char *s, char *d, size_t n, int flags) {
 }
 #include "badges.h"
 static struct { uint64_t mask; float x,y,budget,width; } badgeDraws[32];
-static int badgeDrawCount, recordBadges;
+static int badgeDrawCount, recordBadges, flagDrawCount;
+static void trackedFlag(const char *country,float x,float y,float w,float h,float a) {
+  if(recordBadges && a>0)flagDrawCount++;
+  badges_bandeira(country,x,y,w,h,a);
+}
+#define badges_bandeira trackedFlag
 static float rememberBadges(uint64_t mask,float x,float y,float budget,float width) {
   if(recordBadges && badgeDrawCount<32) {
     int i=badgeDrawCount++;
@@ -31,6 +36,7 @@ static float trackedColored(uint64_t mask,float x,float y,float w,float h,float 
 #undef nv_limpar_texto
 #undef badges_desenhar_fonte
 #undef badges_desenhar_selos
+#undef badges_bandeira
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 #include <unistd.h>
@@ -105,33 +111,34 @@ static int pixelLine(const char *label, TxtEstilo style, const char *s,
   printf("pixels %s bg=%d alpha=%.1f mismatches=%d ink=%d\n",label,background,alpha,mismatches,ink);
   return mismatches==0 && ink>0 && (!icon || iconInk>0);
 }
-static void focusBadges(const char *dir) {
+static void nativeWithoutFlags(const char *dir) {
   Stream s=fixtures[1];
   snprintf(s.provedor,sizeof s.provedor,"AIOStreams very long provider name");
   snprintf(s.descricao,sizeof s.descricao,"4K REMUX DV HDR10 HEVC TrueHD Atmos DTS-HD MA 7.1");
   snprintf(s.audioIdiomas,sizeof s.audioIdiomas,"Polish,English,German,French");
   s.badges=badges_detectar(s.descricao);s.audioDescritores=STREAM_AUDIO_MULTI;
-  for(int colored=0;colored<=1;colored++) for(int flags=0;flags<=1;flags++) {
-    char path[512];snprintf(path,sizeof path,"%s/ajustes.txt",dir);
-    FILE *f=fopen(path,"w");assert(f);
-    fprintf(f,"fonteTextoLocal 0\naudioFlagsLocal %d\nselosColoridosLocal %d\n",!flags,!colored);
-    fclose(f);ajustes_dir(dir);
-    assert(ajustes_selos_coloridos()==colored && ajustes_audio_flags()==flags);
-    stream_definir_lista(&s,1);stream_folha_abrir();
-    for(int w=1100;w<=1920;w+=205) {
-      grupo=0;linhaAnt=-1;abreAnt=abreFoco=0;rolagem=0;montar(-1);
-      for(int j=0;j<40;j++){tex_bombear(32);txt_novo_quadro();corpoFolha(0,w,1,SDL_GetTicks(),0);SDL_Delay(2);}
-      badgeDrawCount=0;recordBadges=1;txt_novo_quadro();corpoFolha(0,w,1,SDL_GetTicks(),0);
-      assert(badgeDrawCount>0);
-      unsigned char before[sizeof badgeDraws];memcpy(before,badgeDraws,sizeof before);
-      int count=badgeDrawCount;
-      grupo=1;foco=0;badgeDrawCount=0;txt_novo_quadro();corpoFolha(0,w,1,SDL_GetTicks(),0);recordBadges=0;
-      assert(badgeDrawCount==count);
-      assert(!memcmp(before,badgeDraws,count*sizeof badgeDraws[0]) &&
-             "focus must preserve badge positions, available budget and rendered width with inline flags");
+  for(int colored=0;colored<=1;colored++) for(int selected=0;selected<=1;selected++) {
+    unsigned char before[sizeof badgeDraws];int count=0;
+    for(int flags=0;flags<=1;flags++) {
+      char path[512];snprintf(path,sizeof path,"%s/ajustes.txt",dir);
+      FILE *f=fopen(path,"w");assert(f);
+      fprintf(f,"fonteTextoLocal 0\naudioFlagsLocal %d\nselosColoridosLocal %d\n",!flags,!colored);
+      fclose(f);ajustes_dir(dir);
+      assert(ajustes_selos_coloridos()==colored && ajustes_audio_flags()==flags);
+      stream_definir_lista(&s,1);stream_folha_abrir();
+      grupo=selected;foco=0;linhaAnt=-1;abreAnt=abreFoco=0;rolagem=0;montar(-1);
+      for(int j=0;j<40;j++){tex_bombear(32);txt_novo_quadro();corpoFolha(0,1920,1,SDL_GetTicks(),0);SDL_Delay(2);}
+      badgeDrawCount=flagDrawCount=0;recordBadges=1;
+      txt_novo_quadro();corpoFolha(0,1920,1,SDL_GetTicks(),0);recordBadges=0;
+      assert(flagDrawCount==0 && "From Nuvio must not draw audio flags even with the old setting enabled");
+      assert(badgeDrawCount>0 && "native quality badges must remain visible");
+      if(!flags){count=badgeDrawCount;memcpy(before,badgeDraws,sizeof before);}
+      else assert(badgeDrawCount==count && !memcmp(before,badgeDraws,count*sizeof badgeDraws[0]) &&
+                  "the retired flag setting must not consume native badge space");
+      assert(linhasFaixas(&lista[0])>0 && "native audio language text remains visible");
     }
   }
-  puts("focus regression: crowded badges retain geometry/width with flags on/off and both badge colors");
+  puts("native presentation: no audio flags in either focus/color state; badges and audio text retained");
 }
 static void colorEmoji(void) {
   GLuint image=0;
@@ -158,7 +165,7 @@ static void pixels(const char *dir) {
     }
     assert(icon && "pixel assertion must draw real icons");
   }
-  focusBadges(dir);colorEmoji();
+  nativeWithoutFlags(dir);colorEmoji();
   int ok=1;
   for(int addon=0;addon<=1;addon++) for(int failed=0;failed<=1;failed++)
     for(int bg=77;bg<=220;bg+=143) for(int fade=0;fade<=1;fade++) {
@@ -227,8 +234,6 @@ static void formatterPresentation(const char *dir) {
   snprintf(s.audioIdiomas,sizeof s.audioIdiomas,"Polish,English");
   stream_definir_lista(&s,1);montar(-1);
   assert(fabsf(alturaLinha(0,-1)-h-FOLHA_FAIXA_H)<.01f && "Nuvio audio text remains visible");
-  assert(desenharAudioFlags(&lista[0],0,0,220,0)>0);
-  assert(desenharAudioFlags(&lista[0],0,0,20,0)==0);
   puts("formatter presentation: shipped icons, inline flags, title symbols, addon metadata isolation and Nuvio audio row OK");
 }
 int main(int argc,char **argv) {
