@@ -67,7 +67,7 @@ static void memoria(char *s, size_t n) {
 }
 typedef struct { TxtLinha fps, pior, ram; } Linha;
 static float montar(int forma, Linha *L) {
-  char a[24], b[24], c[96];
+  char a[24], b[32], c[96];
   float w;
   num(a, sizeof a, uFps, 0);
   snprintf(b, sizeof b, "%s fps", a);
