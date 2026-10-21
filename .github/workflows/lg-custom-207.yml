@@ -34,6 +34,7 @@ jobs:
           git diff --check
           bash tests/versao_207.sh
           bash tests/buffer_tamanho.sh
+          bash tests/buffer_overlay.sh
           bash tests/textwrap.sh
           bash tests/logexport.sh
           bash tests/memlog.sh
@@ -58,6 +59,7 @@ jobs:
         if: ${{ !cancelled() && matrix.group == 'engine' }}
         run: |
           bash tests/moviebuffer.sh
+          bash tests/dts_recovery_scope.sh
           bash tests/dts_buffer64.sh
           bash tests/dts_range_retry.sh
           SANITIZE=1 bash tests/dts_range_retry.sh

@@ -37,6 +37,7 @@ int64_t dts_engine_source_total(DtsEngine *e) { (void)e;return -1; }
 DtsEngine *dts_engine_create(void) { return calloc(1, sizeof(DtsEngine)); }
 int dts_engine_available(void) { return 0; }
 void dts_engine_dv(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
+void dts_engine_recovery(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
 void dts_engine_metrics(DtsEngine *e,DtsEngineMetrics *out) { (void)e; if(out) memset(out,0,sizeof(*out)); }
 int dts_engine_open(DtsEngine *e,const char *u,const char *h,int a,int c,double s) {
   (void)e;(void)u;(void)h;(void)a;(void)c;(void)s; return -1;
@@ -138,7 +139,7 @@ struct DtsEngine {
   SwrContext *swr;
   AVAudioFifo *fifo;
   AVPacket *in, *out;
-  int dv7;
+  int dv7, recovery;
   uint8_t *dv7_buffer;
   unsigned dv7_capacity;
   AVFrame *decoded, *encoded;
@@ -181,7 +182,11 @@ static int cancelled(void *opaque) {
 /* Retry the SAME validated byte interval before exposing an I/O error to
  * libavformat. Other completed speculative ranges stay owned by their slots.
  * A failed/partial HTTP body never enters the active cache. */
+#ifdef NV_DTS_WEBOS_RECOVERY
 #define RANGE_ATTEMPTS 3
+#else
+#define RANGE_ATTEMPTS 1
+#endif
 static int range_retryable(int status) {
   return status==0 || status==206 || (status>=300 && status<400) ||
          status==408 || status==425 || status==429 || (status>=500 && status<=599);
@@ -201,11 +206,20 @@ static int range_backoff(DtsEngine *e,DtsRangeJob *job,int ms) {
 }
 static void range_fetch(DtsEngine *e,DtsRangeJob *job,int fast,int *stalled) {
   uint64_t begun=clock_ns(CLOCK_MONOTONIC);
-  if(!e->dv && !e->remux)
+#ifndef NV_DTS_WEBOS_RECOVERY
+  (void)fast;
+#endif
+  if(!e->dv && !e->remux) {
+#ifdef NV_DTS_WEBOS_RECOVERY
+    if(e->recovery)
     job->data=rede_baixar_trecho64_vigiado(e->url,e->headers,job->start,job->end,
       &job->count,&job->total,&job->status,&job->cancel,NULL,NULL,
       fast?&job->urgent:NULL,2500,stalled);
-  else {
+    else
+#endif
+    job->data=rede_baixar_trecho64_cab(e->url,e->headers,job->start,job->end,
+      &job->count,&job->total,&job->status,&job->cancel);
+  } else {
     /* After the first answer, go straight to the address behind the add-on
      * redirects. Credential headers follow only on the same origin. A final
      * link that stops answering (expired: 403/410, or any failure) is
@@ -215,18 +229,30 @@ static void range_fetch(DtsEngine *e,DtsRangeJob *job,int fast,int *stalled) {
     direct=e->final_url[0]!=0; cross=e->final_cross;
     snprintf(target,sizeof target,"%s",direct?e->final_url:e->url);
     pthread_mutex_unlock(&e->range_lock);
+#ifdef NV_DTS_WEBOS_RECOVERY
+    if(e->recovery)
     job->data=rede_baixar_trecho64_vigiado(target,direct&&cross?"":e->headers,job->start,job->end,
       &job->count,&job->total,&job->status,&job->cancel,fin,&cross,
       fast?&job->urgent:NULL,2500,stalled);
+    else
+#endif
+    job->data=rede_baixar_trecho64_final(target,direct&&cross?"":e->headers,job->start,job->end,
+      &job->count,&job->total,&job->status,&job->cancel,fin,&cross);
     uint64_t first=clock_ns(CLOCK_MONOTONIC);
     int first_status=job->status, first_ok=job->data!=NULL;
     if(direct && !job->data && !*stalled && !__atomic_load_n(&job->cancel,__ATOMIC_RELAXED)) {
       pthread_mutex_lock(&e->range_lock);
       if(!strcmp(e->final_url,target)) e->final_url[0]=0;
       pthread_mutex_unlock(&e->range_lock);
+#ifdef NV_DTS_WEBOS_RECOVERY
+      if(e->recovery)
       job->data=rede_baixar_trecho64_vigiado(e->url,e->headers,job->start,job->end,
         &job->count,&job->total,&job->status,&job->cancel,fin,&cross,
         fast?&job->urgent:NULL,2500,stalled);
+      else
+#endif
+      job->data=rede_baixar_trecho64_final(e->url,e->headers,job->start,job->end,
+        &job->count,&job->total,&job->status,&job->cancel,fin,&cross);
       direct=0;
       /* #203 DV startup took ~19.5 s twice (LG C9): one stalled request
        * hitting the 15 s curl deadline plus a ~4.5 s add-on re-resolve is
@@ -268,17 +294,17 @@ static void *range_worker(void *opaque) {
     job->state=2;
     pthread_mutex_unlock(&e->range_lock);
     uint64_t begun=clock_ns(CLOCK_MONOTONIC);
-    int attempt=0;
-    for(;attempt<RANGE_ATTEMPTS;attempt++) {
+    int attempts=e->recovery?RANGE_ATTEMPTS:1, attempt=0;
+    for(;attempt<attempts;attempt++) {
       if(cancelled(e) || __atomic_load_n(&job->cancel,__ATOMIC_RELAXED)) break;
       int stalled=0;
-      range_fetch(e,job,attempt+1<RANGE_ATTEMPTS,&stalled);
+      range_fetch(e,job,attempt+1<attempts,&stalled);
       if(job->data || !range_retryable(job->status) || cancelled(e) ||
-         __atomic_load_n(&job->cancel,__ATOMIC_RELAXED)) break;
+         __atomic_load_n(&job->cancel,__ATOMIC_RELAXED) || attempt+1==attempts) break;
       printf("[range-retry] start=%lld end=%lld attempt=%d/%d http=%d\n",
-             (long long)job->start,(long long)job->end,attempt+1,RANGE_ATTEMPTS,job->status);
+             (long long)job->start,(long long)job->end,attempt+1,attempts,job->status);
       fflush(stdout);
-      if(attempt+1==RANGE_ATTEMPTS || (!stalled && !range_backoff(e,job,150*(attempt+1)))) break;
+      if(!stalled && !range_backoff(e,job,150*(attempt+1))) break;
     }
     if(!cancelled(e) && !__atomic_load_n(&job->cancel,__ATOMIC_RELAXED) &&
        (attempt || !job->data)) {
@@ -656,7 +682,7 @@ static void close_media(DtsEngine *e) {
 }
 DtsEngine *dts_engine_create(void) {
   DtsEngine *e=calloc(1,sizeof(*e));
-  if(e) { e->total=-1; e->range_bytes=RANGE_BYTES; e->range_slots=RANGE_SLOTS; pthread_mutex_init(&e->range_lock,NULL); pthread_cond_init(&e->range_wake,NULL); }
+  if(e) { dts_engine_recovery(e,1); e->total=-1; e->range_bytes=RANGE_BYTES; e->range_slots=RANGE_SLOTS; pthread_mutex_init(&e->range_lock,NULL); pthread_cond_init(&e->range_wake,NULL); }
   return e;
 }
 void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *b) {
@@ -731,6 +757,13 @@ int64_t dts_engine_source_total(DtsEngine *e) {
   return total;
 }
 void dts_engine_dv(DtsEngine *e, int enabled) { if (e) e->dv = !!enabled; }
+void dts_engine_recovery(DtsEngine *e, int enabled) {
+#ifdef NV_DTS_WEBOS_RECOVERY
+  if(e) e->recovery=!!enabled;
+#else
+  (void)enabled; if(e) e->recovery=0;
+#endif
+}
 int dts_engine_available(void) {
   return avcodec_find_decoder(AV_CODEC_ID_DTS) && avcodec_find_encoder(AV_CODEC_ID_AAC) && av_bsf_get_by_name("h264_mp4toannexb")
       && av_bsf_get_by_name("hevc_mp4toannexb");
@@ -984,6 +1017,10 @@ static int resample(DtsEngine *e,AVFrame *f) {
     int64_t expected=e->sample_pts+av_audio_fifo_size(e->fifo)
         +av_rescale_rnd(swr_get_delay(e->swr,e->input_rate),48000,e->input_rate,AV_ROUND_NEAR_INF);
     if (incoming>expected+4800 || incoming<expected-4800) {
+#ifndef NV_DTS_WEBOS_RECOVERY
+      return fail(e,DTS_ENGINE_TIMESTAMP_DISCONTINUITY,0);
+#else
+      if(!e->recovery) return fail(e,DTS_ENGINE_TIMESTAMP_DISCONTINUITY,0);
       /* Numeric diagnostics survive export redaction; no source/header data. */
       printf("[dts] timestamp-gap incomingMs=%.3f expectedMs=%.3f deltaMs=%.3f "
              "fifoSamples=%d delaySamples=%lld frameSamples=%d inputRate=%d targetMs=%.3f\n",
@@ -1026,6 +1063,7 @@ static int resample(DtsEngine *e,AVFrame *f) {
              "pads=%d padMs=%.3f\n",(double)gap/48.0,input,e->input_rate,
              e->pad_count,(double)e->pad_samples/48.0);
       fflush(stdout);
+#endif
     }
   }
   int capacity=(int)av_rescale_rnd(swr_get_delay(e->swr,e->input_rate)+(f?f->nb_samples:0),48000,e->input_rate,AV_ROUND_UP)+32;

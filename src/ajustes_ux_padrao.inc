@@ -342,3 +342,4 @@
   1, /* playback RAM overlay (test): Desligado */
   0, /* independent P7 conversion: on, preserving the working custom build */
   0, /* buffer RAM auto reduction: On, preserves official policy */
+  0, /* DTS playback recovery: On, independent of DV7 */

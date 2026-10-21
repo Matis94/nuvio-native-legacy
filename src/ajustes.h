@@ -644,6 +644,7 @@ int   ajustes_dv_mkv(void);              // 1 = Dolby Vision MKV through our dem
 int   ajustes_dv7(void);
 int   ajustes_player_ram_toggle(void);
 int   ajustes_player_ram(void);          // local test overlay, off by default
+int   ajustes_dts_recovery(void); // webOS-only, default On; applies to next session
 int   ajustes_cw_retido_tambem(void);   // 1 = o titulo da ilha/Retomar tambem fica em Continuar assistindo
 // Percentual (70-98, padrao 90) a partir do qual o episodio conta como
 // assistido: sai do Continuar assistindo e o card passa ao proximo. Local.

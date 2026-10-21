@@ -9,7 +9,7 @@ PREFIX=${NUVIO_DTS_ROOT:-${TMPDIR:-/tmp}/nuvio-dts-host}
 TMP=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-dts-test.XXXXXXXX)
 SERVER_PID=""
 trap 'if [ -n "$SERVER_PID" ]; then kill "$SERVER_PID" 2>/dev/null || true; fi; rm -rf "$TMP"' EXIT
-${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -DNV_DTS_FFMPEG -I"$PREFIX/include" \
+${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -DNV_DTS_FFMPEG ${NV_TEST_DTS_RECOVERY_CFLAGS--DNV_DTS_WEBOS_RECOVERY} -I"$PREFIX/include" \
   src/dts/dts_engine.c tests/dts_engine.c -o "$TMP/engine" \
   -L"$PREFIX/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread
 printf '1\n00:00:00,500 --> 00:00:01,500\nDTS subtitle fixture\n' > "$TMP/input.srt"
@@ -74,7 +74,7 @@ with open(sys.argv[2],'wb') as out:
     out.write(source[:ftyp]); out.write(struct.pack('>I4s',gap,b'free'))
     out.seek(ftyp+gap); out.write(source[ftyp:])
 PY
-${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation -DNV_DTS_FFMPEG -DDTS_ENGINE_HTTP -I"$PREFIX/include" \
+${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation -DNV_DTS_FFMPEG ${NV_TEST_DTS_RECOVERY_CFLAGS--DNV_DTS_WEBOS_RECOVERY} -DDTS_ENGINE_HTTP -I"$PREFIX/include" \
   src/dts/dts_engine.c tests/dts_engine.c src/rede.c src/redeurl.c -o "$TMP/http-engine" \
   -L"$PREFIX/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
 python3 tests/dts_engine_server.py "$TMP" "$TMP/port" "$TMP/requests" &
