@@ -35,7 +35,7 @@ static void measure(const char *dir, int addon, int verify) {
   // Build every card's expanded text WITHOUT focus. Moving focus must reuse it.
   grupo=0;
   for(int row=0;row<CARDS;row++) {
-    linhaAnt=row; abreAnt=1; montar(automaticaDaFolha()); rolagem=linhaY[row];
+    linhaAnt=row; abreAnt=1; montar(automaticaDaFolha()); rolagem=linhaPosicao(row);
     for(int j=0;j<3;j++) { txt_novo_quadro(); stream_folha_desenhar(SDL_GetTicks()); }
   }
   grupo=1; foco=0; focoVisto=0; linhaAnt=-1; abreAnt=0; abreFoco=1;

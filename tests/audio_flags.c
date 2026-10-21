@@ -14,10 +14,26 @@ static void check(const char *fields, unsigned bits, const char *audio, const ch
   }
   audio_flags_ler(v,&f);
   assert(f.n==strlen(paises)/2);
-  for(unsigned i=0;i<f.n;i++)assert(!memcmp(f.pais[i],paises+2*i,2));
+  for(unsigned i=0;i<f.n;i++) if (memcmp(f.pais[i],paises+2*i,2)) {
+    fprintf(stderr,"flag mismatch fields=%s slot=%u actual=%s expected=%.2s\n",fields,i,f.pais[i],paises+2*i);
+    abort();
+  }
   free(v);
 }
 int main(void) {
+  check("\"description\":\"🎬 Movie.2026.mkv\\n🎧 DTS 5.1\\n🗣️🌍 🇬🇧  🇵🇱 DUAL Dubbed\\n💾 11 GB 🏷️ Group\"",STREAM_AUDIO_DUAL,"English,Polish","gbpl");
+  check("\"description\":\"🗣️🌍 🇬🇧 🇫🇷 🇩🇪 🇯🇵 MULTI Dubbed\"",STREAM_AUDIO_MULTI,"English,French,German,Japanese","gbfrdejp");
+  check("\"description\":\"🗣️🌍 🇵🇱  🇬🇧\"",0,"Polish,English","plgb");
+  check("\"description\":\"🗣️🌏 🇮🇳  🇺🇸 DUAL\"",STREAM_AUDIO_DUAL,"","inus");
+  check("\"description\":\"🗣️🌍 🇬🇧 Dubbed\"",0,"English","gb");
+  check("\"name\":\"🇵🇱 ☁️ [TB⚡️] AIOStreams\\n4K\",\"description\":\"🗣️🌍 🇬🇧 DUAL\"",STREAM_AUDIO_DUAL,"English","gbpl");
+  check("\"name\":\"🇵🇱 [TB⚡️] AIOStreams\\n1080p\"",0,"","pl");
+  check("\"audioLanguages\":[\"fr\"],\"name\":\"🇵🇱 [TB⚡️] AIOStreams\"",0,"fr","plfr");
+  check("\"name\":\"Provider 🇫🇷\",\"description\":\"📝 🇵🇱 DUAL Dubbed\"",0,"","");
+  char escaped[5000]="\"description\":\"";
+  for(int i=0;i<400;i++)strcat(escaped,"\\u65e5");
+  strcat(escaped,"\\n🗣️🌍 🇵🇱 DUAL Dubbed\"");
+  check(escaped,STREAM_AUDIO_DUAL,"Polish","pl");
   check("\"description\":\"🌐 🇵🇱 🇬🇧 | Dual Audio\"",STREAM_AUDIO_DUAL,"Polish,English","plgb");
   check("\"description\":\"🇵🇱 🇬🇧\"",0,"","plgb");
   check("\"description\":\"🌎 / 🇬🇧\"",STREAM_AUDIO_MULTI,"","gb");

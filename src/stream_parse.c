@@ -610,7 +610,7 @@ static size_t faixasSeparadorTexto(const char *p, const char *fim) {
 }
 static size_t faixasMarcadorTexto(const char *p, const char *fim, int *tipo) {
   static const struct { const char *emoji; int tipo; } marcadores[] = {
-    {"🌎", 3}, {"🌐", 1}, {"🗣", 1}, {"⚑", 1}, {"📝", 2}
+    {"🌎", 3}, {"🌍", 3}, {"🌏", 3}, {"🌐", 1}, {"🗣", 1}, {"⚑", 1}, {"📝", 2}
   };
   for (unsigned k = 0; k < sizeof marcadores / sizeof *marcadores; k++) {
     size_t n = strlen(marcadores[k].emoji);
@@ -662,7 +662,9 @@ static void faixasLinhaTexto(const char *p, const char *fim, char *audio, unsign
     int tipoAnterior = tipo;
     n = faixasMarcadorTexto(p, fim, &tipo);
     if (n) {
-      if (tipo == 3 && tipoAnterior == 2) tipo = 2;
+      // Compound custom heading: 🗣️🌍 is one audio heading, not a Multi
+      // value. A globe inside an already declared section preserves its type.
+      if (tipo == 3 && (tipoAnterior == 1 || tipoAnterior == 2)) tipo = tipoAnterior;
       // AIOStreams uses the globe as its Multi value as well as a heading.
       // Never turn a subtitle section into audio or guess languages from it.
       if (tipo == 3 && descritores) {
@@ -718,9 +720,25 @@ static void faixasLinhaTexto(const char *p, const char *fim, char *audio, unsign
     p = q;
   }
 }
-static void faixasBandeirasTexto(const char *p, const char *fim, char *saida, unsigned tam) {
+static int faixaAudioSufixoTexto(const char *p, const char *fim, unsigned *bits) {
+  unsigned encontrados = 0;
+  int tem = 0;
+  while ((p = faixasEspacos(p, fim)) < fim) {
+    const char *e = p;
+    while (e < fim && !isspace((unsigned char)*e)) e++;
+    unsigned bit = faixaAudioDescritor(p, e);
+    if (!bit && !((e-p == 6 && !strncasecmp(p,"dubbed",6)) ||
+                  (tem && e-p == 5 && !strncasecmp(p,"audio",5)))) return 0;
+    encontrados |= bit; tem = 1; p = e;
+  }
+  if (tem && bits) *bits |= encontrados;
+  return tem;
+}
+static void faixasBandeirasTexto(const char *p, const char *fim, char *saida, unsigned tam,
+                                 unsigned *descritores) {
   char paises[96] = "";
   size_t usados = 0;
+  unsigned bits = 0;
   while ((p = faixasEspacos(p, fim)) < fim) {
     size_t n = faixasSeparadorTexto(p, fim);
     if (n) { p += n; continue; }
@@ -746,12 +764,13 @@ static void faixasBandeirasTexto(const char *p, const char *fim, char *saida, un
     while(q<fim && !faixasSeparadorTexto(q,fim) &&
           !(fim-q >= 3 && !memcmp(q,"\xF0\x9F\x87",3))) q++;
     const char *e=q; while(e>p && isspace((unsigned char)e[-1]))e--;
-    if (!faixaAudioDescritor(p,e) && !faixaIdiomaTextoConhecido(p,e)) return;
+    if (!faixaAudioSufixoTexto(p,e,&bits) && !faixaIdiomaTextoConhecido(p,e)) return;
     p=q;
   }
   // The ENTIRE line must be language values. A filename, provider, codec,
   // subtitle label or URL invalidates it; generic country symbols only affect
   // display and cannot make a source pass a declared-audio language filter.
+  if (descritores) *descritores |= bits;
   for(size_t k=0;k<usados;k+=2) {
     size_t u=strlen(saida), j; for(j=0;j<u;j+=2)if(saida[j]==paises[k] && saida[j+1]==paises[k+1])break;
     if(j==u && u+2<tam) { saida[u]=paises[k]; saida[u+1]=paises[k+1]; saida[u+2]=0; }
@@ -759,10 +778,13 @@ static void faixasBandeirasTexto(const char *p, const char *fim, char *saida, un
 }
 static void faixasCampoTexto(const char *obj, const char *fim, const char *campo, Stream *s) {
   const char *v = valorRaiz(obj, fim, campo), *f;
-  char texto[2048], json[sizeof texto + 16];
+  // A JSON \uXXXX escape can occupy six bytes for one decoded character.
+  // Long escaped filenames must not discard a later language row that fits
+  // in the existing bounded decoded description.
+  char texto[2048], json[6 * sizeof texto + 16];
   char audio[sizeof s->audioIdiomas] = "", subs[sizeof s->legendaIdiomas] = "";
   char paises[sizeof s->audioBandeiras] = "";
-  if (!v || !(f = faixasFimTexto(v, fim)) || (size_t)(f - v - 2) >= sizeof texto) return;
+  if (!v || !(f = faixasFimTexto(v, fim)) || (size_t)(f - v - 2) >= sizeof json - 16) return;
   const char *apos = faixasEspacos(f, fim);
   if (apos >= fim || (*apos != ',' && *apos != '}')) return;
   // A descricao permite quebras, mas nunca NUL, controles ocultos ou um valor
@@ -793,8 +815,18 @@ static void faixasCampoTexto(const char *obj, const char *fim, const char *campo
   for (const char *p = texto; *p;) {
     const char *q = p;
     while (*q && *q != '\n' && *q != '\r') q++;
+    if (!strcmp(campo,"name")) {
+      // This formatter places a regex-derived PL indicator BEFORE the
+      // provider/cache label in name. Keep it for display only: a provider
+      // label cannot establish the actual language used by audio filters.
+      const char *a=faixasEspacos(p,q), *e=a;
+      while (q-e >= 8 && !memcmp(e,"\xF0\x9F\x87",3) && !memcmp(e+4,"\xF0\x9F\x87",3))
+        e=faixasEspacos(e+8,q);
+      if (e>a) faixasBandeirasTexto(a,e,s->audioBandeiras,sizeof s->audioBandeiras,NULL);
+      break;
+    }
     faixasLinhaTexto(p, q, audio, sizeof audio, subs, sizeof subs, &s->audioDescritores);
-    faixasBandeirasTexto(p, q, paises, sizeof paises);
+    faixasBandeirasTexto(p, q, paises, sizeof paises, &s->audioDescritores);
     p = *q ? q + 1 : q;
   }
   if (!s->audioIdiomas[0]) {
@@ -847,10 +879,11 @@ static void metadadosFaixas(const char *obj, const char *fim, Stream *s) {
   // no objeto de resposta/titulo, nem afirmar que estas faixas sao embutidas.
   faixasCampo(obj, fim, "subtitles", s->legendaIdiomas, sizeof s->legendaIdiomas, 1, NULL);
   // Valores estruturados continuam prioritarios, por tipo. Na falta deles,
-  // ler somente secoes declaradas no texto DESTA fonte, nunca seu name,
+  // ler somente secoes declaradas no texto DESTA fonte, nunca seu name para filtros,
   // provedor, filename, filtro de idiomas ou faixas descobertas pelo player.
   faixasCampoTexto(obj, fim, "description", s);
   faixasCampoTexto(obj, fim, "title", s);
+  faixasCampoTexto(obj, fim, "name", s);
 }
 
 // Decimal integers only, parsed without double rounding. Numeric strings
