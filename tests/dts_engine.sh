@@ -91,7 +91,7 @@ with open(sys.argv[1].replace("range.bin", "prefetch.bin"),"wb") as out:
     count=96*1024*1024
     out.write((pattern*((count+250)//251))[:count])
 PY
-${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation -I"$PREFIX/include" \
+${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation ${NV_TEST_DTS_RECOVERY_CFLAGS--DNV_DTS_WEBOS_RECOVERY} -I"$PREFIX/include" \
   tests/dts_engine_avio.c src/rede.c src/redeurl.c -o "$TMP/range" \
   -L"$PREFIX/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
 "$TMP/range" "http://127.0.0.1:$PORT/parallel/range.bin"
@@ -99,7 +99,7 @@ ${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation -I"$PREF
 "$TMP/range" "http://127.0.0.1:$PORT/prefetch/prefetch.bin"
 cp "$TMP/prefetch.bin" "$TMP/dv-prefetch.bin"
 "$TMP/range" "http://127.0.0.1:$PORT/prefetch/dv-prefetch.bin"
-${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation -DRANGE_WORKERS=1 -I"$PREFIX/include" \
+${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation -DRANGE_WORKERS=1 ${NV_TEST_DTS_RECOVERY_CFLAGS--DNV_DTS_WEBOS_RECOVERY} -I"$PREFIX/include" \
   tests/dts_engine_avio.c src/rede.c src/redeurl.c -o "$TMP/serial-range" \
   -L"$PREFIX/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
 "$TMP/serial-range" "http://127.0.0.1:$PORT/parallel/range.bin"
