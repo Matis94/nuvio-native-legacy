@@ -177,6 +177,8 @@ int main(void) {
     snprintf(s->arquivo,sizeof s->arquivo,"Movie.2026.1080p.WEB-DL.Long.Release.Name.That.Must.Wrap.Without.Truncation.%04d.mkv",i);
   }
   const int counts[]={100,500,1000,2121};
+  stream_definir_lista(v,100);
+  assert(nFiltrados()==100); // query before the provider tabs have been built
   for(int c=0;c<4;c++)for(int addon=0;addon<2;addon++)for(int order=0;order<2;order++)benchmark(dir,v,counts[c],addon,order);
   setting(dir,1,1,1);stream_definir_lista(v,303);stream_folha_abrir();anim=1;
   stream_lista_acrescentar(v+303,1818,2);
