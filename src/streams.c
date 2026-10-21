@@ -3304,6 +3304,10 @@ static uint64_t folhaConfigMarca(void) {
   h = preparoMarca(h, versions, sizeof versions);
   const char *q = ajustes_qualidade(), *l = idiomaPreferidoFonte();
   h = preparoMarca(h, q, strlen(q));
+  h = preparoMarca(h, l, strlen(l));
+  // The manual audio chip follows the account/local audio language even
+  // when audio-language preference is disabled for automatic ranking.
+  l = ling_audio_fonte(idioma_iso(ajustes_idioma()));
   return preparoMarca(h, l, strlen(l));
 }
 static unsigned folhaAutoCalculos;

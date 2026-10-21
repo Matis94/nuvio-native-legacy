@@ -188,6 +188,11 @@ int main(void) {
   assert(stream_vod_falhou_ha(4)>=0 && folhaAutoCalculos>oldChoices && folhaContagemVisitas>oldCounts);
   stream_vod_tocou(4);stream_folha_atualizar(1.f/60,SDL_GetTicks());
   assert(stream_vod_falhou_ha(4)<0);sameLayout();
+  soDub=1;ling_local_audio("ru");stream_folha_atualizar(1.f/60,SDL_GetTicks());
+  assert(nFiltrados()==0 && nOrdem==0);
+  ling_local_audio("en");stream_folha_atualizar(1.f/60,SDL_GetTicks());
+  assert(nFiltrados()==2121 && nOrdem==2121);
+  soDub=0;ling_local_audio("");
   ranking(v);
   stream_definir_lista(NULL,0);free(v);tex_encerrar();txt_encerrar();gfx_encerrar();SDL_GL_DeleteContext(gl);SDL_DestroyWindow(win);SDL_Quit();
   puts("source list: cold/warm scrolling, both styles/orders, layout equivalence, filters, append, replacement, fonts, flags and bounded parsed cache OK");

@@ -26,8 +26,8 @@ jobs:
           persist-credentials: false
       - name: Verify application source
         run: |
-          git fetch --no-tags --depth=1 origin f1b255685fd0312ba92551040b6102097ce15c3d
-          git diff --exit-code f1b255685fd0312ba92551040b6102097ce15c3d HEAD -- src rust tools deploy
+          git fetch --no-tags --depth=1 origin ad82130a91bd2636387ad348a5ff7228bb26963f
+          git diff --exit-code ad82130a91bd2636387ad348a5ff7228bb26963f HEAD -- src rust tools deploy
       - name: Buffer labels and webOS buffering lifecycle regressions
         run: |
           sudo apt-get update -qq
