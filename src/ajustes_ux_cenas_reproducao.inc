@@ -469,6 +469,23 @@ static void rOrdemFontes(void) {
     if (addon) ajcSelo(res[i], 460, y + 22, 12, 0, 0.8f);
   }
 }
+static void rAudioFlags(void) {
+  float k=ajcLig(AJ_AUDIO_FLAGS);
+  for(int i=0;i<3;i++) {
+    float y=30+i*100;
+    ajc_neutro(40,y,560,84,14,1);
+    ajc_barra(66,y+16,180,.8f);
+    ajcSelo("4K",66,y+44,12,0,.85f);
+    ajcSelo("DTS",118,y+44,12,0,.85f);
+    if(k>.005f) {
+      badges_bandeira("pl",ajc_x(300),ajc_y(y+46),ajc_px(28),ajc_px(21),k);
+      badges_bandeira("gb",ajc_x(340),ajc_y(y+46),ajc_px(28),ajc_px(21),k);
+      ajcSelo(i==1?"MULTI":"DUAL",390,y+44,12,0,k);
+      if(i==1)ajcTexto("+3",16,0,470,y+46,k);
+    }
+  }
+  ajcChaveCanto(k);
+}
 static void rTexto(void) {   // Do Nuvio / Do addon / Logo do titulo
   int v = rInt(AJ_FONTE_TEXTO, 2), i;
   for (i = 0; i < 3; i++) {
@@ -856,6 +873,7 @@ static int ajcNovaReproducao(int sec, int op) {
       rMemoria(op); return 1;
     case AJ_FONTE_ORDEM_ADDON: rOrdemFontes(); return 1;
     case AJ_FONTE_TEXTO: rTexto(); return 1;
+    case AJ_AUDIO_FLAGS: rAudioFlags(); return 1;
     case AJ_SELOS_CORES: rSelosCores(op); return 1;
     case AJ_SELOS_PACOTE: rPacote(); return 1;
     case AJ_SELOS_PACOTE_ADD: rPacoteAdd(); return 1;

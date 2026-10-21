@@ -18,6 +18,7 @@
 #include "fontefiltro.h"
 
 // A lista cresce conforme a resposta dos addons; a UI virtualiza as linhas.
+enum { STREAM_AUDIO_DUAL = 1u, STREAM_AUDIO_MULTI = 2u };
 
 typedef struct Stream {
   char rotulo[192];     // Nome curto da fonte
@@ -54,6 +55,12 @@ typedef struct Stream {
   // Legendas anexadas pelo addon tambem contam, sem afirmar que sao embutidas.
   char audioIdiomas[512];
   char legendaIdiomas[512];
+  // Addon/formatter declarations, independent of known language names.
+  // Dual/Multi never imply any particular language or number of tracks.
+  unsigned audioDescritores;
+  // Country symbols explicitly formatted on a language-only line. Retain
+  // ambiguous flags (e.g. India) without inventing a language for filters.
+  char audioBandeiras[96]; // concatenated ISO country pairs, no separators
   // Metadados canonicos para as exclusoes compartilhadas. Independentes dos
   // badges importados e do tamanho exato exigido pelo StreamFit.
   FonteFiltroDados filtro;
