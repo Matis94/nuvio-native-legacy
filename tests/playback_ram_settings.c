@@ -1,10 +1,57 @@
+// Compile settings as webOS while the linked host backend stays desktop.
+#define NV_WEBOS 1
+#ifdef NV_TEST_RECOVERY_SETTINGS
+#define NV_DTS_WEBOS_RECOVERY 1
+#endif
 #include "../src/ajustes.c"
 #include <assert.h>
+
+// Host fixture has no LG model service; keep automatic UI sizing deterministic.
+#ifdef NV_LINUX_DESKTOP
+void avisos_tv_linha(char *line, size_t cap, char *model, size_t modelCap) {
+  if (line && cap) line[0] = 0;
+  if (model && modelCap) model[0] = 0;
+}
+#endif
 
 int main(void) {
   char dir[] = "/tmp/nuvio-ram-settings-XXXXXX";
   char *blob = NULL;
   assert(!ajustes_player_ram());
+  assert(ajustes_buffer_ram_auto() && valorPadrao[AJ_BUFFER_RAM_AUTO] == 0);
+  assert(AJ_BUFFER_RAM_AUTO == AJ_DV7 + 1); // persisted IDs are append-only
+  assert(AJ_DTS_RECOVERY == AJ_BUFFER_RAM_AUTO + 1);
+  assert(valorPadrao[AJ_DTS_RECOVERY] == 0);
+  assert(!strcmp(CHAVE[AJ_DTS_RECOVERY], "dtsRecoveryLocal"));
+  assert(somenteDesteAparelho(AJ_DTS_RECOVERY) && !dePerfil(AJ_DTS_RECOVERY));
+  assert(!ajustePortavel(AJ_DTS_RECOVERY) && !ajusteAparelho(AJ_DTS_RECOVERY));
+  int recoveryRows = 0;
+  for (int i = 0; i < AJ_N_TELA; i++)
+    if (TELA[i].tipo == IT_OPC && TELA[i].op == AJ_DTS_RECOVERY) recoveryRows++;
+#ifdef NV_DTS_WEBOS_RECOVERY
+  assert(recoveryRows == 1 && ajustes_dts_recovery());
+  for (int p7 = 0; p7 < 2; p7++) for (int recovery = 0; recovery < 2; recovery++) {
+    valor[AJ_DV7] = !p7; valor[AJ_DTS_RECOVERY] = !recovery;
+    assert(ajustes_dv7() == p7 && ajustes_dts_recovery() == recovery);
+  }
+  valor[AJ_DV7] = 0; valor[AJ_DTS_RECOVERY] = 0;
+#else
+  assert(!ajustes_dts_recovery());
+  assert(foraDestaPlataforma(AJ_DTS_RECOVERY));
+#endif
+  assert(somenteDesteAparelho(AJ_BUFFER_RAM_AUTO) && !dePerfil(AJ_BUFFER_RAM_AUTO));
+  assert(!ajustePortavel(AJ_BUFFER_RAM_AUTO) && !ajusteAparelho(AJ_BUFFER_RAM_AUTO));
+  assert(!strcmp(CHAVE[AJ_BUFFER_RAM_AUTO], "bufferRamAutoReduceLocal"));
+  int bufferRow = -1, reductionRow = -1;
+  for (int i = 0; i < AJ_N_TELA; i++) if (TELA[i].tipo == IT_OPC) {
+    if (TELA[i].op == AJ_BUFFER) bufferRow = i;
+    if (TELA[i].op == AJ_BUFFER_RAM_AUTO) { assert(reductionRow == -1); reductionRow = i; }
+  }
+  assert(bufferRow >= 0 && reductionRow == bufferRow + 1);
+  valor[AJ_BUFFER_RAM_AUTO] = 1;
+  assert(!ajustes_buffer_ram_auto());
+  valor[AJ_BUFFER_RAM_AUTO] = 2; assert(ajustes_buffer_ram_auto());
+  valor[AJ_BUFFER_RAM_AUTO] = 0;
   assert(ajustes_buffer_preset()==0 && ajustes_dv7());
   valor[AJ_DV_MKV]=1; assert(!ajustes_dv_mkv() && ajustes_dv7());
   valor[AJ_DV7]=1;valor[AJ_DV_MKV]=0;assert(!ajustes_dv7() && ajustes_dv_mkv());
@@ -21,14 +68,20 @@ int main(void) {
   ajustes_dir(dir);
   assert(!ajustes_player_ram());
   valor[AJ_PLAYER_RAM] = 0;
+  valor[AJ_BUFFER_RAM_AUTO] = 1;
   assert(gravar());
   valor[AJ_PLAYER_RAM] = 1;
   ajustes_dir(dir);
   assert(ajustes_player_ram());
+  assert(!ajustes_buffer_ram_auto());
+  assert(!ajustes_aplicar_blob("{\"bufferRamAutoReduceLocal\":0}"));
+  assert(!ajustes_aplicar_blob("{\"c_settings_v1\":{\"values\":{\"c_bufferRamAutoReduceLocal\":0}}}"));
+  assert(!ajustes_buffer_ram_auto());
   assert(!ajustes_aplicar_blob("{\"playerRamOverlayLocal\":1}"));
   assert(ajustes_player_ram());
   ajustes_mesclar_blob("{}", &blob);
   assert(!blob || !strstr(blob, "playerRamOverlayLocal"));
+  assert(!blob || !strstr(blob, "bufferRamAutoReduceLocal"));
   assert(!ajustePortavel(AJ_DV7) && !ajusteAparelho(AJ_DV7));
   assert(!ajustePortavel(AJ_PLAYER_RAM) && !ajusteAparelho(AJ_PLAYER_RAM));
   assert(!ajustes_aplicar_blob("{\"c_settings_v1\":{\"values\":{\"c_playerRamOverlayLocal\":1}}}"));
@@ -39,6 +92,21 @@ int main(void) {
   valor[AJ_PLAYER_RAM] = 0;
   ajustes_dir(dir);
   assert(!ajustes_player_ram());
+  valor[AJ_BUFFER_RAM_AUTO] = 0; assert(gravar());
+  valor[AJ_BUFFER_RAM_AUTO] = 1; ajustes_dir(dir);
+  assert(ajustes_buffer_ram_auto());
+#ifdef NV_DTS_WEBOS_RECOVERY
+  for (int on = 0; on < 2; on++) {
+    valor[AJ_DV7] = on; valor[AJ_DTS_RECOVERY] = !on; assert(gravar());
+    valor[AJ_DV7] = !on; valor[AJ_DTS_RECOVERY] = on; ajustes_dir(dir);
+    assert(ajustes_dv7() == !on && ajustes_dts_recovery() == on);
+    assert(!ajustes_aplicar_blob("{\"dtsRecoveryLocal\":0}"));
+    assert(!ajustes_aplicar_blob("{\"c_settings_v1\":{\"values\":{\"c_dtsRecoveryLocal\":0}}}"));
+    assert(ajustes_dts_recovery() == on);
+  }
+  blob = NULL; ajustes_mesclar_blob("{}", &blob);
+  assert(!blob || !strstr(blob, "dtsRecoveryLocal")); free(blob);
+#endif
   // The legacy custom setting is consumed once and no longer serialized.
   char path[512]; snprintf(path,sizeof path,"%s/ajustes.txt",dir);
   for(int old=0;old<4;old++) {

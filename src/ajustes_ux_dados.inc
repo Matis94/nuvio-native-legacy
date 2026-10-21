@@ -199,6 +199,7 @@ static const char *uxSinonimos(int op) {
     case AJ_BRILHO_PLAYER: return "brilho interface player controles barra escurecer forte claro oled hdr osd luz";
     case AJ_DICASCONTROLE: return "controle dicas atalhos remote tips CH+ CH- toque";
     case AJ_NOVIDADES20: return "novidades novo versao 2.0 tour guia o que mudou mudancas whats new";
+    case AJ_DTS_RECOVERY: return "dts recovery retry stalled download timestamp SDR audio playback";
     case AJ_DTS_AC3: return "dts truehd convertido ac3 aac dolby digital 5.1 surround estereo audio som barra de som receiver arc earc conversao lg samsung desligado converted stereo off";
     case AJ_PS_CONTINUAR: return "continuar escolha perfil cartao card tela abertura inicial assistindo retomar remover esconder desligar quem esta assistindo continue watching profile picker";
     case AJ_DV_MKV: return "dolby vision dv dovi mkv matroska perfil 8 5 hdr hdr10 experimental imagem cores";
@@ -260,6 +261,7 @@ static const char *uxSinonimos(int op) {
     case AJ_ESTAT_LADO: return "estatisticas ao vivo stats nerds lado direita esquerda direito esquerdo posicao painel live statistics side left right position";
     case AJ_PLAYER_ANIME: return "player anime externo igual vlc mx outro app video kitsu mal";
     case AJ_PLAYER_EXTERNO: return "player externo interno perguntar vlc mx outro app video external ask";
+    case AJ_BUFFER_RAM_AUTO: return "buffer ram memory automatic reduction low memory protection";
     case AJ_BUFFER: return "buffer tamanho memoria 64 128 256 mb travando carregando rede instavel stats nerds";
     case AJ_CACHE_SEEK: return "cache seek buffer disco armazenamento voltar avancar travando carregando";
     case AJ_TMDB_IDIOMA: return "idioma metadados titulo sinopse traducao tmdb";

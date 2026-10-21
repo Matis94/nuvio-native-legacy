@@ -10,7 +10,11 @@ for source in src/*.c src/dts/*.c; do
 done
 read -r -a cflags <<< "$(pkg-config --cflags sdl2 SDL2_image SDL2_ttf glesv2 egl zlib)"
 read -r -a libs <<< "$(pkg-config --libs sdl2 SDL2_image SDL2_ttf glesv2 egl zlib)"
-cc -std=gnu11 -DNV_LINUX_DESKTOP -Isrc -O1 -g -ffunction-sections -fdata-sections \
-  "${sources[@]}" tests/playback_ram_settings.c "${cflags[@]}" \
-  -Wl,--gc-sections -o "$task_tmp/settings" "${libs[@]}" -ldl -pthread -lm
-"$task_tmp/settings"
+for mode in disabled enabled; do
+  extra=()
+  [[ $mode != enabled ]] || extra+=(-DNV_TEST_RECOVERY_SETTINGS)
+  cc -std=gnu11 -DNV_LINUX_DESKTOP -Isrc -O1 -g -ffunction-sections -fdata-sections \
+    "${extra[@]}" "${sources[@]}" tests/playback_ram_settings.c "${cflags[@]}" \
+    -Wl,--gc-sections -o "$task_tmp/settings-$mode" "${libs[@]}" -ldl -pthread -lm
+  "$task_tmp/settings-$mode"
+done

@@ -46,11 +46,17 @@ static const Item TELA[] = {
       OPC(AJ_DTS_AC3),
 #if !defined(NV_TPK) && !defined(NV_ANDROID)
       OPC(AJ_DV_MKV), OPC(AJ_DV7),
+#ifdef NV_DTS_WEBOS_RECOVERY
+      OPC(AJ_DTS_RECOVERY),
+#endif
       OPC(AJ_PLAYER_RAM),
 #endif
       OPC(AJ_CACHE_SEEK), OPC(AJ_MANTER_VIDEO), OPC(AJ_RETOMADA_MORNA), OPC(AJ_MANTER_PRAZO), OPC(AJ_SEEKR_AJUSTE),
 #if defined(NV_ANDROID) || (!defined(NV_TPK) && !defined(__EMSCRIPTEN__))
       OPC(AJ_BUFFER),   // webOS: DTS/Dolby Vision conversion read-ahead
+#ifdef NV_WEBOS
+      OPC(AJ_BUFFER_RAM_AUTO),
+#endif
 #endif
 #ifdef NV_ANDROID
       OPC(AJ_PLAYER_EXTERNO),

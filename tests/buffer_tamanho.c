@@ -14,32 +14,35 @@ int main(void) {
   assert(cacheboost_buffer_mb(3, 4096) == 256);
   // LG C5 report: ~500 MiB free before the buffer -> 256 fits above the floor.
   assert(cacheboost_buffer_mb(3, 500) == 256);
-  // DTS allocates ceil(MiB / 4) queued ranges plus one active range.
-  // At 448 MiB free, 64 queued ranges plus the active cache break the floor.
-  const long available[] = {255, 256, 259, 260, 319, 320, 323, 324, 447, 448, 451, 452, 500};
-  for (size_t i = 0; i < sizeof available / sizeof available[0]; i++) {
-    long freeMb = available[i];
+  // Official da7b893 floor: reserve 100 MiB after queue + active 4 MiB.
+  assert(CB_BUFFER_PISO_MB == 100);
+  for (long freeMb = 0; freeMb <= 500; freeMb++) {
     for (int option = 1; option <= 3; option++) {
       int mb = cacheboost_buffer_mb(option, freeMb);
-      if (!mb) continue; // Auto preserves the backend default.
-      long backendBytes = ((mb + 3) / 4 + 1L) * (4L * 1024 * 1024 - 1);
-      assert(freeMb * 1024 * 1024 - backendBytes >= CB_BUFFER_PISO_MB * 1024L * 1024);
+      assert(!mb || freeMb - mb - 4 >= CB_BUFFER_PISO_MB);
     }
   }
-  // Tight RAM steps down the ladder, never below the floor.
-  assert(cacheboost_buffer_mb(3, 448) == 128);
-  assert(cacheboost_buffer_mb(3, 451) == 128);
-  assert(cacheboost_buffer_mb(3, 452) == 256);
-  assert(cacheboost_buffer_mb(2, 324) == 128);
-  assert(cacheboost_buffer_mb(1, 260) == 64);
-  assert(cacheboost_buffer_mb(3, 447) == 128);
-  assert(cacheboost_buffer_mb(3, 320) == 64);
-  assert(cacheboost_buffer_mb(3, 300) == 64);
-  assert(cacheboost_buffer_mb(2, 255) == 0);
-  assert(cacheboost_buffer_mb(1, 256) == 0);
+  assert(cacheboost_buffer_mb(3, 360) == 256);
+  assert(cacheboost_buffer_mb(3, 359) == 128);
+  assert(cacheboost_buffer_mb(2, 232) == 128);
+  assert(cacheboost_buffer_mb(2, 231) == 64);
+  assert(cacheboost_buffer_mb(1, 168) == 64);
+  assert(cacheboost_buffer_mb(1, 167) == 0);
+  assert(cacheboost_buffer_mb(3, 300) == 128);
+  assert(cacheboost_buffer_mb(3, 250) == 128);
+  assert(cacheboost_buffer_mb(3, 150) == 0);
   // Unknown memory or out-of-range option -> Auto.
   assert(cacheboost_buffer_mb(3, -1) == 0);
   assert(cacheboost_buffer_mb(4, 4096) == 0 && cacheboost_buffer_mb(-1, 4096) == 0);
+  // Explicit RAM opt-out respects supported choices even with low/unknown RAM.
+  const long tight[] = {-1, 0, 99, 100, 150, 167, 168, 231, 232, 359, 360};
+  for (size_t i = 0; i < sizeof tight / sizeof tight[0]; i++) {
+    for (int option = -1; option <= 4; option++) {
+      int requested = option >= 1 && option <= 3 ? 32 << option : 0;
+      assert(cacheboost_buffer_mb_policy(option, tight[i], 0) == requested);
+      assert(cacheboost_buffer_mb_policy(option, tight[i], 1) == cacheboost_buffer_mb(option, tight[i]));
+    }
+  }
   // The setting is queued read-ahead. Measured DTS/DV capacity also includes
   // its active range, and the official RAM clamp can lower the queue.
   const long long MiB = 1048576;

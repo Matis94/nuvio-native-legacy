@@ -581,6 +581,7 @@ unsigned ajustes_p2p_limite_mb(void);           // #334: P2P space limit in MB (
 int   ajustes_p2p_usb(void);                    // #205: 1 = cache P2P em pendrive USB
 int   ajustes_player_externo(int anime);     // #501/#205: 0 Interno, 1 Externo, 2 Perguntar, 3 app (pacote em ajustes_player_pacote); anime: -1 = Igual ao Player
 const char *ajustes_player_pacote(int anime); // #205: pacote do app escolhido ("" = nenhum)
+int   ajustes_buffer_ram_auto(void);          // webOS only, default On; next open
 int   ajustes_buffer_preset(void);           // #338: 0 Automatico, 1 = 64, 2 = 128, 3 = 256 MiB
 int   ajustes_cache_seek_mb(void);           // F07: seek cache limit in MB for the next video (0 = off / not on this TV)
 #ifdef AJUSTES_TESTE
@@ -643,6 +644,7 @@ int   ajustes_dv_mkv(void);              // 1 = Dolby Vision MKV through our dem
 int   ajustes_dv7(void);
 int   ajustes_player_ram_toggle(void);
 int   ajustes_player_ram(void);          // local test overlay, off by default
+int   ajustes_dts_recovery(void); // webOS-only, default On; applies to next session
 int   ajustes_cw_retido_tambem(void);   // 1 = o titulo da ilha/Retomar tambem fica em Continuar assistindo
 // Percentual (70-98, padrao 90) a partir do qual o episodio conta como
 // assistido: sai do Continuar assistindo e o card passa ao proximo. Local.
