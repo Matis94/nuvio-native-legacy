@@ -10,4 +10,6 @@ void fontesmortas_definir_escopo(const char *conta, int perfil);
 long fontesmortas_idade(const Stream *s);
 void fontesmortas_marcar(const Stream *s);
 void fontesmortas_limpar(const Stream *s);
+// UI caches track mutations and six-hour expiry without rehashing every URL.
+unsigned fontesmortas_versao(void);
 #endif

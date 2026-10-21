@@ -21,7 +21,7 @@ static void sameLayout(void) {
   float *ys=malloc((size_t)total*sizeof *ys), *hs=malloc((size_t)total*sizeof *hs);
   assert(indices && ys && hs);
   memcpy(indices,ordem,(size_t)total*sizeof *indices);
-  memcpy(ys,linhaY,(size_t)total*sizeof *ys); memcpy(hs,linhaH,(size_t)total*sizeof *hs);
+  for(int i=0;i<total;i++){ys[i]=linhaPosicao(i);hs[i]=linhaAltura(i);}
   float altura=alturaTotal, secs[FOLHA_GRUPOS]; memcpy(secs,secY,sizeof secs);
   // Independent uncached layout is the correctness oracle for animation,
   // marks, dynamic row heights, group headers, filtering and addon order.
@@ -79,7 +79,9 @@ static void benchmark(const char *dir, Stream *v, int count, int addon, int orde
     for(int j=0;j<20;j++) {tex_bombear(32);txt_novo_quadro();glClear(GL_COLOR_BUFFER_BIT);stream_folha_desenhar(SDL_GetTicks());SDL_Delay(5);}
     screenshot();
   }
-  unsigned builds=folhaLayoutMontagens;
+  contarFontes(); automaticoDaFolhaModo();
+  unsigned builds=folhaLayoutMontagens, visits=folhaLayoutVisitas;
+  unsigned counts=folhaContagemVisitas, choices=folhaAutoCalculos;
   double times[120];
   for(int j=0;j<120;j++) {
     SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_DOWN;
@@ -89,6 +91,9 @@ static void benchmark(const char *dir, Stream *v, int count, int addon, int orde
     times[j]=(SDL_GetPerformanceCounter()-a)*1000.0/SDL_GetPerformanceFrequency();
   }
   assert(folhaLayoutMontagens==builds && "focus/scroll must not rebuild ordering and closed heights");
+  assert(folhaLayoutVisitas==visits && "stable scrolling must not validate offscreen sources");
+  assert(folhaContagemVisitas==counts && "drawing provider totals must not scan sources");
+  assert(folhaAutoCalculos==choices && "moving focus must not recalculate automatic ranking");
   assert(textoAddonNSlots<=TEXTO_ADDON_RESIDENTES);
   qsort(times,120,sizeof *times,numberCompare);
   printf("scaling sources=%d addon=%d order=%d cold_ms=%.3f move_p50_ms=%.3f p95_ms=%.3f max_ms=%.3f full_rebuilds=%u parsed_resident=%d\n",
@@ -101,8 +106,8 @@ static void benchmark(const char *dir, Stream *v, int count, int addon, int orde
   soCache=1;sameLayout();soCache=0;
   melhorFolha=5;sameLayout();
   preferida=2;atual=4;sameLayout();
-  lista[6].foraCache=1;sameLayout();
-  fitClasses[7]=SF_PESADA;sameLayout();
+  lista[6].foraCache=1;folhaDadosMudaram();sameLayout();
+  fitClasses[7]=SF_PESADA;folhaDadosMudaram();sameLayout();
   setting(dir,addon,order,0);sameLayout();
   setting(dir,addon,order,1);txt_definir_fonte_interface(TXT_FAMILIA_MONTSERRAT);sameLayout();
   txt_definir_fonte_interface(TXT_FAMILIA_INTER);sameLayout();
@@ -159,8 +164,8 @@ int main(void) {
   stream_definir_tela(1,1);
   glViewport(0,0,1920,1080);assert(tex_iniciar(128));badges_carregar("deploy/app/art");gfx_icones_dir("deploy/app/art");
   flagPixels();
-  Stream *v=calloc(2000,sizeof *v);assert(v);
-  for(int i=0;i<2000;i++) {
+  Stream *v=calloc(2121,sizeof *v);assert(v);
+  for(int i=0;i<2121;i++) {
     Stream *s=&v[i];s->altura=(i%3==0?2160:1080);s->mp4=i%2;s->fileIdx=-1;s->tamanhoMB=(i*7919)%60000;
     s->badges=badges_detectar("WEB-DL DTS-HD MA");
     snprintf(s->url,sizeof s->url,"https://fixture.invalid/%d.%s",i,s->mp4?"mp4":"mkv");
@@ -168,11 +173,21 @@ int main(void) {
     snprintf(s->rotulo,sizeof s->rotulo,"Source %d",i);
     snprintf(s->audioIdiomas,sizeof s->audioIdiomas,"Polish,English,French,German,Japanese");s->audioDescritores=i%2?STREAM_AUDIO_MULTI:STREAM_AUDIO_DUAL;
     snprintf(s->legendaIdiomas,sizeof s->legendaIdiomas,"Portuguese");
-    snprintf(s->descricao,sizeof s->descricao,"💾 11.1 GB | 30.1 Mbps\n🔊 DTS-HD MA 5.1 | Dual Audio\n🌐 Polish | English\n⚙️ Release group\nMovie.2026.1080p.WEB-DL.Long.Release.Name.%04d.mkv",i);
+    snprintf(s->descricao,sizeof s->descricao,"🎬 Movie.2026.1080p.WEB-DL.Long.Release.Name.%04d.mkv\n🖥️ WEB-DL\n🎨 HEVC HDR DV 10Bit\n🎧 DTS-HD MA 5.1\n🗣️🌍 🇬🇧  🇵🇱 DUAL Dubbed\n💾 11.1 GB 🏷️ Group",i);
     snprintf(s->arquivo,sizeof s->arquivo,"Movie.2026.1080p.WEB-DL.Long.Release.Name.That.Must.Wrap.Without.Truncation.%04d.mkv",i);
   }
-  const int counts[]={100,500,1000,2000};
+  const int counts[]={100,500,1000,2121};
   for(int c=0;c<4;c++)for(int addon=0;addon<2;addon++)for(int order=0;order<2;order++)benchmark(dir,v,counts[c],addon,order);
+  setting(dir,1,1,1);stream_definir_lista(v,303);stream_folha_abrir();anim=1;
+  stream_lista_acrescentar(v+303,1818,2);
+  stream_folha_atualizar(1.f/60,SDL_GetTicks());
+  assert(n==2121 && nOrdem==2121 && nFiltrados()==2121);
+  unsigned oldChoices=folhaAutoCalculos,oldCounts=folhaContagemVisitas;
+  stream_vod_falhou(4);stream_folha_atualizar(1.f/60,SDL_GetTicks());
+  contarFontes();
+  assert(stream_vod_falhou_ha(4)>=0 && folhaAutoCalculos>oldChoices && folhaContagemVisitas>oldCounts);
+  stream_vod_tocou(4);stream_folha_atualizar(1.f/60,SDL_GetTicks());
+  assert(stream_vod_falhou_ha(4)<0);sameLayout();
   ranking(v);
   stream_definir_lista(NULL,0);free(v);tex_encerrar();txt_encerrar();gfx_encerrar();SDL_GL_DeleteContext(gl);SDL_DestroyWindow(win);SDL_Quit();
   puts("source list: cold/warm scrolling, both styles/orders, layout equivalence, filters, append, replacement, fonts, flags and bounded parsed cache OK");

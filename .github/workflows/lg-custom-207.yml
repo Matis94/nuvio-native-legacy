@@ -50,6 +50,8 @@ jobs:
           bash tests/playback_ram_settings.sh
           bash tests/audio_flags.sh
           SANITIZE=1 bash tests/audio_flags.sh
+          bash tests/fontesmortas_version.sh
+          SANITIZE=1 bash tests/fontesmortas_version.sh
           bash tests/fonte_ordem_addon.sh
           xvfb-run -a bash tests/fontes_formatter.sh
           xvfb-run -a bash tests/source_list_scaling.sh

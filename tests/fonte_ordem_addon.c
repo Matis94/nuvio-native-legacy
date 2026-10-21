@@ -3,6 +3,22 @@
 #include "../src/streams.c"
 #include "stub_player_source_actions.h"
 
+int ajustes_dolby_atmos(void) { return 0; }
+int ajustes_dolby_vision(void) { return 0; }
+int ajustes_dv_mkv(void) { return 0; }
+int ajustes_fonte_escopo(void) { return 0; }
+int ajustes_fonte_hdr(void) { return 0; }
+int ajustes_fonte_idioma_audio(void) { return 0; }
+int ajustes_fonte_manual(void) { return 0; }
+int ajustes_fonte_ordem_uso(void) { return 0; }
+int ajustes_fonte_primeira(void) { return 0; }
+int ajustes_fonte_regex_modo(void) { return 0; }
+int ajustes_fonte_usar_outros(void) { return 0; }
+int ajustes_tamanho_max_gb(void) { return 0; }
+int ajustes_tamanho_min_gb(void) { return 0; }
+const char *ajustes_qualidade(void) { return ""; }
+unsigned fonteregra_versao(void) { return 0; }
+
 static int modo;
 static int negativa, consultas;
 int debrid_resolver_cache(const char *h, int f, char *u, unsigned t, int *fora) {
