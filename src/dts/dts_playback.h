@@ -20,6 +20,9 @@ int dts_playback_enabled(void);
  * Vision one (AC-3/E-AC-3 passthrough, larger direct ranges, starvation
  * fallback). Consumed by that start. */
 void dts_playback_next_dv(int enabled);
+/* Main thread, next session only. Does not control DV/P7 conversion, codec
+ * core fallback or explicit seeks. No-op without NV_DTS_WEBOS_RECOVERY. */
+void dts_playback_next_recovery(int enabled);
 DtsPlayback *dts_playback_start(const char *url, const char *headers,
                                int audio_stream, double position,
                                int paused, const char *window, int webos_major,

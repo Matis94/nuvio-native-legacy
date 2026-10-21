@@ -13,7 +13,8 @@ static int fake_sleep(const struct timespec *, struct timespec *);
 static DtsPlaybackStatus pump_status;
 static unsigned closing_session;
 static int buffer_stops;
-int ajustes_movie_buffer_mib(void) { return 64; }
+int cacheboost_backend_buffer_mb(void) { return 64; }
+void mkvass_aceitar_imagem(int sim) { assert(sim == 1); }
 int moviebuffer_url(const char *s,const char *h,int mib,char *out,size_t n) {
   (void)s;(void)h;(void)mib;(void)out;(void)n;assert(0);return 0;
 }
@@ -129,7 +130,7 @@ int main(void) {
   snprintf(faixaAudio[0].codec,sizeof faixaAudio[0].codec,"eac3");
   snprintf(faixaAudio[1].codec,sizeof faixaAudio[1].codec,"dts");
   faixaAudio[0].numero=0;faixaAudio[1].numero=1;dtsHabilitado=1;
-  lsCall=fake_native_audio;
+  bus=(LSHandle *)(uintptr_t)1;lsCall=fake_native_audio;
   eventoPayload("{\"errorCode\":200,\"errorText\":\"Audio Codec Not Supported\"}",sessao);
   assert(audioNaoSup && !dtsSessao);
   video_escolher_audio(0);assert(audioNaoSup); /* same rejected track */
@@ -139,7 +140,23 @@ int main(void) {
   assert(video_tocando() && !audioNaoSup && !dtsSessao);
   eventoPayload("{\"errorCode\":200,\"errorText\":\"Audio Codec Not Supported\"}",sessao);
   assert(audioNaoSup); /* a fresh DTS failure still permits fallback */
-  audioNaoSup=0;dtsHabilitado=0;ligado=0;nAudio=0;midia[0]=0;posSeg=0;tocando=0;lsCall=NULL;
+  audioNaoSup=0;dtsHabilitado=0;ligado=0;nAudio=0;midia[0]=0;posSeg=0;tocando=0;lsCall=NULL;bus=NULL;
+
+  // A new playing event ends an old buffering indication even if LG omits
+  // bufferingEnd. A genuine subsequent underrun must remain observable.
+  SDL_Delay(2);
+  bufferandoDesde=1;
+  eventoPayload("{\"playing\":{}}",sessao);
+  assert(!bufferandoDesde && !video_bufferando_ms());
+  eventoPayload("{\"bufferingStart\":{}}",sessao);
+  assert(bufferandoDesde && video_bufferando_ms());
+  Uint32 first_buffering=bufferandoDesde;
+  eventoPayload("{\"currentTime\":2000}",sessao);
+  assert(bufferandoDesde==first_buffering); // time alone is not proof of video recovery
+  eventoPayload("{\"bufferingStart\":{},\"playing\":{}}",sessao);
+  assert(bufferandoDesde); // explicit buffering wins a combined payload
+  eventoPayload("{\"bufferingEnd\":{}}",sessao);
+  assert(!bufferandoDesde);
 
   /* Source stages have no detail field. Logging them must not read or print
    * uninitialized stack data, as seen in the full TV startup log. */
@@ -223,10 +240,12 @@ int main(void) {
   pump_count=3;pump_read=0;
   bombearDts();assert(pump_read==0 && !video_pronto() && !video_decoder_anunciou());
   pump_status.prepared=pump_status.native_loaded=pump_status.revision=1;
+  bufferandoDesde=1;bufferSeg=123; // stale buffering from native -> DV handoff
   pump_status.info.width=1920;pump_status.info.height=1080;
   snprintf(pump_status.media_id,sizeof pump_status.media_id,"exported-dts-media");
   bombearDts();
   assert(pump_read==3 && video_pronto() && video_tocando() && video_decoder_anunciou());
+  assert(!bufferandoDesde && !bufferSeg && !video_bufferando_ms());
   assert(!strcmp(vidHdr,"HDR10") && exported_windows>0 && !bindPendente);
   bombearDts();
   assert(video_pronto() && video_tocando() && video_decoder_anunciou());
@@ -238,12 +257,24 @@ int main(void) {
   int old_windows=exported_windows;
   bombearDts();assert(pump_read==0 && exported_windows==old_windows);
   pump_status.prepared=pump_status.native_loaded=1;pump_status.revision=2;
+  bufferandoDesde=1;bufferSeg=456; // stale state from the previous converter Load
   snprintf(pump_status.media_id,sizeof pump_status.media_id,"recovered-dts-media");
   bombearDts();
   assert(pump_read==3 && dtsRevisao==2 && !strcmp(midia,"recovered-dts-media"));
   assert(video_pronto() && video_tocando() && video_decoder_anunciou());
+  assert(!bufferandoDesde && !bufferSeg);
   assert(!strcmp(vidHdr,"HDR10") && exported_windows>old_windows);
   old_windows=exported_windows;bombearDts();assert(exported_windows==old_windows);
+  // Clear the retired revision even before any playing callback arrives,
+  // then retain fresh bufferingStart from the replacement until it plays.
+  pump_status.revision=3;
+  snprintf(pump_status.media_id,sizeof pump_status.media_id,"fresh-dv-media");
+  pump_count=pump_read=0;bufferandoDesde=1;bufferSeg=789;
+  bombearDts();assert(!bufferandoDesde && !bufferSeg && !video_tocando());
+  pump_events[0]="{\"bufferingStart\":{}}";pump_count=1;pump_read=0;
+  bombearDts();assert(bufferandoDesde && video_bufferando_ms());
+  pump_events[0]="{\"playing\":{}}";pump_read=0;
+  bombearDts();assert(!bufferandoDesde && video_tocando());
   puts("webOS ACB dispatch snapshot, stale generations, deferred VIDEO/MSE transitions, overrides and failed-init retry, early webOS 6 exported-window events and replacement pipeline tests passed");
   return 0;
 }

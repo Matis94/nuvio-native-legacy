@@ -351,12 +351,35 @@ static int faixasTexto(const char *p, const char *fim, char *dst, unsigned tam) 
   memcpy(json, p, (size_t)(f - p)); json[f - p] = 0;
   return js_cadeia(json, dst, tam) && faixasUtf8((const unsigned char *)dst);
 }
-static void faixaIdiomaAdicionar(char *dst, unsigned tam, const char *ini, const char *fim) {
+static unsigned faixaAudioDescritor(const char *ini, const char *fim) {
+  static const struct { const char *nome; unsigned bit; } valores[] = {
+    {"dual", STREAM_AUDIO_DUAL}, {"dual audio", STREAM_AUDIO_DUAL},
+    {"dual-audio", STREAM_AUDIO_DUAL}, {"dual áudio", STREAM_AUDIO_DUAL},
+    {"multi", STREAM_AUDIO_MULTI}, {"mul", STREAM_AUDIO_MULTI},
+    {"multi audio", STREAM_AUDIO_MULTI}, {"multi-audio", STREAM_AUDIO_MULTI},
+    {"multilingual", STREAM_AUDIO_MULTI}, {"multiple languages", STREAM_AUDIO_MULTI}
+  };
+  while (ini < fim && isspace((unsigned char)*ini)) ini++;
+  while (fim > ini && isspace((unsigned char)fim[-1])) fim--;
+  if (fim - ini >= 2 && ((*ini == '[' && fim[-1] == ']') || (*ini == '(' && fim[-1] == ')'))) {
+    ini++; fim--;
+    while (ini < fim && isspace((unsigned char)*ini)) ini++;
+    while (fim > ini && isspace((unsigned char)fim[-1])) fim--;
+  }
+  for (unsigned i = 0; i < sizeof valores / sizeof *valores; i++)
+    if (strlen(valores[i].nome) == (size_t)(fim - ini) &&
+        !strncasecmp(ini, valores[i].nome, (size_t)(fim - ini))) return valores[i].bit;
+  return 0;
+}
+static void faixaIdiomaAdicionar(char *dst, unsigned tam, const char *ini, const char *fim,
+                                 unsigned *descritores) {
   char idioma[128];
   while (ini < fim && isspace((unsigned char)*ini)) ini++;
   while (fim > ini && isspace((unsigned char)fim[-1])) fim--;
   size_t n = (size_t)(fim - ini);
   if (!n || n >= sizeof idioma) return;
+  unsigned bit = faixaAudioDescritor(ini, fim);
+  if (bit) { if (descritores) *descritores |= bit; return; }
   int letra = 0;
   for (const char *p = ini; p < fim; p++) {
     unsigned char c = (unsigned char)*p;
@@ -383,14 +406,15 @@ static void faixaIdiomaAdicionar(char *dst, unsigned tam, const char *ini, const
   if (usado) dst[usado++] = ',';
   memcpy(dst + usado, idioma, n + 1);
 }
-static void faixasValorLer(const char *v, const char *fim, char *dst, unsigned tam, unsigned prof, int faixa) {
+static void faixasValorLer(const char *v, const char *fim, char *dst, unsigned tam, unsigned prof, int faixa,
+                           unsigned *descritores) {
   if (!v || v >= fim || prof > 3) return;
   if (*v == '"') {
     char texto[1024];
     if (!faixasTexto(v, fim, texto, sizeof texto)) return;
     const char *p = texto;
     for (const char *q = p;; q++) if (!*q || *q == ',' || *q == '|' || *q == ';') {
-      faixaIdiomaAdicionar(dst, tam, p, q);
+      faixaIdiomaAdicionar(dst, tam, p, q, descritores);
       if (!*q) break;
       p = q + 1;
     }
@@ -400,7 +424,7 @@ static void faixasValorLer(const char *v, const char *fim, char *dst, unsigned t
       const char *f = faixasFimValor(q, fim, 0);
       if (!f) return;
       // Lista aninhada nao tem significado de faixa: nao a achatar.
-      if (*q == '"' || *q == '{') faixasValorLer(q, f, dst, tam, prof + 1, faixa);
+      if (*q == '"' || *q == '{') faixasValorLer(q, f, dst, tam, prof + 1, faixa, descritores);
       q = faixasEspacos(f, fim);
       if (q < fim && *q == ',') q = faixasEspacos(q + 1, fim);
       else break;
@@ -414,18 +438,19 @@ static void faixasValorLer(const char *v, const char *fim, char *dst, unsigned t
     for (unsigned k = 0; k < n; k++) {
       const char *p = valorRaiz(v, fim, chaves[k]);
       if (p && (*p == '"' || *p == '{')) {
-        faixasValorLer(p, fim, dst, tam, prof + 1, 0);
+        faixasValorLer(p, fim, dst, tam, prof + 1, 0, descritores);
         return;
       }
     }
   }
 }
-static void faixasCampo(const char *obj, const char *fim, const char *chave, char *dst, unsigned tam, int faixa) {
+static void faixasCampo(const char *obj, const char *fim, const char *chave, char *dst, unsigned tam, int faixa,
+                         unsigned *descritores) {
   const char *v = valorRaiz(obj, fim, chave), *f;
   if (!v || !(f = faixasFimValor(v, fim, 0))) return;
   const char *apos = faixasEspacos(f, fim);
   if (apos >= fim || (*apos != ',' && *apos != '}')) return;
-  faixasValorLer(v, f, dst, tam, 0, faixa);
+  faixasValorLer(v, f, dst, tam, 0, faixa, descritores);
 }
 
 // Um campo de texto do addon tambem pode RELATAR idiomas. Exigir uma secao
@@ -576,11 +601,16 @@ static const char *faixaIdiomaEmoji(const char *p, const char *fim) {
 static size_t faixasSeparadorTexto(const char *p, const char *fim) {
   if (p >= fim) return 0;
   if (*p == ',' || *p == '|' || *p == ';' || *p == '/') return 1;
-  return (size_t)(fim - p) >= strlen("•") && !memcmp(p, "•", strlen("•")) ? strlen("•") : 0;
+  static const char *const divisores[] = {"•", "│", "┃", "▸", "◆", "●", "·"};
+  for (unsigned i = 0; i < sizeof divisores / sizeof *divisores; i++) {
+    size_t n = strlen(divisores[i]);
+    if ((size_t)(fim - p) >= n && !memcmp(p, divisores[i], n)) return n;
+  }
+  return 0;
 }
 static size_t faixasMarcadorTexto(const char *p, const char *fim, int *tipo) {
   static const struct { const char *emoji; int tipo; } marcadores[] = {
-    {"🌎", 3}, {"🌐", 1}, {"🗣", 1}, {"⚑", 1}, {"📝", 2}
+    {"🌎", 3}, {"🌍", 3}, {"🌏", 3}, {"🌐", 1}, {"🗣", 1}, {"⚑", 1}, {"📝", 2}
   };
   for (unsigned k = 0; k < sizeof marcadores / sizeof *marcadores; k++) {
     size_t n = strlen(marcadores[k].emoji);
@@ -623,14 +653,30 @@ static int faixasIndicadoresTexto(const char *p, const char *fim) {
   return indicador;
 }
 static void faixasLinhaTexto(const char *p, const char *fim, char *audio, unsigned na,
-                             char *subs, unsigned ns) {
+                             char *subs, unsigned ns, unsigned *descritores) {
   int tipo = 0;
   while (p < fim) {
     p = faixasEspacos(p, fim);
     size_t n = faixasSeparadorTexto(p, fim);
     if (n) { p += n; continue; }
+    int tipoAnterior = tipo;
     n = faixasMarcadorTexto(p, fim, &tipo);
     if (n) {
+      // Compound custom heading: 🗣️🌍 is one audio heading, not a Multi
+      // value. A globe inside an already declared section preserves its type.
+      if (tipo == 3 && (tipoAnterior == 1 || tipoAnterior == 2)) tipo = tipoAnterior;
+      // AIOStreams uses the globe as its Multi value as well as a heading.
+      // Never turn a subtitle section into audio or guess languages from it.
+      if (tipo == 3 && descritores) {
+        const char *q = faixasEspacos(p + n, fim);
+        const char *e = q;
+        while (e < fim && !faixasSeparadorTexto(e, fim)) e++;
+        while (e > q && isspace((unsigned char)e[-1])) e--;
+        int secao;
+        if (!faixaIdiomaTextoConhecido(q, e) &&
+            (faixasRotuloTexto(q, fim, &secao) == q || secao != 2))
+          *descritores |= STREAM_AUDIO_MULTI;
+      }
       p = faixasEspacos(p + n, fim);
       if (p < fim && *p == ':') p++;
       continue;
@@ -638,7 +684,9 @@ static void faixasLinhaTexto(const char *p, const char *fim, char *audio, unsign
     const char *rotulado = faixasRotuloTexto(p, fim, &tipo);
     if (rotulado != p) { p = rotulado; continue; }
     const char *q = p;
-    for (; q < fim; q++) {
+    if (fim - p >= 8 && !memcmp(p, "\xF0\x9F\x87", 3) &&
+        !memcmp(p + 4, "\xF0\x9F\x87", 3)) q = p + 8;
+    else for (; q < fim; q++) {
       int proximo;
       // Uma URL e um valor inteiro: suas barras nao separam idiomas nem
       // permitem reiniciar um rotulo no caminho, como /subtitles:fr.
@@ -660,22 +708,83 @@ static void faixasLinhaTexto(const char *p, const char *fim, char *audio, unsign
     while (ate > ini && isspace((unsigned char)ate[-1])) ate--;
     // Outro campo encerra a secao; nao emprestar os valores seguintes.
     if (memchr(ini, ':', (size_t)(ate - ini))) tipo = 0;
+    unsigned bit = faixaAudioDescritor(ini, ate);
+    if (bit && tipo != 2 && descritores) *descritores |= bit;
     if (tipo) {
       char *dst = tipo == 2 ? subs : audio;
       unsigned tam = tipo == 2 ? ns : na;
       const char *idioma = tipo != 3 ? faixaIdiomaEmoji(ini, ate) : NULL;
-      if (idioma) faixaIdiomaAdicionar(dst, tam, idioma, idioma + strlen(idioma));
-      else if (faixaIdiomaTextoConhecido(ini, ate)) faixaIdiomaAdicionar(dst, tam, ini, ate);
+      if (idioma) faixaIdiomaAdicionar(dst, tam, idioma, idioma + strlen(idioma), tipo == 2 ? NULL : descritores);
+      else if (faixaIdiomaTextoConhecido(ini, ate)) faixaIdiomaAdicionar(dst, tam, ini, ate, tipo == 2 ? NULL : descritores);
     }
     p = q;
   }
 }
+static int faixaAudioSufixoTexto(const char *p, const char *fim, unsigned *bits) {
+  unsigned encontrados = 0;
+  int tem = 0;
+  while ((p = faixasEspacos(p, fim)) < fim) {
+    const char *e = p;
+    while (e < fim && !isspace((unsigned char)*e)) e++;
+    unsigned bit = faixaAudioDescritor(p, e);
+    if (!bit && !((e-p == 6 && !strncasecmp(p,"dubbed",6)) ||
+                  (tem && e-p == 5 && !strncasecmp(p,"audio",5)))) return 0;
+    encontrados |= bit; tem = 1; p = e;
+  }
+  if (tem && bits) *bits |= encontrados;
+  return tem;
+}
+static void faixasBandeirasTexto(const char *p, const char *fim, char *saida, unsigned tam,
+                                 unsigned *descritores) {
+  char paises[96] = "";
+  size_t usados = 0;
+  unsigned bits = 0;
+  while ((p = faixasEspacos(p, fim)) < fim) {
+    size_t n = faixasSeparadorTexto(p, fim);
+    if (n) { p += n; continue; }
+    int tipo = 0;
+    n = faixasMarcadorTexto(p, fim, &tipo);
+    if (n) {
+      if (tipo != 1 && tipo != 3) return;
+      p = faixasEspacos(p + n, fim);
+      if (p < fim && *p == ':') p++;
+      continue;
+    }
+    const char *rotulo = faixasRotuloTexto(p, fim, &tipo);
+    if (rotulo != p) { if (tipo != 1) return; p = rotulo; continue; }
+    if (fim-p >= 8 && !memcmp(p,"\xF0\x9F\x87",3) && !memcmp(p+4,"\xF0\x9F\x87",3) &&
+        (unsigned char)p[3] >= 0xA6 && (unsigned char)p[3] <= 0xBF &&
+        (unsigned char)p[7] >= 0xA6 && (unsigned char)p[7] <= 0xBF) {
+      char a=(char)('a'+(unsigned char)p[3]-0xA6), b=(char)('a'+(unsigned char)p[7]-0xA6);
+      size_t k; for(k=0;k<usados;k+=2)if(paises[k]==a && paises[k+1]==b)break;
+      if(k==usados && usados+2<sizeof paises) { paises[usados++]=a; paises[usados++]=b; }
+      p+=8; continue;
+    }
+    const char *q=p;
+    while(q<fim && !faixasSeparadorTexto(q,fim) &&
+          !(fim-q >= 3 && !memcmp(q,"\xF0\x9F\x87",3))) q++;
+    const char *e=q; while(e>p && isspace((unsigned char)e[-1]))e--;
+    if (!faixaAudioSufixoTexto(p,e,&bits) && !faixaIdiomaTextoConhecido(p,e)) return;
+    p=q;
+  }
+  // The ENTIRE line must be language values. A filename, provider, codec,
+  // subtitle label or URL invalidates it; generic country symbols only affect
+  // display and cannot make a source pass a declared-audio language filter.
+  if (descritores) *descritores |= bits;
+  for(size_t k=0;k<usados;k+=2) {
+    size_t u=strlen(saida), j; for(j=0;j<u;j+=2)if(saida[j]==paises[k] && saida[j+1]==paises[k+1])break;
+    if(j==u && u+2<tam) { saida[u]=paises[k]; saida[u+1]=paises[k+1]; saida[u+2]=0; }
+  }
+}
 static void faixasCampoTexto(const char *obj, const char *fim, const char *campo, Stream *s) {
-  if (s->audioIdiomas[0] && s->legendaIdiomas[0]) return;
   const char *v = valorRaiz(obj, fim, campo), *f;
-  char texto[2048], json[sizeof texto + 16];
+  // A JSON \uXXXX escape can occupy six bytes for one decoded character.
+  // Long escaped filenames must not discard a later language row that fits
+  // in the existing bounded decoded description.
+  char texto[2048], json[6 * sizeof texto + 16];
   char audio[sizeof s->audioIdiomas] = "", subs[sizeof s->legendaIdiomas] = "";
-  if (!v || !(f = faixasFimTexto(v, fim)) || (size_t)(f - v - 2) >= sizeof texto) return;
+  char paises[sizeof s->audioBandeiras] = "";
+  if (!v || !(f = faixasFimTexto(v, fim)) || (size_t)(f - v - 2) >= sizeof json - 16) return;
   const char *apos = faixasEspacos(f, fim);
   if (apos >= fim || (*apos != ',' && *apos != '}')) return;
   // A descricao permite quebras, mas nunca NUL, controles ocultos ou um valor
@@ -706,10 +815,24 @@ static void faixasCampoTexto(const char *obj, const char *fim, const char *campo
   for (const char *p = texto; *p;) {
     const char *q = p;
     while (*q && *q != '\n' && *q != '\r') q++;
-    faixasLinhaTexto(p, q, audio, sizeof audio, subs, sizeof subs);
+    if (!strcmp(campo,"name")) {
+      // This formatter places a regex-derived PL indicator BEFORE the
+      // provider/cache label in name. Keep it for display only: a provider
+      // label cannot establish the actual language used by audio filters.
+      const char *a=faixasEspacos(p,q), *e=a;
+      while (q-e >= 8 && !memcmp(e,"\xF0\x9F\x87",3) && !memcmp(e+4,"\xF0\x9F\x87",3))
+        e=faixasEspacos(e+8,q);
+      if (e>a) faixasBandeirasTexto(a,e,s->audioBandeiras,sizeof s->audioBandeiras,NULL);
+      break;
+    }
+    faixasLinhaTexto(p, q, audio, sizeof audio, subs, sizeof subs, &s->audioDescritores);
+    faixasBandeirasTexto(p, q, paises, sizeof paises, &s->audioDescritores);
     p = *q ? q + 1 : q;
   }
-  if (!s->audioIdiomas[0]) memcpy(s->audioIdiomas, audio, sizeof audio);
+  if (!s->audioIdiomas[0]) {
+    memcpy(s->audioIdiomas, audio, sizeof audio);
+    if (!s->audioBandeiras[0]) memcpy(s->audioBandeiras, paises, sizeof paises);
+  }
   if (!s->legendaIdiomas[0]) memcpy(s->legendaIdiomas, subs, sizeof subs);
 }
 static void metadadosFaixas(const char *obj, const char *fim, Stream *s) {
@@ -730,36 +853,37 @@ static void metadadosFaixas(const char *obj, const char *fim, Stream *s) {
   for (unsigned k = 0; k < sizeof objetos / sizeof *objetos; k++) if (objetos[k]) {
     const char *f = js_fim(objetos[k]);
     for (unsigned j = 0; j < sizeof audio / sizeof *audio; j++)
-      faixasCampo(objetos[k], f, audio[j], s->audioIdiomas, sizeof s->audioIdiomas, j >= 2);
+      faixasCampo(objetos[k], f, audio[j], s->audioIdiomas, sizeof s->audioIdiomas, j >= 2, &s->audioDescritores);
     for (unsigned j = 0; j < sizeof subs / sizeof *subs; j++)
-      faixasCampo(objetos[k], f, subs[j], s->legendaIdiomas, sizeof s->legendaIdiomas, j >= 2);
+      faixasCampo(objetos[k], f, subs[j], s->legendaIdiomas, sizeof s->legendaIdiomas, j >= 2, NULL);
     const char *tracks = objetoRaiz(objetos[k], f, "tracks");
     if (tracks) {
       const char *tf = js_fim(tracks);
-      faixasCampo(tracks, tf, "audio", s->audioIdiomas, sizeof s->audioIdiomas, 1);
-      faixasCampo(tracks, tf, "subtitles", s->legendaIdiomas, sizeof s->legendaIdiomas, 1);
-      faixasCampo(tracks, tf, "subtitle", s->legendaIdiomas, sizeof s->legendaIdiomas, 1);
+      faixasCampo(tracks, tf, "audio", s->audioIdiomas, sizeof s->audioIdiomas, 1, &s->audioDescritores);
+      faixasCampo(tracks, tf, "subtitles", s->legendaIdiomas, sizeof s->legendaIdiomas, 1, NULL);
+      faixasCampo(tracks, tf, "subtitle", s->legendaIdiomas, sizeof s->legendaIdiomas, 1, NULL);
     }
   }
   // AIOStreams separa explicitamente languages (audio) de subtitles no
   // ParsedFile. So estes caminhos documentados autorizam o nome generico.
   // https://github.com/Viren070/AIOStreams/blob/main/packages/core/src/db/schemas.ts
   if (parsedFile) {
-    faixasCampo(parsedFile, js_fim(parsedFile), "languages", s->audioIdiomas, sizeof s->audioIdiomas, 0);
-    faixasCampo(parsedFile, js_fim(parsedFile), "subtitles", s->legendaIdiomas, sizeof s->legendaIdiomas, 0);
+    faixasCampo(parsedFile, js_fim(parsedFile), "languages", s->audioIdiomas, sizeof s->audioIdiomas, 0, &s->audioDescritores);
+    faixasCampo(parsedFile, js_fim(parsedFile), "subtitles", s->legendaIdiomas, sizeof s->legendaIdiomas, 0, NULL);
   }
   if (parsed) {
-    faixasCampo(parsed, js_fim(parsed), "languages", s->audioIdiomas, sizeof s->audioIdiomas, 0);
-    faixasCampo(parsed, js_fim(parsed), "subtitles", s->legendaIdiomas, sizeof s->legendaIdiomas, 0);
+    faixasCampo(parsed, js_fim(parsed), "languages", s->audioIdiomas, sizeof s->audioIdiomas, 0, &s->audioDescritores);
+    faixasCampo(parsed, js_fim(parsed), "subtitles", s->legendaIdiomas, sizeof s->legendaIdiomas, 0, NULL);
   }
   // Stremio stream.subtitles sao legendas anexadas a ESTA fonte. Nao buscar
   // no objeto de resposta/titulo, nem afirmar que estas faixas sao embutidas.
-  faixasCampo(obj, fim, "subtitles", s->legendaIdiomas, sizeof s->legendaIdiomas, 1);
+  faixasCampo(obj, fim, "subtitles", s->legendaIdiomas, sizeof s->legendaIdiomas, 1, NULL);
   // Valores estruturados continuam prioritarios, por tipo. Na falta deles,
-  // ler somente secoes declaradas no texto DESTA fonte, nunca seu name,
+  // ler somente secoes declaradas no texto DESTA fonte, nunca seu name para filtros,
   // provedor, filename, filtro de idiomas ou faixas descobertas pelo player.
   faixasCampoTexto(obj, fim, "description", s);
   faixasCampoTexto(obj, fim, "title", s);
+  faixasCampoTexto(obj, fim, "name", s);
 }
 
 // Decimal integers only, parsed without double rounding. Numeric strings
@@ -1061,6 +1185,12 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
       if (isfinite(indice) && indice >= 0 && indice <= INT_MAX)
         s.fileIdx = (int)indice;
       if (s.infoHash[0]) lerFontesP2P(p, fim, s.fontes, sizeof s.fontes);
+    } else {
+      // Fonte com link: o hash, quando o addon manda, so serve para achar o
+      // torrent na conta TorBox (partes.h). Nao vira infoHash.
+      const char *cr = strstr(p, "\"clientResolve\"");
+      if (!js_texto(p, fim, "infoHash", s.hashTorrent, sizeof s.hashTorrent) && cr && cr < fim)
+        js_texto(cr, fim, "infoHash", s.hashTorrent, sizeof s.hashTorrent);
     }
     // Nao tocar URL cortada; sem url e sem hash nao ha o que tocar.
     if ((s.infoHash[0] || !strncmp(s.url, "http", 4)) &&
@@ -1132,6 +1262,14 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
       // cuidado de token() com DVDRip — o mesmo cuidado ja se aplica aqui).
       s.av1 = token(texto, "av1") || contem(texto, "av01");
       s.foraCache = stream_texto_fora_de_cache(texto);
+      // Cached by the add-on's own mark (clientResolve.isCached:true or "⚡" in
+      // the name): only the full source name can veto it. A mark found only in the
+      // description/title never overrides a negative status there. A "⏳" age, "download]" or "uncached" deep
+      // in the description/filename (AIOStreams + TorBox) marked every cached
+      // stream "not cached", and the verified auto pick dropped all of them.
+      if (s.foraCache && strlen(nomeFonte) < sizeof nomeFonte - 1 &&
+          (cache > 0 || (cache == 0 && textoEmCache(nomeFonte))) &&
+          !stream_texto_fora_de_cache(nomeFonte)) s.foraCache = 0;
       // AIOStreams: clientResolve.isCached e explicito; ausente nao e false.
       if (s.infoHash[0] && !s.url[0] && cache < 0) s.foraCache = 1;
       if (s.foraCache) s.emCache = 0;

@@ -1,5 +1,8 @@
 #define _POSIX_C_SOURCE 200809L
 #include "logexport.h"
+#ifndef NV_VERSAO
+#define NV_VERSAO "2.0.7"
+#endif
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -128,7 +131,7 @@ int logexport_create(const char *source, char *path, size_t size) {
   if (!out) { close(fd); goto done; }
   line = malloc(LINE_MAXIMUM + 1); clean = malloc(LINE_MAXIMUM + 128);
   if (!line || !clean) goto done;
-  fprintf(out, "Nuvio Legacy 2.0.6 DTS early retry test 8\nSnapshot UTC epoch: %lld\n"
+  fprintf(out, "Nuvio Legacy " NV_VERSAO " LG custom port\nSnapshot UTC epoch: %lld\n"
     "All app log categories; frozen snapshot, not live.\n"
     "Recognized credentials, URLs, personal identifiers and payloads are masked.\n"
     "Automatic redaction is best effort: review before sharing publicly.\n"

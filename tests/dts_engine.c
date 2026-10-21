@@ -41,7 +41,7 @@ char *rede_baixar_trecho64_final(const char *url,const char *headers,int64_t sta
 }
 char *rede_baixar_trecho64_cab(const char *url,const char *headers,int64_t start,int64_t end,long *size,int64_t *total,int *status,volatile int *cancelled) {
   assert(!strcmp(headers,HEADERS));
-  assert(start>=0 && end>=start && end-start<1024*1024); __atomic_add_fetch(&requests,1,__ATOMIC_RELAXED);
+  assert(start>=0 && end>=start && end-start<4*1024*1024); __atomic_add_fetch(&requests,1,__ATOMIC_RELAXED);
   *size=0; *status=0; *total=-1;
   if(__atomic_load_n(cancelled,__ATOMIC_RELAXED)) return NULL;
   FILE *f=fopen(url,"rb"); if(!f) return NULL;
@@ -62,6 +62,21 @@ static void aac_adts(FILE *out,const DtsFrame *f) {
 int main(int argc,char **argv) {
   assert(argc==3);
   DtsEngine *e=dts_engine_create(); assert(e && dts_engine_available());
+#ifndef DTS_ENGINE_HTTP
+  // Exercise the official 4 MiB queue configuration and diagnostics for
+  // every preset; ASan catches slot-array overruns during container probing.
+  const int budgets[]={0,64,128,256};
+  for(unsigned i=0;i<sizeof budgets/sizeof *budgets;i++) {
+    dts_engine_set_ahead_mib(budgets[i]);
+    check(e,dts_engine_open(e,argv[1],HEADERS,-1,0,0));
+    DtsBufferInfo buffer; dts_engine_buffer_info(e,&buffer);
+    int64_t unit=4*1024*1024-1;
+    int64_t expected=budgets[i] ? (budgets[i]/4+1)*unit : 33LL*1024*1024;
+    assert(buffer.capacity_bytes==expected);
+    assert(buffer.ready_bytes>=0 && buffer.ready_bytes<=buffer.capacity_bytes);
+  }
+  dts_engine_set_ahead_mib(0);
+#endif
   check(e,dts_engine_open(e,argv[1],HEADERS,-1,0,0));
   const DtsMediaInfo *info=dts_engine_info(e);
   assert(info->channels==2); assert(info->sample_rate==48000);

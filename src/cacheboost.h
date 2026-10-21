@@ -82,8 +82,23 @@ void cacheboost_backend_cache(int mb);
 // switch). Android only: webOS/Tizen have no disk cache, so these are no-ops.
 void cacheboost_backend_titulo(const char *id);
 void cacheboost_backend_descartar(void);
-// #338: buffer preset (0 Auto, 1 Low, 2 Medium, 3 High) for the NEXT open.
-void cacheboost_backend_buffer(int preset);
+// #338: buffer size in MiB for the NEXT open (0 = Auto, the backend default).
+void cacheboost_backend_buffer(int mb);
+// Settings "Tamanho do buffer" index (0 Auto, 1 = 64, 2 = 128, 3 = 256 MiB)
+// -> MiB for the next open. Steps down the 256/128/64 ladder until free RAM
+// (`livreMb`, MemAvailable; < 0 = unknown) keeps CB_BUFFER_PISO_MB after the
+// buffer plus the DTS active range (4 MiB); nothing fits or unknown -> 0 (Auto). Logs any cut.
+#define CB_BUFFER_PISO_MB 100
+int cacheboost_buffer_mb(int opcao, long livreMb);
+// Explicit opt-out skips only the free-RAM ladder. Auto/invalid stay 0;
+// supported sizes remain bounded to 64/128/256 MiB. Backend allocation failures
+// retain their normal handling. Other platforms use the guarded wrapper above.
+int cacheboost_buffer_mb_policy(int opcao, long livreMb, int autoReduce);
+// Measured total includes the active DTS/DV range; the setting is read-ahead.
+// Show both when they differ, without hiding the working range or RAM clamp.
+void cacheboost_buffer_texto(char *dst, size_t n, long long used, long long capacity, int opcao);
+// Off Android: the last cacheboost_backend_buffer value (webOS DTS/DV read-ahead).
+int cacheboost_backend_buffer_mb(void);
 
 // Host captures/tests: pretend the backend supports (1) or not (0) the
 // features; -1 = the build's real answer.

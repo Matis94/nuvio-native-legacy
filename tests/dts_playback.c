@@ -19,7 +19,7 @@ static int64_t last_sub_pts;
 static atomic_int allow_decode_failure, transport_stalled, release_transport, stall_transport;
 static atomic_int jam_native, native_full, seek_failure;
 static atomic_int timestamp_fault, timestamp_fail_open, timestamp_block_open, timestamp_open_entered;
-static int last_dv;
+static int last_dv, last_recovery;
 static atomic_llong stall_wall_ns;
 static int64_t frozen_clock, original_stall_clock;
 static int64_t stall_audio_pts, stall_video_pts;
@@ -40,6 +40,7 @@ static void emit(const char *json) {
 void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *out) { (void)e;memset(out,0,sizeof *out); }
 int dts_engine_available(void) { return 1; }
 void dts_engine_dv(DtsEngine *e,int on) { (void)e; last_dv=on; }
+void dts_engine_recovery(DtsEngine *e,int on) { (void)e; last_recovery=on; }
 DtsEngine *dts_engine_create(void) { return calloc(1,sizeof(DtsEngine)); }
 int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,int core,double target) {
  (void)headers;assert(!strcmp(url,"fixture://movie"));
@@ -241,13 +242,24 @@ static DtsPlayback *start(int paused,int stream,const DtsTrack *selected,int ord
 }
 int main(int argc,char **argv) {
  assert(argc==2);assert(!dts_playback_enabled());DtsPlayback *p;DtsPlaybackStatus s;
- if(!strncmp(argv[1],"timestamp",9)) {
+ if(!strcmp(argv[1],"recoveryoff") || !strcmp(argv[1],"recoveryoffdv")) {
+  int dv=!strcmp(argv[1],"recoveryoffdv");scenario=TIMESTAMP_ONCE;
+  dts_playback_next_dv(dv);dts_playback_next_recovery(0);p=start(0,9,NULL,0,0);
+  wait_count(&accepted,2);assert(last_dv==dv && !last_recovery);
+  atomic_store(&timestamp_fault,1);s=wait_status(p,1,0);
+  assert(!strcmp(s.error,DTS_ENGINE_TIMESTAMP_DISCONTINUITY) && count(&loads)==1 && count(&opens)==1);
+  dts_playback_close(p);
+  // One-shot Off does not leak to the next video; P7/DV remains independent.
+  scenario=NORMAL;dts_playback_next_dv(0);p=start(0,9,NULL,0,0);wait_count(&accepted,4);
+  assert(last_recovery && !last_dv);dts_playback_close(p);
+ } else if(!strncmp(argv[1],"timestamp",9)) {
   int bounded=!strcmp(argv[1],"timestampbound"), progress=!strcmp(argv[1],"timestampprogress");
   int reopen_fail=!strcmp(argv[1],"timestampopenfail"), cancel=!strcmp(argv[1],"timestampcancel");
   int pause=!strcmp(argv[1],"timestamppause"), dv=!strcmp(argv[1],"timestampdv");
   int manual_seek=!strcmp(argv[1],"timestampseek"), audio_switch=!strcmp(argv[1],"timestampaudio");
   scenario=pause?TIMESTAMP_PAUSED:cancel?TIMESTAMP_CANCEL:bounded||progress||manual_seek||audio_switch?TIMESTAMP_REPEAT:TIMESTAMP_ONCE;
   dts_playback_next_dv(dv);p=start(pause,9,NULL,0,0);
+  assert(last_recovery && last_dv==dv);
   if(pause) wait_count(&nexts,1);else wait_count(&accepted,2);
   if(!pause) {
    dts_playback_subtitle(p,20);wait_count(&sub_created,1);
@@ -435,6 +447,14 @@ int main(int argc,char **argv) {
   wait_count(&accepted,before+4);assert(atomic_load(&native_full)==0);
   assert(last_open_target==298.381);
   pthread_mutex_lock(&fixture);assert(frozen_clock>INT64_C(298381000000));pthread_mutex_unlock(&fixture);
+  dts_playback_close(p);
+ } else if(!strcmp(argv[1],"stalloff")) {
+  scenario=NATIVE_STALL;atomic_store(&stall_wall_ns,INT64_C(100000000000));
+  dts_playback_next_recovery(0);p=start(0,9,NULL,0,0);wait_count(&accepted,4);assert(!last_recovery && !last_dv);
+  atomic_store(&jam_native,1);
+  for(int i=0;i<1500 && atomic_load(&native_full)<100;i++) nap();
+  assert(atomic_load(&native_full)>=100 && count(&loads)==1);dts_playback_status(p,&s);assert(!s.failed);
+  dts_playback_seek(p,42);wait_count(&loads,2);assert(last_seek==42 || last_open_target==42);
   dts_playback_close(p);
  } else if(!strcmp(argv[1],"stallrecover") || !strcmp(argv[1],"stallbound") ||
            !strcmp(argv[1],"stallnoclock") || !strcmp(argv[1],"stalltransient") ||

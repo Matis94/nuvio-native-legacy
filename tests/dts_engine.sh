@@ -9,14 +9,14 @@ PREFIX=${NUVIO_DTS_ROOT:-${TMPDIR:-/tmp}/nuvio-dts-host}
 TMP=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-dts-test.XXXXXXXX)
 SERVER_PID=""
 trap 'if [ -n "$SERVER_PID" ]; then kill "$SERVER_PID" 2>/dev/null || true; fi; rm -rf "$TMP"' EXIT
-${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -DNV_DTS_FFMPEG -I"$PREFIX/include" \
+${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -DNV_DTS_FFMPEG ${NV_TEST_DTS_RECOVERY_CFLAGS--DNV_DTS_WEBOS_RECOVERY} -I"$PREFIX/include" \
   src/dts/dts_engine.c tests/dts_engine.c -o "$TMP/engine" \
   -L"$PREFIX/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread
 printf '1\n00:00:00,500 --> 00:00:01,500\nDTS subtitle fixture\n' > "$TMP/input.srt"
 ffmpeg -hide_banner -loglevel error \
   -f lavfi -i 'color=size=64x64:rate=25:duration=4' \
   -f lavfi -i 'aevalsrc=0.1*sin(2*PI*300*t)|0.1*sin(2*PI*500*t)|0.1*sin(2*PI*700*t)|0.1*sin(2*PI*100*t)|0.1*sin(2*PI*900*t)|0.1*sin(2*PI*1100*t):s=44100:d=4:c=5.1' \
-  -i "$TMP/input.srt" -map 0:v -map 1:a -map 1:a -map 2:s -c:s srt -c:v libopenh264 -g 25 -c:a dca -strict -2 -b:a 1411200 \
+  -i "$TMP/input.srt" -map 0:v -map 1:a -map 1:a -map 2:s -c:s srt -c:v libx264 -bf 0 -g 25 -c:a dca -strict -2 -b:a 1411200 \
   -metadata:s:a:0 language=eng -metadata:s:a:1 language=por "$TMP/input.mkv"
 "$TMP/engine" "$TMP/input.mkv" "$TMP/out.aac"
 ffmpeg -hide_banner -loglevel error -i "$TMP/input.mkv" -map 0 -c copy -c:s mov_text -strict -2 "$TMP/input.mp4"
@@ -74,7 +74,7 @@ with open(sys.argv[2],'wb') as out:
     out.write(source[:ftyp]); out.write(struct.pack('>I4s',gap,b'free'))
     out.seek(ftyp+gap); out.write(source[ftyp:])
 PY
-${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation -DNV_DTS_FFMPEG -DDTS_ENGINE_HTTP -I"$PREFIX/include" \
+${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation -DNV_DTS_FFMPEG ${NV_TEST_DTS_RECOVERY_CFLAGS--DNV_DTS_WEBOS_RECOVERY} -DDTS_ENGINE_HTTP -I"$PREFIX/include" \
   src/dts/dts_engine.c tests/dts_engine.c src/rede.c src/redeurl.c -o "$TMP/http-engine" \
   -L"$PREFIX/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
 python3 tests/dts_engine_server.py "$TMP" "$TMP/port" "$TMP/requests" &
@@ -91,7 +91,7 @@ with open(sys.argv[1].replace("range.bin", "prefetch.bin"),"wb") as out:
     count=96*1024*1024
     out.write((pattern*((count+250)//251))[:count])
 PY
-${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation -I"$PREFIX/include" \
+${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation ${NV_TEST_DTS_RECOVERY_CFLAGS--DNV_DTS_WEBOS_RECOVERY} -I"$PREFIX/include" \
   tests/dts_engine_avio.c src/rede.c src/redeurl.c -o "$TMP/range" \
   -L"$PREFIX/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
 "$TMP/range" "http://127.0.0.1:$PORT/parallel/range.bin"
@@ -99,7 +99,7 @@ ${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation -I"$PREF
 "$TMP/range" "http://127.0.0.1:$PORT/prefetch/prefetch.bin"
 cp "$TMP/prefetch.bin" "$TMP/dv-prefetch.bin"
 "$TMP/range" "http://127.0.0.1:$PORT/prefetch/dv-prefetch.bin"
-${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation -DRANGE_WORKERS=1 -I"$PREFIX/include" \
+${CC:-gcc} -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation -DRANGE_WORKERS=1 ${NV_TEST_DTS_RECOVERY_CFLAGS--DNV_DTS_WEBOS_RECOVERY} -I"$PREFIX/include" \
   tests/dts_engine_avio.c src/rede.c src/redeurl.c -o "$TMP/serial-range" \
   -L"$PREFIX/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
 "$TMP/serial-range" "http://127.0.0.1:$PORT/parallel/range.bin"

@@ -33,7 +33,7 @@ static void check_prefetch(DtsEngine *e) {
       if(job->state==3) { ready++; payload+=job->count; }
     }
     assert(active<=RANGE_WORKERS && occupied<=RANGE_SLOTS);
-    assert(payload + e->cache_size <= NV_RANGE_BUDGET_MIB*1024L*1024L);
+    assert(payload + e->cache_size <= (int64_t)(e->range_slots+1)*e->range_bytes);
     pthread_mutex_unlock(&e->range_lock);
   } while(ready<e->range_slots && clock_ns(CLOCK_MONOTONIC)<deadline);
   assert(ready==e->range_slots);
