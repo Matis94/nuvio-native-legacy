@@ -29,10 +29,14 @@ jobs:
         run: |
           git fetch --no-tags --depth=1 origin ceb0ba72f4e63523707ea8f165531291ea1530c9
           git diff --exit-code ceb0ba72f4e63523707ea8f165531291ea1530c9 HEAD -- src rust tools deploy
-      - name: Native buffering regressions
+      - name: Install host test dependencies
+        timeout-minutes: 6
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq build-essential pkg-config libsdl2-dev libgles-dev libegl-dev
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update -qq
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y -qq build-essential pkg-config libsdl2-dev libgles-dev libegl-dev
+      - name: Native buffering regressions
+        timeout-minutes: 4
+        run: |
           bash tests/video_http_buffer.sh
           bash tests/video_http_buffer_build.sh
           bash tests/video_moviebuffer.sh
@@ -42,6 +46,7 @@ jobs:
           /tmp/buffer-policy-test
           cc -std=gnu11 -Wall -Wextra -Werror -Isrc -c src/dts/dts_engine.c -o /tmp/dts-noffmpeg.o
       - name: Build host FFmpeg and test real HTTP buffering
+        timeout-minutes: 8
         env:
           NUVIO_DTS_HOST: '1'
           CC: gcc
