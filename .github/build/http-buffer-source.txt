@@ -1,0 +1,4 @@
+source=e19571da245ffbb8d1c4677e54dc6b8922754233
+base=v2.0.8
+package=full-webos-arm
+checks=video_http_buffer,video_http_buffer_build,video_moviebuffer,video_acb_lg,buffer_tamanho,moviebuffer
