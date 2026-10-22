@@ -1,4 +1,4 @@
-name: Build 2.0.8 original buffer counter IPK
+name: Build 2.0.8 native and DTS buffer test IPK
 on:
   push:
     branches: [build/custom-2.0.7-test]
@@ -27,13 +27,15 @@ jobs:
           persist-credentials: false
       - name: Verify application source
         run: |
-          git fetch --no-tags --depth=1 origin ceb0ba72f4e63523707ea8f165531291ea1530c9
-          git diff --exit-code ceb0ba72f4e63523707ea8f165531291ea1530c9 HEAD -- src rust tools deploy
+          git fetch --no-tags --depth=1 origin d4d718f86321db2d340ba1dec7dedb0e1bafc9e3
+          git diff --exit-code d4d718f86321db2d340ba1dec7dedb0e1bafc9e3 HEAD -- src rust tools deploy
+          git fetch --no-tags --depth=1 origin 87c8b8909f0d605f1d8351147fe5afb9de233b8d
+          python3 .github/build/verify_official_dts.py
       - name: Install host test dependencies
         timeout-minutes: 6
         run: |
           sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update -qq
-          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y -qq build-essential pkg-config libsdl2-dev libgles-dev libegl-dev
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y -qq build-essential pkg-config libsdl2-dev libgles-dev libegl-dev ffmpeg
       - name: Native buffering regressions
         timeout-minutes: 4
         run: |
@@ -42,6 +44,8 @@ jobs:
           bash tests/video_moviebuffer.sh
           bash tests/video_buffer_test_osd.sh
           bash tests/video_acb_lg.sh
+          bash tests/dts_playback.sh
+          BUFFER_DIAG=1 bash tests/dts_playback.sh
           cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -Isrc src/cacheboost.c tests/buffer_tamanho.c -lpthread -lm -o /tmp/buffer-policy-test
           /tmp/buffer-policy-test
           cc -std=gnu11 -Wall -Wextra -Werror -Isrc -c src/dts/dts_engine.c -o /tmp/dts-noffmpeg.o
@@ -53,8 +57,9 @@ jobs:
           NUVIO_DTS_ROOT: /tmp/nuvio-dts-host
           NUVIO_DTS_JOBS: '3'
         run: |
-          bash tools/build-dts-ffmpeg.sh
+          bash .github/build/host_ffmpeg.sh
           bash tests/moviebuffer.sh
+          bash tests/dts_buffer_reporting.sh
       - name: Install package tool and Rust target
         run: |
           npm install --prefix .build-tools --no-audit --no-fund @webosose/ares-cli@2.4.0
@@ -127,7 +132,7 @@ jobs:
           data = json.loads(p.read_text())
           assert data["version"] == "2.0.8"
           assert data["id"] == "space.nuvio.native.legacy"
-          data["title"] = "Nuvio Legacy (buffer counter test)"
+          data["title"] = "Nuvio Legacy (DTS buffer counter v2)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -140,7 +145,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-http-buffer-counter.ipk
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-buffer-counter-dts-v2.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -156,7 +161,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: http-buffer-counter-2.0.8-webos-ipk
+          name: buffer-counter-dts-v2-webos-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14
