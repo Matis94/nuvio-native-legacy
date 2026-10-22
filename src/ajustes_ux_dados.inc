@@ -185,7 +185,6 @@ static const char *uxSinonimos(int op) {
     case AJ_LEG2_POS: case AJ_LEG2_TAMANHO: case AJ_LEG2_COR: case AJ_LEG2_FUNDO: case AJ_LEG2_BORDA:
       return "legenda secundaria segunda dupla dual posicao topo junto empilhada tamanho cor fundo borda contorno estilo second subtitle position size color";
     case AJ_FONTE_IDIOMA_AUDIO: return "fonte automatica idioma audio dublado dublagem dual multi anime ingles japones preferir dub language";
-    case AJ_AUDIO_FLAGS: return "audio language flags countries dual multi multilingual aiostreams formatter bandeiras idiomas fontes addon";
     case AJ_FONTE_PRIORIDADE: case AJ_FONTE_HDR: return "fonte automatica prioridade qualidade equilibrio fluidez hdr dolby vision dv hdr10 sdr cor escolha melhor resolucao addon aiostreams ordem primeira order first";
     case AJ_LOGO_APP: return "logo marca simbolo novo classico icone identidade nuvio tv retro play gradiente splash";
     case AJ_ABERTURA: return "abertura splash inicio animacao zoom esmaecer fade direto rapido logo entrada boot arranque";
@@ -200,7 +199,6 @@ static const char *uxSinonimos(int op) {
     case AJ_BRILHO_PLAYER: return "brilho interface player controles barra escurecer forte claro oled hdr osd luz";
     case AJ_DICASCONTROLE: return "controle dicas atalhos remote tips CH+ CH- toque";
     case AJ_NOVIDADES20: return "novidades novo versao 2.0 tour guia o que mudou mudancas whats new";
-    case AJ_DTS_RECOVERY: return "dts recovery retry stalled download timestamp SDR audio playback";
     case AJ_DTS_AC3: return "dts truehd convertido ac3 aac dolby digital 5.1 surround estereo audio som barra de som receiver arc earc conversao lg samsung desligado converted stereo off";
     case AJ_PS_CONTINUAR: return "continuar escolha perfil cartao card tela abertura inicial assistindo retomar remover esconder desligar quem esta assistindo continue watching profile picker";
     case AJ_DV_MKV: return "dolby vision dv dovi mkv matroska perfil 8 5 hdr hdr10 experimental imagem cores";
@@ -238,6 +236,7 @@ static const char *uxSinonimos(int op) {
     case AJ_CW_MINIMO: return "minimo continuar assistindo porcentagem percentual entrar fileira retomada progresso quanto assistir comecou piso minimum percent continue watching threshold row";
     case AJ_FONTE_PREPARAR: return "preparar fonte ao abrir titulo antecipar resolver antecipado play instantaneo inicio rapido debrid painel arquivo prepare source ahead instant start";
     case AJ_COLECAO_EXIBICAO: return "colecao colecoes exibicao padrao automatico grade linha tempo ranking saga decadas mural vitrine global collection collections default view automatic grid timeline showcase";
+    case AJ_LOG_REDE: return "registro rede local pagina log ip navegador local network log page browser seek";
     case AJ_LINK_REUSAR: case AJ_LINK_PRAZO: return "reusar ultimo link sem busca retomar validade cache horas reuse last link cache duration";
     case AJ_FONTE_GRUPO: case AJ_FONTE_GRUPO_SESSOES: return "grupo bingegroup binge proximo episodio mesma fonte lembrar fonte escolhida lancamento release sessoes reusar prefer binge group remember picked source same release next episode reuse sessions";
     case AJ_FONTE_PRECARREGAR: return "precarregar video buffer episodio proximo creditos preload video next episode";
@@ -262,7 +261,6 @@ static const char *uxSinonimos(int op) {
     case AJ_ESTAT_LADO: return "estatisticas ao vivo stats nerds lado direita esquerda direito esquerdo posicao painel live statistics side left right position";
     case AJ_PLAYER_ANIME: return "player anime externo igual vlc mx outro app video kitsu mal";
     case AJ_PLAYER_EXTERNO: return "player externo interno perguntar vlc mx outro app video external ask";
-    case AJ_BUFFER_RAM_AUTO: return "buffer ram memory automatic reduction low memory protection";
     case AJ_BUFFER: return "buffer tamanho memoria 64 128 256 mb travando carregando rede instavel stats nerds";
     case AJ_CACHE_SEEK: return "cache seek buffer disco armazenamento voltar avancar travando carregando";
     case AJ_TMDB_IDIOMA: return "idioma metadados titulo sinopse traducao tmdb";

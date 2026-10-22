@@ -29,6 +29,7 @@
 #include "marco.h"
 #include "streams.h"
 #include "video.h"
+#include "ajustes.h"
 #include "xtream.h"
 #include "capmkv.h"
 #include "audioinfo.h"
@@ -700,6 +701,11 @@ JNIEXPORT void JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeCache(JNIEnv
   }
 }
 
+JNIEXPORT jboolean JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeTunneling(JNIEnv *env, jclass cls) {
+  (void)env; (void)cls;
+  return ajustes_tunneling();
+}
+
 JNIEXPORT jint JNICALL Java_space_nuvio_nativelegacy_NvPlayer_nativeLimitedStatus(JNIEnv *env, jclass cls) {
   XtreamConta c;
   (void)env; (void)cls;
@@ -1167,11 +1173,6 @@ double video_pos(void) {
 double video_duracao(void) { return durMs / 1000.0; }
 // Capitulos do MKV lidos por um fio lateral (capmkv.c, 203-capitulos).
 double video_creditos(void) { return capmkv_creditos(video_duracao()); }
-// The Android bridge does not expose download-cache byte counts.
-void video_download_buffer(long long *used, long long *capacity) {
-  if (used) *used = 0;
-  if (capacity) *capacity = 0;
-}
 int video_live_progresso(double *pos, double *fim) {
   int valido;
   pthread_mutex_lock(&travaRetomada);

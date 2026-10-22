@@ -27,9 +27,9 @@ void dts_engine_set_ring_mib(int mib);
 /* Range read-ahead of dts_engine_open for engines opened after the call, in
  * MiB (Settings > Buffer size): 0 = default (32 MiB), else 4 MiB ranges. */
 void dts_engine_set_ahead_mib(int mib);
+/* Native HTTP cache only: measured ready payload and allocated ring capacity. */
 typedef struct { int64_t ready_bytes, capacity_bytes, position, total; } DtsBufferInfo;
 void dts_engine_buffer_info(DtsEngine *, DtsBufferInfo *);
-/* Byte-preserving input for the native URI player's loopback cache. */
 DtsEngine *dts_engine_source_create(const char *url, const char *headers, int mib);
 int dts_engine_source_read(DtsEngine *, int64_t offset, unsigned char *data, int n);
 int64_t dts_engine_source_total(DtsEngine *);
@@ -38,9 +38,8 @@ int dts_engine_available(void);
 /* Dolby Vision path, set before open: AC-3/E-AC-3 tracks are selectable and
  * pass through undecoded; HTTP ranges are larger and reuse the final address. */
 void dts_engine_dv(DtsEngine *, int enabled);
-/* Before open, independent of DV/P7. Without NV_DTS_WEBOS_RECOVERY this is
- * always disabled. Captured for the session; survives close/open/seek. */
-void dts_engine_recovery(DtsEngine *, int enabled);
+/* Explicit opt-in before open: P7 conversion and webOS recovery. Default off. */
+void dts_engine_allow_p7(DtsEngine *, int enabled);
 /* Open and seek return 0 on success, negative on error. */
 int dts_engine_open(DtsEngine *, const char *url, const char *headers,
                     int audio_stream, int core_only, double start_seconds);

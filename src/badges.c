@@ -13,7 +13,6 @@
 static const char *ids[]={"r-4k","r-1080","r-720","r-sd","q-remux","q-bluray","q-webdl","q-webrip","q-seadex","v-dv","v-hdr10plus","v-hdr10","v-hdr","v-hlg","v-imax-enhanced","v-imax","v-sdr","a-atmos-dv","a-atmos","a-truehd-dv","a-truehd","a-dtsx","a-dtshdma","a-dtshd","a-dts","a-dd-dv","a-ddp","a-dd","c-71","c-51","co-x265","co-x264","co-av1","p-netflix","p-prime","p-appletv","p-disney","p-max","p-hulu","p-peacock","p-paramount","p-crave","p-crunchyroll"};
 #define NB (sizeof ids/sizeof ids[0])
 static struct {char image[700],name[64];} art[NB];
-static char bandeirasDir[600], emojiDir[600];
 // BUSCA DO BIT LEMBRADA PELO ENDERECO DO TEXTO. Quem chama passa literal
 // ("r-4k", "v-dv"...), e a folha de Fontes chama isto milhares de vezes por
 // quadro (grupoRes/ehHdr/nivelHdr por fonte, 2-3 montagens por quadro):
@@ -171,41 +170,12 @@ float marca_formato(FormatoMarca f, float x, float y, float altura,
     return (float)l.w; }
 }
 void badges_carregar(const char *dir) {
-  snprintf(emojiDir, sizeof emojiDir, "%s/formatter-emoji", dir);
-  snprintf(bandeirasDir, sizeof bandeirasDir, "%s/flags", dir);
   char path[700];snprintf(path,sizeof path,"%s/badges/index.json",dir);FILE *f=fopen(path,"rb");if(!f)return;
   char body[24000];size_t n=fread(body,1,sizeof body-1,f);body[n]=0;fclose(f);
   for(const char *p=js_array(body,NULL,"badges");p;p=js_prox(js_fim(p))){char id[48],name[64],file[128];const char *e=js_fim(p);
     js_texto(p,e,"id",id,sizeof id);js_texto(p,e,"name",name,sizeof name);js_texto(p,e,"image",file,sizeof file);
     if(strchr(file,'/')||strstr(file,".."))continue;
     for(size_t i=0;i<NB;i++)if(!strcmp(ids[i],id)){snprintf(art[i].image,sizeof art[i].image,"%s/badges/%s",dir,file);snprintf(art[i].name,sizeof art[i].name,"%s",name);}
-  }
-}
-void badges_emoji(const char *id, float x, float y, float size, float alpha) {
-  char path[640];
-  if (!id || !*id || strlen(id)>48 || !emojiDir[0]) return;
-  for (const char *p=id; *p; p++) if (!isxdigit((unsigned char)*p) && *p!='-') return;
-  snprintf(path,sizeof path,"%s/%s.png",emojiDir,id);
-  GLuint tex=tex_obter_larg(path,size);
-  if (tex) {
-    gfx_tex_aspect_atual=0;
-    gfx_rect((GfxRect){x,y,size,size},tex,GFX_ARTE,0,0,0,0,1,1,1,alpha);
-  }
-}
-void badges_bandeira(const char *pais, float x, float y, float w, float h, float alpha) {
-  char path[640];
-  if (!pais || strlen(pais) != 2 || !isalpha((unsigned char)pais[0]) ||
-      !isalpha((unsigned char)pais[1])) return;
-  snprintf(path, sizeof path, "%s/%c%c.png", bandeirasDir,
-           tolower((unsigned char)pais[0]), tolower((unsigned char)pais[1]));
-  GLuint tex = bandeirasDir[0] ? tex_obter_larg(path, w) : 0;
-  if (tex) {
-    gfx_tex_aspect_atual = 0;
-    gfx_rect((GfxRect){x,y,w,h},tex,GFX_ARTE,0,0,0,.08f,1,1,1,alpha);
-  } else {
-    char label[3] = {(char)toupper((unsigned char)pais[0]), (char)toupper((unsigned char)pais[1]), 0};
-    TxtLinha l = txt_linha(TXT_MINI,label,210,210,210,255);
-    txt_desenhar_alpha(l,x+(w-l.w)*.5f,y+(h-l.h)*.5f,alpha);
   }
 }
 // FILEIRA DE BADGES, clara ou escura. A escura existe porque desde 16/09 a
@@ -248,7 +218,7 @@ float badges_desenhar_escura(uint64_t mask,float x,float y,float maxW,float h,fl
 // os usa como a linha de especificacao, abaixo do titulo, entao eles entram
 // num cinza da hierarquia do texto e nao no branco cheio de selo de cartaz.
 // Selo sem arte cai no nome, na mesma tinta.
-static float fileiraTom(uint64_t mask,float x,float y,float maxW,float h,float r,float g,float b,float a,float gap) {
+float badges_desenhar_tom(uint64_t mask,float x,float y,float maxW,float h,float r,float g,float b,float a) {
   float start=x;int c=(int)(r*255.0f+.5f);
   for(size_t i=0;i<NB;i++)if(mask&(UINT64_C(1)<<i)) {
     GLuint t=art[i].image[0]?tex_obter_larg(art[i].image,128):0;
@@ -257,15 +227,9 @@ static float fileiraTom(uint64_t mask,float x,float y,float maxW,float h,float r
       float height=w/aspect;gfx_rect((GfxRect){x,y+(h-height)*.5f,w,height},t,GFX_MARCA,0,0,0,0,r,g,b,a);}
     else{TxtLinha l=txt_linha(TXT_PG_FIM,art[i].name[0]?art[i].name:ids[i],c,c,c,255);w=(float)l.w;if(x+w>start+maxW)break;
       txt_desenhar_alpha(l,x,y+(h-l.h)*.5f,a);}
-    x+=w+gap;
+    x+=w+18;
   }
-  return x>start?x-start-gap:0;
-}
-float badges_desenhar_tom(uint64_t mask,float x,float y,float maxW,float h,float r,float g,float b,float a) {
-  return fileiraTom(mask,x,y,maxW,h,r,g,b,a,18);
-}
-float badges_desenhar_fonte(uint64_t mask,float x,float y,float maxW,float h,float r,float g,float b,float a) {
-  return fileiraTom(mask,x,y,maxW,h,r,g,b,a,8);
+  return x>start?x-start-18:0;
 }
 
 // --- SELOS COLORIDOS (#198, 01/10/2026) --------------------------------------

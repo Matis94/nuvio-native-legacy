@@ -11,16 +11,9 @@ for source in src/*.c src/dts/*.c; do
   case "$source" in src/main.c|src/streams.c) continue;; esac
   sources+=("$source")
 done
-flags=(-O1 -g -Isrc -Wno-deprecated-declarations -Wno-macro-redefined)
-if [[ $(uname) == Linux ]]; then
-  flags+=(-DNV_LINUX_DESKTOP)
-  read -r -a cflags <<< "$(pkg-config --cflags sdl2 SDL2_image SDL2_ttf glesv2 egl zlib)"
-  read -r -a libs <<< "$(pkg-config --libs sdl2 SDL2_image SDL2_ttf glesv2 egl zlib)"
-  flags+=("${cflags[@]}"); libs+=(-ldl -pthread -lm)
-else
-  flags+=(-I/opt/homebrew/include -I/opt/homebrew/include/SDL2)
-  libs=(-L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL)
-fi
+flags=(-O1 -g -Isrc -I/opt/homebrew/include -I/opt/homebrew/include/SDL2
+  -Wno-deprecated-declarations -Wno-macro-redefined)
+libs=(-L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL)
 mkdir -p "$dir/obj"
 for s in "${sources[@]}"; do
   o="$dir/obj/$(echo "$s" | tr / _).o"

@@ -1,4 +1,4 @@
-name: Build custom 2.0.7 formatter badges IPK
+name: Build 2.0.8 HTTP RAM buffer review IPK
 on:
   push:
     branches: [build/custom-2.0.7-test]
@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: custom-207-formatter-ipk
+  group: http-buffer-review-ipk
   cancel-in-progress: true
 jobs:
   build:
@@ -26,23 +26,28 @@ jobs:
           persist-credentials: false
       - name: Verify application source
         run: |
-          git fetch --no-tags --depth=1 origin 98257f63ba7861523ee026dd2631e9811a6bd829
-          git diff --exit-code 98257f63ba7861523ee026dd2631e9811a6bd829 HEAD -- src rust tools deploy
-      - name: Buffer labels and webOS buffering lifecycle regressions
+          git fetch --no-tags --depth=1 origin e19571da245ffbb8d1c4677e54dc6b8922754233
+          git diff --exit-code e19571da245ffbb8d1c4677e54dc6b8922754233 HEAD -- src rust tools deploy
+      - name: Native buffering regressions
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq build-essential pkg-config libsdl2-dev libgles-dev libegl-dev
-          bash tests/audio_flags.sh
-          ASAN_OPTIONS=detect_leaks=0 SANITIZE=1 bash tests/audio_flags.sh
-          bash tests/stream_parser.sh
-          bash tests/fontesmortas_version.sh
-          ASAN_OPTIONS=detect_leaks=0 SANITIZE=1 bash tests/fontesmortas_version.sh
-          bash tests/buffer_tamanho.sh
-          bash tests/buffer_overlay.sh
-          bash tests/dts_playback.sh
-          ASAN_OPTIONS=detect_leaks=0 SANITIZE=1 bash tests/dts_playback.sh
+          bash tests/video_http_buffer.sh
+          bash tests/video_http_buffer_build.sh
+          bash tests/video_moviebuffer.sh
           bash tests/video_acb_lg.sh
-          bash tests/video_buffer_teardown.sh
+          cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -Isrc src/cacheboost.c tests/buffer_tamanho.c -lpthread -lm -o /tmp/buffer-policy-test
+          /tmp/buffer-policy-test
+          cc -std=gnu11 -Wall -Wextra -Werror -Isrc -c src/dts/dts_engine.c -o /tmp/dts-noffmpeg.o
+      - name: Build host FFmpeg and test real HTTP buffering
+        env:
+          NUVIO_DTS_HOST: '1'
+          CC: gcc
+          NUVIO_DTS_ROOT: /tmp/nuvio-dts-host
+          NUVIO_DTS_JOBS: '3'
+        run: |
+          bash tools/build-dts-ffmpeg.sh
+          bash tests/moviebuffer.sh
       - name: Install package tool and Rust target
         run: |
           npm install --prefix .build-tools --no-audit --no-fund @webosose/ares-cli@2.4.0
@@ -51,20 +56,24 @@ jobs:
       - name: Restore application configuration from verified official release
         run: |
           mkdir -p .build-private
-          curl -fsSL --retry 3 https://github.com/iqui27/nuvio-native-legacy/releases/download/v2.0.7/space.nuvio.native.legacy_2.0.7_arm.ipk -o .build-private/official.ipk
-          curl -fsSL --retry 3 https://github.com/iqui27/nuvio-native-legacy/releases/download/v2.0.7/SHA256SUMS -o .build-private/SHA256SUMS
+          curl -fsSL --retry 3 https://github.com/iqui27/nuvio-native-legacy/releases/download/v2.0.8/space.nuvio.native.legacy_2.0.8_arm.ipk -o .build-private/official.ipk
+          curl -fsSL --retry 3 https://github.com/iqui27/nuvio-native-legacy/releases/download/v2.0.8/SHA256SUMS -o .build-private/SHA256SUMS
           python3 .github/build/release_config.py .build-private/official.ipk .build-private/SHA256SUMS local.properties
       - name: Restore SDK cache
         uses: actions/cache/restore@v4
         with:
           path: .build-cache/sdk.tar.zst
           key: custom207-sdk-amd64-${{ hashFiles('tools/Dockerfile', 'tools/build-ass-arm.sh', 'tools/build-dts-ffmpeg.sh') }}
+          restore-keys: custom207-sdk-amd64-
       - name: Build webOS SDK, libass, FFmpeg and Rust
         run: |
           if [ -f .build-cache/sdk.tar.zst ]; then
             zstd -dc .build-cache/sdk.tar.zst | docker load
           else
-            docker build --platform linux/amd64 --build-arg SDK_URL=https://github.com/openlgtv/buildroot-nc4/releases/download/webos-a38c582/arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz -t nuvio-webos-sdk tools/
+            cp tools/Dockerfile tools/Dockerfile.review
+            python3 .github/build/sdk_links.py tools/Dockerfile.review
+            docker build -f tools/Dockerfile.review --platform linux/amd64 --build-arg SDK_URL=https://github.com/openlgtv/buildroot-nc4/releases/download/webos-a38c582/arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz -t nuvio-webos-sdk tools/
+            rm tools/Dockerfile.review
             mkdir -p .build-cache
             docker save nuvio-webos-sdk | zstd -T2 -3 -o .build-cache/sdk.tar.zst
           fi
@@ -97,7 +106,7 @@ jobs:
         with:
           path: .build-p2p
           key: custom207-p2p-amd64-${{ hashFiles('tools/p2p-motor/build-arm.sh', 'tools/p2p-motor/pasta.sh', 'tools/p2p-motor/janela-334.patch') }}
-      - name: Compile and package custom test
+      - name: Compile and package full HTTP buffer test
         run: |
           export RUSTUP_HOME="$HOME/.rustup"
           export CARGO_HOME="$HOME/.cargo"
@@ -109,9 +118,9 @@ jobs:
           import json, pathlib
           p = pathlib.Path("deploy/app/appinfo.json")
           data = json.loads(p.read_text())
-          assert data["version"] == "2.0.7"
+          assert data["version"] == "2.0.8"
           assert data["id"] == "space.nuvio.native.legacy"
-          data["title"] = "Nuvio Legacy (custom 2.0.7 native badge focus v4)"
+          data["title"] = "Nuvio Legacy (HTTP RAM buffer test)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -124,7 +133,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.7_arm.ipk output/space.nuvio.native.legacy_2.0.7_arm-custom-native-badges-v4.ipk
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-http-ram-buffer-test.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -140,7 +149,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: custom-2.0.7-webos-ipk
+          name: http-ram-buffer-2.0.8-webos-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14

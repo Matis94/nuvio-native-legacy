@@ -116,8 +116,6 @@ double video_duracao(void);  // 0 enquanto desconhecida
 // baixado para descobrir o idioma das faixas — ver mkv.h. Vale so para MKV com
 // capitulos; quem chama precisa de um plano B.
 double video_creditos(void);
-// Download-cache payload bytes; zero when unavailable. Either output may be NULL.
-void video_download_buffer(long long *used, long long *capacity);
 double video_buffer_fim(void); // ate onde o buffer cobre (s); 0 se desconhecido
 // Ha quanto tempo (ms) o pipeline esta parado esperando dados, do par de
 // eventos bufferingStart/bufferingEnd do uMS; 0 quando NAO esta bufferizando.
@@ -174,8 +172,8 @@ void video_definir_reconexao(int sim);
 // velocidade e pausa. 1 = pedido aceito; 0 = indisponivel neste estado/alvo.
 int  video_recarregar(void);
 // MODO DO LOAD para o PROXIMO video_tocar (#158, LG C4: dado chega, VDEC
-// concedido, decoder nunca anuncia). 0 = o de sempre; 1 = sem o selectTrack
-// de video logo depois do load; 2 = o 1 e mais o payload enxuto de live
+// concedido, decoder nunca anuncia). 0/1 = default-track startup (the legacy
+// mode 1 is retained for saved settings); 2 = the lean live payload
 // (mediaTransportType HLS/URI, sem useSeekableRanges/bufferControl). Vale UMA
 // vez (video_modo_live_consumir zera); so a webOS le. Ver video_modo.c.
 void video_definir_modo_live(int modo);
@@ -183,6 +181,13 @@ int  video_modo_live_consumir(void);
 // Numero da tentativa (1..3) enquanto uma queda esta em curso, esperando ou
 // recarregando; 0 fora disso. Enquanto nao e 0, video_falhou fica em 0.
 int    video_reconectando(void);
+#ifdef NV_TPK
+// Seek sent and not yet confirmed by the TV (video_tpk.c), and a counter of
+// seeks the TV refused (EV_BUSCA_FALHOU). Used by player.c to hold the bar on
+// the target instead of the stale position.
+int      video_busca_em_voo(void);
+unsigned video_busca_falhas(void);
+#endif
 int    video_tocando(void);
 // Pausa comprovada pelo backend da sessao atual, nao a intencao local de
 // video_pausar. Alvos sem confirmacao confiavel devolvem 0.
@@ -224,7 +229,7 @@ int video_dv_recuo_consumir(void);
 enum {
   VIDEO_DV_NAO_NADA = 0,
   VIDEO_DV_NAO_SEM_DV,    // o cabecalho do arquivo nao tem Dolby Vision
-  VIDEO_DV_NAO_PERFIL,    // perfil 7 com camada de realce (ou outro que nao 5/8)
+  VIDEO_DV_NAO_PERFIL,    // unsupported profile/layout or missing converter
   VIDEO_DV_NAO_AUDIO,     // nenhuma faixa de audio que o caminho alimenta
   VIDEO_DV_NAO_SONDA,     // o cabecalho nao veio (a sonda desistiu)
   VIDEO_DV_NAO_LENTO,     // o caminho abriu e a fonte nao acompanhou
@@ -324,7 +329,6 @@ static inline void video_stats_vazio(VideoStats *s) {
 }
 void video_estatisticas(VideoStats *s);
 #if defined(__APPLE__) || defined(NV_LINUX_DESKTOP)
-void video_simular_download_buffer(long long used,long long capacity);
 void video_simular_estatisticas(const VideoStats *s);   // capturas; NULL zera
 #endif
 

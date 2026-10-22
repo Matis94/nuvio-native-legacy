@@ -60,7 +60,7 @@ panel-left list-x bell audio-lines layers type sliders-horizontal book-open user
 alarm-clock badge-check captions chart-column chevrons-down circle-check circle-dot compass droplet feather film funnel globe image image-plus inbox key key-round layout-list life-buoy link list-ordered list-video loader log-in map maximize-2 menu message-square monitor-play mouse-pointer move-horizontal pause picture-in-picture-2 play quote send server settings-2 shield sparkle stethoscope telescope thumbs-up unlink wand sparkles corner-up-left book-open-text
 pipette blend spotlight paint-roller
 ellipsis
-hard-drive volume-2 package tag disc-3 headphones sprout
+hard-drive volume-2 package tag
 "
 # A linha que comeca em "clock" e da ILHA DO RELOGIO (02/10, mockup aprovado em design/ilha):
 # os icones dos avisos (alerta, wifi, debrid baixando, Trakt desconectado...) e

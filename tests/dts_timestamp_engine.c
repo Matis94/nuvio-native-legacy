@@ -6,7 +6,7 @@
 #include "../src/dts/dts_engine.c"
 #include <assert.h>
 static void init(DtsEngine *e,int channels,int codec) {
- memset(e,0,sizeof *e);dts_engine_recovery(e,1);
+ memset(e,0,sizeof *e); /* SDR DTS recovery with P7 conversion disabled. */
  const AVCodec *c=codec?avcodec_find_encoder(codec):NULL;
  e->enc=avcodec_alloc_context3(c);e->dec=avcodec_alloc_context3(NULL);assert(e->enc&&e->dec);
  e->enc->time_base=(AVRational){1,48000};e->enc->sample_fmt=AV_SAMPLE_FMT_FLTP;e->enc->sample_rate=48000;
@@ -37,16 +37,6 @@ static void boundary(int gap,int failure) {
  if(failure) {assert(n<0&&!strcmp(e.error,DTS_ENGINE_TIMESTAMP_DISCONTINUITY));assert(!av_audio_fifo_size(e.fifo)&&!e.pad_count);}
  else {assert(n==512+(gap>4800?gap:0));assert(e.pad_count==(gap>4800));}
  cleanup(&e);av_frame_free(&f);
-}
-static void runtime_policy(void) {
- for(int dv=0;dv<2;dv++) for(int on=0;on<2;on++) {
-  DtsEngine e;init(&e,2,0);e.timeline=1;dts_engine_dv(&e,dv);dts_engine_recovery(&e,on);
-  AVFrame *f=frame(48000,AV_SAMPLE_FMT_FLTP,2,512,9728);
-  int n=resample(&e,f);
-  if(on) assert(n==10240 && e.pad_count==1);
-  else assert(n<0 && !e.pad_count && !strcmp(e.error,DTS_ENGINE_TIMESTAMP_DISCONTINUITY));
-  assert(e.dv==dv);cleanup(&e);av_frame_free(&f);
- }
 }
 static void observed(int64_t incoming,int64_t want,int gap) {
  DtsEngine e;init(&e,2,0);e.timeline=1;e.sample_pts=want-512;
@@ -101,7 +91,6 @@ static void encode(int rate,int format,int channels,int codec,int gap) {
  cleanup(&e);
 }
 int main(void) {
- runtime_policy();
  av_log_set_level(AV_LOG_ERROR);
  boundary(0,0);boundary(4800,0);boundary(-4800,0);boundary(4801,0);boundary(24000,0);
  boundary(24001,1);boundary(-4801,1);boundary(263800*48,1);

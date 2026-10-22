@@ -24,16 +24,6 @@ RUN curl -fsSL "$SDK_URL" -o /tmp/sdk.tar.gz \
   && rm /tmp/sdk.tar.gz \
   && /opt/arm-webos-linux-gnueabi_sdk-buildroot/relocate-sdk.sh
 
-# Some x86_64 SDK archives omit the development links for the firmware's
-# shared glibc libraries. Avoid accidentally linking their static archives.
-RUN for pair in dl:2 m:6 pthread:0 rt:1; do \
-      name=${pair%:*}; abi=${pair#*:}; \
-      base=/opt/arm-webos-linux-gnueabi_sdk-buildroot/arm-webos-linux-gnueabi/sysroot; \
-      if [ ! -e "$base/usr/lib/lib$name.so" ] && [ -e "$base/lib/lib$name.so.$abi" ]; then \
-        ln -sf "../../lib/lib$name.so.$abi" "$base/usr/lib/lib$name.so"; \
-      fi; \
-    done
-
 ENV PATH=/opt/arm-webos-linux-gnueabi_sdk-buildroot/bin:$PATH
 ENV NUVIO_SYSROOT=/opt/arm-webos-linux-gnueabi_sdk-buildroot/arm-webos-linux-gnueabi/sysroot
 

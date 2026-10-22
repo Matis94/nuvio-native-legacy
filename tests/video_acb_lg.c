@@ -10,32 +10,27 @@ static int fake_sleep(const struct timespec *, struct timespec *);
 #include "../src/video.c"
 #undef nanosleep
 
+/* The official native HTTP payload reads device buffering preferences. */
+int ajustes_buffer_preset(void) { return 0; }
+long memlog_livre_mb(void) { return 4096; }
+/* No HTTP or decoder is started by native dispatcher fixtures. */
+static DtsBufferInfo movie_snapshot;
+static int movie_active, movie_stops;
+static unsigned movie_stop_session;
+int moviebuffer_url(const char *s,const char *h,int m,char *o,size_t n) {
+  (void)s;(void)h;(void)m;(void)o;(void)n;return 0;
+}
+int moviebuffer_info(DtsBufferInfo *out) { *out=movie_snapshot;return movie_active; }
+void moviebuffer_stop(void) { movie_stops++;movie_stop_session=sessao;movie_active=0; }
 static DtsPlaybackStatus pump_status;
-static unsigned closing_session;
-static int buffer_stops;
-int cacheboost_backend_buffer_mb(void) { return 64; }
-void mkvass_aceitar_imagem(int sim) { assert(sim == 1); }
-int moviebuffer_url(const char *s,const char *h,int mib,char *out,size_t n) {
-  (void)s;(void)h;(void)mib;(void)out;(void)n;assert(0);return 0;
-}
-void dts_playback_pause(DtsPlayback *p,int pause) { (void)p;(void)pause;assert(0); }
-void moviebuffer_stop(void) {
-  buffer_stops++;
-  /* Closing the HTTP socket can synchronously deliver a native network
-   * error. The old callback must already be invalid before that happens. */
-  assert(sessao != closing_session);
-  int pending=reconErroPend;
-  double pos=posSeg;
-  eventoPayload("{\"error\":{\"errorCode\":300,\"errorText\":\"Network Error\"}}",closing_session);
-  eventoPayload("{\"currentTime\":999000}",closing_session);
-  assert(reconErroPend==pending && posSeg==pos);
-}
 static const char *pump_events[8];
 static int pump_read, pump_count;
 void dts_playback_status(DtsPlayback *p, DtsPlaybackStatus *out) { (void)p;*out=pump_status; }
 int dts_playback_event(DtsPlayback *p,char *out,size_t n) { (void)p;if (pump_read==pump_count)return 0;snprintf(out,n,"%s",pump_events[pump_read++]);return 1; }
 /* Unused source-changing paths remain linked by the real event dispatcher. */
 void dts_playback_close(DtsPlayback *p) { (void)p;assert(0); }
+void dts_playback_pause(DtsPlayback *p,int paused) { (void)p;(void)paused;assert(0); }
+void mkvass_aceitar_imagem(int sim) { (void)sim; }
 void dts_playback_seek(DtsPlayback *p,double t) { (void)p;(void)t;assert(0); }
 void dts_playback_audio(DtsPlayback *p,int stream) { (void)p;(void)stream;assert(0); }
 void dts_playback_subtitle(DtsPlayback *p,int stream) { (void)p;(void)stream;assert(0); }
@@ -92,7 +87,32 @@ static int fake_native_audio(LSHandle *h,const char *uri,const char *payload,
   assert(!strcmp(uri,"luna://com.webos.media/selectTrack"));
   assert(strstr(payload,"\"type\":\"audio\""));native_audio_calls++;return 1;
 }
+static int startup_selects, startup_plays, startup_subscribes;
+static const char *fake_load_payload(LSMessage *m) { (void)m;return "{\"returnValue\":true,\"mediaId\":\"live-test\"}"; }
+static int fake_startup_call(LSHandle *h,const char *uri,const char *payload,
+                             Filtro cb,void *ctx,unsigned long *token,void *error) {
+  (void)h;(void)payload;(void)cb;(void)ctx;(void)token;(void)error;
+  if (strstr(uri,"/selectTrack")) startup_selects++;
+  if (strstr(uri,"/subscribe")) startup_subscribes++;
+  if (strstr(uri,"/play")) {
+    assert(startup_subscribes == 1);
+    startup_plays++;
+  }
+  return 1;
+}
 int main(void) {
+  /* #625: successful load must start playback before track discovery.
+   * TS and HLS both use this callback; native default tracks need no selection. */
+  lsPayload=fake_load_payload;lsCall=fake_startup_call;
+  bus=(LSHandle *)(uintptr_t)1;protetorLigado=1;
+  for (int mode=0;mode<=2;mode++) {
+    modoLoad=mode;midia[0]=0;
+    startup_selects=startup_plays=startup_subscribes=0;
+    aoCarregar(NULL,NULL,(void *)(uintptr_t)sessao);
+    assert(startup_selects == 0);
+    assert(startup_plays == 1 && startup_subscribes == 1);
+  }
+  midia[0]=0;
   /* OLED A1: LG rejects DTS and returns an empty string, followed by a video
    * array. That video must never become a fake H264 audio track. */
   eventoPayload("{\"sourceInfo\":{\"programInfo\":[{\"numAudioTracks\":0,\"audioTrackInfo\":\"\",\"videoTrackInfo\":[{\"codec\":\"H264\"}],\"subtitleTrackInfo\":\"\"}]}}",sessao);
@@ -130,7 +150,7 @@ int main(void) {
   snprintf(faixaAudio[0].codec,sizeof faixaAudio[0].codec,"eac3");
   snprintf(faixaAudio[1].codec,sizeof faixaAudio[1].codec,"dts");
   faixaAudio[0].numero=0;faixaAudio[1].numero=1;dtsHabilitado=1;
-  bus=(LSHandle *)(uintptr_t)1;lsCall=fake_native_audio;
+  lsCall=fake_native_audio;
   eventoPayload("{\"errorCode\":200,\"errorText\":\"Audio Codec Not Supported\"}",sessao);
   assert(audioNaoSup && !dtsSessao);
   video_escolher_audio(0);assert(audioNaoSup); /* same rejected track */
@@ -140,23 +160,7 @@ int main(void) {
   assert(video_tocando() && !audioNaoSup && !dtsSessao);
   eventoPayload("{\"errorCode\":200,\"errorText\":\"Audio Codec Not Supported\"}",sessao);
   assert(audioNaoSup); /* a fresh DTS failure still permits fallback */
-  audioNaoSup=0;dtsHabilitado=0;ligado=0;nAudio=0;midia[0]=0;posSeg=0;tocando=0;lsCall=NULL;bus=NULL;
-
-  // A new playing event ends an old buffering indication even if LG omits
-  // bufferingEnd. A genuine subsequent underrun must remain observable.
-  SDL_Delay(2);
-  bufferandoDesde=1;
-  eventoPayload("{\"playing\":{}}",sessao);
-  assert(!bufferandoDesde && !video_bufferando_ms());
-  eventoPayload("{\"bufferingStart\":{}}",sessao);
-  assert(bufferandoDesde && video_bufferando_ms());
-  Uint32 first_buffering=bufferandoDesde;
-  eventoPayload("{\"currentTime\":2000}",sessao);
-  assert(bufferandoDesde==first_buffering); // time alone is not proof of video recovery
-  eventoPayload("{\"bufferingStart\":{},\"playing\":{}}",sessao);
-  assert(bufferandoDesde); // explicit buffering wins a combined payload
-  eventoPayload("{\"bufferingEnd\":{}}",sessao);
-  assert(!bufferandoDesde);
+  audioNaoSup=0;dtsHabilitado=0;ligado=0;nAudio=0;midia[0]=0;posSeg=0;tocando=0;lsCall=NULL;
 
   /* Source stages have no detail field. Logging them must not read or print
    * uninitialized stack data, as seen in the full TV startup log. */
@@ -240,12 +244,10 @@ int main(void) {
   pump_count=3;pump_read=0;
   bombearDts();assert(pump_read==0 && !video_pronto() && !video_decoder_anunciou());
   pump_status.prepared=pump_status.native_loaded=pump_status.revision=1;
-  bufferandoDesde=1;bufferSeg=123; // stale buffering from native -> DV handoff
   pump_status.info.width=1920;pump_status.info.height=1080;
   snprintf(pump_status.media_id,sizeof pump_status.media_id,"exported-dts-media");
   bombearDts();
   assert(pump_read==3 && video_pronto() && video_tocando() && video_decoder_anunciou());
-  assert(!bufferandoDesde && !bufferSeg && !video_bufferando_ms());
   assert(!strcmp(vidHdr,"HDR10") && exported_windows>0 && !bindPendente);
   bombearDts();
   assert(video_pronto() && video_tocando() && video_decoder_anunciou());
@@ -257,24 +259,12 @@ int main(void) {
   int old_windows=exported_windows;
   bombearDts();assert(pump_read==0 && exported_windows==old_windows);
   pump_status.prepared=pump_status.native_loaded=1;pump_status.revision=2;
-  bufferandoDesde=1;bufferSeg=456; // stale state from the previous converter Load
   snprintf(pump_status.media_id,sizeof pump_status.media_id,"recovered-dts-media");
   bombearDts();
   assert(pump_read==3 && dtsRevisao==2 && !strcmp(midia,"recovered-dts-media"));
   assert(video_pronto() && video_tocando() && video_decoder_anunciou());
-  assert(!bufferandoDesde && !bufferSeg);
   assert(!strcmp(vidHdr,"HDR10") && exported_windows>old_windows);
   old_windows=exported_windows;bombearDts();assert(exported_windows==old_windows);
-  // Clear the retired revision even before any playing callback arrives,
-  // then retain fresh bufferingStart from the replacement until it plays.
-  pump_status.revision=3;
-  snprintf(pump_status.media_id,sizeof pump_status.media_id,"fresh-dv-media");
-  pump_count=pump_read=0;bufferandoDesde=1;bufferSeg=789;
-  bombearDts();assert(!bufferandoDesde && !bufferSeg && !video_tocando());
-  pump_events[0]="{\"bufferingStart\":{}}";pump_count=1;pump_read=0;
-  bombearDts();assert(bufferandoDesde && video_bufferando_ms());
-  pump_events[0]="{\"playing\":{}}";pump_read=0;
-  bombearDts();assert(!bufferandoDesde && video_tocando());
   puts("webOS ACB dispatch snapshot, stale generations, deferred VIDEO/MSE transitions, overrides and failed-init retry, early webOS 6 exported-window events and replacement pipeline tests passed");
   return 0;
 }

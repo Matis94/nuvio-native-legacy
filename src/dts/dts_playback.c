@@ -27,8 +27,7 @@
 typedef struct { DtsSubtitle cue; unsigned revision; } DtsQueuedSubtitle;
 #define DTS_DV_STARVED_WINDOWS 4
 struct DtsPlayback {
-  int recovery; /* Immutable session policy, independent of Dolby Vision. */
-  int dv, starved; /* Dolby Vision path: passthrough audio, starvation fallback. */
+  int allow_p7, dv, starved; /* Dolby Vision path: passthrough audio, starvation fallback. */
   pthread_t thread;
   pthread_mutex_t lock;
   pthread_cond_t wake;
@@ -304,12 +303,6 @@ static void reportRate(DtsPlayback *p, DtsRate *rate, double presented,
                        double audio_pts, double video_pts, int clock_seen,
                        int pause, int complete, int preroll) {
   double now = clockSeconds(CLOCK_MONOTONIC);
-  DtsBufferInfo cached;
-  dts_engine_buffer_info(p->engine,&cached);
-  pthread_mutex_lock(&p->lock);
-  p->status.buffer=cached;
-  p->status.buffered_until=fmin(audio_pts,video_pts);
-  pthread_mutex_unlock(&p->lock);
   if (now < 0 || now - rate->start < 5.0) return;
   char event[512];
   snprintf(event, sizeof event,
@@ -389,7 +382,7 @@ static void *run(void *user) {
     }
     int seek_reload = !audio && seek;
     int stall_seek = seek_reload && native_unhealthy;
-    int stall_reload = p->recovery && !audio && !seek && !pause && !eof && (recovery_waiting || (complete && clock_seen)) &&
+    int stall_reload = !audio && !seek && !pause && !eof && (recovery_waiting || (complete && clock_seen)) &&
                        stalled(&stall, wall, DTS_STALL_SECONDS);
     if (stall_reload || seek_reload) {
       if (stall_reload && stall_retries >= DTS_STALL_RETRIES) {
@@ -472,7 +465,10 @@ static void *run(void *user) {
       if (read_started >= 0 && now >= read_started) rate.read_wall += now - read_started;
       if (stopped(p)) break;
       const char *error = r < 0 ? dts_engine_error(p->engine) : "";
-      if (p->recovery && r < 0 && !strcmp(error, DTS_ENGINE_TIMESTAMP_DISCONTINUITY)) {
+      if (r < 0 && !strcmp(error, DTS_ENGINE_TIMESTAMP_DISCONTINUITY)) {
+#ifndef NV_DTS_WEBOS_RECOVERY
+        fail(p, error); break;
+#endif
         /* Use the latest presentation clock, never a packet fed ahead.
          * Pending user seek/track requests are handled by the next iteration. */
         int pending_control;
@@ -625,21 +621,9 @@ done:
   return NULL;
 }
 
-static int dvNext;
-#ifdef NV_DTS_WEBOS_RECOVERY
-#define DTS_RECOVERY_DEFAULT 1
-#else
-#define DTS_RECOVERY_DEFAULT 0
-#endif
-static int recoveryNext = DTS_RECOVERY_DEFAULT;
+static int dvNext, p7Next;
+void dts_playback_next_p7(int enabled) { p7Next = !!enabled; }
 void dts_playback_next_dv(int enabled) { dvNext = !!enabled; }
-void dts_playback_next_recovery(int enabled) {
-#ifdef NV_DTS_WEBOS_RECOVERY
-  recoveryNext=!!enabled;
-#else
-  (void)enabled;
-#endif
-}
 DtsPlayback *dts_playback_start(const char *url, const char *headers,
                                int audio_stream, double position,
                                int paused, const char *window, int major,
@@ -655,8 +639,8 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
   if (!p->engine) { dts_playback_close(p); return NULL; }
   p->dv = dvNext; dvNext = 0;
   dts_engine_dv(p->engine, p->dv);
-  p->recovery=recoveryNext; recoveryNext=DTS_RECOVERY_DEFAULT;
-  dts_engine_recovery(p->engine,p->recovery);
+  p->allow_p7 = p7Next; p7Next = 0;
+  dts_engine_allow_p7(p->engine, p->allow_p7);
   snprintf(p->url, sizeof p->url, "%s", url);
   snprintf(p->headers, sizeof p->headers, "%s", headers ? headers : "");
   snprintf(p->window, sizeof p->window, "%s", window ? window : "");

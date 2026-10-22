@@ -347,9 +347,6 @@ double video_duracao(void) { return SIM.duracao; }
 // no plano B dos ultimos minutos, que e o mesmo caminho de um MKV sem
 // capitulos. Melhor um stub honesto que um numero inventado.
 double video_creditos(void) { return 0.0; }
-static long long simDownloadUsed,simDownloadCapacity;
-void video_simular_download_buffer(long long used,long long capacity) {simDownloadUsed=used;simDownloadCapacity=capacity;}
-void video_download_buffer(long long *used,long long *capacity) { if(used)*used=simDownloadUsed;if(capacity)*capacity=simDownloadCapacity; }
 double video_buffer_fim(void) { return SIM.bufferFim; }
 static VideoStats simStats;
 static int simStatsDef;
@@ -1360,9 +1357,6 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
     marco(m);
   }
   if (strstr(p, "playing")) {
-    // Some firmware resumes without bufferingEnd. An explicit new
-    // bufferingStart in the same payload still takes precedence.
-    if (js_tem(p, NULL, "playing") && !js_tem(p, NULL, "bufferingStart")) bufferandoDesde = 0;
     pausaConfirmada = 0;
     tocando = 1;
     dvSilenciarTv();
@@ -1405,11 +1399,6 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
   // esse campo em resposta NORMAL — os marcos encheram de
   // `pipeline erro: errorText":"No Error"`, que e ruido escondendo o sinal.
   if (strstr(p, "errorText") && !strstr(p, "\"No Error\"")) {
-    printf("[playback-diag] native-error tick=%u generation=%u code=%.0f network=%d "
-           "route=%s pos=%.3f\n", SDL_GetTicks(), sessao,
-           numeroDe(p, "\"errorCode\":"),
-           nv_recon_rede_ums(numeroDe(p, "\"errorCode\":")),
-           dtsSessao ? "conversion" : "native-uri", posSeg);
     const char *q = strstr(p, "errorText");
     char m[96];
     snprintf(m, sizeof m, "pipeline erro: %.60s", q);
@@ -1580,11 +1569,11 @@ static void chamar(const char *metodo, const char *carga, Filtro cb) {
 // Variante para callbacks que precisam saber a qual sessao pertencem. O
 // contexto e um inteiro convertido em ponteiro; nao ha alocacao para vazar nem
 // memoria cujo tempo de vida possa acabar antes da resposta assincrona.
-static void chamarCtx(const char *metodo, const char *carga, Filtro cb,
+static int chamarCtx(const char *metodo, const char *carga, Filtro cb,
                       void *ctx) {
   char uri[128];
   snprintf(uri, sizeof uri, "luna://com.webos.media/%s", metodo);
-  lsChamar(uri, carga, cb, ctx, metodo);
+  return lsChamar(uri, carga, cb, ctx, metodo);
 }
 
 // Chamada a OUTRO servico. O recorte de fonte NAO mora no com.webos.media: ele
@@ -1607,6 +1596,15 @@ static void chamarEm(const char *servico, const char *metodo,
 
 static void protegerScreensaver(void);
 static int modoLoad;   // video_modo_live_consumir do load em curso
+static char cargaBufferPadrao[8192];
+static int bufferCustom;
+static int aoCarregar(LSHandle *h, LSMessage *m, void *u);
+static void repetirBufferPadrao(void *u) {
+  bufferCustom = 0;
+  printf("[video] bufferControl custom recusado, voltando ao padrao\n");
+  fflush(stdout);
+  chamarCtx("load", cargaBufferPadrao, aoCarregar, u);
+}
 static int aoCarregar(LSHandle *h, LSMessage *m, void *u) {
   const char *p = lsPayload(m), *q;
   char b[256];
@@ -1626,6 +1624,15 @@ static int aoCarregar(LSHandle *h, LSMessage *m, void *u) {
     }
     return 1;
   }
+  if (p && bufferCustom) {
+    char retorno[16] = "";
+    js_bruto(p, NULL, "returnValue", retorno, sizeof retorno);
+    if (!strcmp(retorno, "false") || js_num(p, NULL, "errorCode", 0) != 0) {
+      repetirBufferPadrao(u);
+      return 1;
+    }
+  }
+  bufferCustom = 0;
   if (!p || midia[0]) return 1;
   q = strstr(p, "\"mediaId\":\"");
   if (!q) return 1;
@@ -1641,13 +1648,9 @@ static int aoCarregar(LSHandle *h, LSMessage *m, void *u) {
   chamar("notifyForeground", b, soLog);
   snprintf(b, sizeof b, "{\"mediaId\":\"%s\"}", midia);
   chamarCtx("subscribe", b, aoEvento, (void *)(uintptr_t)minhaSessao);
-  // MODO 1/2 (#158): sem selectTrack antes do sourceInfo — o pipeline de live
-  // ainda nao sabe que faixas tem, e e a unica chamada que este app manda que
-  // o navegador e o Kodi nao mandam no comeco.
-  if (!modoLoad) {
-    snprintf(b, sizeof b, "{\"mediaId\":\"%s\",\"type\":\"video\",\"index\":0}", midia);
-    chamar("selectTrack", b, soLog);
-  }
+  // Let uMS discover and select its default tracks. Selecting video index 0
+  // before sourceInfo can stall TS startup on webOS 24 (#625); a successful
+  // load only allocates the pipeline, so request play without selecting tracks.
   snprintf(b, sizeof b, "{\"mediaId\":\"%s\"}", midia);
   chamar("play", b, soLog);
   return 1;
@@ -2375,9 +2378,7 @@ static void mkvRetryBombear(void) {
   mkvPendente = 1;
   video_sondar_mkv_agora();
 }
-static void diagnosticoPlayback(void);
 void video_bombear(void) {
-  diagnosticoPlayback();
   ack_publicar();
   velBombear();
   mkvRetryBombear();
@@ -2607,6 +2608,41 @@ static void montarHttpHeader(char *dst, unsigned tam) {
   fflush(stdout);
 }
 
+static void montarCarga(char *dst, size_t tam, const char *url, int modo,
+                        const char *dolby, const char *hh, const char *janela,
+                        int preset, long livreMb) {
+  char buffer[192] = "\"bufferControl\":{\"userBufferCtrl\":false},";
+  int mb = !modo && (!strncasecmp(url, "http://", 7) ||
+                    !strncasecmp(url, "https://", 8))
+           ? cacheboost_buffer_mb(preset, livreMb) : 0;
+  if (mb) {
+    unsigned bytes = (unsigned)mb * 1024U * 1024U;
+    // Start at 1/8 capacity; refill below 1/4, up to the RAM-clamped limit.
+    snprintf(buffer, sizeof buffer,
+             "\"bufferControl\":{\"userBufferCtrl\":true,\"preBufferByte\":%u,"
+             "\"bufferMinLevel\":%u,\"bufferMaxLevel\":%u},",
+             bytes / 8, bytes / 4, bytes);
+  }
+  if (modo == 2) {
+    snprintf(dst, tam,
+        "{\"payload\":{\"option\":{"
+        "\"appId\":\"" NV_APP_ID "\","
+        "%s%s"
+        "\"mediaTransportType\":\"%s\","
+        "\"windowId\":\"%s\"}},"
+        "\"uri\":\"%s\",\"type\":\"media\"}",
+        dolby, hh, strstr(url, ".m3u8") ? "HLS" : "URI", janela, url);
+  } else {
+    snprintf(dst, tam,
+        "{\"payload\":{\"option\":{\"useSeekableRanges\":true,"
+        "\"appId\":\"" NV_APP_ID "\","
+        "%s%s%s"
+        "\"windowId\":\"%s\"}},"
+        "\"uri\":\"%s\",\"type\":\"media\"}",
+        dolby, hh, buffer, janela, url);
+  }
+}
+
 static int tocarInterno(const char *url, int comDV) {
   // 8 KB E NAO 2: a URL de fonte vai ate 4096 (Stream.url) e a do Pluto TV
   // leva ~1,7 KB de query com JWT. Com 2048 o snprintf CORTAVA o JSON no meio
@@ -2708,39 +2744,23 @@ static int tocarInterno(const char *url, int comDV) {
       dvNaCarga = 1;
     }
   }
-  char buffered_url[256];
-  const char *load_url=url;
-  if (modoLoad!=2 && moviebuffer_url(url,cabsHttp,cacheboost_backend_buffer_mb(),buffered_url,sizeof buffered_url)) load_url=buffered_url;
+  char bufferedUrl[256];
+  const char *loadUrl=url;
+  // Recheck available RAM immediately before creating the read-ahead ring.
+  // Keep the official floor active; the proxy replaces custom native buffering.
+  int ownBuffer = !modoLoad && moviebuffer_url(url,cabsHttp,
+      cacheboost_buffer_mb(ajustes_buffer_preset(),memlog_livre_mb()),
+      bufferedUrl,sizeof bufferedUrl);
+  if(ownBuffer)loadUrl=bufferedUrl;
   { char hh[768];
     montarHttpHeader(hh, sizeof hh);
-  if (modoLoad == 2) {
-    // PAYLOAD ENXUTO DE LIVE (#158, modo 2): o que o load de um <video> HLS
-    // costuma mandar — transporte dito pelo nome, sem useSeekableRanges nem
-    // bufferControl (que sao de VOD). Experimental, atras de Ajustes.
-    int hls = strstr(url, ".m3u8") != NULL;
-    snprintf(carga, sizeof carga,
-        "{\"payload\":{\"option\":{"
-        "\"appId\":\"" NV_APP_ID "\","
-        "%s%s"
-        "\"mediaTransportType\":\"%s\","
-        "\"windowId\":\"%s\"}},"
-        "\"uri\":\"%s\",\"type\":\"media\"}",
-        dolby, hh, hls ? "HLS" : "URI",
-        expWin[0] ? expWin : "window_id_dummy", load_url);
-  } else
-  snprintf(carga, sizeof carga,
-      "{\"payload\":{\"option\":{\"useSeekableRanges\":true,"
-      "\"appId\":\"" NV_APP_ID "\","
-      "%s%s"
-      "\"bufferControl\":{\"userBufferCtrl\":false},"
-      "\"windowId\":\"%s\"}},"
-      "\"uri\":\"%s\",\"type\":\"media\"}",
-      dolby, hh,
-      // No caminho do ACB o id e um marcador qualquer (so nao pode ser vazio,
-      // ver acima); no da webOS 5 ele e o endereco REAL do plano exportado e um
-      // valor errado aqui deixa o video sem para onde ir.
-      expWin[0] ? expWin : "window_id_dummy",
-      load_url);
+    montarCarga(carga, sizeof carga, loadUrl, modoLoad, dolby, hh,
+                expWin[0] ? expWin : "window_id_dummy",
+                ownBuffer ? 0 : ajustes_buffer_preset(), memlog_livre_mb());
+    bufferCustom = strstr(carga, "\"userBufferCtrl\":true") != NULL;
+    if (bufferCustom)
+      montarCarga(cargaBufferPadrao, sizeof cargaBufferPadrao, loadUrl, modoLoad,
+                  dolby, hh, expWin[0] ? expWin : "window_id_dummy", 0, 0);
     if (strlen(carga) >= sizeof carga - 1) {
       printf("[video] carga do load nao coube em %zu bytes (URL de %zu): recusando\n",
              sizeof carga, strlen(url));
@@ -2791,7 +2811,8 @@ static int tocarInterno(const char *url, int comDV) {
   if (expWin[0]) expJanelaAplicar();
   if (modoLoad) { printf("[video] modo do load: %d\n", modoLoad); fflush(stdout); }
   msDoLoad = agoraMs();
-  chamarCtx("load", carga, aoCarregar, (void *)(uintptr_t)minhaSessao);
+  if (!chamarCtx("load", carga, aoCarregar, (void *)(uintptr_t)minhaSessao) && bufferCustom)
+    repetirBufferPadrao((void *)(uintptr_t)minhaSessao);
   return 1;
 }
 
@@ -2805,19 +2826,14 @@ void video_parar(void) {
 
 static void pararSessao(void) {
   char b[128];
-  /* Invalidate native callbacks BEFORE closing the loopback socket or DTS
-   * worker. Socket shutdown can itself emit 40004/300 from the old pipeline.
-   * Accepting it here leaves a pending error for the replacement DTS/DV load,
-   * which can play normally behind a false source-failed dialog. */
+  /* Invalidate native callbacks before closing the DTS worker. A closing
+   * pipeline must not queue an error for the replacement source. */
   __atomic_add_fetch(&sessao, 1, __ATOMIC_ACQ_REL);
-  // Buffering belongs to the native pipeline being retired, not its DTS/DV
-  // replacement. Invalidate first so closing callbacks cannot restore it.
-  bufferandoDesde = 0; bufferSeg = 0;
+  moviebuffer_stop();
   int tinhaDts = dtsSessao != NULL;
   DtsPlayback *antigoDts = dtsSessao;
   dtsSessao = NULL;
   if (antigoDts) dts_playback_close(antigoDts);
-  moviebuffer_stop();
   dtsSaida[0] = 0;
 
   // Invalida tambem a sessao que ainda esta esperando o retorno de load. Esse
@@ -3068,7 +3084,7 @@ static int iniciarDts(int stream) {
   dts_engine_set_ac3(ajustes_dts_ac3());
   dts_engine_set_ahead_mib(cacheboost_backend_buffer_mb());   // #338: Settings > Buffer size
   dts_playback_next_dv(dtsModoDv);
-  dts_playback_next_recovery(ajustes_dts_recovery());
+  dts_playback_next_p7(ajustes_dv7());
   dtsSessao = dts_playback_start(urlAtual, cabsHttp, stream, alvo,
                                paused, expWin, 0, (a || trocada) ? &selected : NULL, ordinal, count);
   if (!dtsSessao) {
@@ -3154,9 +3170,6 @@ static void bombearDts(void) {
     int selectedSub = initial ? -1 : (video_legenda(legAtual) ? video_legenda(legAtual)->stream_index : -1);
     dtsRevisao = st.revision;
     pronto = 0; tocando = 0; bindPendente = 0;
-    // Each converter Load has its own buffering state, including seeks and
-    // recovery within one source session. Drain its fresh events afterwards.
-    bufferandoDesde = 0; bufferSeg = 0;
     if (!st.media_id[0]) { midia[0] = 0; ackMidia = 0; }
     ack_publicar();
     printf("[dts] prepared revision=%d video=%s %dx%d audio=%s channels=%d stream=%d\n",
@@ -3511,45 +3524,11 @@ void video_janela_fonte(int sx, int sy, int sw, int sh,
 
 double video_pos(void)      { return posSeg; }
 double video_duracao(void)  { return durSeg; }
-void video_download_buffer(long long *used,long long *capacity) {
-  DtsBufferInfo b={0};
-  if(dtsSessao) { DtsPlaybackStatus st;dts_playback_status(dtsSessao,&st);b=st.buffer; }
-  else moviebuffer_info(&b);
-  if(used)*used=b.ready_bytes;
-  if(capacity)*capacity=b.capacity_bytes;
-}
-/* No per-frame I/O: only one numeric snapshot every five seconds while a
- * source is active. Includes the conversion path, not just native URI cache. */
-static void diagnosticoPlayback(void) {
-  static Uint32 last;
-  static unsigned generation;
-  Uint32 now = SDL_GetTicks();
-  long long used = 0, capacity = 0;
-  MemlogInfo mem;
-  if (!urlAtual[0]) return;
-  if (generation == sessao && (Uint32)(now - last) < 5000) return;
-  generation = sessao; last = now;
-  video_download_buffer(&used, &capacity);
-  memlog_ler(&mem);
-  printf("[playback-diag] tick=%u generation=%u route=%s pos=%.3f duration=%.3f "
-         "nativeEnd=%.3f playing=%d ready=%d failed=%d bufferingMs=%u "
-         "dtsState=%d dvProfile=%d dtsPending=%d errorPending=%d dtsEnabled=%d dvEnabled=%d p7Enabled=%d "
-         "readyBytes=%lld capacityBytes=%lld rssKiB=%ld peakKiB=%ld availableKiB=%ld totalKiB=%ld\n",
-         now, sessao, dtsSessao ? (dtsModoDv ? "dv-conversion" : "dts-conversion") : "native-uri",
-         posSeg, durSeg, bufferSeg, tocando, pronto, falhou,
-         bufferandoDesde ? (Uint32)(now - bufferandoDesde) : 0,
-         dtsEstado, dvMkvPerfil, dtsNativePending, reconErroPend, dtsHabilitado, dvHabilitado, ajustes_dv7(),
-         used, capacity, mem.rss_kib, mem.peak_kib, mem.available_kib, mem.total_kib);
-  fflush(stdout);
-}
-
 double video_buffer_fim(void) {
   DtsBufferInfo b={0};double end=bufferSeg;
-  if(dtsSessao) { DtsPlaybackStatus st;dts_playback_status(dtsSessao,&st);b=st.buffer;if(st.buffered_until>end)end=st.buffered_until; }
-  else moviebuffer_info(&b);
-  /* Prefetch time is an estimate from average file bitrate (VBR varies).
-   * The numeric MiB counter is the measured payload, not this estimate. */
-  if(b.total>0 && b.ready_bytes>0 && durSeg>0) {
+  if(!dtsSessao && moviebuffer_info(&b)>0 && b.total>0 && b.ready_bytes>0 && durSeg>0) {
+    // Estimate only the standard buffered rail from measured payload and
+    // average file bitrate. No labels, counters or extra player overlay.
     double estimate=posSeg+(double)b.ready_bytes*durSeg/(double)b.total;
     if(estimate>end)end=estimate>durSeg?durSeg:estimate;
   }

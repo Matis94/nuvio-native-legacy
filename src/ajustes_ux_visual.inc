@@ -138,7 +138,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_FONTE_PREPARAR: return "aj_download";
     case AJ_FONTE_PRECARREGAR: return "aj_download";
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: return "aj_rotate-ccw-clock";
-    case AJ_BUFFER: case AJ_BUFFER_RAM_AUTO: return "aj_gauge";
+    case AJ_BUFFER: return "aj_gauge";
     case AJ_FONTE_IDIOMA_AUDIO: return "aj_audio-lines";
     case AJ_FILTROS_FONTES: return "aj_funnel";
     case AJ_PROVEDORES_ESCOPO: return "aj_key-round";
@@ -155,7 +155,6 @@ static const char *ajVisualIcone(int op) {
     case AJ_FONTE_PRAZO: return "aj_list-video";
     case AJ_FONTE_PRIORIDADE: case AJ_FONTE_HDR: return "aj_list-video";
     case AJ_FONTE_TEXTO: case AJ_FONTE_ORDEM_ADDON: return "aj_list-video";
-    case AJ_AUDIO_FLAGS: return "aj_languages";
     case AJ_FONTE_ESCOPO: case AJ_FONTE_OUTROS: return "aj_list-video";
     case AJ_FONTE_ADDONS_PERM: return "aj_puzzle";
     case AJ_FONTE_PLUGINS_PERM: return "aj_plug";
@@ -176,6 +175,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_PLR_CLASSIF: return "aj_shield";
     case AJ_TELA_ABERTURA: return "aj_clapperboard";
     case AJ_ABERTURA_ADDON: return "aj_clapperboard";
+    case AJ_PLR_FORMATO: return "aj_monitor-play";
     case AJ_ABERTURA_FUNDO: case AJ_ABERTURA_ESTILO: return "aj_clapperboard";
     case AJ_EP_TAMANHO: return "aj_layout-dashboard";
     case AJ_HERO_SINOPSE_TAM: return "aj_layout-dashboard";
@@ -307,7 +307,7 @@ static const char *ajVisualIcone(int op) {
     case AJ_AVISO_LEGAL: return "aj_file-text";
     case AJ_VER_REGISTRO: return "aj_scroll-text";
     case AJ_ENVIAR_LOG: return "aj_send";
-    case AJ_ENVIO_AUTO: return "aj_scroll-text";
+    case AJ_ENVIO_AUTO: case AJ_LOG_REDE: return "aj_scroll-text";
     case AJ_GPU_EFEITOS: return "aj_zap";
     default: return "aj_settings-2";
   }

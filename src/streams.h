@@ -18,7 +18,6 @@
 #include "fontefiltro.h"
 
 // A lista cresce conforme a resposta dos addons; a UI virtualiza as linhas.
-enum { STREAM_AUDIO_DUAL = 1u, STREAM_AUDIO_MULTI = 2u };
 
 typedef struct Stream {
   char rotulo[192];     // Nome curto da fonte
@@ -55,12 +54,6 @@ typedef struct Stream {
   // Legendas anexadas pelo addon tambem contam, sem afirmar que sao embutidas.
   char audioIdiomas[512];
   char legendaIdiomas[512];
-  // Addon/formatter declarations, independent of known language names.
-  // Dual/Multi never imply any particular language or number of tracks.
-  unsigned audioDescritores;
-  // Country symbols explicitly formatted on a language-only line. Retain
-  // ambiguous flags (e.g. India) without inventing a language for filters.
-  char audioBandeiras[96]; // concatenated ISO country pairs, no separators
   // Metadados canonicos para as exclusoes compartilhadas. Independentes dos
   // badges importados e do tamanho exato exigido pelo StreamFit.
   FonteFiltroDados filtro;
@@ -244,6 +237,11 @@ const Stream *stream_item(int i);
 // = nada, e quem chama usa a mascara de badges.h.
 int   stream_selos_ha(const Stream *s);
 float stream_selos_fileira(const Stream *s, float x, float y, float maxW, float h, float tom, float a);
+// A mesma fileira para o que esta TOCANDO (OSD do player): o pacote ativo casado
+// com `texto`, os formatos medidos pelo pipeline ("4K Dolby Vision Dolby Atmos").
+// `medir` = so a largura. 0 = o pacote nao casou nada.
+float stream_selos_medidos(const char *texto, float x, float y, float maxW, float h, float tom,
+                           float a, int medir);
 
 // Indice do stream que o modo automatico escolhe, ou -1 se a lista esta vazia.
 int  stream_automatico(void);

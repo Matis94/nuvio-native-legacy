@@ -11,10 +11,6 @@ void badges_check_disco(float cx, float cy, float d, float a);
 float badges_check_cartao(GfxRect card, int redondo, float a);
 void badges_progresso(GfxRect card, float frac, float a);
 void badges_carregar(const char *dir);
-// Bundled formatter emoji preserve RGB and animation alpha.
-void badges_emoji(const char *id, float x, float y, float size, float alpha);
-// Bundled country artwork; keeps its RGB, independent of badge tint settings.
-void badges_bandeira(const char *pais, float x, float y, float w, float h, float alpha);
 uint64_t badges_detectar(const char *metadata);
 uint64_t badges_provedor(const char *name);
 // O bit do selo `id` ("v-dv", "q-remux", "a-dtshdma"...), 0 se nao existe.
@@ -22,8 +18,6 @@ uint64_t badges_bit(const char *id);
 // Fileira de logos tingidos (r,g,b em 0..1), para a linha de selos da folha
 // de Fontes. Devolve a largura usada.
 float badges_desenhar_tom(uint64_t mask,float x,float y,float maxW,float h,float r,float g,float b,float a);
-// Source-sheet spacing, excluding the trailing gap so flags can follow directly.
-float badges_desenhar_fonte(uint64_t mask,float x,float y,float maxW,float h,float r,float g,float b,float a);
 
 // --- MARCA DE FORMATO (29/09/2026) -------------------------------------------
 // HDR, Dolby Vision, Atmos, DTS, 4K...: onde o app cita um formato de video ou

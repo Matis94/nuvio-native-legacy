@@ -2,7 +2,7 @@
 #include <unistd.h>   // access (fontes de /system/fonts)
 #endif
 #include "text.h"
-#include "textwrap.h"
+#include "sdlcompat.h"
 #include "dobra.h"
 #include "idioma.h"
 #include "ajustes.h"
@@ -1538,8 +1538,7 @@ static int medirCorridas(TTF_Font *f, TTF_Font *a, TTF_Font *b, const char *s,
     { TTF_Font *g = c[i].f; int ex = extra;
       if (bidi_tem_arabe(pedaco)) {
         TTF_Font *bf = arabeBoldFace(g);
-        if (bf) g = bf;
-        ex = extra & ~TTF_STYLE_BOLD;
+        if (bf) { g = bf; ex &= ~TTF_STYLE_BOLD; }
       }
       ant = estiloSoma(g, f, ex);
       if (TTF_SizeUTF8(g, pedaco, &cw, &ch) == 0) soma += cw;
@@ -1565,8 +1564,7 @@ static SDL_Surface *renderCorridas(TTF_Font *f, TTF_Font *a, TTF_Font *b,
     memcpy(pedaco, s + c[i].ini, (size_t)len); pedaco[len] = 0;
     if (bidi_tem_arabe(pedaco)) {
       TTF_Font *bf = arabeBoldFace(g);
-      if (bf) g = bf;
-      ex = extra & ~TTF_STYLE_BOLD;
+      if (bf) { g = bf; ex &= ~TTF_STYLE_BOLD; }
     }
     gf[i] = g; as = TTF_FontAscent(g);
     ant = estiloSoma(g, f, ex);
@@ -1578,7 +1576,7 @@ static SDL_Surface *renderCorridas(TTF_Font *f, TTF_Font *a, TTF_Font *b,
     w += sf[i]->w;
   }
   out = w > 0 && asc + abaixo > 0
-      ? SDL_CreateRGBSurfaceWithFormat(0, w, asc + abaixo, 32, SDL_PIXELFORMAT_ARGB8888) : NULL;
+      ? nv_superficie(0, w, asc + abaixo, 32, SDL_PIXELFORMAT_ARGB8888) : NULL;
   if (out) SDL_FillRect(out, NULL, 0);
   for (i = 0; i < n; i++) {
     if (!sf[i]) continue;
@@ -1797,8 +1795,8 @@ static SDL_Surface *rasterLinha(TxtEstilo estilo, const char *s, SDL_Color cor,
   arabeCorpo = (int)(corpoAtual(estilo) * ESC_T + 0.5f);
   if (bidi_tem_arabe(v) && !txtTemLatim(v)) {   // #335, #205: Naskh Bold em todo peso
     TTF_Font *bf = arabeBoldFace(fonte);
-    if (bf) fonte = bf;               // a face Bold de verdade
-    enfase &= ~TXT_ENF_NEGRITO;       // nunca o sintetico sobre arabe
+    if (bf) { fonte = bf; enfase &= ~TXT_ENF_NEGRITO; }
+    // Keep synthetic bold when the bundled Bold face is unavailable.
   }
   if (enfase) fonte = fonteComEnfase(familia, estilo, fonte, enfase, &novo);
   estiloAnt = TTF_GetFontStyle(fonte);
@@ -1847,7 +1845,7 @@ static SDL_Surface *rasterTracking(TxtEstilo estilo, const char *s, SDL_Color co
     lx += trk;
   }
   *larg = lx > 0.0f ? lx - trk : 0.0f;
-  out = w > 0 && h > 0 ? SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_ABGR8888) : NULL;
+  out = w > 0 && h > 0 ? nv_superficie(0, w, h, 32, SDL_PIXELFORMAT_ABGR8888) : NULL;
   if (out) SDL_FillRect(out, NULL, (Uint32)cor.r | (Uint32)cor.g << 8 | (Uint32)cor.b << 16);
   for (i = 0; i < n; i++) {
     int x, y;
@@ -1942,8 +1940,8 @@ static int larguraLinhaMedir(TxtEstilo estilo, const char *s, TxtFamilia familia
   arabeCorpo = (int)(corpoAtual(estilo) * ESC_T + 0.5f);
   if (bidi_tem_arabe(v) && !txtTemLatim(v)) {   // #335, #205: Naskh Bold em todo peso
     TTF_Font *bf = arabeBoldFace(fonte);
-    if (bf) fonte = bf;               // a face Bold de verdade
-    enfase &= ~TXT_ENF_NEGRITO;       // nunca o sintetico sobre arabe
+    if (bf) { fonte = bf; enfase &= ~TXT_ENF_NEGRITO; }
+    // Keep synthetic bold when the bundled Bold face is unavailable.
   }
   if (enfase) fonte = fonteComEnfase(familia, estilo, fonte, enfase, &novo);
   estiloAnt = TTF_GetFontStyle(fonte);
@@ -2261,26 +2259,6 @@ size_t txt_token_tam(const char *s) {
   return (size_t)((const char *)q - s);
 }
 
-static int medirIntegral(const char *s, void *ctx) {
-  return txt_largura(*(TxtEstilo *)ctx, s);
-}
-float txt_bloco_integral(TxtEstilo estilo, const char *s, int r, int g, int b,
-                        float x, float y, float larg, float leading, float alpha) {
-  return txt_bloco_integral_tom(estilo,s,r,g,b,x,y,larg,leading,1.0f,alpha);
-}
-float txt_bloco_integral_tom(TxtEstilo estilo, const char *s, int r, int g, int b,
-                            float x, float y, float larg, float leading, float tom, float alpha) {
-  char linha[512];
-  float h=0;
-  if (!s || larg<=0 || leading<=0) return 0;
-  while (*s) {
-    s=nv_wrap_line(s,linha,sizeof linha,larg,medirIntegral,&estilo);
-    if (alpha>0 && linha[0])
-      txt_desenhar_tom(txt_linha(estilo,linha,r,g,b,255),x,y+h,tom,tom,tom,alpha);
-    h+=leading;
-  }
-  return h;
-}
 static float txt_bloco_impl(TxtEstilo estilo, const char *s, int r, int g, int b,
                             float x, float y, float larg, float leading,
                             float alpha, int maxLinhas, int reticencias) {

@@ -48,7 +48,7 @@ def main():
     parser.add_argument("output", type=pathlib.Path)
     args = parser.parse_args()
     expected = [line.split()[0] for line in args.checksums.read_text().splitlines()
-                if line.split()[-1].lstrip("*") == "space.nuvio.native.legacy_2.0.7_arm.ipk"]
+                if line.split()[-1].lstrip("*") == "space.nuvio.native.legacy_2.0.8_arm.ipk"]
     assert len(expected) == 1, "Missing official checksum"
     assert hashlib.sha256(args.package.read_bytes()).hexdigest() == expected[0], "Release checksum mismatch"
     blob = executable(args.package)
@@ -77,7 +77,7 @@ def main():
     assert all("\n" not in value and "\r" not in value for value in config.values())
     args.output.write_text("".join(key+"="+value+"\n" for key,value in config.items()))
     args.output.chmod(0o600)
-    print("Verified official 2.0.7 release; restored application build configuration without profile data.")
+    print("Verified official 2.0.8 release; restored application build configuration without profile data.")
 
 if __name__ == "__main__":
     main()

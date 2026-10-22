@@ -871,6 +871,7 @@ static int armarPoliticaFonteAberta(int indice, int servico, const char *url) {
 #include "segurar.h"
 #include "servidores.h"
 #include "partes.h"
+#include "logrede.h"
 #include <stdio.h>
 
 static Tela tela = TELA_HOME;
@@ -3357,15 +3358,6 @@ static void tentarProximaFonteVOD(void) {
   }
 
   atual = stream_atual();
-  { long long used = 0, capacity = 0;
-    video_download_buffer(&used, &capacity);
-    printf("[playback-diag] failover tick=%u sourceIndex=%d reason=%d "
-           "pos=%.3f bufferEnd=%.3f bufferingMs=%u videoFailed=%d playerFailed=%d "
-           "readyBytes=%lld capacityBytes=%lld\n",
-           SDL_GetTicks(), atual, motivo, video_pos(), video_buffer_fim(),
-           (unsigned)video_bufferando_ms(), video_falhou(), player_fonte_falhou(), used, capacity);
-    fflush(stdout);
-  }
   if (fonteFalha) {
 #ifdef NV_ANDROID
     if (atual >= 0 && motivo == 1)
@@ -4224,7 +4216,6 @@ void app_evento(const SDL_Event *e) {
   if (e->type == SDL_KEYDOWN && e->key.keysym.sym == SDLK_F9 && stream_folha_aberta() &&
       !registro_aberto()) { stream_folha_evento(e); return; }
 #endif
-  if (celb_dono() == CELB_LOG && celb_evento(e)) return;
   if (registro_evento(e)) return;
   // O painel de envio do registro (Ajustes > Enviar registro, ou o "Enviar
   // agora" do painel): modal, come o teclado enquanto aberto.
@@ -4795,6 +4786,8 @@ void app_atualizar(float dt, Uint32 agora) {
   // "Preferir o mesmo grupo de fonte" governa as duas memorias: a escolha a
   // mao (o titulo inteiro, 180 dias) e a do automatico.
   fontepref_configurar(ajustes_fonte_grupo(), 0, ajustes_fonte_grupo(), ajustes_fonte_grupo_sessoes());
+  // Pagina de registro na rede local (logrede.h): Ajustes > Sobre e ajuda > Registro.
+  logrede_configurar(ajustes_log_rede(), registro_arquivo());
   fontevolta_configurar(ajustes_link_reusar(), ajustes_link_prazo_s());
   // Pausa entre quadros medida uma vez, antes de qualquer tela perguntar se o
   // OK segurado venceu (segurar.h, #387).
@@ -5613,6 +5606,7 @@ void app_atualizar(float dt, Uint32 agora) {
         cwEspera = 0;
         if (cw && !strcmp(cw->tipo, "series")) {
           cwTocarT = cw->temporada; cwTocarE = cw->episodio;
+          if (cw->episodio <= 0) tocar = 0;
           // EPISODIO TERMINADO NUNCA TOCA DE NOVO DO COMECO. O card ja anuncia
           // o proximo quando a lista existe; sem lista (a copia do card nao
           // tem), a pagina abre e o toque espera a lista (cwEsperarProximo).
@@ -7447,7 +7441,6 @@ void app_desenhar(Uint32 agora) {
   // propria: e conteudo da ilha do relogio (ilha.c, plrilha.c; desempenho.h).
   CAMADA_SE(registro_aberto());
   registro_desenhar();
-  if (celb_dono() == CELB_LOG) { CAMADA_SE(celb_aberto()); celb_desenhar(); }
   // A ilha do relogio fica acima do painel de registro, no canto de sempre.
   if (registro_aberto() && sessao_logada()) {
     ilha_relogio_visivel(ajustes_relogio_ligado());

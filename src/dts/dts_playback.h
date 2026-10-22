@@ -1,14 +1,11 @@
 #ifndef NV_DTS_PLAYBACK_H
 #define NV_DTS_PLAYBACK_H
 #include "dts_media.h"
-#include "dts_engine.h"
 #include "dts_subtitles.h"
 typedef struct DtsPlayback DtsPlayback;
 typedef struct {
   int prepared, failed, eof, revision, native_loaded;
   DtsMediaInfo info;
-  DtsBufferInfo buffer;
-  double buffered_until;
   char media_id[64], error[160];
 } DtsPlaybackStatus;
 /* All expensive work and native Feed calls are serialized on one worker.
@@ -20,9 +17,8 @@ int dts_playback_enabled(void);
  * Vision one (AC-3/E-AC-3 passthrough, larger direct ranges, starvation
  * fallback). Consumed by that start. */
 void dts_playback_next_dv(int enabled);
-/* Main thread, next session only. Does not control DV/P7 conversion, codec
- * core fallback or explicit seeks. No-op without NV_DTS_WEBOS_RECOVERY. */
-void dts_playback_next_recovery(int enabled);
+/* Main thread: snapshot the P7/recovery opt-in for the next session. */
+void dts_playback_next_p7(int enabled);
 DtsPlayback *dts_playback_start(const char *url, const char *headers,
                                int audio_stream, double position,
                                int paused, const char *window, int webos_major,

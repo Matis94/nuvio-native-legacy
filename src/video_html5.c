@@ -863,11 +863,6 @@ void video_recorte_reaplicar(void) {
 const char *video_url_atual(void) { return urlAtual; }
 double video_pos(void)        { return posSeg; }
 double video_duracao(void)    { return durSeg; }
-// HTML5 buffered ranges provide time spans, not download-cache byte counts.
-void video_download_buffer(long long *used, long long *capacity) {
-  if (used) *used = 0;
-  if (capacity) *capacity = 0;
-}
 double video_buffer_fim(void) { return bufFimSeg; }
 unsigned video_bufferando_ms(void) { return bufMs; }
 int    video_tocando(void)    { return tocando; }
