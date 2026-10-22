@@ -6608,26 +6608,6 @@ void player_desenhar(Uint32 agora) {
   // O botao de pular fica POR CIMA dos degrades e dos controles: desenhado
   // antes deles, o veu de 400px do rodape o afogava assim que a barra subia —
   // era o "aparece e some" do relato. Sem controles ele e a unica coisa na tela.
-#ifdef NV_HTTP_BUFFER_DIAG
-  // Temporary test badge, also visible after transport controls hide. Updating
-  // twice a second bounds text work and avoids touching the playback workers.
-  {
-    static char text[192];
-    static Uint32 sampled;
-    if (!text[0] || agora - sampled >= 500) {
-      video_buffer_test_text(text, sizeof text);
-      sampled = agora;
-    }
-    ESCALA_INI();
-    TxtLinha l = txt_linha_corta(TXT_G20B, text, 243, 242, 239, 255,
-                                NV_VTELA_W - PLR_MARGEM * 2.0f - 32.0f);
-    float w = (float)l.w + 32.0f, h = (float)l.h + 20.0f;
-    float x = (NV_VTELA_W - w) * 0.5f, y = 120.0f;
-    gfx_cor((GfxRect){x, y, w, h}, 10.0f, 0, 0, 0, .82f);
-    txt_desenhar_alpha(l, x + 16.0f, y + 10.0f, 1.0f);
-    ESCALA_FIM();
-  }
-#endif
   // CANAL AO VIVO: banner do zapping (sobrepoe tudo enquanto a troca espera o
   // debounce) e o OSD proprio no lugar dos controles de filme.
   if (ehCanal()) {
@@ -6932,6 +6912,13 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
       for (i = 0; i < nCaps; i++) if (caps[i] <= 0.0f || caps[i] >= 1.0f) caps[i--] = caps[--nCaps];
     }
     plrui_barra(bx, yBarra, bw, frac, bufFrac, barraFoco, caps, nCaps, a); }
+#ifdef NV_HTTP_BUFFER_DIAG
+  { char b[96];
+    video_buffer_test_text(b, sizeof b);
+    TxtLinha l = txt_linha(TXT_G19M, b, 230, 230, 230, 210);
+    txt_desenhar_alpha(l, bx + bw - l.w, yBarra - l.h - 14.0f, a);
+  }
+#endif
 
   // --- O TITULO: o LOGO, e o texto so na falta dele -------------------------
   // (O dono tinha pedido texto em 2026-09; o mockup aprovado em 03/10 volta ao

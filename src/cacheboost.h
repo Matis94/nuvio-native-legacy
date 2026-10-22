@@ -96,4 +96,8 @@ int cacheboost_backend_buffer_mb(void);
 // Host captures/tests: pretend the backend supports (1) or not (0) the
 // features; -1 = the build's real answer.
 void cacheboost_simular_suporte(int s);
+#ifdef NV_HTTP_BUFFER_DIAG
+// Counter and wording from custom 2.0.7, test builds only.
+void cacheboost_buffer_texto(char *dst, size_t n, long long used, long long capacity, int opcao);
+#endif
 #endif
