@@ -28,7 +28,21 @@ int main(void) {
   movie_active = 0;
   video_buffer_test_text(text, sizeof text);assert(!strcmp(text, "Buffer: system"));
   movie_active = 1;dtsSessao = (DtsPlayback *)(uintptr_t)1;
+  pump_status=(DtsPlaybackStatus){.prepared=1,
+    .buffer={.ready_bytes=12*1048576LL,.capacity_bytes=132*1048576LL,
+             .total=100*1048576LL,.contiguous_bytes=6*1048576LL},.buffered_until=14};
+  video_buffer_test_text(text, sizeof text);
+  assert(!strcmp(text, "Buffer: 12.0 / 132 MiB total (256 MiB selected)"));
+  posSeg=10;durSeg=100;bufferSeg=0;
+  assert(fabs(video_buffer_fim()-16)<.001); // Stop at a gap, not all 12 MiB ready.
+  pump_status.buffered_until=25;
+  assert(fabs(video_buffer_fim()-25)<.001); // Frames already fed to native playback.
+  pump_status.buffer.contiguous_bytes=100*1048576LL;
+  assert(video_buffer_fim()==100); // File-duration clamp.
+  pump_status.failed=1;
   video_buffer_test_text(text, sizeof text);assert(!strcmp(text, "Buffer: system"));
+  assert(video_buffer_fim()==0);
+  pump_status=(DtsPlaybackStatus){0};
   dtsSessao = NULL;test_buffer_preset = 1;
   video_buffer_test_text(text, sizeof text);assert(!strcmp(text, "Buffer: 20.0 / 64 MiB total"));
   movie_snapshot.ready_bytes = -100;
@@ -39,5 +53,5 @@ int main(void) {
   char tiny[2] = {1,1};video_buffer_test_text(tiny, sizeof tiny);assert(tiny[1] == 0);
   video_buffer_test_text(NULL, 0);
   ligado = 0;midia[0] = 0;acb = 0;pararSessao();
-  puts("video_buffer_test_osd: measured capacity, reduced budget, native unknown, fallback, converter isolation and reset passed");
+  puts("video_buffer_test_osd: native and SDR/DTS counters, contiguous rail, fed timestamps, fallback and reset passed");
 }

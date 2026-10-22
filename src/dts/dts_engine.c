@@ -706,6 +706,33 @@ void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *b) {
   if(e->source_stream) {
     b->position=e->pos;b->total=e->total;b->capacity_bytes=e->fx_buf?e->fx_cap:0;
     if(e->fx_req<0 && e->pos>=e->fx_lo && e->pos<=e->fx_hi)b->ready_bytes=e->fx_hi-e->pos;
+#ifdef NV_HTTP_BUFFER_DIAG
+    b->contiguous_bytes=b->ready_bytes;
+  } else if(!e->remux && e->range_threads && !cancelled(e)) {
+    // Called only by the conversion worker: it owns pos/cache. Completed
+    // speculative ranges belong to the network workers and need range_lock.
+    b->position=e->pos; b->total=e->total;
+    b->capacity_bytes=(int64_t)(e->range_slots+1)*e->range_bytes;
+    if(e->cache && e->pos>=e->cache_start && e->pos-e->cache_start<e->cache_size)
+      b->ready_bytes=e->cache_size-(e->pos-e->cache_start);
+    b->contiguous_bytes=b->ready_bytes;
+    for(int i=0;i<e->range_slots;i++) {
+      DtsRangeJob *j=&e->ranges[i];
+      if(j->state==3 && j->data && j->count>0 && j->start>=e->pos)
+        b->ready_bytes+=j->count;
+    }
+    int64_t next=e->pos+b->contiguous_bytes;
+    for(int k=0;k<e->range_slots;k++) {
+      DtsRangeJob *found=NULL;
+      for(int i=0;i<e->range_slots;i++) {
+        DtsRangeJob *j=&e->ranges[i];
+        if(j->state==3 && j->data && j->count>0 && j->start==next) { found=j;break; }
+      }
+      if(!found)break;
+      b->contiguous_bytes+=found->count;next+=found->count;
+      if(found->count<found->end-found->start+1)break;
+    }
+#endif
   }
   pthread_mutex_unlock(&e->range_lock);
 }

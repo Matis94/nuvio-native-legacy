@@ -3531,6 +3531,20 @@ double video_pos(void)      { return posSeg; }
 double video_duracao(void)  { return durSeg; }
 double video_buffer_fim(void) {
   DtsBufferInfo b={0};double end=bufferSeg;
+#ifdef NV_HTTP_BUFFER_DIAG
+  if(dtsSessao) {
+    DtsPlaybackStatus st={0};dts_playback_status(dtsSessao,&st);
+    if(!st.failed && st.prepared) {
+      if(st.buffered_until>end)end=st.buffered_until;
+      if(st.buffer.total>0 && st.buffer.contiguous_bytes>0 && durSeg>0) {
+        double estimate=posSeg+(double)st.buffer.contiguous_bytes*durSeg/(double)st.buffer.total;
+        if(estimate>end)end=estimate;
+      }
+      if(durSeg>0 && end>durSeg)end=durSeg;
+    }
+    return end;
+  }
+#endif
   if(!dtsSessao && moviebuffer_info(&b)>0 && b.total>0 && b.ready_bytes>0 && durSeg>0) {
     // Estimate only the standard buffered rail from measured payload and
     // average file bitrate. No labels, counters or extra player overlay.
@@ -3542,9 +3556,13 @@ double video_buffer_fim(void) {
 #ifdef NV_HTTP_BUFFER_DIAG
 void video_buffer_test_text(char *out, size_t n) {
   DtsBufferInfo b = {0};
-  // Only this proxy exposes measured allocated bytes. Native webOS and the
-  // converter must not be labelled with an unverified selected capacity.
-  if (!dtsSessao && moviebuffer_info(&b) > 0 && b.capacity_bytes > 0) {
+  if (dtsSessao) {
+    DtsPlaybackStatus st={0};dts_playback_status(dtsSessao,&st);
+    if(st.prepared && !st.failed)b=st.buffer;
+  } else if(moviebuffer_info(&b)<=0)b=(DtsBufferInfo){0};
+  // Use the measured converter queue or native RAM ring. A selected setting
+  // alone is not evidence of the buffer used by the current playback path.
+  if (b.capacity_bytes > 0) {
     if (b.ready_bytes > b.capacity_bytes) b.ready_bytes = b.capacity_bytes;
     cacheboost_buffer_texto(out, n, b.ready_bytes, b.capacity_bytes, ajustes_buffer_preset());
   } else cacheboost_buffer_texto(out, n, 0, 0, ajustes_buffer_preset());

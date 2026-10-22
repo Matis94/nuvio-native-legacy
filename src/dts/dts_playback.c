@@ -172,6 +172,10 @@ static int prepareMode(DtsPlayback *p, int stream, int core, double target,int r
   pthread_mutex_lock(&p->lock);
   p->suppress_events = 1;
   p->status.prepared = 0; p->status.media_id[0] = 0;
+#ifdef NV_HTTP_BUFFER_DIAG
+  p->status.buffer = (DtsBufferInfo){0};
+  p->status.buffered_until = 0;
+#endif
   p->load_complete = 0;
   pthread_mutex_unlock(&p->lock);
   dts_pipeline_destroy(p->pipeline); p->pipeline = NULL;
@@ -304,6 +308,14 @@ static void reportRate(DtsPlayback *p, DtsRate *rate, double presented,
                        int pause, int complete, int preroll) {
   double now = clockSeconds(CLOCK_MONOTONIC);
   if (now < 0 || now - rate->start < 5.0) return;
+#ifdef NV_HTTP_BUFFER_DIAG
+  DtsPlaybackStatus sampled;
+  dts_playback_status(p, &sampled);
+  printf("[dts-buffer] readyBytes=%lld contiguousBytes=%lld windowBytes=%lld fedUntil=%.3f\n",
+    (long long)sampled.buffer.ready_bytes, (long long)sampled.buffer.contiguous_bytes,
+    (long long)sampled.buffer.capacity_bytes, sampled.buffered_until);
+  fflush(stdout);
+#endif
   char event[512];
   snprintf(event, sizeof event,
     "{\"dtsStage\":{\"name\":\"worker-rate\",\"detail\":\"pause=%d ready=%d preroll=%d wall=%.1f readMs=%.0f cpuMs=%.0f feedMs=%.0f a=%u v=%u full=%u pace=%u clock=%d at=%.2f aheadA=%.2f aheadV=%.2f\"}}",
@@ -319,6 +331,21 @@ static void reportRate(DtsPlayback *p, DtsRate *rate, double presented,
   else if (!pause) p->starved = 0;
   memset(rate, 0, sizeof *rate); rate->start = now;
 }
+#ifdef NV_HTTP_BUFFER_DIAG
+static void reportBuffer(DtsPlayback *p, double audio_pts, double video_pts) {
+  DtsBufferInfo b;
+  dts_engine_buffer_info(p->engine, &b);
+  pthread_mutex_lock(&p->lock);
+  if(p->stop || p->status.failed || !p->status.prepared || p->seek_dirty || p->audio_dirty) {
+    p->status.buffer = (DtsBufferInfo){0};
+    p->status.buffered_until = 0;
+  } else {
+    p->status.buffer = b;
+    p->status.buffered_until = fmax(0, fmin(audio_pts, video_pts));
+  }
+  pthread_mutex_unlock(&p->lock);
+}
+#endif
 static void *run(void *user) {
   DtsPlayback *p = user;
   DtsFrame frame;
@@ -448,6 +475,9 @@ static void *run(void *user) {
     }
     /* Native volume is optional. Reapply after each Load completion. */
     if (volume_dirty) (void)dts_pipeline_volume(p->pipeline, volume);
+#ifdef NV_HTTP_BUFFER_DIAG
+    reportBuffer(p, fed_audio, fed_video);
+#endif
     /* Native load completion needs preroll even when opened paused. */
     if (paused && !seek_preroll && (complete || position > preroll + 2.0)) {
       cpu_window = clockSeconds(CLOCK_MONOTONIC); cpu_used = 0;
@@ -615,6 +645,11 @@ static void *run(void *user) {
 done:
   /* Ignore closing callbacks after terminal failure, too. */
   pthread_mutex_lock(&p->lock); p->suppress_events = 1; pthread_mutex_unlock(&p->lock);
+#ifdef NV_HTTP_BUFFER_DIAG
+  pthread_mutex_lock(&p->lock);
+  p->status.buffer = (DtsBufferInfo){0};p->status.buffered_until = 0;
+  pthread_mutex_unlock(&p->lock);
+#endif
   dts_subtitles_destroy(p->subtitle_decoder); p->subtitle_decoder = NULL;
   dts_pipeline_destroy(p->pipeline);
   p->pipeline = NULL;
@@ -692,6 +727,9 @@ void dts_playback_pause(DtsPlayback *p, int paused) {
 void dts_playback_seek(DtsPlayback *p, double seconds) {
   if (!p || !isfinite(seconds) || seconds >= 9e9) return;
   pthread_mutex_lock(&p->lock); p->target = seconds < 0 ? 0 : seconds; p->seek_dirty = 1;
+#ifdef NV_HTTP_BUFFER_DIAG
+  p->status.buffer = (DtsBufferInfo){0};p->status.buffered_until = 0;
+#endif
   pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
 }
 void dts_playback_audio(DtsPlayback *p, int stream) {
@@ -699,6 +737,9 @@ void dts_playback_audio(DtsPlayback *p, int stream) {
   pthread_mutex_lock(&p->lock);
   if (!p->seek_dirty) p->target = p->presented;
   p->audio_stream = stream; p->audio_dirty = 1;
+#ifdef NV_HTTP_BUFFER_DIAG
+  p->status.buffer = (DtsBufferInfo){0};p->status.buffered_until = 0;
+#endif
   pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
 }
 void dts_playback_close(DtsPlayback *p) {

@@ -27,8 +27,15 @@ void dts_engine_set_ring_mib(int mib);
 /* Range read-ahead of dts_engine_open for engines opened after the call, in
  * MiB (Settings > Buffer size): 0 = default (32 MiB), else 4 MiB ranges. */
 void dts_engine_set_ahead_mib(int mib);
-/* Native HTTP cache only: measured ready payload and allocated ring capacity. */
-typedef struct { int64_t ready_bytes, capacity_bytes, position, total; } DtsBufferInfo;
+/* Native HTTP cache: measured payload and allocated ring capacity. Test builds
+ * also sample the converter's existing range queue, on its owning worker.
+ * Conversion capacity includes its active range plus the read-ahead window. */
+typedef struct {
+  int64_t ready_bytes, capacity_bytes, position, total;
+#ifdef NV_HTTP_BUFFER_DIAG
+  int64_t contiguous_bytes; /* Ready bytes up to the first missing range. */
+#endif
+} DtsBufferInfo;
 void dts_engine_buffer_info(DtsEngine *, DtsBufferInfo *);
 DtsEngine *dts_engine_source_create(const char *url, const char *headers, int mib);
 int dts_engine_source_read(DtsEngine *, int64_t offset, unsigned char *data, int n);
