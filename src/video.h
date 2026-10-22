@@ -16,6 +16,7 @@
 // TV tocando o mesmo arquivo: e o que comprovadamente funciona.
 #ifndef NV_VIDEO_H
 #define NV_VIDEO_H
+#include <stddef.h>
 
 // Registra no barramento e sobe o laco de eventos. 1 se deu certo.
 // Falhar aqui nao e fatal: o app segue sem video.
@@ -117,6 +118,10 @@ double video_duracao(void);  // 0 enquanto desconhecida
 // capitulos; quem chama precisa de um plano B.
 double video_creditos(void);
 double video_buffer_fim(void); // ate onde o buffer cobre (s); 0 se desconhecido
+#ifdef NV_HTTP_BUFFER_DIAG
+// Temporary test build: measured RAM ring, or an explicitly unverified native target.
+void video_buffer_test_text(char *out, size_t n);
+#endif
 // Ha quanto tempo (ms) o pipeline esta parado esperando dados, do par de
 // eventos bufferingStart/bufferingEnd do uMS; 0 quando NAO esta bufferizando.
 //

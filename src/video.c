@@ -51,6 +51,9 @@
 #endif
 
 #define DTS_MARCA_ARQ "dts-conversao.txt"
+#ifdef NV_HTTP_BUFFER_DIAG
+static _Atomic int bufferTestNativeMiB;
+#endif
 static void dtsMarcarAbertas(int n) {
   char b[sizeof NV_VERSAO + 32];
   snprintf(b, sizeof b, "%d\n%s\n", n, NV_VERSAO);
@@ -348,6 +351,11 @@ double video_duracao(void) { return SIM.duracao; }
 // capitulos. Melhor um stub honesto que um numero inventado.
 double video_creditos(void) { return 0.0; }
 double video_buffer_fim(void) { return SIM.bufferFim; }
+#ifdef NV_HTTP_BUFFER_DIAG
+void video_buffer_test_text(char *out, size_t n) {
+  if (out && n) snprintf(out, n, "Buffer: simulation | actual size unknown");
+}
+#endif
 static VideoStats simStats;
 static int simStatsDef;
 void video_simular_estatisticas(const VideoStats *s) {
@@ -1601,6 +1609,9 @@ static int bufferCustom;
 static int aoCarregar(LSHandle *h, LSMessage *m, void *u);
 static void repetirBufferPadrao(void *u) {
   bufferCustom = 0;
+#ifdef NV_HTTP_BUFFER_DIAG
+  bufferTestNativeMiB = 0;
+#endif
   printf("[video] bufferControl custom recusado, voltando ao padrao\n");
   fflush(stdout);
   chamarCtx("load", cargaBufferPadrao, aoCarregar, u);
@@ -2758,6 +2769,10 @@ static int tocarInterno(const char *url, int comDV) {
                 expWin[0] ? expWin : "window_id_dummy",
                 ownBuffer ? 0 : ajustes_buffer_preset(), memlog_livre_mb());
     bufferCustom = strstr(carga, "\"userBufferCtrl\":true") != NULL;
+#ifdef NV_HTTP_BUFFER_DIAG
+    bufferTestNativeMiB = bufferCustom
+      ? (int)(js_num(carga, NULL, "bufferMaxLevel", 0) / (1024.0 * 1024.0)) : 0;
+#endif
     if (bufferCustom)
       montarCarga(cargaBufferPadrao, sizeof cargaBufferPadrao, loadUrl, modoLoad,
                   dolby, hh, expWin[0] ? expWin : "window_id_dummy", 0, 0);
@@ -2830,6 +2845,9 @@ static void pararSessao(void) {
    * pipeline must not queue an error for the replacement source. */
   __atomic_add_fetch(&sessao, 1, __ATOMIC_ACQ_REL);
   moviebuffer_stop();
+#ifdef NV_HTTP_BUFFER_DIAG
+  bufferTestNativeMiB = 0;
+#endif
   int tinhaDts = dtsSessao != NULL;
   DtsPlayback *antigoDts = dtsSessao;
   dtsSessao = NULL;
@@ -3534,6 +3552,39 @@ double video_buffer_fim(void) {
   }
   return end;
 }
+#ifdef NV_HTTP_BUFFER_DIAG
+void video_buffer_test_text(char *out, size_t n) {
+  DtsBufferInfo b = {0};
+  const int sizes[] = {0, 64, 128, 256};
+  int preset = ajustes_buffer_preset();
+  char setting[32];
+  if (!out || !n) return;
+  if (preset > 0 && preset < 4) snprintf(setting, sizeof setting, "%d MiB", sizes[preset]);
+  else snprintf(setting, sizeof setting, "Auto");
+  // The converter does not expose session byte capacity; never reuse a stale
+  // native/proxy target or claim a requested webOS value was actually allocated.
+  if (dtsSessao) {
+    snprintf(out, n, "Buffer: DTS/DV path | actual size unknown | setting: %s", setting);
+    return;
+  }
+  int active = moviebuffer_info(&b);
+  if (active > 0 && b.capacity_bytes > 0) {
+    int64_t ready = b.ready_bytes < 0 ? 0 : b.ready_bytes;
+    if (ready > b.capacity_bytes) ready = b.capacity_bytes;
+    snprintf(out, n, "Buffer RAM: %.1f / %.0f MiB | setting: %s",
+             (double)ready / 1048576.0, (double)b.capacity_bytes / 1048576.0, setting);
+  } else if (active > 0) {
+    snprintf(out, n, "Buffer RAM: starting, allocation pending | setting: %s", setting);
+  } else if (active < 0) {
+    snprintf(out, n, "Buffer: webOS fallback | RAM proxy inactive | actual size unknown | setting: %s", setting);
+  } else if (bufferTestNativeMiB > 0) {
+    snprintf(out, n, "Buffer: webOS | requested: %d MiB | actual size unknown | setting: %s",
+             bufferTestNativeMiB, setting);
+  } else {
+    snprintf(out, n, "Buffer: webOS Auto | actual size unknown | setting: %s", setting);
+  }
+}
+#endif
 // webOS: so o buffer em SEGUNDOS e real (bufferRange do uMS); bytes, conexoes
 // e quadros o uMS nao conta. O host e o do link pedido (o uMS nao diz o final).
 void video_estatisticas(VideoStats *s) {

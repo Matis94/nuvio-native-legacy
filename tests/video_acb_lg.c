@@ -11,7 +11,8 @@ static int fake_sleep(const struct timespec *, struct timespec *);
 #undef nanosleep
 
 /* The official native HTTP payload reads device buffering preferences. */
-int ajustes_buffer_preset(void) { return 0; }
+static int test_buffer_preset;
+int ajustes_buffer_preset(void) { return test_buffer_preset; }
 long memlog_livre_mb(void) { return 4096; }
 /* No HTTP or decoder is started by native dispatcher fixtures. */
 static DtsBufferInfo movie_snapshot;
