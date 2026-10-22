@@ -7,9 +7,51 @@ static size_t countedClean(const char *s, char *d, size_t n, int flags) {
   cleanCalls++;
   return nv_limpar_texto(s, d, n, flags);
 }
+#include "badges.h"
+static struct { uint64_t mask; float x,y,budget,width; } badgeDraws[32];
+static int badgeDrawCount, recordBadges, flagDrawCount;
+static void trackedFlag(const char *country,float x,float y,float w,float h,float a) {
+  if(recordBadges && a>0)flagDrawCount++;
+  badges_bandeira(country,x,y,w,h,a);
+}
+#define badges_bandeira trackedFlag
+static float rememberBadges(uint64_t mask,float x,float y,float budget,float width) {
+  if(recordBadges && badgeDrawCount<32) {
+    int i=badgeDrawCount++;
+    badgeDraws[i].mask=mask;badgeDraws[i].x=x;badgeDraws[i].y=y;
+    badgeDraws[i].budget=budget;badgeDraws[i].width=width;
+  }
+  return width;
+}
+static float trackedBadges(uint64_t mask,float x,float y,float w,float h,float r,float g,float b,float a) {
+  return rememberBadges(mask,x,y,w,badges_desenhar_fonte(mask,x,y,w,h,r,g,b,a));
+}
+static float trackedColored(uint64_t mask,float x,float y,float w,float h,float a) {
+  return rememberBadges(mask,x,y,w,badges_desenhar_selos(mask,x,y,w,h,a));
+}
+#define badges_desenhar_fonte trackedBadges
+#define badges_desenhar_selos trackedColored
+#include <math.h>
+typedef struct { GLuint texture; float x,y,w,h; } PackageDraw;
+static PackageDraw packageDraws[32];
+static int packageDrawCount, recordPackage;
+static float packageY;
+static void trackedRect(GfxRect r,GLuint t,GfxModo mode,float focus,
+                        float px,float py,float radius,float cr,float cg,float cb,float ca) {
+  if(recordPackage && t && r.y>=packageY-.1f && r.y+r.h<=packageY+25 && packageDrawCount<32) {
+    PackageDraw *d=&packageDraws[packageDrawCount++];
+    d->texture=t;d->x=r.x;d->y=r.y-packageY;d->w=r.w;d->h=r.h;
+  }
+  gfx_rect(r,t,mode,focus,px,py,radius,cr,cg,cb,ca);
+}
+#define gfx_rect trackedRect
 #define nv_limpar_texto countedClean
 #include "../src/streams.c"
 #undef nv_limpar_texto
+#undef gfx_rect
+#undef badges_desenhar_fonte
+#undef badges_desenhar_selos
+#undef badges_bandeira
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 #include <unistd.h>
@@ -70,7 +112,7 @@ static int pixelLine(const char *label, TxtEstilo style, const char *s,
   glClearColor(background/255.0f,background/255.0f,background/255.0f,1);
   glClear(GL_COLOR_BUFFER_BIT);
   if(icon) {
-    gfx_icone((GfxRect){x,y+3,22,22},icon,r/255.0f,g/255.0f,b/255.0f,alpha);
+    badges_emoji(icon,x,y+3,22,alpha);
     x+=30;
   }
   TxtLinha l=txt_linha(style,s,r,g,b,255);
@@ -84,9 +126,98 @@ static int pixelLine(const char *label, TxtEstilo style, const char *s,
   printf("pixels %s bg=%d alpha=%.1f mismatches=%d ink=%d\n",label,background,alpha,mismatches,ink);
   return mismatches==0 && ink>0 && (!icon || iconInk>0);
 }
+static void nativeWithoutFlags(const char *dir) {
+  Stream s=fixtures[1];
+  snprintf(s.provedor,sizeof s.provedor,"AIOStreams very long provider name");
+  snprintf(s.descricao,sizeof s.descricao,"4K REMUX DV HDR10 HEVC TrueHD Atmos DTS-HD MA 7.1");
+  snprintf(s.audioIdiomas,sizeof s.audioIdiomas,"Polish,English,German,French");
+  s.badges=badges_detectar(s.descricao);s.audioDescritores=STREAM_AUDIO_MULTI;
+  for(int colored=0;colored<=1;colored++) for(int selected=0;selected<=1;selected++) {
+    unsigned char before[sizeof badgeDraws];int count=0;
+    for(int flags=0;flags<=1;flags++) {
+      char path[512];snprintf(path,sizeof path,"%s/ajustes.txt",dir);
+      FILE *f=fopen(path,"w");assert(f);
+      fprintf(f,"fonteTextoLocal 0\naudioFlagsLocal %d\nselosColoridosLocal %d\n",!flags,!colored);
+      fclose(f);ajustes_dir(dir);
+      assert(ajustes_selos_coloridos()==colored && ajustes_audio_flags()==flags);
+      stream_definir_lista(&s,1);stream_folha_abrir();
+      grupo=selected;foco=0;linhaAnt=-1;abreAnt=abreFoco=0;rolagem=0;montar(-1);
+      for(int j=0;j<40;j++){tex_bombear(32);txt_novo_quadro();corpoFolha(0,1920,1,SDL_GetTicks(),0);SDL_Delay(2);}
+      badgeDrawCount=flagDrawCount=0;recordBadges=1;
+      txt_novo_quadro();corpoFolha(0,1920,1,SDL_GetTicks(),0);recordBadges=0;
+      assert(flagDrawCount==0 && "From Nuvio must not draw audio flags even with the old setting enabled");
+      assert(badgeDrawCount>0 && "native quality badges must remain visible");
+      if(!flags){count=badgeDrawCount;memcpy(before,badgeDraws,sizeof before);}
+      else assert(badgeDrawCount==count && !memcmp(before,badgeDraws,count*sizeof badgeDraws[0]) &&
+                  "the retired flag setting must not consume native badge space");
+      assert(linhasFaixas(&lista[0])>0 && "native audio language text remains visible");
+    }
+  }
+  puts("native presentation: no audio flags in either focus/color state; badges and audio text retained");
+}
+static void nativeFocusRoundTrip(const char *dir) {
+  selospacote_dir_embutidos("deploy/app/art");assert(selospacote_embutidos_ok());
+  Stream sources[2]={fixtures[1],fixtures[1]};
+  for(int i=0;i<2;i++) {
+    snprintf(sources[i].url,sizeof sources[i].url,"https://fixture.invalid/focus-%d.mkv",i);
+    snprintf(sources[i].provedor,sizeof sources[i].provedor,"AIOStreams long provider name");
+    snprintf(sources[i].descricao,sizeof sources[i].descricao,
+             "2160p REMUX BluRay WEB-DL DV HDR10 IMAX HEVC AV1 TrueHD Atmos DTS-HD MA 7.1 Netflix Amazon Disney");
+    sources[i].mp4=0;sources[i].badges=badges_detectar(sources[i].descricao);
+  }
+  for(int colored=0;colored<=1;colored++) {
+    char path[512];snprintf(path,sizeof path,"%s/ajustes.txt",dir);
+    FILE *f=fopen(path,"w");assert(f);
+    fprintf(f,"fonteTextoLocal 0\nselosColoridosLocal %d\n",!colored);fclose(f);ajustes_dir(dir);
+    stream_definir_lista(sources,2);stream_folha_abrir();
+    grupo=1;foco=0;focoVisto=0;focoFixo=-1;linhaAnt=-1;abreAnt=0;abreFoco=1;anim=1;rolagem=0;
+    for(int i=0;i<n;i++)selosCalcular(&lista[i]);
+    assert(selosPacoteVisiveis(&lista[ordem[0]])>3);
+    for(int k=0;k<160;k++){tex_bombear(64);txt_novo_quadro();montar(automaticaDaFolha());corpoFolha(0,1920,1,SDL_GetTicks(),0);SDL_Delay(2);}
+    for(int width=1000;width<=1920;width+=20) {
+      PackageDraw before[32];int count=0;
+      for(int state=0;state<3;state++) {
+        if(state) {
+          SDL_Event e={0};e.type=SDL_KEYDOWN;e.key.keysym.sym=state==1?SDLK_DOWN:SDLK_UP;
+          stream_folha_evento(&e);
+          for(int k=0;k<20;k++)stream_folha_atualizar(1.0f/60,SDL_GetTicks());
+        }
+        if(foco!=(state==1?1:0))fprintf(stderr,"unexpected focus=%d group=%d state=%d nf=%d\n",foco,grupo,state,nOrdem);
+        assert(foco==(state==1?1:0));rolagem=0;montar(automaticaDaFolha());
+        int i=ordem[0];
+        packageY=FOLHA_TOPO+linhaPosicao(0)+20+(temMarca(i,automaticaDaFolha())?FOLHA_MARCA_H:0)+40;
+        packageDrawCount=0;recordPackage=1;
+        txt_novo_quadro();corpoFolha(0,width,1,SDL_GetTicks(),0);recordPackage=0;
+        assert(packageDrawCount>0 && "test must draw real bundled badge images");
+        if(!state){count=packageDrawCount;memcpy(before,packageDraws,sizeof before);}
+        else {
+          if(packageDrawCount!=count || memcmp(before,packageDraws,count*sizeof *before))
+            fprintf(stderr,"badge focus mismatch color=%d width=%d state=%d counts=%d/%d\n",colored,width,state,count,packageDrawCount);
+          assert(packageDrawCount==count && !memcmp(before,packageDraws,count*sizeof *before) &&
+                 "native badge images and geometry must survive Down/Up navigation");
+        }
+      }
+    }
+  }
+  puts("native focus: real bundled badge images unchanged across Down/Up, 47 widths and both color settings");
+}
+static void colorEmoji(void) {
+  GLuint image=0;
+  for(int tries=0;tries<200 && !image;tries++) {
+    tex_bombear(8);image=tex_obter_larg("deploy/app/art/formatter-emoji/1f3ac.png",22);
+    if(!image)SDL_Delay(5);
+  }
+  assert(image);glClearColor(.2,.2,.2,1);glClear(GL_COLOR_BUFFER_BIT);
+  badges_emoji("1f3ac",20,20,22,1);
+  unsigned char pixels[22*22*4];glReadPixels(20,1080-42,22,22,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+  int colored=0;
+  for(size_t p=0;p<sizeof pixels;p+=4)
+    if(abs(pixels[p]-pixels[p+1])>15 || abs(pixels[p+1]-pixels[p+2])>15)colored++;
+  assert(colored>10 && "formatter emoji must preserve colored RGB artwork");
+}
 static void pixels(const char *dir) {
-  assert(tex_iniciar(64)); gfx_icones_dir("deploy/app/art");
-  const char *paths[]={"deploy/app/art/icones/aj_hard-drive.png","deploy/app/art/icones/aj_volume-2.png"};
+  assert(tex_iniciar(128)); gfx_icones_dir("deploy/app/art");badges_carregar("deploy/app/art");
+  const char *paths[]={"deploy/app/art/formatter-emoji/1f4be.png","deploy/app/art/formatter-emoji/1f50a.png"};
   for(int i=0;i<2;i++) {
     GLuint icon=0;
     for(int tries=0;tries<200 && !icon;tries++) {
@@ -95,6 +226,7 @@ static void pixels(const char *dir) {
     }
     assert(icon && "pixel assertion must draw real icons");
   }
+  nativeWithoutFlags(dir);colorEmoji();
   int ok=1;
   for(int addon=0;addon<=1;addon++) for(int failed=0;failed<=1;failed++)
     for(int bg=77;bg<=220;bg+=143) for(int fade=0;fade<=1;fade++) {
@@ -130,7 +262,41 @@ static void pixels(const char *dir) {
     }
   fflush(stdout);
   assert(ok && "unfocused text and icons must preserve the previous RGB and alpha");
+  nativeFocusRoundTrip(dir);
   tex_encerrar();
+}
+static void formatterPresentation(const char *dir) {
+  // Exact custom-formatter symbols, compound heading and in-place flag order.
+  LinhaAddon line;
+  const char *text="🗣️🌍 🇵🇱🇬🇧 DUAL Dubbed";
+  pecasAddon(text,strlen(text),&line);
+  assert(line.n==4 && !strcmp(line.ic[0],"1f5e3") && !strcmp(line.ic[1],"1f30d"));
+  assert(!strcmp(line.pais[2],"pl") && !strcmp(line.pais[3],"gb"));
+  assert(!strcmp(line.tx[3],"DUAL Dubbed"));
+  for(size_t k=0;k<sizeof EMOJI_ICONE/sizeof *EMOJI_ICONE;k++) {
+    char path[512]; snprintf(path,sizeof path,"deploy/app/art/formatter-emoji/%s.png",EMOJI_ICONE[k].icone);
+    assert(access(path,R_OK)==0 && "formatter icons must ship offline");
+  }
+  Stream s=fixtures[0];
+  snprintf(s.rotulo,sizeof s.rotulo,"🇵🇱 ☁️ [TB⚡️] Torrentio 4K");
+  snprintf(s.descricao,sizeof s.descricao,"🎬 Movie.2160p.REMUX.mkv\n📀 REMUX\n🎨 HEVC HDR DV\n🎧 TrueHD 7.1\n🗣️🌍 🇵🇱  🇬🇧 DUAL Dubbed\n💾 52.6 GB / 📁 60 GB 🌱 12 🔎 Index 🏷️ Group 📅 2d\nℹ️ Message");
+  snprintf(s.audioIdiomas,sizeof s.audioIdiomas,"Polish,English");
+  snprintf(s.legendaIdiomas,sizeof s.legendaIdiomas,"French");
+  s.audioDescritores=STREAM_AUDIO_DUAL;
+  setting(dir,1);stream_definir_lista(&s,1);stream_folha_abrir();
+  grupo=0;linhaAnt=-1;montar(-1);
+  float h=alturaLinha(0,-1);
+  const TextoAddon *t=textoAddonDa(0);
+  assert(t->nl==7 && t->cabecalho && !strcmp(t->cabecalho->pais[0],"pl"));
+  assert(t->linhas[4].n==4 && !strcmp(t->linhas[4].pais[2],"pl"));
+  s.audioIdiomas[0]=s.legendaIdiomas[0]=s.audioBandeiras[0]=0;s.audioDescritores=0;
+  stream_definir_lista(&s,1);montar(-1);
+  assert(fabsf(alturaLinha(0,-1)-h)<.01f && "addon layout must not append metadata rows");
+  setting(dir,0);stream_definir_lista(&s,1);montar(-1);h=alturaLinha(0,-1);
+  snprintf(s.audioIdiomas,sizeof s.audioIdiomas,"Polish,English");
+  stream_definir_lista(&s,1);montar(-1);
+  assert(fabsf(alturaLinha(0,-1)-h-FOLHA_FAIXA_H)<.01f && "Nuvio audio text remains visible");
+  puts("formatter presentation: shipped icons, inline flags, title symbols, addon metadata isolation and Nuvio audio row OK");
 }
 int main(int argc,char **argv) {
   int verify=argc==1 || strcmp(argv[1],"--measure");
@@ -188,6 +354,7 @@ int main(int argc,char **argv) {
   assert(!strcmp(textoAddonDa(1)->linhas[0].tx[0],release));
   assert(corpoAddon(0,0,0,600,1,1,0)>FOLHA_ADDON_LD);
   puts("formatter cache: long filenames, growth and wrapped measurement OK");
+  formatterPresentation(dir);
   pixels(dir);
   txt_encerrar(); stream_definir_lista(NULL,0);
   SDL_GL_DeleteContext(gl); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit();

@@ -10,7 +10,6 @@
 #include "idioma.h"
 #include "linguas.h"
 #include "badges.h"
-#include "audio_flags.h"
 #include "selospacote.h"
 #include "logotitulo.h"
 #include "tex_cache.h"
@@ -3615,8 +3614,8 @@ static int linhaAnt = -1, focoVisto = -1;
 // opcao de receber pronto o texto que alguns addons mandam"). O titulo e o
 // `name` do addon numa linha so, e embaixo a `description` linha a linha, como
 // veio — o AIOStreams do dono manda "11.1 GB | 30.1 Mbps |", o grupo, os
-// idiomas e o arquivo, cada um numa linha. Glifo que a Inter nao tem (o ⚡ e o
-// ⚑ do formatador) cai fora em text.c, sem virar quadrado.
+// idiomas e o arquivo, cada um numa linha. Simbolos conhecidos e bandeiras
+// usam artes locais; glifos sem suporte saem limpos, sem virar quadrados.
 // Fora do foco a linha mostra so as 2 primeiras linhas do addon; a linha em
 // foco abre (mola abreFoco) e mostra o texto inteiro, com quebra de linhas.
 // As outras fontes continuam compactas.
@@ -3632,20 +3631,30 @@ static void linhaLimpa(char *d, size_t tam, const char *ini, size_t n) {
   }
   d[k] = 0;
 }
-// Emoji do formatador -> icone Lucide (aj_<nome>.png). A TV nao tem emoji
-// colorido; o que nao esta aqui sai limpo em nv_limpar_texto (sem quadrado).
-// Um emoji pode vir com o seletor de variacao U+FE0F (EF B8 8F) colado.
+// Bundled color emoji keep formatter symbols visible on TVs without an emoji font.
+// Optional U+FE0F variation selectors are consumed with the base symbol.
 static const struct { const char *emoji, *icone; } EMOJI_ICONE[] = {
-  { "\xF0\x9F\x92\xBE", "aj_hard-drive" },   // 💾
-  { "\xF0\x9F\x91\xA4", "aj_users" },        // 👤
-  { "\xF0\x9F\x8E\x9E", "aj_film" },         // 🎞
-  { "\xF0\x9F\x94\x8A", "aj_volume-2" },     // 🔊
-  { "\xF0\x9F\x8C\x90", "aj_globe" },        // 🌐
-  { "\xE2\x9A\x99",     "aj_settings-2" },  // ⚙
-  { "\xE2\x9A\xA1",     "aj_zap" },         // ⚡
-  { "\xF0\x9F\x93\xA6", "aj_package" },      // 📦
-  { "\xF0\x9F\x8F\xB7", "aj_tag" },          // 🏷
-  { "\xE2\x8F\xB1",     "aj_clock" },       // ⏱
+  { "🎬", "1f3ac" },
+  { "🎨", "1f3a8" },
+  { "🎧", "1f3a7" },
+  { "🗣", "1f5e3" },
+  { "🌍", "1f30d" }, { "🌎", "1f30e" }, { "🌏", "1f30f" },
+  { "📀", "1f4c0" }, { "💿", "1f4bf" }, { "💽", "1f4bd" },
+  { "🖥", "1f5a5" }, { "💻", "1f4bb" },
+  { "📺", "1f4fa" },
+  { "📁", "1f4c1" }, { "🌱", "1f331" },
+  { "🔎", "1f50e" }, { "📅", "1f4c5" },
+  { "ℹ", "2139" }, { "☁", "2601" }, { "⌛", "231b" },
+  { "\xF0\x9F\x92\xBE", "1f4be" },   // 💾
+  { "\xF0\x9F\x91\xA4", "1f464" },        // 👤
+  { "\xF0\x9F\x8E\x9E", "1f39e" },         // 🎞
+  { "\xF0\x9F\x94\x8A", "1f50a" },     // 🔊
+  { "\xF0\x9F\x8C\x90", "1f310" },        // 🌐
+  { "\xE2\x9A\x99",     "2699" },  // ⚙
+  { "\xE2\x9A\xA1",     "26a1" },         // ⚡
+  { "\xF0\x9F\x93\xA6", "1f4e6" },      // 📦
+  { "\xF0\x9F\x8F\xB7", "1f3f7" },          // 🏷
+  { "\xE2\x8F\xB1",     "23f1" },       // ⏱
 };
 #define ADDON_PECAS 128
 // The whole description is at most 2047 bytes; share its storage between
@@ -3653,6 +3662,7 @@ static const struct { const char *emoji, *icone; } EMOJI_ICONE[] = {
 typedef struct {
   int n;
   const char *ic[ADDON_PECAS];
+  char pais[ADDON_PECAS][3];
   char *tx[ADDON_PECAS];
   char texto[sizeof(((Stream *)0)->descricao)];
 } LinhaAddon;
@@ -3662,6 +3672,7 @@ typedef struct {
   char titulo[96];
   int nl;
   LinhaAddon *linhas;
+  LinhaAddon *cabecalho;
   float fechada;
   int fechadaPronta;
   unsigned uso;
@@ -3669,6 +3680,7 @@ typedef struct {
 static const TextoAddon *textoAddonDa(int i);
 static float textoAddonFechada(int i);
 static const char *emojiIcone(const char *p, size_t *len) {
+  if ((unsigned char)*p < 0x80) return NULL;
   for (size_t k = 0; k < sizeof EMOJI_ICONE / sizeof EMOJI_ICONE[0]; k++) {
     size_t n = strlen(EMOJI_ICONE[k].emoji);
     if (strncmp(p, EMOJI_ICONE[k].emoji, n)) continue;
@@ -3677,6 +3689,15 @@ static const char *emojiIcone(const char *p, size_t *len) {
     return EMOJI_ICONE[k].icone;
   }
   return NULL;
+}
+// Preserve the formatter's own flags in place; do not infer or append languages.
+static int bandeiraAddon(const char *p, size_t n, char pais[3]) {
+  if (n < 8 || memcmp(p,"\xF0\x9F\x87",3) || memcmp(p+4,"\xF0\x9F\x87",3) ||
+      (unsigned char)p[3]<0xA6 || (unsigned char)p[3]>0xBF ||
+      (unsigned char)p[7]<0xA6 || (unsigned char)p[7]>0xBF) return 0;
+  pais[0]=(char)('a'+(unsigned char)p[3]-0xA6);
+  pais[1]=(char)('a'+(unsigned char)p[7]-0xA6); pais[2]=0;
+  return 1;
 }
 // Uma linha crua do addon vira pecas "[icone] texto". O texto de cada peca
 // passa pelo limpador do #144 (versalete, subscrito, glifo que a fonte nao
@@ -3691,19 +3712,25 @@ static void pecasAddon(const char *ini, size_t n, LinhaAddon *L) {
   ate = cru + strlen(cru);
   while (p < ate && L->n < ADDON_PECAS) {
     const char *ic = NULL, *q = p;
+    char pais[3]={0};
     char seg[sizeof L->texto];
     size_t k;
     // O icone (se a peca abre com um) e o texto ate o proximo emoji conhecido.
-    if (!(ic = emojiIcone(p, &len))) len = 0;
+    if (bandeiraAddon(p,(size_t)(ate-p),pais)) len=8;
+    else if (!(ic = emojiIcone(p, &len))) len = 0;
     q = p + len;
-    for (k = 0; q + k < ate; k++) { size_t l2; if (emojiIcone(q + k, &l2)) break; }
+    for (k = 0; q + k < ate; k++) {
+      size_t l2; char flag[3];
+      if (emojiIcone(q+k,&l2) || bandeiraAddon(q+k,(size_t)(ate-q-k),flag)) break;
+    }
     snprintf(seg, sizeof seg, "%.*s", (int)(k < sizeof seg - 1 ? k : sizeof seg - 1), q);
     if (usado + 1 >= sizeof L->texto) break;
     L->tx[L->n] = L->texto + usado;
     nv_limpar_texto(seg, L->tx[L->n], sizeof L->texto - usado, NV_LIMPA_UMA_LINHA);
     nv_aparar_separadores(L->tx[L->n]);   // "31.4 GB | 43.2 Mbps |" -> sem o | solto
-    if (ic || L->tx[L->n][0]) {
+    if (ic || pais[0] || L->tx[L->n][0]) {
       usado += strlen(L->tx[L->n]) + 1;
+      memcpy(L->pais[L->n],pais,sizeof pais);
       L->ic[L->n++] = ic;
     }
     p = q + k;
@@ -3737,14 +3764,17 @@ static float corpoAddon(int index, float x, float y, float w,
     int c=linha==0?(sel?215:180):(sel?170:130);
     int base=linha==0?215:170;
     for (int pc=0;pc<L->n;pc++) {
-      float iw=L->ic[pc]?30:0;
+      float iw=L->pais[pc][0]?34:L->ic[pc]?30:0;
       float tw=inteiro?txt_largura(TXT_PG_FIM,L->tx[pc]):0;
       if (inteiro && px>x && px-x+iw+tw>w) {
         h+=lh; px=x; lh=FOLHA_ADDON_LD;
       }
       if (!inteiro && w-(px-x)<=30) break;
-      if (L->ic[pc]) {
-        if (alpha>0) gfx_icone((GfxRect){px,y+h+3,22,22},L->ic[pc],c/255.f,c/255.f,c/255.f,alpha);
+      if (L->pais[pc][0]) {
+        if (alpha>0) badges_bandeira(L->pais[pc],px,y+h+5,28,21,alpha);
+        px+=iw;
+      } else if (L->ic[pc]) {
+        if (alpha>0) badges_emoji(L->ic[pc],px,y+h+3,22,alpha);
         px+=iw;
       }
       if (L->tx[pc][0]) {
@@ -3801,8 +3831,18 @@ static unsigned textoAddonUso;
 static void textoAddonMontar(TextoAddon *t, const Stream *s) {
   int max=1;
   for (const char *p=s->descricao;*p;p++) if(*p=='\n')max++;
-  t->linhas=calloc((size_t)max,sizeof *t->linhas);
+  t->linhas=calloc((size_t)max+1,sizeof *t->linhas);
   t->nl=t->linhas?linhasAddon(s,t->linhas,max):0;
+  t->cabecalho=t->linhas?&t->linhas[max]:NULL;
+  if(t->cabecalho) {
+    const char *name=s->rotulo;
+    if(cacheConfirmado(s) && !strncmp(name,"⚡",strlen("⚡"))) {
+      name+=strlen("⚡");
+      if(!strncmp(name,"\xEF\xB8\x8F",3))name+=3;
+    }
+    if(!name[0])name=s->provedor;
+    pecasAddon(name,strlen(name),t->cabecalho);
+  }
   tituloAddon(s,t->titulo,sizeof t->titulo);
   t->fechada=fminf(t->nl,FOLHA_ADDON_FECHADA)*FOLHA_ADDON_LD; t->fechadaPronta=1;
 }
@@ -3857,6 +3897,32 @@ static const TextoAddon *textoAddonDa(int i) {
   }
   t->uso=++textoAddonUso;
   return t;
+}
+
+static float desenharTituloAddon(int i, float x, float y, float w, int c, float a) {
+  const TextoAddon *t=textoAddonDa(i);
+  const LinhaAddon *l=t->cabecalho;
+  float px=x;
+  if(!l) {
+    TxtLinha tx=txt_linha_corta(TXT_CALLOUT,t->titulo,c,c,c-2,255,w);
+    txt_desenhar_alpha(tx,x,y,a); return tx.w;
+  }
+  for(int j=0;j<l->n && px<x+w;j++) {
+    float iw=l->pais[j][0]?28:l->ic[j]?22:0;
+    if(iw) {
+      if(px+iw>x+w)break;
+      if(l->pais[j][0])badges_bandeira(l->pais[j],px,y+8,28,21,a);
+      else badges_emoji(l->ic[j],px,y+7,22,a);
+      px+=iw+(l->tx[j][0]?6:4);
+    }
+    if(l->tx[j][0] && px<x+w) {
+      TxtLinha tx=txt_linha_corta(TXT_CALLOUT,l->tx[j],255,255,253,255,x+w-px);
+      txt_desenhar_tom(tx,px,y,c/255.f,c/255.f,(c-2)/253.f,a);
+      px+=tx.w;
+      if(j+1<l->n)px+=8;
+    }
+  }
+  return px-x;
 }
 
 // O mesmo indicador nas duas apresentacoes, sem depender de emoji na fonte
@@ -4025,64 +4091,7 @@ int stream_faixas_texto(const Stream *s, int legendas, char *saida, unsigned tam
   }
   return (int)usado;
 }
-#define FOLHA_AUDIO_FLAGS_H 36.0f
-static const AudioFlags *audioFlagsDa(const Stream *s) {
-  typedef struct { AudioFlags flags; int pronta; } Entrada;
-  static Entrada *cache;
-  static int cap;
-  static unsigned ger = ~0u;
-  static AudioFlags reserva;
-  uintptr_t ptr = (uintptr_t)s, ini = (uintptr_t)lista;
-  if (!s || ptr < ini || ptr >= ini + (size_t)n * sizeof *lista) {
-    audio_flags_ler(s,&reserva); return &reserva;
-  }
-  if (ger != listaGeracao) { free(cache); cache=NULL; cap=0; ger=listaGeracao; }
-  if (cap < n) {
-    int novo = n + 32;
-    Entrada *p = realloc(cache,(size_t)novo*sizeof *p);
-    if (!p) { audio_flags_ler(s,&reserva); return &reserva; }
-    memset(p+cap,0,(size_t)(novo-cap)*sizeof *p); cache=p; cap=novo;
-  }
-  int i = (int)((ptr-ini)/sizeof *lista);
-  if (!cache[i].pronta) { audio_flags_ler(s,&cache[i].flags); cache[i].pronta=1; }
-  return &cache[i].flags;
-}
-static int temAudioFlags(const Stream *s) {
-  if (!ajustes_audio_flags()) return 0;
-  const AudioFlags *f=audioFlagsDa(s);
-  return s->audioDescritores || f->n || f->outros;
-}
-// Measure and draw the same bounded strip; full languages remain in the audio
-// text/details. No emoji font, network request, or per-source image allocation.
-static float desenharAudioFlags(const Stream *s, float x, float y, float maxW, float alpha) {
-  if (!temAudioFlags(s) || maxW < 28) return 0;
-  const AudioFlags *f=audioFlagsDa(s);
-  const char *label = (s->audioDescritores & STREAM_AUDIO_MULTI) ? "MULTI" :
-                      (s->audioDescritores & STREAM_AUDIO_DUAL) ? "DUAL" : NULL;
-  if ((s->audioDescritores & (STREAM_AUDIO_DUAL|STREAM_AUDIO_MULTI)) == (STREAM_AUDIO_DUAL|STREAM_AUDIO_MULTI)) label="DUAL/MULTI";
-  TxtLinha l={0}, more={0};
-  if(label)l=txt_linha(TXT_MINI,label,205,205,205,255);
-  float labelW=label?l.w+14:0;
-  unsigned vis=f->n<3?f->n:3, ocultas;
-  float largura;
-  for (;;) {
-    ocultas=f->n-vis+f->outros;
-    if(ocultas) { char b[24]; snprintf(b,sizeof b,"+%u",ocultas); more=txt_linha(TXT_MINI,b,175,175,175,255); }
-    largura=vis*40.0f+(ocultas?more.w+8:0)+labelW;
-    if(largura<=maxW)break;
-    if(vis)vis--;
-    else if(label) { label=NULL; labelW=0; }
-    else return 0;
-  }
-  if(alpha<=0)return largura;
-  for(unsigned k=0;k<vis;k++) { badges_bandeira(f->pais[k],x+3,y+4,30,22.5f,alpha); x+=40; }
-  if(ocultas) { txt_desenhar_alpha(more,x+2,y+(30-more.h)*.5f,alpha); x+=more.w+8; }
-  if(label) {
-    gfx_cor((GfxRect){x,y+2,labelW-4,26},.16f,.14f,.15f,.17f,alpha);
-    txt_desenhar_alpha(l,x+5,y+(30-l.h)*.5f,alpha);
-  }
-  return largura;
-}
+#define FOLHA_SELO_GAP 8.0f
 static int linhasFaixas(const Stream *s) {
   int n = 0;
   if (!s) return 0;
@@ -4396,8 +4405,7 @@ static float alturaLinha(int i, int automatica) {
     if (grupo == 1 && nOrdem == foco) h += extra * abreFoco;
     else if (nOrdem == linhaAnt)      h += extra * abreAnt;
   }
-  if (ajustes_fonte_texto_addon() && temAudioFlags(&lista[i])) h += FOLHA_AUDIO_FLAGS_H;
-  return h + linhasFaixas(&lista[i]) * FOLHA_FAIXA_H;
+  return h + (ajustes_fonte_texto_addon()?0:linhasFaixas(&lista[i])*FOLHA_FAIXA_H);
 }
 static void porLinha(int i, float *y, int automatica) {
   float h = alturaLinha(i, automatica);
@@ -5430,7 +5438,7 @@ static float desenharSelosPacote(const Stream *s, float x, float y, float maxW, 
           if (w > 160.0f) { w = 160.0f; ih = w / asp; }
           if (x + w > x0 + maxW) break;
           gfx_rect((GfxRect){x, y + (h - ih) * .5f, w, ih}, t, GFX_MARCA, 0, 0, 0, 0.0f, tom, tom, tom, a);
-          x += w + 16.0f;
+          x += w + gap;
         }
         continue;
       }
@@ -6109,7 +6117,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     }
     // COLUNA DA DIREITA: tamanho grande, addon embaixo. Medida primeiro: o
     // titulo e a fileira de logos param antes dela.
-    { char gb[24]="";
+    { char gb[24]="", pv[160];
       TxtLinha lg, lu, lp;
       int cg=sel?250:218;
       // No modo do addon o tamanho ja vem no texto dele; so o addon fica.
@@ -6120,11 +6128,16 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       // diz se a fonte abre (log da 2.0.0 no Android: "metadados nao chegaram
       // em 30 s"); a pessoa escolhia as cegas. "seeds" fica sem traducao: e o
       // termo que quem usa torrent conhece em qualquer idioma.
-      { char pv[160];
-        legendaProvedor(s,pv,sizeof pv);
-        lp=txt_linha_corta(TXT_PG_FIM,pv,150,150,148,255,340); }
+      legendaProvedor(s,pv,sizeof pv);
+      lp=txt_linha_corta(TXT_PG_FIM,pv,150,150,148,255,340);
       colW=lp.w;
       if(gb[0] && lg.w+6+lu.w>colW) colW=lg.w+6+lu.w;
+      // Native badges keep the same width as focus moves. Fit Info inside
+      // the provider column instead of taking another 30 px from the badges.
+      if(!ajustes_fonte_texto_addon()) {
+        colW=fmaxf(colW,30);
+        if(sel) lp=txt_linha_corta(TXT_PG_FIM,pv,150,150,148,255,colW-30);
+      }
       cy=y+20+(temMarca(i,automatica)?FOLHA_MARCA_H:0);
       if(gb[0]){
         txt_desenhar_alpha(lu,tr-lu.w,cy+(lg.h-lu.h)-3,anim);
@@ -6132,7 +6145,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       txt_desenhar_tom(lp,tr-lp.w,gb[0]?cy+40:cy+6,sel?1:110.0f/150,sel?1:110.0f/150,sel?1:108.0f/148,anim);
       // Dica da tecla Info/Amarela: so na linha em foco, no canto do addon.
       if(sel) gfx_icone((GfxRect){tr-lp.w-30,(gb[0]?cy+40:cy+6)+3,20,20},"aj_info",.62f,.62f,.62f,anim*.85f); }
-    txtW=tr-tx-colW-28;
+    txtW=tr-tx-colW-16-(sel && ajustes_fonte_texto_addon()?30:0);
     cy=y+20;
     // A MARCA: o que esta tocando (com o equalizador), a escolha anterior e a
     // automatica. Texto espacado no acento, e nao pilula: a pilula cheia era a
@@ -6206,7 +6219,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
         // LOGO DO TITULO no lugar do nome (ajuste em teste): a mesma logo do
         // hero/detalhe, encostada a esquerda numa caixa da altura do nome.
         // Sem logo (ausente ou ainda baixando) fica o nome escrito.
-        const CatItem *ci = ajustes_fonte_texto_logo() && itemFolha >= 0 ? cat_item(itemFolha) : NULL;
+        const CatItem *ci = !ajustes_fonte_texto_addon() && ajustes_fonte_texto_logo() && itemFolha >= 0 ? cat_item(itemFolha) : NULL;
         const char *lu = ci ? logotitulo_url(ci, FOLHA_LOGO_W) : NULL;
         GLuint lt = lu ? tex_obter_larg_qualquer(lu, FOLHA_LOGO_W) : 0;
         float la = lt ? tex_aspecto(lu) : 0.0f;
@@ -6221,7 +6234,9 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
                    tex_marca_escura(lu) ? GFX_MARCA : GFX_TEXTO, 0, 0, 0, 0.0f, 1, 1, 1,
                    anim * (sel ? 1.0f : .80f));
           l.w = (int)(lw + .5f);
-        } else
+        } else if(ajustes_fonte_texto_addon())
+          l.w=(int)desenharTituloAddon(i,nx,cy,nw,c,anim);
+        else
         txt_desenhar_tom(l,nx,cy,c/255.0f,c/255.0f,(c-2)/253.0f,anim);
         if(ep[0]){ int ce=sel?175:135;
           TxtLinha le=txt_linha(TXT_PG_FIM,ep,175,175,175,255);
@@ -6229,8 +6244,6 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
           if(l.w+14+le.w<=nw) txt_desenhar_tom(le,nx+l.w+14,cy+l.h-le.h-3,ce/175.0f,ce/175.0f,ce/175.0f,anim); } } }
     cy+=40;
     if(ajustes_fonte_texto_addon()) {
-      if(temAudioFlags(s)) { desenharAudioFlags(s,tx,cy,tr-tx,anim); cy+=FOLHA_AUDIO_FLAGS_H; }
-      cy+=desenharFaixas(s,tx,cy,tr-tx,sel,anim);
       float abr = grupo==1 && row==foco ? abreFoco : row==linhaAnt ? abreAnt : 0.0f;
       // Clip the expanding body to its animated row and the list viewport.
       float top=fmaxf(cy,FOLHA_TOPO-8), bottom=fminf(y+h-18,folhaBase);
@@ -6261,13 +6274,12 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
         float lx2=tx;
         txt_desenhar_alpha(lr,lx2,cy+(FOLHA_SELO_H-lr.h)*.5f,anim); lx2+=lr.w+9;
         txt_desenhar_alpha(ls,lx2,cy+(FOLHA_SELO_H-ls.h)*.5f,anim); lx2+=ls.w+9;
-        txt_desenhar_alpha(lf,lx2,cy+(FOLHA_SELO_H-lf.h)*.5f,anim); lx2+=lf.w+26;
-        tx0=lx2; txtW0=txtW-(lx2-tx); if(txtW0<80) txtW0=80; }
+        txt_desenhar_alpha(lf,lx2,cy+(FOLHA_SELO_H-lf.h)*.5f,anim); lx2+=lf.w+FOLHA_SELO_GAP;
+        tx0=lx2; txtW0=fmaxf(0,txtW-(lx2-tx)); }
       int ehMp4=!strcmp(containerDa(s),"MP4");
       TxtLinha mp;
-      if(ehMp4){ mp=txt_linha(TXT_HERO_META,"MP4",ai,(int)(ag*255),(int)(ab*255),255); mpW=mp.w+18; }
-      float audioW=desenharAudioFlags(s,0,0,fminf(220,txtW0*.65f),0);
-      float selosW=fmaxf(0,txtW0-mpW-(audioW>0?audioW+14:0));
+      if(ehMp4){ mp=txt_linha(TXT_HERO_META,"MP4",ai,(int)(ag*255),(int)(ab*255),255); mpW=mp.w+FOLHA_SELO_GAP; }
+      float selosW=fmaxf(0,txtW0-mpW);
       // TODOS OS LOGOS NA MESMA TINTA (dono, 02/10: "podemos deixar elas
       // todas brancas"). A rodada de "cor so no premium" deixava uns logos no
       // acento e outros brancos, e na TV isso lia como inconsistencia, nao
@@ -6281,26 +6293,26 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
         // O Crave (servico canadense) nao esta em nenhum dos dois pacotes
         // embutidos: sai pela arte antiga para nao ser perdido.
         if(selospacote_ativo()<0 && (logos&badges_bit("p-crave"))) {
-          float cw=badges_desenhar_tom(badges_bit("p-crave"),tx0+(lw>0?lw+16:0),cy,selosW-lw-16,FOLHA_SELO_H,t,t,t,anim);
-          if(cw>0) lw+=(lw>0?16:0)+cw; }
+          float cw=badges_desenhar_fonte(badges_bit("p-crave"),tx0+(lw>0?lw+FOLHA_SELO_GAP:0),cy,selosW-lw-FOLHA_SELO_GAP,FOLHA_SELO_H,t,t,t,anim);
+          if(cw>0) lw+=(lw>0?FOLHA_SELO_GAP:0)+cw; }
       } else if(logos) lw=ajustes_selos_coloridos()
         ? badges_desenhar_selos(logos,tx0,cy,selosW,FOLHA_SELO_H,anim*(sel?1.0f:.85f))
-        : badges_desenhar_tom(logos,tx0,cy,selosW,FOLHA_SELO_H,t,t,t,anim);
+        : badges_desenhar_fonte(logos,tx0,cy,selosW,FOLHA_SELO_H,t,t,t,anim);
       else if(!ehMp4){ char d[sizeof s->descricao];
         snprintf(d,sizeof d,"%s",s->descricao);
         for(char *p=d;*p;p++)if((unsigned char)*p<32)*p=' ';
         int c=sel?180:130;
-        txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,d,c,c,c,255,selosW),tx0,cy+(FOLHA_SELO_H-26)*.5f,anim); }
-      if(ehMp4){ txt_desenhar_alpha(mp,tx0+(lw>0?lw+18:0),cy+(FOLHA_SELO_H-mp.h)*.5f,anim); lw+=(lw>0?18:0)+mp.w; }
+        TxtLinha ld=txt_linha_corta(TXT_PG_FIM,d,c,c,c,255,selosW);
+        txt_desenhar_alpha(ld,tx0,cy+(FOLHA_SELO_H-26)*.5f,anim); lw=ld.w; }
+      if(ehMp4){ txt_desenhar_alpha(mp,tx0+(lw>0?lw+FOLHA_SELO_GAP:0),cy+(FOLHA_SELO_H-mp.h)*.5f,anim); lw+=(lw>0?FOLHA_SELO_GAP:0)+mp.w; }
       // O IDIOMA, em texto no fim da fileira (nao ha logo para ele).
       { const char *id=idiomaDa(s);
         if(id){ int c=sel?230:190;
           TxtLinha li=txt_linha(TXT_HERO_META,id,c,c,c,255);
-          if(lw+18+li.w<=txtW0-(audioW>0?audioW+14:0)){ txt_desenhar_alpha(li,tx0+(lw>0?lw+18:0),cy+(FOLHA_SELO_H-li.h)*.5f,anim); lw+=(lw>0?18:0)+li.w; } } }
+          if(lw+FOLHA_SELO_GAP+li.w<=txtW0){ txt_desenhar_alpha(li,tx0+(lw>0?lw+FOLHA_SELO_GAP:0),cy+(FOLHA_SELO_H-li.h)*.5f,anim); lw+=(lw>0?FOLHA_SELO_GAP:0)+li.w; } } }
       if(s->naoVideo){ int c=sel?185:140;
         TxtLinha ln=txt_linha(TXT_HERO_META,"Não é vídeo",c,c-6,c-14,255);
-        if(lw+18+ln.w<=txtW0-(audioW>0?audioW+14:0)) { txt_desenhar_alpha(ln,tx0+(lw>0?lw+18:0),cy+(FOLHA_SELO_H-ln.h)*.5f,anim); lw+=(lw>0?18:0)+ln.w; } }
-      if(audioW>0) desenharAudioFlags(s,tx0+txtW0-audioW,cy, audioW+.1f,anim);
+        if(lw+FOLHA_SELO_GAP+ln.w<=txtW0) { txt_desenhar_alpha(ln,tx0+(lw>0?lw+FOLHA_SELO_GAP:0),cy+(FOLHA_SELO_H-ln.h)*.5f,anim); lw+=(lw>0?FOLHA_SELO_GAP:0)+ln.w; } }
       }
     cy+=FOLHA_SELO_H+12;
     cy+=desenharFaixas(s,tx,cy,tr-tx,sel,anim);
