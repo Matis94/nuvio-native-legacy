@@ -27,14 +27,19 @@ jobs:
           persist-credentials: false
       - name: Verify application source
         run: |
-          git fetch --no-tags --depth=1 origin a7f088fa78ad45eb31740a8226da523378bdd9bf
-          git diff --exit-code a7f088fa78ad45eb31740a8226da523378bdd9bf HEAD -- src rust tools deploy
+          git fetch --no-tags --depth=1 origin 256d8cf1b8610d5ada1c639625ef48e368e6ab57
+          git diff --exit-code 256d8cf1b8610d5ada1c639625ef48e368e6ab57 HEAD -- src rust tools deploy
           git fetch --no-tags --depth=1 origin 0ce56918b116dba810b642bec2c3ac8a9ef2adb0
           git diff --exit-code 0ce56918b116dba810b642bec2c3ac8a9ef2adb0 HEAD -- src/ajustes.c src/ajustes.h
           git diff --check
       - name: Install host test dependencies
         timeout-minutes: 6
         run: bash .github/build/host_deps.sh
+      - name: QR diagnostic export regressions
+        timeout-minutes: 3
+        run: |
+          SANITIZE=1 bash tests/logexport.sh
+          CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular_export.sh
       - name: Native buffering regressions
         timeout-minutes: 4
         run: |
@@ -139,7 +144,7 @@ jobs:
           data = json.loads(p.read_text())
           assert data["version"] == "2.0.8"
           assert data["id"] == "space.nuvio.native.legacy"
-          data["title"] = "Nuvio Legacy (Buffered seek test v2)"
+          data["title"] = "Nuvio Legacy (Buffered seek v3 QR)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -152,7 +157,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-buffered-seek-dv7-dts-test-v2.ipk
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-buffered-seek-dv7-dts-test-v3-qr.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -168,7 +173,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: buffered-seek-dv7-dts-test-v2-ipk
+          name: buffered-seek-dv7-dts-test-v3-qr-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14
