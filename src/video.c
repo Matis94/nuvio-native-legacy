@@ -3010,7 +3010,13 @@ static int dvPronto(void) {
     if (mkvPendente && !fioMkvVivo) video_sondar_mkv_agora();
     return 0;
   }
-  if (dvMkvPerfil && !nv_dv7_selected(dvMkvPerfil,ajustes_dv_mkv(),ajustes_dv7())) {
+  int mkvPacket=ajustes_dv_mkv();
+#ifdef NV_NATIVE_SEEK_TEST
+  // Test native P5/P8 MKV as well as MP4. The actual file metadata below,
+  // not a formatter label or extension, still decides profile/layer validity.
+  mkvPacket=1;
+#endif
+  if (dvMkvPerfil && !nv_dv7_selected(dvMkvPerfil,mkvPacket,ajustes_dv7())) {
     dvNao=VIDEO_DV_NAO_NATIVE;dvHabilitado=0;return 0;
   }
   if (!nv_dv7_profile(dvMkvPerfil, dvMkvEl, dvMkvBl, dvMkvRpu)) {

@@ -53,9 +53,11 @@ static DtsPlayback *dublePartida(const char *url, const char *headers, int audio
 static void dubleFechar(DtsPlayback *p) { (void)p; }
 // Exercise an explicitly enabled DV path independently of stored/default UI
 // preferences (upstream now defaults MKV DV to off).
-static int fixtureDvEnabled(void) { return 1; }
+static int fixtureMkvEnabled=1;
+static int fixtureDvEnabled(void) { return fixtureMkvEnabled; }
+static int fixtureP7Enabled(void) { return 1; }
 #define ajustes_dv_mkv fixtureDvEnabled
-#define ajustes_dv7 fixtureDvEnabled
+#define ajustes_dv7 fixtureP7Enabled
 #undef __APPLE__
 #include "../src/video.c"
 
@@ -188,6 +190,11 @@ int main(void) {
     puts("dvaudio_lg: all 15 filtered LG selections hand off exact MKV ordinal/count out of 21 tracks");
   }
 #ifdef NV_NATIVE_SEEK_TEST
+  { Mkv m[]={{"A_EAC3","eng","DD+"}};Tv t[]={{"en","eac3",6}};
+    fixtureMkvEnabled=0;montar(m,1,t,1,0);
+    assert(dvPronto()); // Native P8 MKV participates in the test without P7 conversion.
+    fixtureMkvEnabled=1;
+  }
   // Confirmed native DV MP4 only; preserve the TV-selected track metadata.
   { Tv t[]={{"en","eac3",6},{"pl","eac3",6}};
     montar(NULL,0,t,2,1);fonteMp4=1;
