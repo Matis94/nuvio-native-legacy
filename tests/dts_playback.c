@@ -20,6 +20,7 @@ static atomic_int allow_decode_failure, transport_stalled, release_transport, st
 static atomic_int jam_native, native_full, seek_failure;
 static atomic_int timestamp_fault, timestamp_fail_open, timestamp_block_open, timestamp_open_entered;
 static int last_dv;
+static int seamless_fixture, flush_refuse, audio_format_change;
 static int last_p7;
 static atomic_llong buffer_ready = 21*1048576LL;
 void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *out) {
@@ -71,6 +72,13 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,
   e->info.tracks[4]=(DtsTrack){.stream_index=20,.kind=DTS_SUBTITLE};strcpy(e->info.tracks[4].codec,"srt");e->info.n_tracks=5;
  }
  e->core=core;e->base=target;e->serial=0;return 0;
+}
+int dts_engine_audio(DtsEngine *e,int stream,int core,double target) {
+ if(atomic_load(&seek_failure)) return -1;
+ e->info.audio_stream=stream;e->core=core;e->base=target;e->serial=0;
+ if(audio_format_change) strcpy(e->info.audio_codec,"ac3");
+ pthread_mutex_lock(&fixture);last_stream=stream;pthread_mutex_unlock(&fixture);
+ return 0;
 }
 const DtsMediaInfo *dts_engine_info(DtsEngine *e) { return &e->info; }
 const void *dts_engine_subtitle_parameters(DtsEngine *e,int stream) { (void)e;static int params;return stream==20?&params:NULL; }
@@ -186,7 +194,7 @@ int dts_pipeline_feed(DtsPipeline *p,const DtsFrame *f) {
   }
  }
  if(!p->completed) { p->completed=1;p->event(p->user,"{\"loadCompleted\":{}}"); }
- if(scenario==SEEK_SEGMENT) {
+ if(scenario==SEEK_SEGMENT || seamless_fixture) {
   char clock[96];snprintf(clock,sizeof clock,"{\"currentTime\":{\"currentTime\":%lld}}",(long long)(f->pts_ns/1000000));
   pthread_mutex_lock(&fixture);frozen_clock=f->pts_ns;pthread_mutex_unlock(&fixture);
   p->event(p->user,clock);
@@ -210,6 +218,8 @@ int dts_pipeline_play(DtsPipeline *p) {
 }
 int dts_pipeline_pause(DtsPipeline *p) { p->running=0;pthread_mutex_lock(&fixture);pauses++;pthread_mutex_unlock(&fixture);return 1; }
 int dts_pipeline_flush(DtsPipeline *p,double t) {
+ if(flush_refuse) return 0;
+ p->target=t;
  if(scenario==SEEK_SEGMENT) {
   /* Captured failure: flush emits one old-segment keyframe clock, then a
    * normal 95KB video packet fills the decoder forever. Fresh Load clears it. */
@@ -251,6 +261,38 @@ static DtsPlayback *start(int paused,int stream,const DtsTrack *selected,int ord
 }
 int main(int argc,char **argv) {
  assert(argc==2);assert(!dts_playback_enabled());DtsPlayback *p;DtsPlaybackStatus s;
+ if(!strncmp(argv[1],"buffered-",9)) {
+  seamless_fixture=1;
+  int broken=!strcmp(argv[1],"buffered-stall"),audio=!strcmp(argv[1],"buffered-audio") || !strcmp(argv[1],"buffered-format");
+  int paused=!strcmp(argv[1],"buffered-paused");
+  flush_refuse=!strcmp(argv[1],"buffered-refused");audio_format_change=!strcmp(argv[1],"buffered-format");
+  scenario=broken?SEEK_SEGMENT:SEEK_PREROLL;
+  dts_playback_next_seamless(1);
+  if(!strcmp(argv[1],"buffered-dv"))dts_playback_next_dv(1);
+  p=start(paused,4,NULL,0,0);wait_count(&accepted,paused?1:4);
+  if(paused)wait_count(&pauses,1);else wait_count(&plays,1);
+  int accepted_before=count(&accepted);
+  if(audio)dts_playback_audio(p,9);else dts_playback_seek(p,broken?546.05:2.0);
+  if(broken || flush_refuse || audio_format_change) {
+   int i;for(i=0;i<5000 && count(&loads)<2;i++)nap();assert(i<5000);
+   assert(count(&creates)==2);
+   if(broken) {
+    // The captured old-segment clock/BufferFull failure gets a bounded reload.
+    int old=count(&flushes);dts_playback_seek(p,10);wait_count(&loads,3);
+    assert(count(&flushes)==old); // Disabled for the rest of this session.
+   }
+  } else {
+   wait_count(&flushes,1);wait_count(&accepted,accepted_before+2);
+   if(paused) { wait_count(&pauses,2);dts_playback_pause(p,0);wait_count(&plays,1); }
+   else wait_count(&plays,2);
+   assert(count(&loads)==1 && count(&creates)==1 && count(&opens)==1);
+   dts_playback_status(p,&s);assert(!s.failed && s.native_loaded && s.info.audio_stream==(audio?9:4));
+   if(!strcmp(argv[1],"buffered-dv"))assert(last_dv && last_p7);
+   char event[2048];while(dts_playback_event(p,event,sizeof event))assert(!strstr(event,"1697863"));
+  }
+  dts_playback_close(p);assert(count(&creates)==count(&destroys));
+  printf("DTS %s: native reuse or bounded fresh-Load fallback passed.\n",argv[1]);return 0;
+ }
  if(!strcmp(argv[1],"buffer")) {
   assert(getenv("DV7_OFF"));scenario=NORMAL;p=start(1,4,NULL,0,0);
   wait_status(p,0,0);wait_count(&pauses,1);assert(!last_dv && !last_p7);

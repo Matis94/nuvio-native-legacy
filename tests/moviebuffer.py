@@ -160,6 +160,13 @@ for mib in [64,128,256]:
             active,used,cap=stats(p);assert active==1 and cap==mib*1024*1024 and 0<=used<=cap
             if used>cap-5*1024*1024:break
             assert time.monotonic()<deadline,(mib,used,cap);time.sleep(.05)
+        # Replacements inside the measured cache use its existing connection.
+        before=len(requests)
+        for start in [11*1024*1024+17,12*1024*1024+31,11*1024*1024+99]:
+            status,h,b=request(url,start,start+4095)
+            assert status==206 and b==content(start,4096)
+        assert len(requests)==before, 'cached seeks restarted the origin transfer'
+        assert stats(p)[2]==cap, 'cached seek enlarged the RAM ring'
         for start in [11*1024*1024+17,TOTAL-333,123,280*1024*1024+7]:
             n=min(65536,TOTAL-start);status,h,b=request(url,start,start+n-1)
             assert b==content(start,n)

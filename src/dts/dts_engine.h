@@ -60,6 +60,9 @@ const void *dts_engine_subtitle_parameters(DtsEngine *, int stream_index);
 /* 1 frame, 0 EOF, -1 error. Frame data lives until the next call or seek. */
 int dts_engine_next(DtsEngine *, DtsFrame *);
 int dts_engine_seek(DtsEngine *, double seconds);
+/* Worker only: change a supported audio track on the existing container and
+ * byte cache. On failure reopen before reading; cancellation remains permanent. */
+int dts_engine_audio(DtsEngine *, int stream, int core_only, double seconds);
 /* Only cancel is safe concurrently with open/next/seek. Join before destroy. */
 void dts_engine_cancel(DtsEngine *);
 void dts_engine_destroy(DtsEngine *);
