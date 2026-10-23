@@ -29,7 +29,8 @@ typedef struct { DtsSubtitle cue; unsigned revision; } DtsQueuedSubtitle;
 #define DTS_DV_STARVED_WINDOWS 4
 struct DtsPlayback {
   int seamless, seamless_disabled, clock_guard;
-  double clock_target;
+  double clock_target, clock_anchor;
+  int clock_advances;
   int allow_p7, dv, starved; /* Dolby Vision path: passthrough audio, starvation fallback. */
   pthread_t thread;
   pthread_mutex_t lock;
@@ -105,6 +106,7 @@ static void nativeEvent(void *user, const char *json) {
       pthread_mutex_unlock(&p->lock);
       return;
     }
+    if (js_tem(json, NULL, "seekDone")) p->pause_dirty = 1;
     if (js_tem(json, NULL, "loadCompleted") && !p->load_complete) {
       p->load_complete = 1; p->pause_dirty = 1; p->volume_dirty = 1;
     }
@@ -112,8 +114,13 @@ static void nativeEvent(void *user, const char *json) {
       double time = js_num(json, NULL, "currentTime", -1);
       if (isfinite(time) && time >= 0 && time < 9e12) {
         // Flush callbacks can still contain a clock from the retired segment.
-        if(p->clock_guard && (time/1000.0<p->clock_target-1.0 || time/1000.0>p->clock_target+10.0)) {
+        if(p->clock_guard && (time/1000.0<p->clock_target-1.0 || time/1000.0>(p->clock_seen ? p->clock_target+10.0 : p->clock_target+1.0))) {
           pthread_mutex_unlock(&p->lock);return;
+        }
+        if(p->clock_guard) {
+          double seconds=time/1000.0;
+          if(!p->clock_seen) p->clock_anchor=seconds;
+          else if(seconds>p->clock_anchor+0.02) { p->clock_advances++;p->clock_anchor=seconds; }
         }
         p->presented = time / 1000.0;
         p->clock_seen = 1;
@@ -319,7 +326,7 @@ static int reposition(DtsPlayback *p,int stream,int core,double target) {
     if(stream!=before.audio_stream) p->status.revision++;
     p->status.buffer=(DtsBufferInfo){0};p->status.buffered_until=0;
     p->presented=p->preroll_target=target;p->clock_seen=0;
-    p->clock_guard=1;p->clock_target=target;
+    p->clock_guard=1;p->clock_target=target;p->clock_advances=0;p->clock_anchor=target;
     p->pause_dirty=p->volume_dirty=1;
   }
   p->suppress_events=0;
@@ -411,7 +418,7 @@ static void *run(void *user) {
   stream = dts_engine_info(p->engine)->audio_stream;
   for (;;) {
     int stop, pause, pause_dirty, seek, audio, new_stream, audio_error, complete, clock_seen;
-    int subtitle, subtitle_stream, volume, volume_dirty;
+    int subtitle, subtitle_stream, volume, volume_dirty, clock_advances;
     double target, presented, preroll;
     pthread_mutex_lock(&p->lock);
     stop = p->stop || p->status.failed;
@@ -421,7 +428,7 @@ static void *run(void *user) {
     new_stream = p->audio_stream; target = p->target;
     audio_error = p->native_audio_error; p->native_audio_error = 0;
     complete = p->load_complete;
-    clock_seen = p->clock_seen;
+    clock_seen = p->clock_seen;clock_advances=p->clock_advances;
     presented = p->presented; preroll = p->preroll_target;
     volume = p->volume; volume_dirty = p->volume_dirty; p->volume_dirty = 0;
     subtitle = p->subtitle_dirty; p->subtitle_dirty = 0; subtitle_stream = p->subtitle_stream;
@@ -453,20 +460,23 @@ static void *run(void *user) {
       fail(p, DTS_PLAYBACK_STARVED);
       break;
     }
-    if(fast_pending && pause) fast_since=wall;
-    if(fast_pending && clock_seen && presented>fast_target+0.25) {
+    if(fast_pending && (pause || (seek_preroll && !have_frame))) fast_since=wall;
+    if(fast_pending && clock_seen && clock_advances>=2 && presented>fast_target+0.25) {
       fast_pending=0;
       pthread_mutex_lock(&p->lock);p->clock_guard=0;pthread_mutex_unlock(&p->lock);
+      nativeEvent(p,"{\"dtsStage\":{\"name\":\"native-seek-progress-confirmed\"}}");
     }
     // A successful flush call is not proof that the firmware changed timeline.
     // Retry with fresh Load once after a bounded no-progress interval; disable
     // the experimental path for the rest of this playback session.
     int fast_failed=fast_pending && !pause && wall-fast_since>=DTS_STALL_SEEK_SECONDS;
-    if(fast_failed) { p->seamless_disabled=1;fast_pending=0; }
-    /* BUFFERSTREAM flush has not proved a stable DV timeline on the TV.
-     * Keep the source/cache reuse, but send one known-good Load with full
-     * DolbyHdrInfo instead of a flush followed by a watchdog reload. */
-    if((seek || audio) && !p->dv && p->seamless && !p->seamless_disabled && !native_unhealthy &&
+    if(fast_failed) {
+      p->seamless_disabled=1;fast_pending=0;
+      nativeEvent(p,"{\"dtsStage\":{\"name\":\"native-seek-fallback\",\"detail\":\"no presentation progress\"}}");
+    }
+    /* The adapter now requests a native segment seek and gates controls on
+     * SEEKDONE. Test both DV and DTS while retaining one bounded cache/player. */
+    if((seek || audio) && p->seamless && !p->seamless_disabled && !native_unhealthy &&
        complete && (clock_seen || pause) && !eof) {
       int selected=audio?new_stream:stream;
       if(reposition(p,selected,audio?0:core,target)) {
@@ -476,10 +486,13 @@ static void *run(void *user) {
         pause_dirty=volume_dirty=1;clock_seen=0;
         timestamp_retries=0;timestamp_anchor=target;
         resetStall(&stall,target);recovery_waiting=1;
-        fast_pending=1;fast_since=wall;fast_target=target;
+        fast_pending=1;fast_since=clockSeconds(CLOCK_MONOTONIC);fast_target=target;
         cpu_window=clockSeconds(CLOCK_MONOTONIC);cpu_used=0;
         seek=audio=0;
-      } else p->seamless_disabled=1;
+      } else {
+        p->seamless_disabled=1;
+        nativeEvent(p,"{\"dtsStage\":{\"name\":\"native-seek-fallback\",\"detail\":\"unavailable, refused or format changed\"}}");
+      }
     }
     int seek_reload = !audio && seek;
     int stall_seek = seek_reload && native_unhealthy;
@@ -501,9 +514,8 @@ static void *run(void *user) {
       double stale_seconds = wall - stall.changed_at;
       int blocked_kind = have_frame ? frame.kind : 0;
       double blocked_pts = have_frame ? frame.pts_ns / 1e9 : 0;
-      /* BUFFERSTREAM flush leaves the old segment/decoder timeline in place
-       * on these TVs. Every seek needs a fresh Load with ptsToDecode and new
-       * codec preroll, including healthy playback and paused scrubbing. */
+      /* Missing/refused native Seek or a renderer without presentation
+       * progress uses the validated fresh Load with full HDR metadata. */
       /* Healthy explicit seeks can keep the validated container/track
        * metadata and reset demux/decoder/encoder through engine_seek. The LG
        * native pipeline still receives a fresh Load and codec preroll. Error
@@ -530,10 +542,10 @@ static void *run(void *user) {
       native_unhealthy = 0;
       cpu_window = clockSeconds(CLOCK_MONOTONIC); cpu_used = 0;
     } else if (audio) {
-      seek_preroll = seek; seek_audio = seek_video = 0;
+      seek_preroll = 1; seek_audio = seek_video = 0;
       stream = new_stream; core = core_tried = 0;
       timestamp_retries = 0; timestamp_anchor = target;
-      if (!prepareMode(p, stream, core, target,p->seamless)) break;
+      if (!prepareMode(p, stream, core, target,1)) break;
       fast_pending=0;
       position = preroll = presented = target; complete = clock_seen = 0;
       fed_audio = fed_video = target;

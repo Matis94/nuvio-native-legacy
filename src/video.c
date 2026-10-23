@@ -3131,10 +3131,12 @@ static int iniciarDts(int stream) {
   dts_engine_set_ahead_mib(cacheboost_backend_buffer_mb());   // #338: Settings > Buffer size
   dts_playback_next_dv(dtsModoDv);
   dts_playback_next_p7(ajustes_dv7());
-  // The C5 log shows flush accepting an unchanged native timeline, then a
-  // watchdog reload. Use the validated cached seek + one native Load by default.
-  // Native reuse remains opt-in for isolated pipeline tests, not TV test builds.
+  // Isolated TV test only. Production retains the known-good Load path.
+#ifdef NV_NATIVE_SEEK_TEST
+  dts_playback_next_seamless(1);
+#else
   dts_playback_next_seamless(0);
+#endif
   dtsSessao = dts_playback_start(urlAtual, cabsHttp, stream, alvo,
                                paused, expWin, 0, (a || trocada) ? &selected : NULL, ordinal, count);
   if (!dtsSessao) {

@@ -13,14 +13,14 @@
 static pthread_mutex_t fixture = PTHREAD_MUTEX_INITIALIZER;
 static int scenario, opens, loads, creates, destroys, nexts, accepted, feeds, plays, pauses, seeks, flushes, eoses;
 static int last_stream, backpressure_left, pending_serial, bad_retry;
-static double last_seek, last_open_target;
+static double last_seek, last_open_target, last_audio_target;
 static int core_opens, volumes, last_volume, sub_decoded, sub_created, sub_destroyed, seek_rendered;
 static int64_t last_sub_pts;
 static atomic_int allow_decode_failure, transport_stalled, release_transport, stall_transport;
 static atomic_int jam_native, native_full, seek_failure;
 static atomic_int timestamp_fault, timestamp_fail_open, timestamp_block_open, timestamp_open_entered;
 static int last_dv;
-static int seamless_fixture, flush_refuse, audio_format_change;
+static int seamless_fixture, flush_refuse, audio_format_change, stale_clock;
 static int last_p7;
 static atomic_llong buffer_ready = 21*1048576LL;
 void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *out) {
@@ -82,7 +82,7 @@ int dts_engine_audio(DtsEngine *e,int stream,int core,double target) {
  if(atomic_load(&seek_failure)) return -1;
  e->info.audio_stream=stream;e->core=core;e->base=target;e->serial=0;
  if(audio_format_change) strcpy(e->info.audio_codec,"ac3");
- pthread_mutex_lock(&fixture);last_stream=stream;pthread_mutex_unlock(&fixture);
+ pthread_mutex_lock(&fixture);last_stream=stream;last_audio_target=target;pthread_mutex_unlock(&fixture);
  return 0;
 }
 const DtsMediaInfo *dts_engine_info(DtsEngine *e) { return &e->info; }
@@ -200,7 +200,8 @@ int dts_pipeline_feed(DtsPipeline *p,const DtsFrame *f) {
  }
  if(!p->completed) { p->completed=1;p->event(p->user,"{\"loadCompleted\":{}}"); }
  if(scenario==SEEK_SEGMENT || seamless_fixture) {
-  char clock[96];snprintf(clock,sizeof clock,"{\"currentTime\":{\"currentTime\":%lld}}",(long long)(f->pts_ns/1000000));
+  int64_t native_pts=stale_clock && p->flushed && p->generation==1 ? (int64_t)((p->target+0.5)*1e9) : f->pts_ns;
+  char clock[96];snprintf(clock,sizeof clock,"{\"currentTime\":{\"currentTime\":%lld}}",(long long)(native_pts/1000000));
   pthread_mutex_lock(&fixture);frozen_clock=f->pts_ns;pthread_mutex_unlock(&fixture);
   p->event(p->user,clock);
  }
@@ -268,25 +269,21 @@ int main(int argc,char **argv) {
  assert(argc==2);assert(!dts_playback_enabled());DtsPlayback *p;DtsPlaybackStatus s;
  if(!strncmp(argv[1],"buffered-",9)) {
   seamless_fixture=1;
-  int broken=!strcmp(argv[1],"buffered-stall"),audio=!strcmp(argv[1],"buffered-audio") || !strcmp(argv[1],"buffered-format");
-  int paused=!strcmp(argv[1],"buffered-paused");
+  int broken=!strcmp(argv[1],"buffered-stall") || !strcmp(argv[1],"buffered-dv-stall"),audio=!strcmp(argv[1],"buffered-audio") || !strcmp(argv[1],"buffered-format");
+  int paused=strstr(argv[1],"paused")!=NULL;
+  stale_clock=!strcmp(argv[1],"buffered-stale");
   flush_refuse=!strcmp(argv[1],"buffered-refused");audio_format_change=!strcmp(argv[1],"buffered-format");
   scenario=broken?SEEK_SEGMENT:SEEK_PREROLL;
   dts_playback_next_seamless(1);
-  if(!strcmp(argv[1],"buffered-dv"))dts_playback_next_dv(1);
+  if(strstr(argv[1],"buffered-dv"))dts_playback_next_dv(1);
   p=start(paused,4,NULL,0,0);wait_count(&accepted,paused?1:4);
   if(paused)wait_count(&pauses,1);else wait_count(&plays,1);
   int accepted_before=count(&accepted);
   if(audio)dts_playback_audio(p,9);else dts_playback_seek(p,broken?546.05:2.0);
-  if(broken || flush_refuse || audio_format_change || !strcmp(argv[1],"buffered-dv")) {
+  if(broken || stale_clock || flush_refuse || audio_format_change) {
    int i;for(i=0;i<5000 && count(&loads)<2;i++)nap();assert(i<5000);
    assert(count(&creates)==2);
-   if(!strcmp(argv[1],"buffered-dv")) {
-    assert(count(&flushes)==0 && count(&opens)==1 && last_dv && last_p7);
-    dts_playback_audio(p,9);wait_count(&loads,3);
-    assert(count(&flushes)==0 && count(&opens)==1 && last_stream==9);
-   }
-   if(broken) {
+   if(broken || stale_clock) {
     assert(count(&opens)==1); // Failed renderer timeline must not reopen HTTP/demux.
     // The captured old-segment clock/BufferFull failure gets a bounded reload.
     int old=count(&flushes);dts_playback_seek(p,10);wait_count(&loads,3);
@@ -299,7 +296,13 @@ int main(int argc,char **argv) {
    else wait_count(&plays,2);
    assert(count(&loads)==1 && count(&creates)==1 && count(&opens)==1);
    dts_playback_status(p,&s);assert(!s.failed && s.native_loaded && s.info.audio_stream==(audio?9:4));
-   if(!strcmp(argv[1],"buffered-dv"))assert(last_dv && last_p7);
+   if(strstr(argv[1],"buffered-dv")) {
+    assert(last_dv && last_p7);
+    dts_playback_audio(p,9);wait_count(&flushes,2);wait_count(&plays,3);
+    assert(count(&loads)==1 && count(&opens)==1 && last_stream==9);
+    dts_playback_seek(p,0.25);wait_count(&flushes,3);wait_count(&plays,4);
+    assert(count(&loads)==1 && count(&creates)==1 && count(&opens)==1);
+   }
    char event[2048];while(dts_playback_event(p,event,sizeof event))assert(!strstr(event,"1697863"));
   }
   dts_playback_close(p);assert(count(&creates)==count(&destroys));
@@ -455,7 +458,7 @@ int main(int argc,char **argv) {
   s=wait_status(p,0,0);assert(s.info.audio_stream==(direct?9:4));
   assert(last_dv && last_p7);dts_playback_close(p);
  } else if(!strcmp(argv[1],"audio")) {
-  p=start(0,4,NULL,0,0);wait_status(p,0,0);dts_playback_audio(p,9);wait_count(&loads,2);s=wait_status(p,0,0);assert(!s.failed);assert(last_stream==9);assert(count(&creates)==2);dts_playback_close(p);
+  p=start(0,4,NULL,0,0);wait_status(p,0,0);dts_playback_audio(p,9);wait_count(&loads,2);s=wait_status(p,0,0);assert(!s.failed);assert(last_stream==9 && count(&opens)==1);assert(count(&creates)==2);dts_playback_close(p);
  } else if(!strcmp(argv[1],"audioerror") || !strcmp(argv[1],"eoferror")) {
   scenario=!strcmp(argv[1],"eoferror")?EOF_MODE:NORMAL;
   p=start(0,4,NULL,0,0);wait_count(&accepted,2);
@@ -468,7 +471,7 @@ int main(int argc,char **argv) {
  } else if(!strcmp(argv[1],"pausedreload")) {
   p=start(1,4,NULL,0,0);wait_count(&pauses,1);wait_count(&accepted,1);
   emit("{\"currentTime\":{\"currentTime\":100000}}");dts_playback_audio(p,9);wait_count(&loads,2);
-  assert(last_open_target==100);wait_count(&accepted,2);wait_count(&pauses,2);dts_playback_close(p);
+  assert(last_audio_target==100 && count(&opens)==1);wait_count(&accepted,2);wait_count(&pauses,2);dts_playback_close(p);
  } else if(!strcmp(argv[1],"eofpause")) {
   scenario=EOF_MODE;p=start(0,4,NULL,0,0);wait_status(p,0,1);
   dts_playback_pause(p,1);wait_count(&pauses,1);dts_playback_pause(p,0);wait_count(&plays,2);

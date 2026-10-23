@@ -18,6 +18,6 @@ for scenario in resumeseek seekfallback timestamp timestampbound timestampprogre
 done
 DV7_OFF=1 "$tmp/test" buffer
 
-for scenario in buffered-seek buffered-audio buffered-paused buffered-dv buffered-refused buffered-format buffered-stall; do
+for scenario in buffered-seek buffered-audio buffered-paused buffered-dv buffered-refused buffered-format buffered-stall buffered-stale buffered-dv-stall buffered-dv-paused; do
  "$tmp/test" "$scenario"
 done
