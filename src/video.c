@@ -2289,6 +2289,14 @@ static long agoraMs(void) {
 }
 
 static int tocarInterno(const char *url, int comDV);
+static int carregarNativo(const char *url,const char *loadUrl,int ownBuffer,
+                          const char *dolby,unsigned minhaSessao);
+static void bufferLoadBombear(void);
+static struct {
+  unsigned session;
+  char source[8192], proxy[256], dolby[192];
+} bufferLoad;
+
 static void pararSessao(void);
 
 // Recarrega a fonte corrente e, quando o load terminar, devolve faixas e
@@ -2383,6 +2391,7 @@ static void mkvRetryBombear(void) {
 }
 void video_bombear(void) {
   ack_publicar();
+  bufferLoadBombear();
   velBombear();
   mkvRetryBombear();
   acbBindRecolher();
@@ -2653,7 +2662,6 @@ static int tocarInterno(const char *url, int comDV) {
   // se le como "o servico sumiu", nao como "mandei JSON pela metade". MEDIDO
   // na C9 em 18/09 com dois canais do Pluto. A conferencia de tamanho logo
   // abaixo transforma o proximo estouro em erro com nome.
-  char carga[8192];
   unsigned minhaSessao;
   if (!ligado && !video_iniciar()) return 0;
   pararSessao();
@@ -2754,7 +2762,30 @@ static int tocarInterno(const char *url, int comDV) {
   int ownBuffer = !modoLoad && moviebuffer_url(url,cabsHttp,
       cacheboost_buffer_mb(ajustes_buffer_preset(),memlog_livre_mb()),
       bufferedUrl,sizeof bufferedUrl);
-  if(ownBuffer)loadUrl=bufferedUrl;
+  if(ownBuffer) {
+    bufferLoad.session=minhaSessao;
+    snprintf(bufferLoad.source,sizeof bufferLoad.source,"%s",url);
+    snprintf(bufferLoad.proxy,sizeof bufferLoad.proxy,"%s",bufferedUrl);
+    snprintf(bufferLoad.dolby,sizeof bufferLoad.dolby,"%s",dolby);
+    return 1;
+  }
+  return carregarNativo(url,loadUrl,0,dolby,minhaSessao);
+}
+static void bufferLoadBombear(void) {
+  if(!bufferLoad.session)return;
+  if(bufferLoad.session!=__atomic_load_n(&sessao,__ATOMIC_ACQUIRE)) {
+    bufferLoad.session=0;return;
+  }
+  int ready=moviebuffer_ready();
+  if(!ready)return;
+  unsigned session=bufferLoad.session;bufferLoad.session=0;
+  if(ready<0)moviebuffer_stop();
+  carregarNativo(bufferLoad.source,ready>0?bufferLoad.proxy:bufferLoad.source,
+                  ready>0,bufferLoad.dolby,session);
+}
+static int carregarNativo(const char *url,const char *loadUrl,int ownBuffer,
+                          const char *dolby,unsigned minhaSessao) {
+  char carga[8192];
   { char hh[768];
     montarHttpHeader(hh, sizeof hh);
     montarCarga(carga, sizeof carga, loadUrl, modoLoad, dolby, hh,
@@ -2832,6 +2863,7 @@ static void pararSessao(void) {
   /* Invalidate native callbacks before closing the DTS worker. A closing
    * pipeline must not queue an error for the replacement source. */
   __atomic_add_fetch(&sessao, 1, __ATOMIC_ACQ_REL);
+  bufferLoad.session=0;
   moviebuffer_stop();
   int tinhaDts = dtsSessao != NULL;
   DtsPlayback *antigoDts = dtsSessao;

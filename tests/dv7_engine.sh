@@ -9,7 +9,7 @@ NUVIO_DV7_ROOT="$PWD/build/dv7-host" bash tools/build-dv7.sh
 ffmpeg -hide_banner -loglevel error -f lavfi -i color=size=64x64:rate=25:duration=0.8 \
   -f lavfi -i sine=frequency=300:sample_rate=48000:duration=0.8 -c:v libx265 \
   -x265-params 'bframes=0:pools=1:frame-threads=1:log-level=error:keyint=10' \
-  -c:a eac3 -ac 2 "$dir/plain.mkv"
+  -map 0:v -map 1:a -map 1:a -map 1:a -c:a eac3 -ac 2 -c:a:2 dca -strict -2 -b:a:2 768k "$dir/plain.mkv"
 ffprobe -v error -show_streams -show_packets -show_data -of json "$dir/plain.mkv" > "$dir/plain.json"
 python3 tests/dv7_fixture.py "$dir"
 cc -std=gnu11 -Wall -Wextra -Werror -DNV_DTS_FFMPEG ${NV_TEST_DTS_RECOVERY_CFLAGS--DNV_DTS_WEBOS_RECOVERY} -DNV_DV7_CONVERSION \

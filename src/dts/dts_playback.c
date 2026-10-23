@@ -251,6 +251,14 @@ static int prepareMode(DtsPlayback *p, int stream, int core, double target,int r
              reused?"source-seeked":"source-opened",(opened - began) * 1000);
     nativeEvent(p, event);
   }
+  if(p->dv && info) {
+    char event[256];
+    snprintf(event,sizeof event,
+      "{\"dtsStage\":{\"name\":\"dv-native-load\",\"detail\":\"profile=%d compatibility=%d bl=%d el=%d rpu=%d reused=%d target=%.3f\"}}",
+      info->dovi_profile,info->dovi_bl_compatibility_id,info->dovi_bl_present,
+      info->dovi_el_present,info->dovi_rpu_present,reused,target);
+    nativeEvent(p,event);
+  }
   p->pipeline = dts_pipeline_create(NV_APP_ID, p->window,
                                     p->major, nativeEvent, p);
   if (!p->pipeline) { fail(p, "DTS native pipeline unavailable"); return 0; }
@@ -448,7 +456,10 @@ static void *run(void *user) {
     // the experimental path for the rest of this playback session.
     int fast_failed=fast_pending && !pause && wall-fast_since>=DTS_STALL_SEEK_SECONDS;
     if(fast_failed) { p->seamless_disabled=1;fast_pending=0; }
-    if((seek || audio) && p->seamless && !p->seamless_disabled && !native_unhealthy &&
+    /* BUFFERSTREAM flush has not proved a stable DV timeline on the TV.
+     * Keep the source/cache reuse, but send one known-good Load with full
+     * DolbyHdrInfo instead of a flush followed by a watchdog reload. */
+    if((seek || audio) && !p->dv && p->seamless && !p->seamless_disabled && !native_unhealthy &&
        complete && (clock_seen || pause) && !eof) {
       int selected=audio?new_stream:stream;
       if(reposition(p,selected,audio?0:core,target)) {

@@ -39,9 +39,13 @@ mapping = elem('41e4', uint('41f0', 1) + uint('41e7', int.from_bytes(b'dvcC', 'b
 video = elem('ae', uint('d7', 1) + uint('73c5', 1) + uint('83', 1)
              + elem('86', b'V_MPEGH/ISO/HEVC') + elem('63a2', hvcc) + uint('23e383', 40000000)
              + elem('e0', uint('b0', 64) + uint('ba', 64)) + mapping)
-audio = elem('ae', uint('d7', 2) + uint('73c5', 2) + uint('83', 2) + elem('86', b'A_EAC3')
-             + elem('e1', elem('b5', struct.pack('>d', 48000.0)) + uint('9f', 2)))
-tracks = elem('1654ae6b', video + audio)
+audios = b''
+for index, stream in enumerate(source['streams'][1:], 2):
+    codec = b'A_DTS' if stream['codec_name'] == 'dts' else b'A_EAC3'
+    audios += elem('ae', uint('d7', index) + uint('73c5', index) + uint('83', 2)
+                   + elem('86', codec)
+                   + elem('e1', elem('b5', struct.pack('>d', 48000.0)) + uint('9f', 2)))
+tracks = elem('1654ae6b', video + audios)
 for kind in ['mel', 'fel']:
     rpu = (root / (kind+'-input.nal')).read_bytes()
     for corrupt in [False, True]:
