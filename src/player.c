@@ -4137,7 +4137,9 @@ static int ativarBotao(int i, int repetiu) {
 
 void player_evento(const SDL_Event *e) {
 #ifdef NV_HTTP_BUFFER_DIAG
-  if(e->type==SDL_KEYDOWN && !e->key.repeat && e->key.keysym.sym==SDLK_F2) {
+  // LG's green remote key is a webOS scancode, not the desktop F2 key.
+  if(e->type==SDL_KEYDOWN && !e->key.repeat &&
+     (e->key.keysym.sym==SDLK_F2 || e->key.keysym.scancode==NV_SCANCODE_GREEN)) {
     bufferTestRamVisible=!bufferTestRamVisible;return;
   }
 #endif
