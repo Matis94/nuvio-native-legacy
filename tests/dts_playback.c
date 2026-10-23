@@ -35,7 +35,7 @@ static int64_t fed_audio_pts, fed_video_pts;
 static long fake_wall=100, fake_thread_cpu;
 static void (*native_event)(void *,const char *);
 static void *native_user;
-enum { NORMAL, OPEN_FAIL, BACKPRESSURE, BLOCK_READ, EOF_MODE, MAPPING, MAPPING_BAD, SUBTITLES, CORE_RECOVERY, NO_CORE_FAIL, CPU_BUDGET, DELAYED_ID, PACING, SUSTAINED, SEEK_PREROLL, SEEK_SEGMENT, TIMESTAMP_ONCE, TIMESTAMP_REPEAT, TIMESTAMP_PAUSED, TIMESTAMP_CANCEL, NATIVE_STALL, NATIVE_REPEAT, NATIVE_NO_CLOCK, NATIVE_TRANSIENT, NATIVE_RECOVERY_NO_CLOCK, NATIVE_RECOVERY_UNLOADED };
+enum { NORMAL, OPEN_FAIL, BACKPRESSURE, BLOCK_READ, EOF_MODE, MAPPING, MAPPING_BAD, SUBTITLES, CORE_RECOVERY, NO_CORE_FAIL, CPU_BUDGET, DELAYED_ID, PACING, SUSTAINED, SEEK_PREROLL, SEEK_SEGMENT, TIMESTAMP_ONCE, TIMESTAMP_REPEAT, TIMESTAMP_PAUSED, TIMESTAMP_CANCEL, NATIVE_STALL, NATIVE_REPEAT, NATIVE_NO_CLOCK, NATIVE_TRANSIENT, NATIVE_RECOVERY_NO_CLOCK, NATIVE_RECOVERY_UNLOADED, DV_MAPPING };
 static int timestampScenario(void) { return scenario>=TIMESTAMP_ONCE && scenario<=TIMESTAMP_CANCEL; }
 struct DtsEngine { DtsMediaInfo info; atomic_int cancelled; unsigned char packet[98304]; int serial, core; double base; };
 struct DtsPipeline { void (*event)(void *,const char *); void *user; int loaded, completed, running, flushed, audio_ready, video_ready, generation, packets, broken_segment; double target; };
@@ -67,6 +67,11 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,
  e->info.tracks[1]=(DtsTrack){.stream_index=1,.kind=DTS_AUDIO,.channels=2};strcpy(e->info.tracks[1].codec,"aac");strcpy(e->info.tracks[1].language,"en");
  e->info.tracks[2]=(DtsTrack){.stream_index=4,.kind=DTS_AUDIO,.channels=6};strcpy(e->info.tracks[2].codec,"dts");strcpy(e->info.tracks[2].language,"pt");
  e->info.tracks[3]=(DtsTrack){.stream_index=9,.kind=DTS_AUDIO,.channels=2};strcpy(e->info.tracks[3].codec,"dts");strcpy(e->info.tracks[3].language,"ja");
+ if(scenario==DV_MAPPING) {
+  // Same-language/channel AC3 and DTS must not be conflated on the DV path.
+  strcpy(e->info.tracks[2].codec,"ac3");strcpy(e->info.tracks[2].language,"ru");
+  strcpy(e->info.tracks[3].language,"ru");e->info.tracks[3].channels=6;
+ }
  if(scenario==MAPPING_BAD) { e->info.tracks[4]=e->info.tracks[3];e->info.tracks[4].stream_index=10;e->info.n_tracks=5; }
  if(scenario==SUBTITLES || scenario==SEEK_SEGMENT || timestampScenario()) {
   e->info.tracks[4]=(DtsTrack){.stream_index=20,.kind=DTS_SUBTITLE};strcpy(e->info.tracks[4].codec,"srt");e->info.n_tracks=5;
@@ -282,9 +287,11 @@ int main(int argc,char **argv) {
     assert(count(&flushes)==0 && count(&opens)==1 && last_stream==9);
    }
    if(broken) {
+    assert(count(&opens)==1); // Failed renderer timeline must not reopen HTTP/demux.
     // The captured old-segment clock/BufferFull failure gets a bounded reload.
     int old=count(&flushes);dts_playback_seek(p,10);wait_count(&loads,3);
     assert(count(&flushes)==old); // Disabled for the rest of this session.
+    assert(count(&opens)==1);
    }
   } else {
    wait_count(&flushes,1);wait_count(&accepted,accepted_before+2);
@@ -439,6 +446,14 @@ int main(int argc,char **argv) {
   s=wait_status(p,scenario==MAPPING_BAD,0);
   if(scenario==MAPPING_BAD)assert(strstr(s.error,"safely identify"));else assert(last_stream==9);
   dts_playback_close(p);
+ } else if(!strcmp(argv[1],"dv-codec") || !strcmp(argv[1],"dv-file-ordinal")) {
+  scenario=DV_MAPPING;dts_playback_next_dv(1);
+  DtsTrack selected={.kind=DTS_AUDIO,.channels=6};strcpy(selected.language,"rus");
+  int direct=!strcmp(argv[1],"dv-file-ordinal");
+  strcpy(selected.codec,direct?"A_DTS/LOSSLESS":"A_AC3");
+  p=start(0,-1,&selected,direct?2:0,direct?3:1);
+  s=wait_status(p,0,0);assert(s.info.audio_stream==(direct?9:4));
+  assert(last_dv && last_p7);dts_playback_close(p);
  } else if(!strcmp(argv[1],"audio")) {
   p=start(0,4,NULL,0,0);wait_status(p,0,0);dts_playback_audio(p,9);wait_count(&loads,2);s=wait_status(p,0,0);assert(!s.failed);assert(last_stream==9);assert(count(&creates)==2);dts_playback_close(p);
  } else if(!strcmp(argv[1],"audioerror") || !strcmp(argv[1],"eoferror")) {

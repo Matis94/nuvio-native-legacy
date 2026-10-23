@@ -86,14 +86,16 @@ static char dtsSaida[64];
 static volatile int dvSondado, dvMkvPerfil, dvMkvEl, dvMkvBl, dvMkvRpu;
 // A sonda leu o comeco do arquivo e ele nao e Matroska (mkv_contentor_definitivo).
 static volatile int mkvNaoMkv;
-static char dvAudioCodec[16][16];   // Matroska CodecID of each audio track, file order
-static char dvAudioIdioma[16][8];   // idioma/nome de cada faixa DO MKV (a lista da TV pode trazer so uma)
-static char dvAudioNome[16][48];
-static int  dvAudioCanais[16];       // Audio > Channels de cada faixa DO MKV (0 = nao informado)
+static char dvAudioCodec[NV_FAIXA_MAX][16];   // Matroska CodecID of each audio track, file order
+static char dvAudioIdioma[NV_FAIXA_MAX][8];   // idioma/nome de cada faixa DO MKV (a lista da TV pode trazer so uma)
+static char dvAudioNome[NV_FAIXA_MAX][48];
+static int  dvAudioCanais[NV_FAIXA_MAX];       // Audio > Channels de cada faixa DO MKV (0 = nao informado)
 static volatile int dvAudios;
 // Faixa do MKV (ordinal entre as de audio) escolhida pelo dvPronto no lugar de uma
 // que o caminho nao alimenta; -1 = nenhuma. O iniciarDts a entrega ao motor.
 static int dvAudioMkvOrd = -1;
+// Resolved original selection, distinct from an automatic codec replacement.
+static int dvAudioMkvAtual = -1;
 static int dvHabilitado, dtsModoDv, dvRecuoAviso;
 // O player ainda nao pediu o ponto salvo ao player da TV (video_dv_segurar):
 // a troca para o caminho espera, para nascer na posicao certa.
@@ -2110,7 +2112,7 @@ static void *lerMkv(void *arg) {
         if (fx[j].dvPerfil)
           printf("[dv] file: profile=%d level=%d rpu=%d el=%d bl=%d compat=%d\n", fx[j].dvPerfil,
                  fx[j].dvNivel, fx[j].dvRpu, fx[j].dvEl, fx[j].dvBl, fx[j].dvCompat);
-      } else if (fx[j].tipo == 2 && na < 16) {
+      } else if (fx[j].tipo == 2 && na < NV_FAIXA_MAX) {
         snprintf(dvAudioIdioma[na], sizeof dvAudioIdioma[0], "%s", fx[j].idioma);
         snprintf(dvAudioNome[na], sizeof dvAudioNome[0], "%s", fx[j].nome);
         dvAudioCanais[na] = fx[j].canais;
@@ -2348,7 +2350,7 @@ int video_tocar(const char *url) {
   dtsTentou = 0; dtsRevisao = 0; dtsSaida[0] = 0; dtsNativePending = 0; dtsEstado = 0;
   dtsHabilitado = dts_playback_enabled() && dtsLiberadoNestaTv();
   printf("[dts] fallback %s\n", dtsHabilitado ? "available" : "unavailable");
-  dvSondado = dvMkvPerfil = dvAudios = 0; dtsModoDv = 0; dvAudioMkvOrd = -1; dvSegurar = 0;
+  dvSondado = dvMkvPerfil = dvAudios = 0; dtsModoDv = 0; dvAudioMkvOrd = dvAudioMkvAtual = -1; dvSegurar = 0;
   mkvNaoMkv = 0;
   dvNao = 0; dvSessaoN++; dvFonteAberta = 0; dvAudioDe[0] = 0;
   nv_dvsonda_zerar(&mkvRetry); mkvRetryEm = 0; dvEntradaSeg = 0.0;
@@ -3009,9 +3011,18 @@ static int dvPronto(void) {
   // audioAtual e o indice da lista da TV; dvAudio* sao as faixas do MKV. A TV
   // pode filtrar a lista: localiza a faixa dela no MKV antes de olhar o codec.
   const VideoFaixa *tv = audioAtual >= 0 && audioAtual < nAudio ? &faixaAudio[audioAtual] : NULL;
-  int m = nv_dvaudio_localizar(nAudio, dvAudios, audioAtual, tv ? tv->idioma : "", tv ? tv->codec : "",
-                               tv ? tv->canais : 0, (const char (*)[16])dvAudioCodec,
-                               (const char (*)[8])dvAudioIdioma, dvAudioCanais, ling_casa, audioinfo_codec);
+  NvDvAudioTrack tvTracks[NV_FAIXA_MAX], mkvTracks[NV_FAIXA_MAX];
+  for (int i = 0; i < nAudio; i++)
+    tvTracks[i] = (NvDvAudioTrack){faixaAudio[i].codec, faixaAudio[i].idioma, faixaAudio[i].canais};
+  for (int i = 0; i < dvAudios; i++)
+    mkvTracks[i] = (NvDvAudioTrack){dvAudioCodec[i], dvAudioIdioma[i], dvAudioCanais[i]};
+  int m = nv_dvaudio_lista(nAudio, dvAudios, audioAtual, tvTracks, mkvTracks, ling_casa, audioinfo_codec);
+  dvAudioMkvAtual = m;
+  if (m >= 0) {
+    printf("[dv] audio map: TV %d/%d -> MKV %d/%d (%s %s)\n", audioAtual + 1, nAudio,
+           m + 1, dvAudios, dvAudioIdioma[m], dvAudioCodec[m]);
+    fflush(stdout);
+  }
   if (m < 0 && audioAtual >= 0 && dvAudios > 0) {
     // Sem par seguro: nao troca. O motor confere idioma e codec por conta
     // propria (dts_playback.c) e, sem faixa que alimente, volta ao HDR10.
@@ -3089,15 +3100,15 @@ static int iniciarDts(int stream) {
     snprintf(selected.codec, sizeof selected.codec, "%s", a->codec);
     selected.channels = a->canais;
   }
-  // DV com a faixa trocada pelo dvPronto: ordinal, contagem e idioma sao os do
-  // MKV (dts_playback.c prepare(): o k-esimo audio do arquivo, conferido por
-  // idioma e por codec que o caminho alimenta). Canais ficam 0 = nao conferir.
-  if (dtsModoDv && dvAudioMkvOrd >= 0 && dvAudioMkvOrd < dvAudios) {
+  // Both a direct match and an automatic replacement use the COMPLETE file
+  // ordinal/count. The native list can omit DTS/TrueHD and shift every index.
+  int mkvAudio = dvAudioMkvOrd >= 0 ? dvAudioMkvOrd : dvAudioMkvAtual;
+  if (dtsModoDv && mkvAudio >= 0 && mkvAudio < dvAudios) {
     memset(&selected, 0, sizeof selected);
-    snprintf(selected.language, sizeof selected.language, "%s", dvAudioIdioma[dvAudioMkvOrd]);
-    snprintf(selected.codec, sizeof selected.codec, "%s",
-             !strcmp(dvAudioCodec[dvAudioMkvOrd], "A_EAC3") ? "eac3" : "ac3");
-    ordinal = dvAudioMkvOrd; count = dvAudios; trocada = 1;
+    snprintf(selected.language, sizeof selected.language, "%s", dvAudioIdioma[mkvAudio]);
+    snprintf(selected.codec, sizeof selected.codec, "%s", dvAudioCodec[mkvAudio]);
+    selected.channels = dvAudioCanais[mkvAudio];
+    ordinal = mkvAudio; count = dvAudios; trocada = 1;
   }
   dtsLegAntes = legAtual; dtsLegCount = nLeg;
   memset(&dtsLegFaixa, 0, sizeof dtsLegFaixa);
@@ -3120,9 +3131,10 @@ static int iniciarDts(int stream) {
   dts_engine_set_ahead_mib(cacheboost_backend_buffer_mb());   // #338: Settings > Buffer size
   dts_playback_next_dv(dtsModoDv);
   dts_playback_next_p7(ajustes_dv7());
-#ifdef NV_BUFFER_SEEK_TEST
-  dts_playback_next_seamless(1);
-#endif
+  // The C5 log shows flush accepting an unchanged native timeline, then a
+  // watchdog reload. Use the validated cached seek + one native Load by default.
+  // Native reuse remains opt-in for isolated pipeline tests, not TV test builds.
+  dts_playback_next_seamless(0);
   dtsSessao = dts_playback_start(urlAtual, cabsHttp, stream, alvo,
                                paused, expWin, 0, (a || trocada) ? &selected : NULL, ordinal, count);
   if (!dtsSessao) {

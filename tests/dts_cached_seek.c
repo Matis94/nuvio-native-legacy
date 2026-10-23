@@ -44,6 +44,13 @@ int main(int argc,char **argv) {
       char *payload=j->data;long size=j->count;
       pthread_mutex_unlock(&e->range_lock);
       assert(payload && size>8192);
+      // FFmpeg can position at an uncached index/EOF and return WITHOUT a read.
+      // That probe must not cancel prefetch or free the cached seek target.
+      int64_t probe = (int64_t)(e->range_slots + 10) * e->range_bytes;
+      assert(seek_range(e,probe,SEEK_SET)==probe);
+      pthread_mutex_lock(&e->range_lock);
+      assert(j->data==payload && j->state==3);
+      pthread_mutex_unlock(&e->range_lock);
       assert(seek_range(e,at,SEEK_SET)==at);
       // Old code cleared this exact payload on an interior seek.
       pthread_mutex_lock(&e->range_lock);assert(j->data==payload && j->state==3);pthread_mutex_unlock(&e->range_lock);
@@ -56,7 +63,11 @@ int main(int argc,char **argv) {
       pthread_mutex_unlock(&e->range_lock);
       assert(bytes<=(int64_t)(e->range_slots+1)*e->range_bytes);
     }
+    // A real read outside the old window still replaces/refills the bounded
+    // queue at the demanded offset; deferring eviction cannot return old bytes.
+    check(e,(int64_t)(e->range_slots+10)*e->range_bytes+321);
+    assert(e->cache_start==(int64_t)(e->range_slots+10)*e->range_bytes+321);
     dts_engine_destroy(e);
-    printf("PASS %d MiB: cached interior seek, exact bytes, original allocation transferred, unchanged payload cap\n",mib);
+    printf("PASS %d MiB: index positioning retains cached ranges, exact seek bytes, original allocation transferred, unchanged payload cap\n",mib);
   }
 }

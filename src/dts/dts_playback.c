@@ -4,6 +4,7 @@
 #include "dts_pipeline.h"
 #include "../js.h"
 #include "../linguas.h"
+#include "../audioinfo.h"
 #include <math.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -167,7 +168,13 @@ static int codecFeeds(const DtsPlayback *p, const char *codec) {
   return !strcmp(codec, "dts") || (p->dv && (!strcmp(codec, "ac3") || !strcmp(codec, "eac3")));
 }
 static int trackMatches(DtsPlayback *p, const DtsTrack *t) {
+  const char *selected_codec = audioinfo_codec(p->selected.codec);
+  const char *track_codec = audioinfo_codec(t->codec);
+  // FFmpeg calls every DTS profile "dts"; keep DTS-HD/DTS:X in that family.
+  if (!strncmp(selected_codec, "DTS", 3)) selected_codec = "DTS";
+  if (!strncmp(track_codec, "DTS", 3)) track_codec = "DTS";
   return t->kind == DTS_AUDIO && codecFeeds(p, t->codec) &&
+      (!p->selected.codec[0] || (selected_codec[0] && !strcmp(selected_codec, track_codec))) &&
       (!p->selected.language[0] || ling_casa(t->language, p->selected.language)) &&
       (!p->selected.channels || t->channels == p->selected.channels);
 }
@@ -234,7 +241,7 @@ static int prepareMode(DtsPlayback *p, int stream, int core, double target,int r
     for (i = 0; i < info->n_tracks; i++)
       if (info->tracks[i].stream_index == desired &&
           !codecFeeds(p, info->tracks[i].codec)) desired = -1;
-    if (desired < 0) { fail(p, "Cannot safely identify the selected DTS track"); return 0; }
+    if (desired < 0) { fail(p, p->dv ? "Cannot safely identify the selected audio track" : "Cannot safely identify the selected DTS track"); return 0; }
     if (desired != info->audio_stream) {
       if (dts_engine_open(p->engine, p->url, p->headers, desired, core, target) < 0) {
         fail(p, dts_engine_error(p->engine)); return 0;
@@ -500,8 +507,10 @@ static void *run(void *user) {
       /* Healthy explicit seeks can keep the validated container/track
        * metadata and reset demux/decoder/encoder through engine_seek. The LG
        * native pipeline still receives a fresh Load and codec preroll. Error
-       * recovery keeps a full source reopen; a failed seek also falls back. */
-      if (!prepareMode(p, stream, core, target,seek_reload && !stall_seek)) break;
+       * recovery keeps a full source reopen. A failed native flush, however,
+       * invalidates only the renderer: retain the validated demux and cache.
+       * prepareMode still reopens if engine_seek itself fails. */
+      if (!prepareMode(p, stream, core, target,fast_failed || (seek_reload && !stall_seek))) break;
       fast_pending=0;
       char event[256];
       snprintf(event, sizeof event,
