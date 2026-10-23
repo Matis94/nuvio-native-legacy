@@ -273,9 +273,14 @@ int main(int argc,char **argv) {
   if(paused)wait_count(&pauses,1);else wait_count(&plays,1);
   int accepted_before=count(&accepted);
   if(audio)dts_playback_audio(p,9);else dts_playback_seek(p,broken?546.05:2.0);
-  if(broken || flush_refuse || audio_format_change) {
+  if(broken || flush_refuse || audio_format_change || !strcmp(argv[1],"buffered-dv")) {
    int i;for(i=0;i<5000 && count(&loads)<2;i++)nap();assert(i<5000);
    assert(count(&creates)==2);
+   if(!strcmp(argv[1],"buffered-dv")) {
+    assert(count(&flushes)==0 && count(&opens)==1 && last_dv && last_p7);
+    dts_playback_audio(p,9);wait_count(&loads,3);
+    assert(count(&flushes)==0 && count(&opens)==1 && last_stream==9);
+   }
    if(broken) {
     // The captured old-segment clock/BufferFull failure gets a bounded reload.
     int old=count(&flushes);dts_playback_seek(p,10);wait_count(&loads,3);

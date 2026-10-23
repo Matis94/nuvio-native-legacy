@@ -47,7 +47,14 @@ int rede_fluxo64(const char *url,const char *headers,int64_t start,
 static void check(DtsEngine *e,int r) {
   if (r<0) { fprintf(stderr,"%s\n",dts_engine_error(e)); abort(); }
 }
+static void check_dv(DtsEngine *e) {
+  const DtsMediaInfo *m=dts_engine_info(e);
+  assert(m->dovi_profile==8 && !m->dovi_el_present && m->dovi_rpu_present &&
+         m->dovi_bl_present && m->dovi_bl_compatibility_id==1);
+  assert(!strcmp(m->hdr,"DolbyVision"));
+}
 static int drain(DtsEngine *e) {
+  check_dv(e);
   DtsFrame f; int r,video=0,audio=0,rpu=0;
   int64_t last=INT64_MIN;
   while ((r=dts_engine_next(e,&f))>0) {
@@ -72,13 +79,19 @@ int main(int argc,char **argv) {
   assert(argc==3);
   DtsEngine *e=dts_engine_create(); assert(e);
   dts_engine_allow_p7(e,1); dts_engine_dv(e,1); check(e,dts_engine_open(e,argv[1],"",-1,0,0));
-  const DtsMediaInfo *m=dts_engine_info(e);
-  assert(m->dovi_profile==8 && !m->dovi_el_present && m->dovi_rpu_present &&
-         m->dovi_bl_present && m->dovi_bl_compatibility_id==1);
-  assert(!strcmp(m->audio_codec,"eac3"));
+  check_dv(e);
+  assert(!strcmp(dts_engine_info(e)->audio_codec,"eac3"));
   assert(drain(e)==20);
   check(e,dts_engine_seek(e,.4)); assert(drain(e)>0);
   check(e,dts_engine_seek(e,0)); assert(drain(e)==20);
+  /* The same container, AVIO cache and DV7 state survive both passthrough
+   * and DTS transcoder switches, including return to the original track. */
+  check(e,dts_engine_audio(e,2,0,.4));assert(drain(e)>0);
+  check(e,dts_engine_audio(e,3,0,0));
+  assert(!strcmp(dts_engine_info(e)->audio_codec,"aac"));assert(drain(e)==20);
+  check(e,dts_engine_seek(e,.4));assert(drain(e)>0);
+  check(e,dts_engine_audio(e,1,0,0));
+  assert(!strcmp(dts_engine_info(e)->audio_codec,"eac3"));assert(drain(e)==20);
   dts_engine_destroy(e);
   e=dts_engine_create(); dts_engine_allow_p7(e,1); dts_engine_dv(e,1);
   check(e,dts_engine_open(e,argv[2],"",-1,0,0));
@@ -86,5 +99,5 @@ int main(int argc,char **argv) {
   while ((r=dts_engine_next(e,&f))>0) {}
   assert(r<0 && strstr(dts_engine_error(e),"DV7 RPU conversion failed"));
   dts_engine_destroy(e);
-  puts("DV7 engine: actual MKV + FFmpeg + P8.1 output, audio passthrough, repeated seek and corrupt-RPU fallback passed.");
+  puts("DV7 engine: actual MKV + FFmpeg + P8.1 output, audio passthrough/DTS switching, repeated seek with retained DV metadata and corrupt-RPU fallback passed.");
 }
