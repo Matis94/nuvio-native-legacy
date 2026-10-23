@@ -27,8 +27,8 @@ jobs:
           persist-credentials: false
       - name: Verify application source
         run: |
-          git fetch --no-tags --depth=1 origin 1568b4086813ee8a8fd18c62e8d2d5148aa0ffec
-          git diff --exit-code 1568b4086813ee8a8fd18c62e8d2d5148aa0ffec HEAD -- src rust tools deploy
+          git fetch --no-tags --depth=1 origin df46275a388823912cf14a64bf04fedb5eb6008e
+          git diff --exit-code df46275a388823912cf14a64bf04fedb5eb6008e HEAD -- src rust tools deploy
           git fetch --no-tags --depth=1 origin 0ce56918b116dba810b642bec2c3ac8a9ef2adb0
           git diff --exit-code 0ce56918b116dba810b642bec2c3ac8a9ef2adb0 HEAD -- src/ajustes.c src/ajustes.h
           git diff --check
@@ -146,7 +146,7 @@ jobs:
           data = json.loads(p.read_text())
           assert data["version"] == "2.0.8"
           assert data["id"] == "space.nuvio.native.legacy"
-          data["title"] = "Nuvio Legacy (Buffered seek v4 QR)"
+          data["title"] = "Nuvio Legacy (Buffered seek v4.1 QR)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -159,7 +159,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-buffered-seek-dv7-dts-test-v4-qr.ipk
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-buffered-seek-dv7-dts-test-v4.1-qr.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -175,7 +175,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: buffered-seek-dv7-dts-test-v4-qr-ipk
+          name: buffered-seek-dv7-dts-test-v4.1-qr-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14
