@@ -12,9 +12,12 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i color=size=64x64:rate=25:duratio
   -map 0:v -map 1:a -map 1:a -map 1:a -c:a eac3 -ac 2 -c:a:2 dca -strict -2 -b:a:2 768k "$dir/plain.mkv"
 ffprobe -v error -show_streams -show_packets -show_data -of json "$dir/plain.mkv" > "$dir/plain.json"
 python3 tests/dv7_fixture.py "$dir"
+# Real MP4 container, native P8.1 configuration and converted RPU packets.
+ffmpeg -hide_banner -loglevel error -i "$dir/p8.mkv" -map 0:v:0 -map 0:a:0 -c copy \
+  -strict unofficial -movflags +faststart "$dir/p8.mp4"
 cc -std=gnu11 -Wall -Wextra -Werror -DNV_DTS_FFMPEG ${NV_TEST_DTS_RECOVERY_CFLAGS--DNV_DTS_WEBOS_RECOVERY} -DNV_DV7_CONVERSION \
   -I"$prefix/include" src/dts/dts_engine.c tests/dv7_engine.c -o "$dir/engine" \
   -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil \
   -Wl,--end-group build/dv7-host/libnuvio_dv7.a -lm -lpthread -ldl
-"$dir/engine" "$dir/fel.mkv" "$dir/fel-bad.mkv"
-"$dir/engine" "$dir/mel.mkv" "$dir/mel-bad.mkv"
+"$dir/engine" "$dir/fel.mkv" "$dir/fel-bad.mkv" "$dir/p8.mp4"
+"$dir/engine" "$dir/mel.mkv" "$dir/mel-bad.mkv" "$dir/p8.mp4"

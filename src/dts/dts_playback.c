@@ -21,6 +21,7 @@
 #define DTS_FEED_AHEAD_SECONDS 6.0
 #define DTS_STALL_SECONDS 8.0
 #define DTS_STALL_SEEK_SECONDS 2.0
+#define DTS_DV_SEEK_SECONDS 4.0
 #define DTS_STALL_RETRIES 2
 #define DTS_TIMESTAMP_RETRIES 2
 /* Reset only after real presentation progress, not time spent reloading. */
@@ -205,7 +206,7 @@ static int prepareMode(DtsPlayback *p, int stream, int core, double target,int r
   pthread_mutex_unlock(&p->lock);
   /* Reloading selects the exact same source stream and resets encoder delay. */
   double began = clockSeconds(CLOCK_MONOTONIC), opened;
-  int reused=0;
+  int reused=0,defer_start=stream<0 && target>0;
   info=dts_engine_info(p->engine);
   if(reuse && info && stream>=0) {
     nativeEvent(p,"{\"dtsStage\":{\"name\":\"source-seek-requested\"}}");
@@ -216,7 +217,7 @@ static int prepareMode(DtsPlayback *p, int stream, int core, double target,int r
   }
   if(!reused) {
     nativeEvent(p,"{\"dtsStage\":{\"name\":\"source-open-requested\"}}");
-    if (dts_engine_open(p->engine, p->url, p->headers, stream, core, target) < 0) {
+    if (dts_engine_open(p->engine, p->url, p->headers, stream, core, defer_start?0:target) < 0) {
       fail(p, dts_engine_error(p->engine)); return 0;
     }
   }
@@ -250,10 +251,19 @@ static int prepareMode(DtsPlayback *p, int stream, int core, double target,int r
           !codecFeeds(p, info->tracks[i].codec)) desired = -1;
     if (desired < 0) { fail(p, p->dv ? "Cannot safely identify the selected audio track" : "Cannot safely identify the selected DTS track"); return 0; }
     if (desired != info->audio_stream) {
-      if (dts_engine_open(p->engine, p->url, p->headers, desired, core, target) < 0) {
-        fail(p, dts_engine_error(p->engine)); return 0;
+      /* Mapping is validated against this open container. Reconfigure only
+       * audio; keep its DV metadata, demux, index and bounded HTTP cache. */
+      nativeEvent(p,"{\"dtsStage\":{\"name\":\"startup-audio-reuse\"}}");
+      if (dts_engine_audio(p->engine, desired, core, target) < 0) {
+        if(stopped(p)) return 0;
+        nativeEvent(p,"{\"dtsStage\":{\"name\":\"startup-audio-reopen\"}}");
+        if(dts_engine_open(p->engine,p->url,p->headers,desired,core,target)<0) {
+          fail(p,dts_engine_error(p->engine));return 0;
+        }
       }
       info = dts_engine_info(p->engine);
+    } else if(defer_start && dts_engine_seek(p->engine,target)<0) {
+      fail(p,dts_engine_error(p->engine));return 0;
     }
   }
   /* #203: stage lines print only after prepare, so they carry no time of
@@ -272,6 +282,9 @@ static int prepareMode(DtsPlayback *p, int stream, int core, double target,int r
       info->dovi_profile,info->dovi_bl_compatibility_id,info->dovi_bl_present,
       info->dovi_el_present,info->dovi_rpu_present,reused,target);
     nativeEvent(p,event);
+  }
+  if(p->dv && (!info || (info->dovi_profile!=5 && info->dovi_profile!=8))) {
+    fail(p,"Dolby Vision configuration absent or unsupported");return 0;
   }
   p->pipeline = dts_pipeline_create(NV_APP_ID, p->window,
                                     p->major, nativeEvent, p);
@@ -305,20 +318,37 @@ static int prepare(DtsPlayback *p,int stream,int core,double target) {
 }
 /* Opt-in TV experiment. A format change or an unhealthy renderer uses the
  * proven fresh-Load path. No packet queue or second native player is added. */
-static int reposition(DtsPlayback *p,int stream,int core,double target) {
+static int reposition(DtsPlayback *p,int stream,int core,double target,DtsFrame *primed) {
   const DtsMediaInfo *info=dts_engine_info(p->engine);
   if(!info || !p->pipeline) return 0;
   DtsMediaInfo before=*info;
   pthread_mutex_lock(&p->lock);
   p->suppress_events=1;
   pthread_mutex_unlock(&p->lock);
-  int ok=(stream==before.audio_stream ? dts_engine_seek(p->engine,target) :
+  /* Hold the existing DV image while the demux seeks and fetches its first
+   * packet. Borrow the engine's normal single pending frame: no second queue,
+   * no additional video copy and no increase to the HTTP/native byte limits. */
+  double began=clockSeconds(CLOCK_MONOTONIC);
+  int ok=!p->dv || dts_pipeline_pause(p->pipeline);
+  if(ok) ok=(stream==before.audio_stream ? dts_engine_seek(p->engine,target) :
           dts_engine_audio(p->engine,stream,core,target))>=0;
   info=dts_engine_info(p->engine);
   // Flush cannot renegotiate a different audio codec/channel configuration.
   ok=ok && info && !strcmp(before.audio_codec,info->audio_codec) &&
      before.channels==info->channels && before.sample_rate==info->sample_rate;
-  if(ok) ok=dts_pipeline_flush(p->pipeline,target);
+  if(ok && p->dv) {
+    ok=dts_engine_next(p->engine,primed)>0;
+    if(ok) {
+      fprintf(stdout,"[dts] dv-seek-prime ms=%.0f kind=%d pts=%.3f bytes=%zu\n",
+        (clockSeconds(CLOCK_MONOTONIC)-began)*1000,primed->kind,primed->pts_ns/1e9,primed->size);
+      fflush(stdout);
+    }
+  }
+  if(ok) {
+    ok=dts_pipeline_flush(p->pipeline,target);
+    /* This survives the seek's deliberate event-queue reset. */
+    printf("[dts] native-seek-request target=%.3f accepted=%d dv=%d\n",target,ok,p->dv);fflush(stdout);
+  }
   pthread_mutex_lock(&p->lock);
   p->event_count=p->event_read=p->event_write=0;
   if(ok) {
@@ -469,9 +499,10 @@ static void *run(void *user) {
     // A successful flush call is not proof that the firmware changed timeline.
     // Retry with fresh Load once after a bounded no-progress interval; disable
     // the experimental path for the rest of this playback session.
-    int fast_failed=fast_pending && !pause && wall-fast_since>=DTS_STALL_SEEK_SECONDS;
+    int fast_failed=fast_pending && !pause && wall-fast_since>=(p->dv?DTS_DV_SEEK_SECONDS:DTS_STALL_SEEK_SECONDS);
     if(fast_failed) {
       p->seamless_disabled=1;fast_pending=0;
+      printf("[dts] native-seek-fallback reason=no-progress target=%.3f waitMs=%.0f\n",fast_target,(wall-fast_since)*1000);fflush(stdout);
       nativeEvent(p,"{\"dtsStage\":{\"name\":\"native-seek-fallback\",\"detail\":\"no presentation progress\"}}");
     }
     /* The adapter now requests a native segment seek and gates controls on
@@ -479,10 +510,10 @@ static void *run(void *user) {
     if((seek || audio) && p->seamless && !p->seamless_disabled && !native_unhealthy &&
        complete && (clock_seen || pause) && !eof) {
       int selected=audio?new_stream:stream;
-      if(reposition(p,selected,audio?0:core,target)) {
+      if(reposition(p,selected,audio?0:core,target,&frame)) {
         stream=selected;if(audio) core=core_tried=0;
         position=preroll=presented=target;fed_audio=fed_video=target;
-        have_frame=eof=0;seek_preroll=1;seek_audio=seek_video=0;
+        have_frame=!!p->dv;eof=0;seek_preroll=1;seek_audio=seek_video=0;
         pause_dirty=volume_dirty=1;clock_seen=0;
         timestamp_retries=0;timestamp_anchor=target;
         resetStall(&stall,target);recovery_waiting=1;
@@ -494,6 +525,7 @@ static void *run(void *user) {
         nativeEvent(p,"{\"dtsStage\":{\"name\":\"native-seek-fallback\",\"detail\":\"unavailable, refused or format changed\"}}");
       }
     }
+    if(stopped(p))break;
     int seek_reload = !audio && seek;
     int stall_seek = seek_reload && native_unhealthy;
     int stall_reload = !audio && !seek && !pause && !eof &&
@@ -657,11 +689,11 @@ static void *run(void *user) {
         eof = 1;
         continue;
       }
-      if ((frame.kind == DTS_VIDEO && frame.size > 16 * 1024 * 1024) ||
-          (frame.kind == DTS_AUDIO && frame.size > 2 * 1024 * 1024)) {
-        fail(p, "DTS packet exceeds playback memory budget"); break;
-      }
       have_frame = 1;
+    }
+    if ((frame.kind == DTS_VIDEO && frame.size > 16 * 1024 * 1024) ||
+        (frame.kind == DTS_AUDIO && frame.size > 2 * 1024 * 1024)) {
+      fail(p, "DTS packet exceeds playback memory budget"); break;
     }
     if (frame.kind == DTS_SUBTITLE) {
       DtsSubtitle cue;

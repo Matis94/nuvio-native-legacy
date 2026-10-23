@@ -35,7 +35,8 @@ int dts_playback_event(DtsPlayback *p,char *out,size_t n) { (void)p;if (pump_rea
 void dts_playback_close(DtsPlayback *p) { (void)p;assert(0); }
 void dts_playback_pause(DtsPlayback *p,int paused) { (void)p;(void)paused;assert(0); }
 void mkvass_aceitar_imagem(int sim) { (void)sim; }
-void dts_playback_seek(DtsPlayback *p,double t) { (void)p;(void)t;assert(0); }
+static int seek_commands;
+void dts_playback_seek(DtsPlayback *p,double t) { assert(p && t>=0);seek_commands++; }
 void dts_playback_audio(DtsPlayback *p,int stream) { (void)p;(void)stream;assert(0); }
 void dts_playback_subtitle(DtsPlayback *p,int stream) { (void)p;(void)stream;assert(0); }
 int dts_overlay_draw(DtsPlayback *p,double t,float x,float y,float w,float h,int vw,int vh,float a) {
@@ -269,6 +270,24 @@ int main(void) {
   assert(video_pronto() && video_tocando() && video_decoder_anunciou());
   assert(!strcmp(vidHdr,"HDR10") && exported_windows>old_windows);
   old_windows=exported_windows;bombearDts();assert(exported_windows==old_windows);
+  /* A stale clock may update subtitles/playback, but never undo the chosen
+   * progress-bar position during the 350ms debounce or decoder preroll. */
+  ligado=pronto=1;dtsSessao=NULL;posSeg=posNativa=100;
+  snprintf(midia,sizeof midia,"seek-ui");
+  video_buscar(500);assert(video_pos()==500);
+  eventoPayload("{\"currentTime\":{\"currentTime\":100200}}",sessao);
+  assert(posNativa==100.2 && video_pos()==500);
+  nv_seekview_sent(&seekView,SDL_GetTicks());
+  eventoPayload("{\"currentTime\":{\"currentTime\":498500}}",sessao);
+  assert(posNativa==498.5 && video_pos()==500);
+  eventoPayload("{\"currentTime\":{\"currentTime\":500100}}",sessao);
+  assert(video_pos()==500.1);
+  dtsSessao=(DtsPlayback *)(uintptr_t)1;
+  video_buscar(200);assert(video_pos()==200);seekAgora(200);assert(seek_commands==1);
+  eventoPayload("{\"currentTime\":{\"currentTime\":500200}}",sessao);
+  assert(posNativa==500.2 && video_pos()==200);
+  eventoPayload("{\"currentTime\":{\"currentTime\":200100}}",sessao);
+  assert(video_pos()==200.1);dtsSessao=NULL;seekView=(NvSeekView){0};
   puts("webOS ACB dispatch snapshot, stale generations, deferred VIDEO/MSE transitions, overrides and failed-init retry, early webOS 6 exported-window events and replacement pipeline tests passed");
   return 0;
 }

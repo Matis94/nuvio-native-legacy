@@ -52,6 +52,18 @@ static int sensitive(const char *s) {
   return 0;
 }
 
+/* Exact built-in event names only. A long arbitrary token after stage= must
+ * still be hidden, even if it resembles one of these public diagnostic names. */
+static int public_stage(const char *line,const char *p,size_t len) {
+  static const char *names[]={"native-buffered-reposition","native-seek-progress-confirmed",
+    "native-seek-accepted","native-seek-unavailable","native-seek-refused",
+    "native-seek-fallback","startup-audio-reuse","startup-audio-reopen"};
+  if(strncmp(line,"[dts] stage=",12) || p!=line+12)return 0;
+  for(size_t i=0;i<sizeof names/sizeof names[0];i++)
+    if(strlen(names[i])==len && !memcmp(p,names[i],len))return 1;
+  return 0;
+}
+
 static void append(char *out, size_t cap, size_t *n, const char *s, size_t len) {
   if (!cap) return;
   if (len > cap - 1 - *n) len = cap - 1 - *n;
@@ -94,7 +106,7 @@ void logexport_redact(const char *in, char *out, size_t cap) {
       }
       len = (size_t)(end - p);
       const char *scheme = strstr(p, "://");
-      hide = (scheme && scheme < end) || (len >= 24) || (hexonly && len >= 16) || memchr(p, '@', len) != NULL;
+      hide = (scheme && scheme < end) || (len >= 24 && !public_stage(in,p,len)) || (hexonly && len >= 16) || memchr(p, '@', len) != NULL;
       /* IP addresses (including private addresses), filesystem paths and JWTs. */
       int dots = 0, colons = 0;
       const char *q;

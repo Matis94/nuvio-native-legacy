@@ -18,6 +18,12 @@ int main(void) {
   const char *safe = "[playback-diag] tick=123 generation=2 pos=123.456 readyBytes=268435456 availableKiB=245760";
   logexport_redact(safe, out, sizeof out); assert(!strcmp(safe, out));
   const char *range_logs[]={
+    "[dts] stage=native-buffered-reposition ",
+    "[dts] stage=native-seek-progress-confirmed ",
+    "[dts] stage=native-seek-accepted 1234567",
+    "[dts] stage=native-seek-fallback no presentation progress",
+    "[dts] stage=startup-audio-reuse ",
+    "[dts] dv-seek-prime ms=2100 kind=1 pts=4645.563 bytes=327759",
     "[dv] file: profile=7 level=6 rpu=1 el=1 bl=1 compat=6",
     "[dts] stage=dv-native-load profile=8 compatibility=1 bl=1 el=0 rpu=1 reused=1 target=123.000",
     "[video] HDR do pipeline: HDR10 (fonte afirmava DV=1)",
@@ -30,6 +36,9 @@ int main(void) {
   for(size_t i=0;i<sizeof range_logs/sizeof range_logs[0];i++) {
     logexport_redact(range_logs[i],out,sizeof out);assert(!strcmp(out,range_logs[i]));
   }
+  hides("[dts] stage=native-seek-progress-confirmedSECRETVALUE", "SECRETVALUE");
+  hides("[net] native-seek-progress-confirmedSECRETVALUE", "SECRETVALUE");
+  hides("[dts] stage=native-seek-progress-confirmed token=shortpw", "shortpw");
   hides("[net] https://person:shortpw@host.example/key/movie?api=x#y", "person");
   hides("[net] HtTpS://private.example/shortpw", "shortpw");
   hides("[net] https:\\/\\/private.example/key", "private.example");

@@ -19,7 +19,9 @@ static int64_t last_sub_pts;
 static atomic_int allow_decode_failure, transport_stalled, release_transport, stall_transport;
 static atomic_int jam_native, native_full, seek_failure;
 static atomic_int timestamp_fault, timestamp_fail_open, timestamp_block_open, timestamp_open_entered;
-static int last_dv;
+static int last_dv, audio_reconfigs, audio_fail_once, missing_dv;
+static atomic_int prime_block, prime_entered, prime_release;
+static int prime_serial;
 static int seamless_fixture, flush_refuse, audio_format_change, stale_clock;
 static int last_p7;
 static atomic_llong buffer_ready = 21*1048576LL;
@@ -62,6 +64,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,
  }
  memset(&e->info,0,sizeof e->info);strcpy(e->info.video_codec,"hevc");strcpy(e->info.audio_codec,"aac");
  e->info.width=1920;e->info.height=1080;e->info.audio_stream=stream<0?4:stream;e->info.channels=2;e->info.sample_rate=48000;
+ if(last_dv && !missing_dv) { e->info.dovi_profile=8;e->info.dovi_bl_present=e->info.dovi_rpu_present=1;strcpy(e->info.hdr,"DolbyVision"); }
  e->info.n_tracks=4;
  e->info.tracks[0]=(DtsTrack){.stream_index=0,.kind=DTS_VIDEO};
  e->info.tracks[1]=(DtsTrack){.stream_index=1,.kind=DTS_AUDIO,.channels=2};strcpy(e->info.tracks[1].codec,"aac");strcpy(e->info.tracks[1].language,"en");
@@ -79,10 +82,11 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,
  e->core=core;e->base=target;e->serial=0;return 0;
 }
 int dts_engine_audio(DtsEngine *e,int stream,int core,double target) {
+ if(audio_fail_once) { audio_fail_once=0;return -1; }
  if(atomic_load(&seek_failure)) return -1;
  e->info.audio_stream=stream;e->core=core;e->base=target;e->serial=0;
  if(audio_format_change) strcpy(e->info.audio_codec,"ac3");
- pthread_mutex_lock(&fixture);last_stream=stream;last_audio_target=target;pthread_mutex_unlock(&fixture);
+ pthread_mutex_lock(&fixture);audio_reconfigs++;last_stream=stream;last_audio_target=target;pthread_mutex_unlock(&fixture);
  return 0;
 }
 const DtsMediaInfo *dts_engine_info(DtsEngine *e) { return &e->info; }
@@ -103,6 +107,11 @@ void dts_subtitles_destroy(DtsSubtitles *s) {
  pthread_mutex_lock(&fixture);sub_destroyed++;pthread_mutex_unlock(&fixture);free(s);
 }
 int dts_engine_next(DtsEngine *e,DtsFrame *f) {
+ if(atomic_load(&prime_block) && e->base>0) {
+  atomic_store(&prime_entered,1);
+  while(!atomic_load(&prime_release) && !atomic_load(&e->cancelled))nap();
+  if(atomic_load(&e->cancelled))return -1;
+ }
  if(scenario==CPU_BUDGET) { fake_wall++;fake_thread_cpu++; }
  pthread_mutex_lock(&fixture);nexts++;pthread_mutex_unlock(&fixture);
  if(timestampScenario()) {
@@ -224,6 +233,11 @@ int dts_pipeline_play(DtsPipeline *p) {
 }
 int dts_pipeline_pause(DtsPipeline *p) { p->running=0;pthread_mutex_lock(&fixture);pauses++;pthread_mutex_unlock(&fixture);return 1; }
 int dts_pipeline_flush(DtsPipeline *p,double t) {
+ if(last_dv) {
+  // DV seeks must hold the old frame and fetch one borrowed packet first.
+  assert(!p->running);assert(atomic_load(&prime_block)?atomic_load(&prime_release):1);
+  pthread_mutex_lock(&fixture);prime_serial=nexts;pthread_mutex_unlock(&fixture);
+ }
  if(flush_refuse) return 0;
  p->target=t;
  if(scenario==SEEK_SEGMENT) {
@@ -267,6 +281,23 @@ static DtsPlayback *start(int paused,int stream,const DtsTrack *selected,int ord
 }
 int main(int argc,char **argv) {
  assert(argc==2);assert(!dts_playback_enabled());DtsPlayback *p;DtsPlaybackStatus s;
+ if(!strncmp(argv[1],"startup-",8)) {
+  int same=!strcmp(argv[1],"startup-same"),fallback=!strcmp(argv[1],"startup-fallback");
+  missing_dv=!strcmp(argv[1],"startup-no-dv");audio_fail_once=fallback;
+  dts_playback_next_dv(1);dts_playback_next_p7(1);scenario=DV_MAPPING;
+  DtsTrack selected={.kind=DTS_AUDIO,.channels=6};strcpy(selected.language,"rus");
+  strcpy(selected.codec,same?"A_AC3":"A_DTS/LOSSLESS");
+  p=dts_playback_start("fixture://movie","",-1,5157.631,0,"window",0,&selected,same?1:2,3);assert(p);
+  s=wait_status(p,missing_dv,0);
+  if(missing_dv)assert(count(&loads)==0 && strstr(s.error,"configuration"));
+  else {
+   assert(s.info.audio_stream==(same?4:9));
+   assert(count(&opens)==(fallback?2:1));
+   if(fallback)assert(last_open_target==5157.631);
+   else assert(last_open_target==0 && (same?last_seek:last_audio_target)==5157.631);
+  }
+  dts_playback_close(p);puts("DV startup: selected audio/cache reuse, one target seek, safe reopen and missing-DV rejection passed");return 0;
+ }
  if(!strncmp(argv[1],"buffered-",9)) {
   seamless_fixture=1;
   int broken=!strcmp(argv[1],"buffered-stall") || !strcmp(argv[1],"buffered-dv-stall"),audio=!strcmp(argv[1],"buffered-audio") || !strcmp(argv[1],"buffered-format");
@@ -276,12 +307,23 @@ int main(int argc,char **argv) {
   scenario=broken?SEEK_SEGMENT:SEEK_PREROLL;
   dts_playback_next_seamless(1);
   if(strstr(argv[1],"buffered-dv"))dts_playback_next_dv(1);
+  int prime=!strcmp(argv[1],"buffered-dv-prime"),prime_cancel=!strcmp(argv[1],"buffered-dv-cancel");
+  if(prime || prime_cancel)atomic_store(&prime_block,1);
   p=start(paused,4,NULL,0,0);wait_count(&accepted,paused?1:4);
   if(paused)wait_count(&pauses,1);else wait_count(&plays,1);
   int accepted_before=count(&accepted);
   if(audio)dts_playback_audio(p,9);else dts_playback_seek(p,broken?546.05:2.0);
+  if(prime || prime_cancel) {
+   for(int i=0;i<1500 && !atomic_load(&prime_entered);i++)nap();
+   assert(atomic_load(&prime_entered) && count(&flushes)==0 && count(&loads)==1);
+   wait_count(&pauses,1);
+   if(prime_cancel) {
+    dts_playback_close(p);assert(count(&creates)==count(&destroys));return 0;
+   }
+   atomic_store(&prime_release,1);
+  }
   if(broken || stale_clock || flush_refuse || audio_format_change) {
-   int i;for(i=0;i<5000 && count(&loads)<2;i++)nap();assert(i<5000);
+   int i;for(i=0;i<7000 && count(&loads)<2;i++)nap();assert(i<7000);
    assert(count(&creates)==2);
    if(broken || stale_clock) {
     assert(count(&opens)==1); // Failed renderer timeline must not reopen HTTP/demux.
@@ -297,6 +339,7 @@ int main(int argc,char **argv) {
    assert(count(&loads)==1 && count(&creates)==1 && count(&opens)==1);
    dts_playback_status(p,&s);assert(!s.failed && s.native_loaded && s.info.audio_stream==(audio?9:4));
    if(strstr(argv[1],"buffered-dv")) {
+    assert(prime_serial>0);
     assert(last_dv && last_p7);
     dts_playback_audio(p,9);wait_count(&flushes,2);wait_count(&plays,3);
     assert(count(&loads)==1 && count(&opens)==1 && last_stream==9);
@@ -447,7 +490,7 @@ int main(int argc,char **argv) {
   DtsTrack selected={.kind=DTS_AUDIO,.channels=2};strcpy(selected.language,"jpn");strcpy(selected.codec,"dts");
   scenario=!strcmp(argv[1],"ambiguous")?MAPPING_BAD:MAPPING;p=start(0,-1,&selected,0,1);
   s=wait_status(p,scenario==MAPPING_BAD,0);
-  if(scenario==MAPPING_BAD)assert(strstr(s.error,"safely identify"));else assert(last_stream==9);
+  if(scenario==MAPPING_BAD)assert(strstr(s.error,"safely identify"));else assert(last_stream==9 && count(&opens)==1 && count(&audio_reconfigs)==1);
   dts_playback_close(p);
  } else if(!strcmp(argv[1],"dv-codec") || !strcmp(argv[1],"dv-file-ordinal")) {
   scenario=DV_MAPPING;dts_playback_next_dv(1);
@@ -456,7 +499,8 @@ int main(int argc,char **argv) {
   strcpy(selected.codec,direct?"A_DTS/LOSSLESS":"A_AC3");
   p=start(0,-1,&selected,direct?2:0,direct?3:1);
   s=wait_status(p,0,0);assert(s.info.audio_stream==(direct?9:4));
-  assert(last_dv && last_p7);dts_playback_close(p);
+  assert(last_dv && last_p7);
+  assert(count(&opens)==1 && count(&audio_reconfigs)==direct);dts_playback_close(p);
  } else if(!strcmp(argv[1],"audio")) {
   p=start(0,4,NULL,0,0);wait_status(p,0,0);dts_playback_audio(p,9);wait_count(&loads,2);s=wait_status(p,0,0);assert(!s.failed);assert(last_stream==9 && count(&opens)==1);assert(count(&creates)==2);dts_playback_close(p);
  } else if(!strcmp(argv[1],"audioerror") || !strcmp(argv[1],"eoferror")) {

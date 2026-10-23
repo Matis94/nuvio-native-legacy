@@ -35,3 +35,14 @@ and requires physical-firmware verification.
 `bash tests/dts_pipeline.sh` tests both ABIs against a fake native library.
 See the [DTS guide](../../docs/features/dts/README.md) for limits and licenses,
 and [DTS Debug builds](DEBUG.md) for a separate test app.
+
+The v6 TV test primes one borrowed engine packet while the existing DV player
+is paused, before issuing native Seek. It uses the existing pending-frame slot,
+not another packet queue. A four-second DV no-progress guard allows bounded
+post-seek preroll; DTS retains its two-second guard. Startup audio selection
+reuses the validated demux and makes one final resume seek, with full reopen on
+reconfiguration failure. Confirmed native DV MP4 with AC-3/E-AC-3/DTS audio also
+tries the packet path in this test build; missing/unsupported DV metadata or
+ambiguous audio mapping returns to URI playback. AAC/TrueHD MP4 stays on URI.
+The UI holds the selected seek position through stale clocks/keyframe preroll,
+with a bounded timeout; the native clock itself is not rewritten.

@@ -76,7 +76,7 @@ static int drain(DtsEngine *e) {
   return video;
 }
 int main(int argc,char **argv) {
-  assert(argc==3);
+  assert(argc==4);
   DtsEngine *e=dts_engine_create(); assert(e);
   dts_engine_allow_p7(e,1); dts_engine_dv(e,1); check(e,dts_engine_open(e,argv[1],"",-1,0,0));
   check_dv(e);
@@ -99,5 +99,10 @@ int main(int argc,char **argv) {
   while ((r=dts_engine_next(e,&f))>0) {}
   assert(r<0 && strstr(dts_engine_error(e),"DV7 RPU conversion failed"));
   dts_engine_destroy(e);
-  puts("DV7 engine: actual MKV + FFmpeg + P8.1 output, audio passthrough/DTS switching, repeated seek with retained DV metadata and corrupt-RPU fallback passed.");
+  e=dts_engine_create();assert(e);dts_engine_dv(e,1);
+  dts_engine_allow_p7(e,0); // Native MP4 P8 requires no P7 conversion.
+  check(e,dts_engine_open(e,argv[3],"",-1,0,0));check_dv(e);
+  assert(drain(e)==20);check(e,dts_engine_seek(e,.4));assert(drain(e)>0);
+  check(e,dts_engine_seek(e,0));assert(drain(e)==20);dts_engine_destroy(e);
+  puts("DV7 engine: actual MKV + FFmpeg + P8.1 output, audio passthrough/DTS switching, repeated seek with retained DV metadata corrupt-RPU fallback and native P8 MP4 passthrough/seek passed.");
 }

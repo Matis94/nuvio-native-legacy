@@ -1,5 +1,6 @@
 #include "app_id.h"
 #include "video.h"
+#include "video_seekview.h"
 #include "webosver.h"
 #include "audioinfo.h"
 #include "esmaecer.h"
@@ -642,6 +643,7 @@ static int dvPedido;
 
 static char      midia[64];
 static double    posSeg, durSeg, posNativa;
+static NvSeekView seekView;
 static _Atomic int tocando, falhou, terminou;
 static int       pronto, ligado;
 static _Atomic int ackMidia; // presenca de midia, sem ler a string entre fios
@@ -1462,7 +1464,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
                  seekRetry.falhas, NV_SEEK_MAX, w);
         marco(m2);
       } else {
-        seekRetryEm = 0; seekEnvEm = 0;
+        seekRetryEm = 0; seekEnvEm = 0;seekView.active=0;
         marco("seek recusado: desistiu, segue tocando de onde esta");
       }
     } else if (!recuperando) {
@@ -1475,6 +1477,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
   }
   { double v = numeroDe(p, "\"currentTime\":");
     if (v >= 0) {
+      nv_seekview_clock(&seekView,v/1000.0);
       posSeg = posNativa = v / 1000.0;
       // Primeiro quadro com avanco: o numero de inicio de verdade.
       if (cronPediu && !cronQuadro && posSeg > 0.0) {
@@ -2463,7 +2466,7 @@ void video_bombear(void) {
     seekRetryEm = 0;
     if (!seekEm && pronto) seekAgora(seekAlvo);   // novo seek do dono tem prioridade
   }
-  if (seekEnvEm && !seekEnvAviso && SDL_GetTicks() - seekEnvEm >= 3000) {
+  if (seekEnvEm && !seekEnvAviso && (Sint32)(SDL_GetTicks() - seekEnvEm) >= 3000) {
     seekEnvAviso = 1;
     printf("[video] seek to %ds: no seekDone after 3000 ms; pipeline at %dms, seekable=%d trickable=%d\n",
            seekEnvAlvo, (int)(posSeg * 1000.0), srcSeekable, srcTrickable);
@@ -2862,6 +2865,7 @@ void video_parar(void) {
 
 static void pararSessao(void) {
   char b[128];
+  seekView=(NvSeekView){0};
   /* Invalidate native callbacks before closing the DTS worker. A closing
    * pipeline must not queue an error for the replacement source. */
   __atomic_add_fetch(&sessao, 1, __ATOMIC_ACQ_REL);
@@ -2983,7 +2987,25 @@ static void dvVoltarEntrada(void) {
 // converter built in; and audio the path can feed (E-AC-3 and
 // AC-3 pass through, DTS is converted). Anything else stays with the TV player.
 static int dvPronto(void) {
+#ifdef NV_NATIVE_SEEK_TEST
+  if(fonteMp4 || nv_url_e_mp4(urlAtual)) {
+    /* Isolated test: confirmed native DV MP4 with feedable audio can use the
+     * same persistent packet player as DV MKV. FFmpeg must prove the actual
+     * P5/P8 configuration; a source label alone never enables this route. */
+    if(!pronto || strcmp(vidHdr,"DolbyVision") || audioAtual<0 || audioAtual>=nAudio)return 0;
+    const VideoFaixa *a=&faixaAudio[audioAtual];
+    const char *family=audioinfo_codec(a->codec);
+    if(strcmp(family,"E-AC-3") && strcmp(family,"AC-3") && strncmp(family,"DTS",3)) {
+      dvHabilitado=0;
+      printf("[dv] MP4 packet seek unavailable for selected audio; keeping URI player\n");fflush(stdout);
+      return 0;
+    }
+    printf("[dv] MP4 native DV confirmed: testing persistent packet player\n");fflush(stdout);
+    return 1;
+  }
+#else
   if (fonteMp4) { dvHabilitado = 0; dvNao = VIDEO_DV_NAO_SEM_DV; return 0; }
+#endif
   if (!dvSondado) {
     if (mkvPendente && !fioMkvVivo) video_sondar_mkv_agora();
     return 0;
@@ -3147,7 +3169,7 @@ static int iniciarDts(int stream) {
     return 0;
   }
   if (dtsModoDv) {
-    marco("Dolby Vision: MKV path requested");
+    marco("Dolby Vision: packet path requested");
     return 1;
   }
   dtsEstado = VIDEO_DTS_PREPARANDO;
@@ -3353,9 +3375,11 @@ void video_volume(int pct) {
 #define SEEK_REPOUSO_MS 350
 
 void video_buscar(double segundos) {
+  if(!isfinite(segundos))return;
   if (dtsSessao) {
     if (segundos < 0) segundos = 0;
     if (dvSilencio) dvEntradaSeg = segundos;
+    nv_seekview_begin(&seekView,segundos,SDL_GetTicks());
     posSeg = segundos; seekAlvo = segundos;
     seekEm = SDL_GetTicks() + SEEK_REPOUSO_MS; return;
   }
@@ -3364,6 +3388,7 @@ void video_buscar(double segundos) {
   // Com a tela do DV de pe ninguem busca com o controle (ela come as teclas):
   // o seek e a retomada, o ponto onde o filme deve comecar.
   if (dvSilencio) dvEntradaSeg = segundos;
+  nv_seekview_begin(&seekView,segundos,SDL_GetTicks());
   posSeg = segundos;
   seekAlvo = segundos;
   seekEm = SDL_GetTicks() + SEEK_REPOUSO_MS;
@@ -3372,13 +3397,14 @@ void video_buscar(double segundos) {
 // Manda de fato. Chamado pelo video_bombear quando o repouso vence.
 static void seekAgora(double segundos) {
   char b[192];
-  if (dtsSessao) { dts_playback_seek(dtsSessao, segundos); return; }
+  if (dtsSessao) { nv_seekview_sent(&seekView,SDL_GetTicks());dts_playback_seek(dtsSessao, segundos); return; }
 
   if (!ligado || !midia[0]) return;
   snprintf(b, sizeof b, "{\"mediaId\":\"%s\",\"position\":%d}",
            midia, (int)(segundos * 1000.0));
-  chamar("seek", b, soLog);
+  nv_seekview_sent(&seekView,SDL_GetTicks());
   seekEnvEm = SDL_GetTicks() | 1; seekEnvAlvo = (int)segundos; seekEnvAviso = 0;
+  chamar("seek", b, soLog);
   { char m[48]; snprintf(m, sizeof m, "seek para %ds", (int)segundos); marco(m); }
 }
 
@@ -3574,7 +3600,7 @@ void video_janela_fonte(int sx, int sy, int sw, int sh,
   (void)b; (void)aoJanela;
 }
 
-double video_pos(void)      { return posSeg; }
+double video_pos(void)      { return nv_seekview_pos(&seekView,posSeg,SDL_GetTicks()); }
 double video_duracao(void)  { return durSeg; }
 double video_buffer_fim(void) {
   DtsBufferInfo b={0};double end=bufferSeg;

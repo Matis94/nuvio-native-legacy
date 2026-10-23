@@ -187,5 +187,21 @@ int main(void) {
     }
     puts("dvaudio_lg: all 15 filtered LG selections hand off exact MKV ordinal/count out of 21 tracks");
   }
+#ifdef NV_NATIVE_SEEK_TEST
+  // Confirmed native DV MP4 only; preserve the TV-selected track metadata.
+  { Tv t[]={{"en","eac3",6},{"pl","eac3",6}};
+    montar(NULL,0,t,2,1);fonteMp4=1;
+    snprintf(urlAtual,sizeof urlAtual,"http://h/native.mp4");
+    snprintf(vidHdr,sizeof vidHdr,"none");assert(!dvPronto());
+    snprintf(vidHdr,sizeof vidHdr,"DolbyVision");pronto=0;assert(!dvPronto());
+    pronto=1;assert(dvPronto());dvAudioMkvAtual=dvAudioMkvOrd=-1;
+    dtsModoDv=1;partidas=0;assert(iniciarDts(-1) && partidas==1);dtsSessao=NULL;
+    assert(partidaOrdinal==1 && partidaContagem==2 && !strcmp(partidaFaixa.codec,"eac3"));
+    montar(NULL,0,t,2,1);fonteMp4=1;snprintf(vidHdr,sizeof vidHdr,"DolbyVision");
+    snprintf(faixaAudio[1].codec,sizeof faixaAudio[1].codec,"aac");
+    assert(!dvPronto() && !dvHabilitado);fonteMp4=0;
+    puts("dvaudio_lg: native DV MP4 waits for confirmed HDR/audio and retains safe URI fallback");
+  }
+#endif
   return 0;
 }

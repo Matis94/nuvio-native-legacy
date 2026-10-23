@@ -13,11 +13,11 @@ if [[ $(uname -s) == Darwin ]]; then
 else
  cc "${flags[@]}" -std=c11 -D_GNU_SOURCE -DNV_DTS_WEBOS_RECOVERY -Wall -Wextra -Werror -Isrc tests/dts_playback.c src/dts/dts_playback.c src/js.c src/linguas.c src/audioinfo.c -pthread -lm -Wl,--wrap=clock_gettime -o "$tmp/test"
 fi
-for scenario in resumeseek seekfallback timestamp timestampbound timestampprogress timestampopenfail timestampcancel timestamppause timestampdv timestampseek timestampaudio preparefail pause backpressure delayedid cancel seek seeksegment pausedseek pacing ordinal filtered ambiguous dv-codec dv-file-ordinal audio audioerror eof eoferror pausedreload eofpause overflow subtitles reordered core nocore volume cpu pausedcore controls stallpaced stallrecover stallbound stallnoclock stalltransient stallpause stallseek stallpausedseek stallrecovernoclock stallrecovercancel stallseeknoclock stallrecoverunloaded sustained; do
+for scenario in startup-same startup-audio startup-fallback startup-no-dv resumeseek seekfallback timestamp timestampbound timestampprogress timestampopenfail timestampcancel timestamppause timestampdv timestampseek timestampaudio preparefail pause backpressure delayedid cancel seek seeksegment pausedseek pacing ordinal filtered ambiguous dv-codec dv-file-ordinal audio audioerror eof eoferror pausedreload eofpause overflow subtitles reordered core nocore volume cpu pausedcore controls stallpaced stallrecover stallbound stallnoclock stalltransient stallpause stallseek stallpausedseek stallrecovernoclock stallrecovercancel stallseeknoclock stallrecoverunloaded sustained; do
  "$tmp/test" "$scenario"
 done
 DV7_OFF=1 "$tmp/test" buffer
 
-for scenario in buffered-seek buffered-audio buffered-paused buffered-dv buffered-refused buffered-format buffered-stall buffered-stale buffered-dv-stall buffered-dv-paused; do
+for scenario in buffered-seek buffered-audio buffered-paused buffered-dv buffered-refused buffered-format buffered-stall buffered-stale buffered-dv-stall buffered-dv-paused buffered-dv-prime buffered-dv-cancel; do
  "$tmp/test" "$scenario"
 done
