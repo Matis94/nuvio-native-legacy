@@ -683,19 +683,9 @@ static int64_t seek_range(void *opaque,int64_t offset,int whence) {
   int64_t base=whence==SEEK_SET?0:whence==SEEK_CUR?e->pos:whence==SEEK_END?e->total:-1;
   if (base<0 || (offset>0 && base>INT64_MAX-offset) || (offset<0 && offset<-base)) return AVERROR(EINVAL);
   e->pos=base+offset;
-  if(!e->cache || e->pos<e->cache_start || e->pos-e->cache_start>=e->cache_size) {
-    int cached=0;
-    pthread_mutex_lock(&e->range_lock);
-    for(int i=0;i<e->range_slots;i++) {
-      DtsRangeJob *j=&e->ranges[i];
-      if(j->state && e->pos>=j->start &&
-         e->pos-j->start<(j->state==3?j->count:j->end-j->start+1)) { cached=1;break; }
-    }
-    pthread_mutex_unlock(&e->range_lock);
-    // Keep the same bounded queue when FFmpeg lands inside an existing range.
-    // This transfers ownership on read; it allocates no second cache.
-    if(!cached) clear_ranges(e,"seek");
-  }
+  // Positioning alone is not a cache miss. FFmpeg probes end/index offsets
+  // and can return without reading; evicting here threw away useful read-ahead.
+  // read_range replaces the same bounded queue only if bytes are really needed.
   return e->pos;
 }
 static int64_t ns(int64_t value,AVRational tb) {

@@ -51,6 +51,11 @@ static DtsPlayback *dublePartida(const char *url, const char *headers, int audio
   return (DtsPlayback *)(uintptr_t)0x1;
 }
 static void dubleFechar(DtsPlayback *p) { (void)p; }
+// Exercise an explicitly enabled DV path independently of stored/default UI
+// preferences (upstream now defaults MKV DV to off).
+static int fixtureDvEnabled(void) { return 1; }
+#define ajustes_dv_mkv fixtureDvEnabled
+#define ajustes_dv7 fixtureDvEnabled
 #undef __APPLE__
 #include "../src/video.c"
 
@@ -70,7 +75,7 @@ typedef struct { const char *idioma, *codec; int canais; } Tv;
 
 static void montar(const Mkv *m, int nm, const Tv *t, int nt, int atual) {
   int i;
-  dtsSessao = NULL; dtsModoDv = 0; dtsTentou = 0; dvAudioMkvOrd = -1; dvAudioDe[0] = 0;
+  dtsSessao = NULL; dtsModoDv = 0; dtsTentou = 0; dvAudioMkvOrd = dvAudioMkvAtual = -1; dvAudioDe[0] = 0;
   ligado = pronto = tocando = 1;
   snprintf(midia, sizeof midia, "fixture-hdr10");
   snprintf(urlAtual, sizeof urlAtual, "http://h/remux.dv.mkv");
@@ -82,6 +87,7 @@ static void montar(const Mkv *m, int nm, const Tv *t, int nt, int atual) {
     snprintf(dvAudioIdioma[i], sizeof dvAudioIdioma[0], "%s", m[i].idioma);
     snprintf(dvAudioNome[i], sizeof dvAudioNome[0], "%s", m[i].nome);
   }
+  memset(dvAudioCanais, 0, sizeof dvAudioCanais);
   dvAudios = nm;
   memset(faixaAudio, 0, sizeof faixaAudio);
   for (i = 0; i < nt; i++) {
@@ -102,6 +108,7 @@ static const char *abrir(void) {
 }
 
 int main(void) {
+  setvbuf(stdout, NULL, _IOLBF, 0);
   lsCall = fakeCall; lsPayload = fakePayload;
   bus = (LSHandle *)(uintptr_t)1; sessao = 40;
 
@@ -160,5 +167,25 @@ int main(void) {
     (void)abrir();
     assert(dvAudioMkvOrd == 1);
     puts("dvaudio_lg: listas iguais, indice 0 = TrueHD -> E-AC-3 eng"); }
+  // Real C5 log: all 15 AC3 tracks from a 21-audio remux, including duplicate
+  // Russian tracks and English tracks beyond the former 16-track metadata cap.
+  { Mkv m[21]; Tv t[15]; int expected[15], nt = 0;
+    for (int i = 0; i < 21; i++) {
+      const char *codec = (i == 1 || (i >= 8 && i <= 11)) ? "A_DTS/LOSSLESS" : i == 17 ? "A_TRUEHD" : "A_AC3";
+      const char *lang = i < 15 ? "ru" : i < 17 ? "uk" : "en";
+      m[i] = (Mkv){codec, lang, "fixture"};
+      if (!strcmp(codec, "A_AC3")) { expected[nt] = i; t[nt++] = (Tv){lang, "ac3", 6}; }
+    }
+    assert(nt == 15);
+    for (int i = 0; i < nt; i++) {
+      montar(m, 21, t, nt, i);
+      for (int k = 0; k < 21; k++) dvAudioCanais[k] = 6;
+      (void)abrir();
+      assert(dvAudioMkvOrd == -1 && dvAudioMkvAtual == expected[i]);
+      assert(partidaOrdinal == expected[i] && partidaContagem == 21);
+      assert(!strcmp(partidaFaixa.codec, "A_AC3") && partidaFaixa.channels == 6);
+    }
+    puts("dvaudio_lg: all 15 filtered LG selections hand off exact MKV ordinal/count out of 21 tracks");
+  }
   return 0;
 }
