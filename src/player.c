@@ -28,6 +28,10 @@
 #include "player.h"
 #include "legfontes.h"
 #include "memlog.h"
+#ifdef NV_HTTP_BUFFER_DIAG
+#include "ramoverlay.h"
+static int bufferTestRamVisible=1;
+#endif
 #include "dvtela.h"
 #include "abrecine.h"
 #include "ilhacart.h"
@@ -4132,6 +4136,11 @@ static int ativarBotao(int i, int repetiu) {
 }
 
 void player_evento(const SDL_Event *e) {
+#ifdef NV_HTTP_BUFFER_DIAG
+  if(e->type==SDL_KEYDOWN && !e->key.repeat && e->key.keysym.sym==SDLK_F2) {
+    bufferTestRamVisible=!bufferTestRamVisible;return;
+  }
+#endif
   // QUALQUER ENTRADA E ATIVIDADE, antes de qualquer return: tecla, clique ou roda
   // do Magic Remote/mouse, toque e botoes do controle. O painel de pausa so sobe
   // depois de 4 s SEM nenhum comando; mexer em legenda, audio ou na barra
@@ -6805,7 +6814,11 @@ void player_desenhar(Uint32 agora) {
     // e conteudo do filme. Desenha-la antes do retorno preserva ASS/SRT/VTT
     // durante a maior parte da reproducao, quando a barra nao esta na tela.
     desenharLegendaExterna();
-    desenharAcoesEpisodio(); return;
+    desenharAcoesEpisodio();
+#ifdef NV_HTTP_BUFFER_DIAG
+    ramoverlay_desenhar(agora,bufferTestRamVisible);
+#endif
+    return;
   }   // tocando limpo
 
   // OS VEUS DO GLASS UI (mockup aprovado em 03/10): so dois degrades, o de
@@ -6832,6 +6845,9 @@ void player_desenhar(Uint32 agora) {
    */
   desenharLegendaExterna();
   desenharOsd(agora, a, ac, c);
+#ifdef NV_HTTP_BUFFER_DIAG
+  ramoverlay_desenhar(agora,bufferTestRamVisible);
+#endif
 }
 
 // O CORPO DO OSD (barra, titulo, Seekr, botoes, tempo, selos e o botao de
@@ -7061,6 +7077,12 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
       for (i = 0; i < nCaps; i++) if (caps[i] <= 0.0f || caps[i] >= 1.0f) caps[i--] = caps[--nCaps];
     }
     plrui_barra(bx, yBarra, bw, frac, bufFrac, barraFoco, caps, nCaps, a); }
+#ifdef NV_HTTP_BUFFER_DIAG
+  { char b[96];video_buffer_test_text(b,sizeof b);
+    TxtLinha l=txt_linha(TXT_G19M,b,230,230,230,210);
+    txt_desenhar_alpha(l,bx+bw-l.w,yBarra-l.h-14.0f,a);
+  }
+#endif
 
   // --- O TITULO: o LOGO, e o texto so na falta dele -------------------------
   // (O dono tinha pedido texto em 2026-09; o mockup aprovado em 03/10 volta ao
