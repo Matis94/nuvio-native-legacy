@@ -191,23 +191,31 @@ int main(void) {
   }
 #ifdef NV_NATIVE_SEEK_TEST
   { Mkv m[]={{"A_EAC3","eng","DD+"}};Tv t[]={{"en","eac3",6}};
-    fixtureMkvEnabled=0;montar(m,1,t,1,0);
-    assert(dvPronto()); // Native P8 MKV participates in the test without P7 conversion.
+    fixtureMkvEnabled=0;
+    for(int profile=5;profile<=8;profile+=3) {
+      montar(m,1,t,1,0);dvMkvPerfil=profile;
+      assert(!dvPronto() && !dvHabilitado && dvNao==VIDEO_DV_NAO_NATIVE);
+      assert(!dtsModoDv && !dtsTentou && !dtsSessao);
+    }
+    // Rolling back P5/P8 forcing must not disable the separate P7 converter.
+    montar(m,1,t,1,0);dvMkvPerfil=7;dvMkvEl=1;
+    assert(dvPronto());
     fixtureMkvEnabled=1;
+    puts("dvaudio_lg: native P5/P8 MKV respects its preference; P7 remains independently enabled");
   }
-  // Confirmed native DV MP4 only; preserve the TV-selected track metadata.
+  // C5 regression: MP4 already playing DV must never be reopened as an
+  // experiment, regardless of selected E-AC-3 audio or initial HDR timing.
   { Tv t[]={{"en","eac3",6},{"pl","eac3",6}};
-    montar(NULL,0,t,2,1);fonteMp4=1;
-    snprintf(urlAtual,sizeof urlAtual,"http://h/native.mp4");
-    snprintf(vidHdr,sizeof vidHdr,"none");assert(!dvPronto());
-    snprintf(vidHdr,sizeof vidHdr,"DolbyVision");pronto=0;assert(!dvPronto());
-    pronto=1;assert(dvPronto());dvAudioMkvAtual=dvAudioMkvOrd=-1;
-    dtsModoDv=1;partidas=0;assert(iniciarDts(-1) && partidas==1);dtsSessao=NULL;
-    assert(partidaOrdinal==1 && partidaContagem==2 && !strcmp(partidaFaixa.codec,"eac3"));
-    montar(NULL,0,t,2,1);fonteMp4=1;snprintf(vidHdr,sizeof vidHdr,"DolbyVision");
-    snprintf(faixaAudio[1].codec,sizeof faixaAudio[1].codec,"aac");
-    assert(!dvPronto() && !dvHabilitado);fonteMp4=0;
-    puts("dvaudio_lg: native DV MP4 waits for confirmed HDR/audio and retains safe URI fallback");
+    for(int detected=0;detected<2;detected++) for(int hdr=0;hdr<2;hdr++) {
+      montar(NULL,0,t,2,1);fonteMp4=detected;partidas=0;
+      snprintf(urlAtual,sizeof urlAtual,"http://h/native.mp4");
+      snprintf(vidHdr,sizeof vidHdr,"%s",hdr?"DolbyVision":"none");
+      assert(!dvPronto() && !dvHabilitado && !partidas);
+      assert(!dtsModoDv && !dtsTentou && !dtsSessao);
+      assert(audioAtual==1 && !strcmp(faixaAudio[1].idioma,"pl"));
+    }
+    fonteMp4=0;
+    puts("dvaudio_lg: native DV MP4 stays on the URI player without conversion/HDR10 fallback");
   }
 #endif
   return 0;

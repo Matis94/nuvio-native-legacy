@@ -2987,36 +2987,17 @@ static void dvVoltarEntrada(void) {
 // converter built in; and audio the path can feed (E-AC-3 and
 // AC-3 pass through, DTS is converted). Anything else stays with the TV player.
 static int dvPronto(void) {
-#ifdef NV_NATIVE_SEEK_TEST
-  if(fonteMp4 || nv_url_e_mp4(urlAtual)) {
-    /* Isolated test: confirmed native DV MP4 with feedable audio can use the
-     * same persistent packet player as DV MKV. FFmpeg must prove the actual
-     * P5/P8 configuration; a source label alone never enables this route. */
-    if(!pronto || strcmp(vidHdr,"DolbyVision") || audioAtual<0 || audioAtual>=nAudio)return 0;
-    const VideoFaixa *a=&faixaAudio[audioAtual];
-    const char *family=audioinfo_codec(a->codec);
-    if(strcmp(family,"E-AC-3") && strcmp(family,"AC-3") && strncmp(family,"DTS",3)) {
-      dvHabilitado=0;
-      printf("[dv] MP4 packet seek unavailable for selected audio; keeping URI player\n");fflush(stdout);
-      return 0;
-    }
-    printf("[dv] MP4 native DV confirmed: testing persistent packet player\n");fflush(stdout);
-    return 1;
+  /* Keep native DV MP4 on the TV's URI player. Moving an already playing
+   * P5/P8 file to the packet experiment could fail audio mapping and reload
+   * healthy Dolby Vision with a misleading conversion/HDR10 warning. */
+  if (fonteMp4 || nv_url_e_mp4(urlAtual)) {
+    dvHabilitado = 0; dvNao = VIDEO_DV_NAO_SEM_DV; return 0;
   }
-#else
-  if (fonteMp4) { dvHabilitado = 0; dvNao = VIDEO_DV_NAO_SEM_DV; return 0; }
-#endif
   if (!dvSondado) {
     if (mkvPendente && !fioMkvVivo) video_sondar_mkv_agora();
     return 0;
   }
-  int mkvPacket=ajustes_dv_mkv();
-#ifdef NV_NATIVE_SEEK_TEST
-  // Test native P5/P8 MKV as well as MP4. The actual file metadata below,
-  // not a formatter label or extension, still decides profile/layer validity.
-  mkvPacket=1;
-#endif
-  if (dvMkvPerfil && !nv_dv7_selected(dvMkvPerfil,mkvPacket,ajustes_dv7())) {
+  if (dvMkvPerfil && !nv_dv7_selected(dvMkvPerfil,ajustes_dv_mkv(),ajustes_dv7())) {
     dvNao=VIDEO_DV_NAO_NATIVE;dvHabilitado=0;return 0;
   }
   if (!nv_dv7_profile(dvMkvPerfil, dvMkvEl, dvMkvBl, dvMkvRpu)) {
