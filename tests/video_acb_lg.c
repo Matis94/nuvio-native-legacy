@@ -38,6 +38,7 @@ void mkvass_aceitar_imagem(int sim) { (void)sim; }
 static int seek_commands;
 void dts_playback_seek(DtsPlayback *p,double t) { assert(p && t>=0);seek_commands++; }
 void dts_playback_audio(DtsPlayback *p,int stream) { (void)p;(void)stream;assert(0); }
+void dts_playback_audio_at(DtsPlayback *p,int stream,double t) { (void)p;(void)stream;(void)t;assert(0); }
 void dts_playback_subtitle(DtsPlayback *p,int stream) { (void)p;(void)stream;assert(0); }
 int dts_overlay_draw(DtsPlayback *p,double t,float x,float y,float w,float h,int vw,int vh,float a) {
   (void)p;(void)t;(void)x;(void)y;(void)w;(void)h;(void)vw;(void)vh;(void)a;assert(0);return 0;
@@ -291,6 +292,7 @@ int main(void) {
   pump_count=3;pump_read=0;
   bombearDts();assert(pump_read==0 && !video_pronto() && !video_decoder_anunciou());
   pump_status.prepared=pump_status.native_loaded=pump_status.revision=1;
+  pump_status.load_revision=1;
   pump_status.info.width=1920;pump_status.info.height=1080;
   snprintf(pump_status.media_id,sizeof pump_status.media_id,"exported-dts-media");
   bombearDts();
@@ -306,12 +308,28 @@ int main(void) {
   int old_windows=exported_windows;
   bombearDts();assert(pump_read==0 && exported_windows==old_windows);
   pump_status.prepared=pump_status.native_loaded=1;pump_status.revision=2;
+  pump_status.load_revision=2;
   snprintf(pump_status.media_id,sizeof pump_status.media_id,"recovered-dts-media");
   bombearDts();
   assert(pump_read==3 && dtsRevisao==2 && !strcmp(midia,"recovered-dts-media"));
   assert(video_pronto() && video_tocando() && video_decoder_anunciou());
   assert(!strcmp(vidHdr,"HDR10") && exported_windows>old_windows);
   old_windows=exported_windows;bombearDts();assert(exported_windows==old_windows);
+  /* A compatible audio metadata revision keeps the confirmed DV picture and
+   * its existing plane. A real Load still rebinds, even with a recycled ID. */
+  pump_count=pump_read=0;dtsModoDv=1;
+  snprintf(vidHdr,sizeof vidHdr,"DolbyVision");
+  pump_status.revision=3;
+  pump_status.info.n_tracks=1;pump_status.info.audio_stream=9;
+  pump_status.info.tracks[0]=(DtsTrack){.kind=DTS_AUDIO,.stream_index=9,.channels=6};
+  strcpy(pump_status.info.tracks[0].codec,"ac3");
+  bombearDts();
+  assert(pronto && tocando && viuVideo && !bindPendente);
+  assert(exported_windows==old_windows && !strcmp(vidHdr,"DolbyVision"));
+  assert(nAudio==1 && audioAtual==0 && faixaAudio[0].stream_index==9);
+  pump_status.revision=4;pump_status.load_revision=3;
+  bombearDts();assert(pronto && !tocando && !viuVideo && exported_windows>old_windows);
+  dtsModoDv=0;
   /* A stale clock may update subtitles/playback, but never undo the chosen
    * progress-bar position during the 350ms debounce or decoder preroll. */
   ligado=pronto=1;dtsSessao=NULL;posSeg=posNativa=100;

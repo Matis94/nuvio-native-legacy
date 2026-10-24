@@ -39,9 +39,13 @@
 #define dts_playback_next_resume_pct dubleResumePct
 #define dts_playback_seek dubleSeek
 #define dts_playback_audio dubleAudio
+#define dts_playback_audio_at dubleAudioAt
 static int seekCalls,audioCalls,chosenStream;
 static void dubleSeek(DtsPlayback *p,double target) { assert(p && target>=0);seekCalls++; }
 static void dubleAudio(DtsPlayback *p,int stream) { assert(p && stream>=0);audioCalls++;chosenStream=stream; }
+static void dubleAudioAt(DtsPlayback *p,int stream,double target) {
+  assert(target==745.286);dubleAudio(p,stream);
+}
 static DtsTrack partidaFaixa;
 static double partidaPos, partidaPct;
 static void dubleResumePct(double pct) { partidaPct=pct; }
@@ -152,10 +156,11 @@ int main(void) {
     strcpy(faixaAudio[1].codec,"eac3");faixaAudio[1].stream_index=20;
     strcpy(faixaAudio[2].codec,"dts");faixaAudio[2].stream_index=21;nAudio=3;
     posSeg=745.286;seekCalls=audioCalls=0;
-    int order[]={0,1,2,0};
+    video_escolher_audio(audioAtual);assert(!audioCalls && !seekCalls);
+    int order[]={1,2,0,1};
     for(int i=0;i<4;i++) {
       video_escolher_audio(order[i]);
-      assert(audioCalls==i+1 && seekCalls==i+1 && chosenStream==19+order[i]);
+      assert(audioCalls==i+1 && seekCalls==0 && chosenStream==19+order[i]);
       assert(dtsSessao && dtsModoDv && dvHabilitado && !dtsNativePending);
       assert(audioAtual==order[i]);
     }

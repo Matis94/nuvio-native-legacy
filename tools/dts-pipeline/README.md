@@ -112,3 +112,29 @@ renegotiation through Load. The v10 TV log shows the retained source/cache
 seek had also disabled native reuse for that session. v11 preserves both format
 validation and that recovery safeguard; hiding the startup poster does not
 claim to eliminate the decoder interruption required by a format change.
+
+In v12, the TV experiment queues a track change and its position atomically;
+it no longer wakes the worker with an independent Seek first. Selecting the
+already selected track is a no-op. A compatible audio metadata revision keeps
+the native plane/playing observation instead of rebinding it; a separate Load
+generation still resets and binds a genuinely replaced renderer (including a
+reused firmware media ID).
+
+For a DV audio-format reload, the old renderer is paused while the existing
+demux/audio chain is reconfigured and one normal borrowed packet is fetched.
+Only then is that renderer unloaded and the new codec configuration loaded.
+The packet uses the existing feed slot: no captured DV image, second player,
+extra queue, audio downmix of otherwise supported tracks, or buffer-limit change
+is introduced. Refused Pause retains the previous Load path; cancellation and
+decode/core recovery remain bounded. An expected format change no longer
+permanently disables compatible native seeks, while a real refused/stalled
+Seek still does so for the rest of that session.
+
+Diagnostics distinguish `audio-format-reload`, `dv-audio-reload-prime` and
+`dv-audio-prepared-before-unload` from a failed native seek. Host fixtures check
+that the old renderer survives a blocked preparation, cancellation closes it,
+AC3/AAC format changes retain DV/cache, pause and recovery guards survive, and
+metadata-only switches do not rebind the picture. Actual black-frame duration
+and firmware frame retention still require TV comparison with v11: a changed
+audio format continues to need a native Load, so zero visible interruption is
+not guaranteed. Native URI playback is unchanged.

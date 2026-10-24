@@ -683,7 +683,7 @@ static char      erroTexto[96];
 // errorCode 200 "Audio Codec Not Supported": o VIDEO segue tocando e so o
 // audio morre. Ver o tratamento em lerEvento.
 static int       audioNaoSup;
-static int dtsHabilitado, dtsTentou, dtsRevisao, dtsFalhaLogada;
+static int dtsHabilitado, dtsTentou, dtsRevisao, dtsLoadRevisao, dtsFalhaLogada;
 static int dtsLegAntes = -1, dtsLegCount;
 static VideoFaixa dtsLegFaixa;
 static int dtsNativePending;
@@ -3196,7 +3196,7 @@ static int iniciarDts(int stream) {
 #endif
   posSeg = alvo; pausaPedida = paused;
   ack_publicar();
-  dtsRevisao = 0; dtsFalhaLogada = 0;
+  dtsRevisao = dtsLoadRevisao = 0; dtsFalhaLogada = 0;
   if (acbCriar && !acbConfigurarTipo(1)) {
     marco("DTS startup failed: MSE video plane initialization");
     dvCaminhoNaoAbriu();
@@ -3299,13 +3299,18 @@ static void bombearDts(void) {
   if (!st.prepared) return;
   if (st.prepared && st.revision != dtsRevisao) {
     int initial = !dtsRevisao;
+    int new_pipeline = initial || st.load_revision != dtsLoadRevisao ||
+                       (st.media_id[0] && strcmp(midia, st.media_id));
     int selectedSub = initial ? -1 : (video_legenda(legAtual) ? video_legenda(legAtual)->stream_index : -1);
     dtsRevisao = st.revision;
-    pronto = 0; tocando = 0; bindPendente = 0;
+    dtsLoadRevisao = st.load_revision;
+    /* A compatible audio switch changes metadata, not the native plane.
+     * Rebinding that same plane can itself blank a healthy DV picture. */
+    if (new_pipeline) { pronto = 0; tocando = 0; bindPendente = 0; }
     if (!st.media_id[0]) { midia[0] = 0; ackMidia = 0; }
     ack_publicar();
-    printf("[dts] prepared revision=%d video=%s %dx%d audio=%s channels=%d stream=%d\n",
-           st.revision, st.info.video_codec, st.info.width, st.info.height,
+    printf("[dts] prepared revision=%d loadRevision=%d nativeReload=%d video=%s %dx%d audio=%s channels=%d stream=%d\n",
+           st.revision, st.load_revision, new_pipeline, st.info.video_codec, st.info.width, st.info.height,
            st.info.audio_codec, st.info.channels, st.info.audio_stream);
     fflush(stdout);
     durSeg = st.info.duration_ns / 1e9;
@@ -3323,7 +3328,7 @@ static void bombearDts(void) {
      * already reported: paused after a seek, videoInfo only comes back on
      * play, and the Dolby Vision badge used to vanish until then. */
     if (initial) { snprintf(vidHdr, sizeof vidHdr, "%s", "none"); vidAtmos = 0; }
-    viuVideo = 0;
+    if (new_pipeline) viuVideo = 0;
     nAudio = nLeg = 0;
     for (i = 0; i < st.info.n_tracks; i++) {
       const DtsTrack *t = &st.info.tracks[i];
@@ -3388,7 +3393,7 @@ static void bombearDts(void) {
       if(dtsModoDv && audioAtual>=0 && audioAtual<nAudio && nv_dts_truehd_codec(faixaAudio[audioAtual].codec))
         snprintf(dtsSaida,sizeof dtsSaida,"TrueHD → %s",!strcmp(st.info.audio_codec,"ac3")?"AC3 5.1":"AAC Stereo");
     }
-    if (expWin[0]) expJanelaAplicar();
+    if (new_pipeline && expWin[0]) expJanelaAplicar();
     protegerScreensaver();
   }
   /* Also handles media IDs assigned only after native preroll. */
@@ -3913,8 +3918,13 @@ void video_escolher_audio(int i) {
   if (dtsSessao && f) {
     if (f->stream_index < 0) return;
     if (nv_dts_audio_feeds(f->codec,dtsModoDv)) {
+#ifdef NV_NATIVE_SEEK_TEST
+      if (i == audioAtual) return;
+      dts_playback_audio_at(dtsSessao, f->stream_index, posSeg);
+#else
       dts_playback_seek(dtsSessao, posSeg);
       dts_playback_audio(dtsSessao, f->stream_index);
+#endif
       audioAtual = i;
     } else {
       VideoFaixa target = *f;

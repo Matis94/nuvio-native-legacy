@@ -14,6 +14,9 @@ if [[ $(uname -s) == Darwin ]]; then
 else
  cc "${flags[@]}" -std=c11 -D_GNU_SOURCE -DNV_DTS_WEBOS_RECOVERY -Wall -Wextra -Werror -Isrc tests/dts_playback.c src/dts/dts_playback.c src/js.c src/linguas.c src/audioinfo.c -pthread -lm -Wl,--wrap=clock_gettime -o "$tmp/test"
 fi
+for scenario in handoff-format handoff-paused handoff-cancel handoff-disabled handoff-refused handoff-prime-error; do
+ "$tmp/test" "$scenario"
+done
 if [[ ${NV_TEST_TRUEHD:-0} == 1 ]]; then "$tmp/test" dv-truehd;exit;fi
 for scenario in startup-same startup-audio startup-fallback startup-no-dv resumeseek seekfallback timestamp timestampbound timestampprogress timestampopenfail timestampcancel timestamppause timestampdv timestampseek timestampaudio preparefail pause backpressure delayedid cancel seek seeksegment pausedseek pacing ordinal filtered ambiguous dv-codec dv-file-ordinal audio audioerror eof eoferror pausedreload eofpause overflow subtitles reordered core nocore volume cpu pausedcore controls stallpaced stallrecover stallbound stallnoclock stalltransient stallpause stallseek stallpausedseek stallrecovernoclock stallrecovercancel stallseeknoclock stallrecoverunloaded sustained; do
  "$tmp/test" "$scenario"

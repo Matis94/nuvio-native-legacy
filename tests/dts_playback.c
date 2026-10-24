@@ -25,6 +25,8 @@ static int truehd_fixture;
 static atomic_int prime_block, prime_entered, prime_release;
 static int prime_serial;
 static int seamless_fixture, flush_refuse, audio_format_change, stale_clock;
+static int handoff_fixture, pause_refuse, prime_failure;
+static atomic_int handoff_cancelled;
 static int last_p7;
 static atomic_llong buffer_ready = 21*1048576LL;
 void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *out) {
@@ -90,6 +92,10 @@ int dts_engine_audio(DtsEngine *e,int stream,int core,double target) {
  if(atomic_load(&seek_failure)) return -1;
  e->info.audio_stream=stream;e->core=core;e->base=target;e->serial=0;
  if(audio_format_change) strcpy(e->info.audio_codec,"ac3");
+ if(handoff_fixture) {
+  strcpy(e->info.audio_codec,stream==9?"ac3":"aac");
+  e->info.channels=stream==9?6:2;
+ }
  pthread_mutex_lock(&fixture);audio_reconfigs++;last_stream=stream;last_audio_target=target;pthread_mutex_unlock(&fixture);
  return 0;
 }
@@ -111,11 +117,12 @@ void dts_subtitles_destroy(DtsSubtitles *s) {
  pthread_mutex_lock(&fixture);sub_destroyed++;pthread_mutex_unlock(&fixture);free(s);
 }
 int dts_engine_next(DtsEngine *e,DtsFrame *f) {
- if(atomic_load(&prime_block) && e->base>0) {
+ if(atomic_load(&prime_block) && e->base>0 && (!handoff_fixture || e->info.audio_stream==9)) {
   atomic_store(&prime_entered,1);
   while(!atomic_load(&prime_release) && !atomic_load(&e->cancelled))nap();
   if(atomic_load(&e->cancelled))return -1;
  }
+ if(handoff_fixture && e->base>0 && prime_failure) { prime_failure=0;return -1; }
  if(scenario==CPU_BUDGET) { fake_wall++;fake_thread_cpu++; }
  pthread_mutex_lock(&fixture);nexts++;pthread_mutex_unlock(&fixture);
  if(timestampScenario()) {
@@ -164,7 +171,7 @@ int dts_engine_seek(DtsEngine *e,double target) {
  if(atomic_load(&seek_failure)) return -1;
  e->base=target;e->serial=0;return 0;
 }
-void dts_engine_cancel(DtsEngine *e) { atomic_store(&e->cancelled,1); }
+void dts_engine_cancel(DtsEngine *e) { atomic_store(&handoff_cancelled,1);atomic_store(&e->cancelled,1); }
 void dts_engine_destroy(DtsEngine *e) { free(e); }
 const char *dts_engine_error(DtsEngine *e) {
  (void)e;if(timestampScenario()) return (opens>1 && atomic_load(&timestamp_fail_open)) ? "fixture reopen failure" : DTS_ENGINE_TIMESTAMP_DISCONTINUITY;
@@ -235,7 +242,10 @@ int dts_pipeline_play(DtsPipeline *p) {
  if(scenario==SEEK_PREROLL && p->flushed && p->audio_ready && p->video_ready) seek_rendered++;
  pthread_mutex_unlock(&fixture);return 1;
 }
-int dts_pipeline_pause(DtsPipeline *p) { p->running=0;pthread_mutex_lock(&fixture);pauses++;pthread_mutex_unlock(&fixture);return 1; }
+int dts_pipeline_pause(DtsPipeline *p) {
+ if(pause_refuse && p->generation==1)return 0;
+ p->running=0;pthread_mutex_lock(&fixture);pauses++;pthread_mutex_unlock(&fixture);return 1;
+}
 int dts_pipeline_flush(DtsPipeline *p,double t) {
  if(last_dv) {
   // DV seeks must hold the old frame and fetch one borrowed packet first.
@@ -259,6 +269,11 @@ int dts_pipeline_flush(DtsPipeline *p,double t) {
 int dts_pipeline_eos(DtsPipeline *p) { (void)p;pthread_mutex_lock(&fixture);eoses++;pthread_mutex_unlock(&fixture);return 1; }
 void dts_pipeline_destroy(DtsPipeline *p) {
  if(!p)return;
+ if(handoff_fixture && p->generation==1 && atomic_load(&prime_block)) {
+  assert(!p->running);
+  assert(atomic_load(&prime_entered));
+  assert(atomic_load(&prime_release) || atomic_load(&handoff_cancelled));
+ }
  if(scenario==SEEK_PREROLL || scenario==SEEK_SEGMENT || timestampScenario()) p->event(p->user,"{\"currentTime\":{\"currentTime\":1697863}}");
  pthread_mutex_lock(&fixture);destroys++;native_event=NULL;pthread_mutex_unlock(&fixture);free(p);
 }
@@ -285,6 +300,65 @@ static DtsPlayback *start(int paused,int stream,const DtsTrack *selected,int ord
 }
 int main(int argc,char **argv) {
  assert(argc==2);assert(!dts_playback_enabled());DtsPlayback *p;DtsPlaybackStatus s;
+ if(!strncmp(argv[1],"handoff-",8)) {
+  handoff_fixture=seamless_fixture=1;scenario=SEEK_PREROLL;
+  int paused=strstr(argv[1],"paused")!=NULL;
+  int cancel=strstr(argv[1],"cancel")!=NULL;
+  int refused=strstr(argv[1],"refused")!=NULL;
+  int failed_seek=strstr(argv[1],"disabled")!=NULL;
+  prime_failure=strstr(argv[1],"prime-error")!=NULL;
+  dts_playback_next_seamless(1);dts_playback_next_dv(1);
+  p=start(paused,4,NULL,0,0);wait_count(&accepted,paused?1:4);
+  if(paused)wait_count(&pauses,1);else wait_count(&plays,1);
+  /* Reproduce a previously refused Seek: audio preparation must still hold
+   * the old plane, without re-enabling the failed fast path. */
+  if(failed_seek) {
+   flush_refuse=1;dts_playback_seek(p,0.5);wait_count(&loads,2);wait_count(&plays,2);
+   flush_refuse=0;
+  }
+  int old_loads=count(&loads),old_destroy=count(&destroys),old_audio=count(&audio_reconfigs);
+  int old_plays=count(&plays);
+  pause_refuse=refused;
+  atomic_store(&prime_block,!refused);
+  dts_playback_audio_at(p,9,2.0);
+  if(!refused) {
+   for(int i=0;i<1500 && !atomic_load(&prime_entered);i++)nap();
+   assert(atomic_load(&prime_entered));
+   assert(count(&loads)==old_loads && count(&destroys)==old_destroy);
+   dts_playback_status(p,&s);assert(!s.failed && !s.prepared);
+   // Retired-player callbacks must not overwrite the new timeline or fail it.
+   emit("{\"currentTime\":{\"currentTime\":999999},\"error\":{\"errorCode\":200}}");
+   if(cancel) {
+    dts_playback_close(p);assert(count(&loads)==old_loads);
+    assert(count(&creates)==count(&destroys));return 0;
+   }
+   atomic_store(&prime_release,1);
+  }
+  wait_count(&loads,old_loads+1);wait_count(&accepted,paused?3:8);
+  if(paused) { wait_count(&pauses,3);dts_playback_pause(p,0); }
+  wait_count(&plays,old_plays+1);
+  s=wait_status(p,0,0);
+  assert(s.info.audio_stream==9 && s.info.dovi_profile==8);
+  assert(s.load_revision==old_loads+1);
+  assert(!strcmp(s.info.audio_codec,"ac3") && s.info.channels==6);
+  assert(last_audio_target==2.0 && last_load_target==2.0 && count(&opens)==1);
+  assert(count(&audio_reconfigs)==old_audio+1);
+  int old_flush=count(&flushes);
+  dts_playback_seek(p,3.0);
+  if(failed_seek || refused) {
+   wait_count(&loads,old_loads+2);assert(count(&flushes)==old_flush);
+  } else {
+   wait_count(&flushes,old_flush+1);wait_count(&plays,old_plays+2);
+   assert(count(&loads)==old_loads+1); // Expected audio format changes do not disable Seek.
+   dts_playback_status(p,&s);assert(s.load_revision==old_loads+1);
+  }
+  // Change back from native AC3 5.1 to converted AAC stereo, keeping DV/cache.
+  dts_playback_audio_at(p,4,4.0);wait_count(&loads,old_loads+(failed_seek||refused?3:2));
+  s=wait_status(p,0,0);assert(s.info.audio_stream==4 && s.info.dovi_profile==8);
+  assert(!strcmp(s.info.audio_codec,"aac") && s.info.channels==2 && count(&opens)==1);
+  dts_playback_close(p);assert(count(&creates)==count(&destroys));
+  printf("DV %s: pause/prepare/prime before Unload, one audio command and safe format Load passed.\n",argv[1]);return 0;
+ }
 #ifdef NV_DV_TRUEHD_TEST
  if(!strcmp(argv[1],"dv-truehd")) {
   scenario=DV_MAPPING;truehd_fixture=1;dts_playback_next_dv(1);
