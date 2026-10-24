@@ -3689,7 +3689,12 @@ int    video_pronto(void)   { return pronto; }
 // pausado" (2,5 s depois de pronto) mandava um seek que recarrega o caminho.
 // Isto separa o preroll da pausa: carregado, sem `playing`, sem pausa nossa.
 int    video_iniciando(void) {
-  return dtsSessao && pronto && !tocando && !pausaPedida && !falhou && !terminou;
+  return dtsSessao && pronto && !pausaPedida && !falhou && !terminou &&
+    (!tocando
+#ifdef NV_NATIVE_SEEK_TEST
+     || bindPendente || bindAtivo()
+#endif
+    );
 }
 void   video_dv_segurar(int segurar) { dvSegurar = segurar ? 1 : 0; }
 

@@ -106,6 +106,18 @@ static int fake_startup_call(LSHandle *h,const char *uri,const char *payload,
   return 1;
 }
 int main(void) {
+#ifdef NV_NATIVE_SEEK_TEST
+  dtsSessao=(DtsPlayback *)(uintptr_t)1;pronto=tocando=1;
+  pausaPedida=falhou=terminou=0;bindPendente=1;
+  assert(video_iniciando()); // Native playing may precede the ACB plane bind.
+  bindPendente=0;__atomic_store_n(&bindVivo,1,__ATOMIC_RELEASE);
+  assert(video_iniciando());
+  __atomic_store_n(&bindVivo,0,__ATOMIC_RELEASE);assert(!video_iniciando());
+  tocando=0;assert(video_iniciando());
+  pausaPedida=1;assert(!video_iniciando()); // A deliberate pause is not startup.
+  dtsSessao=NULL;pronto=tocando=pausaPedida=0;
+  puts("LG converted startup: waits for native playback and completed video-plane bind");
+#endif
   /* #625: successful load must start playback before track discovery.
    * TS and HLS both use this callback; native default tracks need no selection. */
   lsPayload=fake_load_payload;lsCall=fake_startup_call;

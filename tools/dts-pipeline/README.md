@@ -53,7 +53,8 @@ the main player acknowledges that initial position once rather than starting
 at zero and issuing another resume Load. Missing duration/failed preparation
 keeps the normal native fallback. A later audio switch uses the current clock,
 and an explicit pending seek takes precedence over remembered startup data.
-The opening artwork/loading state now remains until native playback starts,
+The opening artwork/loading state now remains until native playback starts
+and the LG video-plane bind finishes,
 which also keeps the converted-audio notice from appearing during preroll.
 This does not remove the time needed to fetch/probe the source or initialize
 the audio converter. Cache byte limits and RAM safeguards are unchanged.
