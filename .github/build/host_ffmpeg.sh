@@ -14,8 +14,8 @@ cd "$build/source"
   --disable-programs --disable-doc --disable-debug --disable-network \
   --disable-avdevice --disable-avfilter --disable-swscale --disable-postproc \
   --enable-avcodec --enable-avformat --enable-avutil --enable-swresample \
-  --enable-decoder=dca,dvdsub,pgssub,ass,ssa,subrip,movtext,webvtt \
-  --enable-encoder=aac,ac3 --enable-demuxer=matroska,mov --enable-parser=dca,h264,hevc,aac \
+  --enable-decoder=dca,truehd,dvdsub,pgssub,ass,ssa,subrip,movtext,webvtt \
+  --enable-encoder=aac,ac3 --enable-demuxer=matroska,mov --enable-parser=dca,h264,hevc,aac,mlp \
   --enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,dca_core --extra-cflags=-O2
 make -j"${NUVIO_DTS_JOBS:-3}"
 make install

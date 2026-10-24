@@ -43,7 +43,8 @@ int64_t dts_engine_source_total(DtsEngine *);
 DtsEngine *dts_engine_create(void);
 int dts_engine_available(void);
 /* Dolby Vision path, set before open: AC-3/E-AC-3 tracks are selectable and
- * pass through undecoded; HTTP ranges are larger and reuse the final address. */
+ * pass through undecoded; HTTP ranges are larger and reuse the final address.
+ * NV_DV_TRUEHD_TEST also enables TrueHD conversion to AAC/AC3 on this path. */
 void dts_engine_dv(DtsEngine *, int enabled);
 /* Explicit opt-in before open: P7 conversion and webOS recovery. Default off. */
 void dts_engine_allow_p7(DtsEngine *, int enabled);

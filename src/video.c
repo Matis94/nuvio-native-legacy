@@ -3374,7 +3374,11 @@ static void bombearDts(void) {
     if (!dtsModoDv || (audioAtual >= 0 && audioAtual < nAudio && !strcmp(faixaAudio[audioAtual].codec, "dts"))) {
       snprintf(dtsSaida, sizeof dtsSaida, "%s", !strcmp(st.info.audio_codec, "ac3") ? "DTS → AC3 5.1" : "DTS → AAC Stereo");
       dtsEstado = VIDEO_DTS_CONVERTIDO;
-    } else { dtsSaida[0] = 0; dtsEstado = 0; }
+    } else {
+      dtsSaida[0] = 0; dtsEstado = 0;
+      if(dtsModoDv && audioAtual>=0 && audioAtual<nAudio && nv_dts_truehd_codec(faixaAudio[audioAtual].codec))
+        snprintf(dtsSaida,sizeof dtsSaida,"TrueHD → %s",!strcmp(st.info.audio_codec,"ac3")?"AC3 5.1":"AAC Stereo");
+    }
     if (expWin[0]) expJanelaAplicar();
     protegerScreensaver();
   }
@@ -3899,8 +3903,7 @@ void video_escolher_audio(int i) {
   const VideoFaixa *f = video_audio(i);
   if (dtsSessao && f) {
     if (f->stream_index < 0) return;
-    if (!strcmp(f->codec, "dts") ||
-        (dtsModoDv && (!strcmp(f->codec, "eac3") || !strcmp(f->codec, "ac3")))) {
+    if (nv_dts_audio_feeds(f->codec,dtsModoDv)) {
       dts_playback_seek(dtsSessao, posSeg);
       dts_playback_audio(dtsSessao, f->stream_index);
       audioAtual = i;

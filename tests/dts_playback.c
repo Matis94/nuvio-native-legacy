@@ -21,6 +21,7 @@ static atomic_int allow_decode_failure, transport_stalled, release_transport, st
 static atomic_int jam_native, native_full, seek_failure;
 static atomic_int timestamp_fault, timestamp_fail_open, timestamp_block_open, timestamp_open_entered;
 static int last_dv, audio_reconfigs, audio_fail_once, missing_dv;
+static int truehd_fixture;
 static atomic_int prime_block, prime_entered, prime_release;
 static int prime_serial;
 static int seamless_fixture, flush_refuse, audio_format_change, stale_clock;
@@ -76,6 +77,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,
   // Same-language/channel AC3 and DTS must not be conflated on the DV path.
   strcpy(e->info.tracks[2].codec,"ac3");strcpy(e->info.tracks[2].language,"ru");
   strcpy(e->info.tracks[3].language,"ru");e->info.tracks[3].channels=6;
+  if(truehd_fixture)strcpy(e->info.tracks[3].codec,"truehd");
  }
  if(scenario==MAPPING_BAD) { e->info.tracks[4]=e->info.tracks[3];e->info.tracks[4].stream_index=10;e->info.n_tracks=5; }
  if(scenario==SUBTITLES || scenario==SEEK_SEGMENT || timestampScenario()) {
@@ -283,6 +285,26 @@ static DtsPlayback *start(int paused,int stream,const DtsTrack *selected,int ord
 }
 int main(int argc,char **argv) {
  assert(argc==2);assert(!dts_playback_enabled());DtsPlayback *p;DtsPlaybackStatus s;
+#ifdef NV_DV_TRUEHD_TEST
+ if(!strcmp(argv[1],"dv-truehd")) {
+  scenario=DV_MAPPING;truehd_fixture=1;dts_playback_next_dv(1);
+  DtsTrack selected={.kind=DTS_AUDIO,.channels=6};
+  strcpy(selected.codec,"A_TRUEHD");strcpy(selected.language,"rus");
+  p=start(0,-1,&selected,2,3);s=wait_status(p,0,0);
+  assert(s.info.audio_stream==9 && s.info.dovi_profile==8 && count(&opens)==1);
+  int streams[]={4,9};
+  for(int j=0;j<2;j++) {
+    dts_playback_audio(p,streams[j]);wait_count(&loads,j+2);
+    for(int i=0;i<1500;i++) {
+      dts_playback_status(p,&s);if(s.revision>=j+2)break;nap();
+    }
+    assert(!s.failed && s.revision>=j+2 && s.info.audio_stream==streams[j]);
+    assert(s.info.dovi_profile==8 && count(&opens)==1);
+  }
+  dts_playback_close(p);
+  puts("DV TrueHD controller: exact selected track and AC3/TrueHD changes retain DV and demux/cache");return 0;
+ }
+#endif
  if(!strncmp(argv[1],"resume-init-",12)) {
   int seconds=!strcmp(argv[1],"resume-init-seconds"),bad=!strcmp(argv[1],"resume-init-no-duration");
   int rejected=!strcmp(argv[1],"resume-init-rejected"),changed=!strcmp(argv[1],"resume-init-audio");

@@ -37,6 +37,11 @@
 #define dts_playback_start dublePartida
 #define dts_playback_close dubleFechar
 #define dts_playback_next_resume_pct dubleResumePct
+#define dts_playback_seek dubleSeek
+#define dts_playback_audio dubleAudio
+static int seekCalls,audioCalls,chosenStream;
+static void dubleSeek(DtsPlayback *p,double target) { assert(p && target>=0);seekCalls++; }
+static void dubleAudio(DtsPlayback *p,int stream) { assert(p && stream>=0);audioCalls++;chosenStream=stream; }
 static DtsTrack partidaFaixa;
 static double partidaPos, partidaPct;
 static void dubleResumePct(double pct) { partidaPct=pct; }
@@ -134,6 +139,32 @@ int main(void) {
   setvbuf(stdout, NULL, _IOLBF, 0);
   lsCall = fakeCall; lsPayload = fakePayload;
   bus = (LSHandle *)(uintptr_t)1; sessao = 40;
+#ifdef NV_DV_TRUEHD_TEST
+  // Keep the exact selected TrueHD track at startup instead of substituting
+  // another language/codec or handing the picture back to the URI player.
+  { Mkv m[]={{"A_TRUEHD","eng","Original Atmos"},{"A_EAC3","eng","DD+"}};
+    Tv t[]={{"en","truehd",6},{"en","eac3",6}};
+    montar(m,2,t,2,0);dvMkvPerfil=7;
+    assert(ling_casa(abrir(),"en") && dvAudioMkvOrd==-1 && dvAudioMkvAtual==0);
+    assert(partidaOrdinal==0 && !strcmp(partidaFaixa.codec,"A_TRUEHD"));
+    montar(m,2,t,2,0);dtsSessao=(DtsPlayback *)(uintptr_t)1;dtsModoDv=1;
+    strcpy(faixaAudio[0].codec,"truehd");faixaAudio[0].stream_index=19;
+    strcpy(faixaAudio[1].codec,"eac3");faixaAudio[1].stream_index=20;
+    strcpy(faixaAudio[2].codec,"dts");faixaAudio[2].stream_index=21;nAudio=3;
+    posSeg=745.286;seekCalls=audioCalls=0;
+    int order[]={0,1,2,0};
+    for(int i=0;i<4;i++) {
+      video_escolher_audio(order[i]);
+      assert(audioCalls==i+1 && seekCalls==i+1 && chosenStream==19+order[i]);
+      assert(dtsSessao && dtsModoDv && dvHabilitado && !dtsNativePending);
+      assert(audioAtual==order[i]);
+    }
+    dtsSessao=NULL;
+    assert(!nv_dts_audio_feeds("truehd",0)); // Regular native audio routing is unchanged.
+    puts("DV TrueHD: selected startup track retained; TrueHD/EAC3/DTS/TrueHD switches stay on DV without native HDR10 handoff");
+  }
+  return 0;
+#endif
 
   // 1. O cenario da revisao (#7): MKV [TrueHD eng, E-AC-3 eng, E-AC-3 por], a
   //    TV expoe so a portuguesa, no indice 0. O portugues tem de chegar ao motor.

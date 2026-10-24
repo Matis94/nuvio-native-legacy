@@ -81,3 +81,19 @@ packet seeking, conversion, HTTP buffering and RAM limits are unchanged.
 When the SDR converter takes over from the URI player, its retired
 bufferingStart stamp is also cleared: the old player cannot send bufferingEnd
 after unload. New converter buffering events still control the real indicator.
+
+The v10 TV build also opts into `NV_DV_TRUEHD_TEST`. A selected TrueHD track
+stays on the DV packet path instead of handing the full source back to the
+native URI player (HDR10). Only its audio is decoded and encoded as stereo
+AAC or AC3 5.1 using the existing output preference; TrueHD losslessness and
+Atmos metadata are not preserved. Exact track mapping, P7 RPU conversion,
+bounded HTTP buffering and fallback on a real conversion error are retained.
+Codec changes may need a new native Load to renegotiate the audio format.
+
+The SDK must be built with `--build-arg NUVIO_DV_TRUEHD=1`; this adds the
+TrueHD decoder and MLP parser without changing normal SDK defaults. The test
+workflow uses a separate SDK cache namespace to prevent reuse of a decoder-less
+image. `NV_TEST_TRUEHD=1` enables dedicated LG routing/controller tests and
+the real FFmpeg MEL/FEL engine fixture: TrueHD 5.1 to AAC/AC3, initial track
+selection, seeks and switches back to EAC3 must retain P8.1 RPU packets.
+The RAM overlay starts hidden; the existing green-button toggle is unchanged.

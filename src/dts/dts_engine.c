@@ -1,4 +1,5 @@
 #include "dts_engine.h"
+#include "dts_audio_codec.h"
 #include "dv7.h"
 #include <stdlib.h>
 #include <string.h>
@@ -846,7 +847,8 @@ static int reset_encoder(DtsEngine *e) {
 static int configure_audio(DtsEngine *e,int core,double start) {
   int r;
   AVCodecParameters *ap=e->fmt->streams[e->info.audio_stream]->codecpar;
-  e->passthrough=ap->codec_id!=AV_CODEC_ID_DTS;
+  e->passthrough=ap->codec_id!=AV_CODEC_ID_DTS &&
+    !(e->dv && nv_dts_truehd_codec(avcodec_get_name(ap->codec_id)));
   if(e->passthrough) {
     e->in=av_packet_alloc(); e->out=av_packet_alloc();
     if(!e->in || !e->out) return fail(e,"Audio queue allocation",0);
@@ -858,7 +860,7 @@ static int configure_audio(DtsEngine *e,int core,double start) {
     e->target_ns=(int64_t)(start*1000000000.0);
     return start>0?dts_engine_seek(e,start):0;
   }
-  const AVCodec *decoder=avcodec_find_decoder(AV_CODEC_ID_DTS);
+  const AVCodec *decoder=avcodec_find_decoder(ap->codec_id);
   if(!decoder) return fail(e,"DTS decoder absent",0);
   e->dec=avcodec_alloc_context3(decoder);
   if(!e->dec) return fail(e,"DTS decoder allocation",0);
@@ -867,7 +869,7 @@ static int configure_audio(DtsEngine *e,int core,double start) {
   /* Corrupt HD extensions must reach the worker error path; an explicit
    * core-only reopen decides whether to discard the failed extension. */
   e->dec->err_recognition=AV_EF_EXPLODE;
-  if(core && av_opt_set_int(e->dec->priv_data,"core_only",1,0)<0) return fail(e,"DTS core-only unavailable",0);
+  if(core && ap->codec_id==AV_CODEC_ID_DTS && av_opt_set_int(e->dec->priv_data,"core_only",1,0)<0) return fail(e,"DTS core-only unavailable",0);
   if((r=avcodec_open2(e->dec,decoder,NULL))<0) return fail(e,"DTS decoder open",r);
   /* AC3 5.1 only when asked and the build has the encoder; else stereo AAC. */
   const AVCodec *encoder=g_surround_ac3?avcodec_find_encoder(AV_CODEC_ID_AC3):NULL;
@@ -887,6 +889,11 @@ static int configure_audio(DtsEngine *e,int core,double start) {
   if(!e->fifo || !e->in || !e->out || !e->decoded || !e->encoded) return fail(e,"Audio queue allocation",0);
   e->info.channels=e->enc->ch_layout.nb_channels; e->info.sample_rate=48000;
   snprintf(e->info.audio_codec,sizeof(e->info.audio_codec),"%s",avcodec_get_name(e->enc->codec_id));
+  if(nv_dts_truehd_codec(avcodec_get_name(ap->codec_id))) {
+    printf("[dts] audio-convert input=truehd output=%s channels=%d rate=%d\n",
+           e->info.audio_codec,e->info.channels,e->info.sample_rate);
+    fflush(stdout);
+  }
   e->info.duration_ns=e->fmt->duration==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->duration,AV_TIME_BASE_Q,NS);
   e->info.start_ns=e->fmt->start_time==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->start_time,AV_TIME_BASE_Q,NS);
   e->target_ns=(int64_t)(start*1000000000.0);
@@ -939,7 +946,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
     if(p->codec_type==AVMEDIA_TYPE_VIDEO && e->info.video_stream<0 && !(s->disposition&AV_DISPOSITION_ATTACHED_PIC))
       e->info.video_stream=i;
     /* Dolby Vision path: AC-3/E-AC-3 go to the TV untouched (passthrough). */
-    if((p->codec_id==AV_CODEC_ID_DTS || (e->dv && (p->codec_id==AV_CODEC_ID_AC3 || p->codec_id==AV_CODEC_ID_EAC3)))
+    if(nv_dts_audio_feeds(avcodec_get_name(p->codec_id),e->dv)
        && e->info.audio_stream<0 && (audio<0 || audio==(int)i)) e->info.audio_stream=i;
     int kind=p->codec_type==AVMEDIA_TYPE_VIDEO?DTS_VIDEO:p->codec_type==AVMEDIA_TYPE_AUDIO?DTS_AUDIO:p->codec_type==AVMEDIA_TYPE_SUBTITLE?DTS_SUBTITLE:0;
     if(kind && e->info.n_tracks<DTS_TRACK_MAX) {
@@ -996,8 +1003,7 @@ int dts_engine_audio(DtsEngine *e,int stream,int core,double target) {
      target>INT64_MAX/1000000000.0) return -1;
   AVCodecParameters *ap=e->fmt->streams[stream]->codecpar;
   if(ap->codec_type!=AVMEDIA_TYPE_AUDIO ||
-     (ap->codec_id!=AV_CODEC_ID_DTS &&
-      !(e->dv && (ap->codec_id==AV_CODEC_ID_AC3 || ap->codec_id==AV_CODEC_ID_EAC3)))) return -1;
+     !nv_dts_audio_feeds(avcodec_get_name(ap->codec_id),e->dv)) return -1;
   // Free the previous audio chain before allocating its replacement. The
   // demuxer, video filter, DV conversion state and bounded HTTP queue survive.
   av_packet_free(&e->in); av_packet_free(&e->out);
@@ -1263,7 +1269,7 @@ static int next_frame(DtsEngine *e,DtsFrame *f) {
       return frame_out(e,f,DTS_SUBTITLE,tb);
     }
     if(e->in->stream_index==e->info.audio_stream) {
-      if(e->in->size>=4) {
+      if(e->dec->codec_id==AV_CODEC_ID_DTS && e->in->size>=4) {
         const uint8_t *b=e->in->data;
         uint32_t sync=((uint32_t)b[0]<<24)|((uint32_t)b[1]<<16)|((uint32_t)b[2]<<8)|b[3];
         if(sync==UINT32_C(0x7ffe8001) || sync==UINT32_C(0xfe7f0180)

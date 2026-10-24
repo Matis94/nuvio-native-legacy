@@ -7,6 +7,7 @@
 
 #include <string.h>
 #include <ctype.h>
+#include "dts/dts_audio_codec.h"
 
 // 0 = o caminho nao alimenta; 1..3 = alimenta (3 = E-AC-3, melhor).
 static inline int nv_dvaudio_nota_codec(const char *c) {
@@ -16,7 +17,9 @@ static inline int nv_dvaudio_nota_codec(const char *c) {
   return 0;
 }
 
-static inline int nv_dvaudio_alimentavel(const char *c) { return nv_dvaudio_nota_codec(c) > 0; }
+static inline int nv_dvaudio_alimentavel(const char *c) {
+  return nv_dvaudio_nota_codec(c)>0 || nv_dts_truehd_codec(c);
+}
 
 static inline int nv_dvaudio_tem_atmos(const char *nome) {
   size_t n = strlen(nome), i, k;

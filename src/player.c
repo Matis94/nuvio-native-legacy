@@ -30,7 +30,7 @@
 #include "memlog.h"
 #ifdef NV_HTTP_BUFFER_DIAG
 #include "ramoverlay.h"
-static int bufferTestRamVisible=1;
+static int bufferTestRamVisible=0;
 #endif
 #include "dvtela.h"
 #include "abrecine.h"

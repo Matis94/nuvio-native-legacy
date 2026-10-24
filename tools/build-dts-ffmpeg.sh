@@ -44,6 +44,10 @@ if [ "$TARGET" = tpk ]; then
       --cross-prefix=arm-linux-gnueabi-
   fi
 else
+  if [ "${NUVIO_DV_TRUEHD:-0}" = 1 ]; then
+    DECODERS=$DECODERS,truehd
+    PARSERS=$PARSERS,mlp
+  fi
   CC=${CC:-arm-webos-linux-gnueabi-gcc}
   archive="$BUILD/ffmpeg-$VERSION.tar.xz"
   [ -f "$archive" ] || curl -fsSL "https://ffmpeg.org/releases/ffmpeg-$VERSION.tar.xz" -o "$archive"

@@ -1,5 +1,6 @@
 #include "../app_id.h"
 #include "dts_playback.h"
+#include "dts_audio_codec.h"
 #include "dts_engine.h"
 #include "dts_pipeline.h"
 #include "../js.h"
@@ -171,9 +172,10 @@ static void rest(DtsPlayback *p) {
   pthread_mutex_unlock(&p->lock);
 }
 /* Codecs this session can feed: DTS is converted; on the Dolby Vision path
- * AC-3 and E-AC-3 pass through. Anything else belongs to the native player. */
+ * AC-3 and E-AC-3 pass through. The TrueHD experiment converts its audio;
+ * anything else belongs to the native player. */
 static int codecFeeds(const DtsPlayback *p, const char *codec) {
-  return !strcmp(codec, "dts") || (p->dv && (!strcmp(codec, "ac3") || !strcmp(codec, "eac3")));
+  return nv_dts_audio_feeds(codec,p->dv);
 }
 static int trackMatches(DtsPlayback *p, const DtsTrack *t) {
   const char *selected_codec = audioinfo_codec(p->selected.codec);

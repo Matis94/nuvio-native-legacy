@@ -92,6 +92,24 @@ int main(int argc,char **argv) {
   check(e,dts_engine_seek(e,.4));assert(drain(e)>0);
   check(e,dts_engine_audio(e,1,0,0));
   assert(!strcmp(dts_engine_info(e)->audio_codec,"eac3"));assert(drain(e)==20);
+#ifdef NV_DV_TRUEHD_TEST
+  // Actual TrueHD 5.1 packets decoded/re-encoded, with converted P8.1 RPU
+  // on every picture before and after seeks and switches back to EAC3.
+  for(int ac3=0;ac3<=1;ac3++) {
+    dts_engine_set_ac3(ac3);
+    check(e,dts_engine_audio(e,4,1,0)); // DTS core flag must not affect TrueHD.
+    assert(!strcmp(dts_engine_info(e)->audio_codec,ac3?"ac3":"aac"));
+    assert(dts_engine_info(e)->channels==(ac3?6:2));
+    assert(!strcmp(dts_engine_info(e)->tracks[4].codec,"truehd"));
+    assert(drain(e)==20 && !dts_engine_has_core(e));
+    check(e,dts_engine_seek(e,.4));assert(drain(e)>0);
+    check(e,dts_engine_audio(e,1,0,0));assert(drain(e)==20);
+  }
+  dts_engine_set_ac3(0);
+  check(e,dts_engine_open(e,argv[1],"",4,0,0));check_dv(e);
+  assert(!strcmp(dts_engine_info(e)->audio_codec,"aac") && drain(e)==20);
+  puts("DV7 TrueHD: real 5.1 decode to AAC/AC3, seek, EAC3 return and initial selection retain P8.1 RPU; no DTS core fallback");
+#endif
   dts_engine_destroy(e);
   e=dts_engine_create(); dts_engine_allow_p7(e,1); dts_engine_dv(e,1);
   check(e,dts_engine_open(e,argv[2],"",-1,0,0));
@@ -105,4 +123,5 @@ int main(int argc,char **argv) {
   assert(drain(e)==20);check(e,dts_engine_seek(e,.4));assert(drain(e)>0);
   check(e,dts_engine_seek(e,0));assert(drain(e)==20);dts_engine_destroy(e);
   puts("DV7 engine: actual MKV + FFmpeg + P8.1 output, audio passthrough/DTS switching, repeated seek with retained DV metadata corrupt-RPU fallback and native P8 MP4 passthrough/seek passed.");
+  return 0;
 }

@@ -41,10 +41,10 @@ video = elem('ae', uint('d7', 1) + uint('73c5', 1) + uint('83', 1)
              + elem('e0', uint('b0', 64) + uint('ba', 64)) + mapping)
 audios = b''
 for index, stream in enumerate(source['streams'][1:], 2):
-    codec = b'A_DTS' if stream['codec_name'] == 'dts' else b'A_EAC3'
+    codec = {'dts': b'A_DTS', 'truehd': b'A_TRUEHD', 'eac3': b'A_EAC3'}[stream['codec_name']]
     audios += elem('ae', uint('d7', index) + uint('73c5', index) + uint('83', 2)
                    + elem('86', codec)
-                   + elem('e1', elem('b5', struct.pack('>d', 48000.0)) + uint('9f', 2)))
+                   + elem('e1', elem('b5', struct.pack('>d', 48000.0)) + uint('9f', stream['channels'])))
 tracks = elem('1654ae6b', video + audios)
 for kind in ['mel', 'fel', 'p8']:
     rpu = (root / ('mel-output.nal' if kind == 'p8' else kind+'-input.nal')).read_bytes()
