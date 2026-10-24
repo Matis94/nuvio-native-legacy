@@ -1,4 +1,4 @@
-name: Build native seek DV7 DTS v9 test IPK
+name: Build native seek DV7 DTS v10 test IPK
 on:
   push:
     branches: [build/native-seek-dv7-dts-test]
@@ -27,8 +27,8 @@ jobs:
           persist-credentials: false
       - name: Verify application source
         run: |
-          git fetch --no-tags --depth=1 origin 53f821f3cbc8c0e9e79f8e7b617086a339fe5a66
-          git diff --exit-code 53f821f3cbc8c0e9e79f8e7b617086a339fe5a66 HEAD -- src rust tools deploy
+          git fetch --no-tags --depth=1 origin 6a2bb9275935e166266e80c8abf7b46ef60ced11
+          git diff --exit-code 6a2bb9275935e166266e80c8abf7b46ef60ced11 HEAD -- src rust tools deploy
           git fetch --no-tags --depth=1 origin 0ce56918b116dba810b642bec2c3ac8a9ef2adb0
           git diff --exit-code 0ce56918b116dba810b642bec2c3ac8a9ef2adb0 HEAD -- src/ajustes.c src/ajustes.h
           git diff --check
@@ -152,7 +152,7 @@ jobs:
           data = json.loads(p.read_text())
           assert data["version"] == "2.0.8"
           assert data["id"] == "space.nuvio.native.legacy"
-          data["title"] = "Nuvio Legacy (Native seek v9 QR)"
+          data["title"] = "Nuvio Legacy (Native seek v10 QR)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -165,7 +165,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-native-seek-dv7-dts-test-v9-qr.ipk
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-native-seek-dv7-dts-test-v10-qr.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -181,7 +181,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: native-seek-dv7-dts-test-v9-qr-ipk
+          name: native-seek-dv7-dts-test-v10-qr-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14
