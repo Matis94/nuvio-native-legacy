@@ -36,13 +36,17 @@
 // O motor do DV de verdade abriria rede e fios: aqui so registra a partida.
 #define dts_playback_start dublePartida
 #define dts_playback_close dubleFechar
+#define dts_playback_next_resume_pct dubleResumePct
 static DtsTrack partidaFaixa;
+static double partidaPos, partidaPct;
+static void dubleResumePct(double pct) { partidaPct=pct; }
 static int partidas, partidaOrdinal, partidaContagem, partidaComFaixa;
 static DtsPlayback *dublePartida(const char *url, const char *headers, int audio_stream,
                                  double position, int paused, const char *window,
                                  int webos_major, const DtsTrack *selected, int ordinal,
                                  int count) {
-  (void)url; (void)headers; (void)audio_stream; (void)position; (void)paused; (void)window;
+  (void)url; (void)headers; (void)audio_stream; (void)paused; (void)window;
+  partidaPos=position;
   (void)webos_major;
   partidas++; partidaOrdinal = ordinal; partidaContagem = count;
   partidaComFaixa = selected != NULL;
@@ -78,6 +82,11 @@ typedef struct { const char *idioma, *codec; int canais; } Tv;
 static void montar(const Mkv *m, int nm, const Tv *t, int nt, int atual) {
   int i;
   dtsSessao = NULL; dtsModoDv = 0; dtsTentou = 0; dvAudioMkvOrd = dvAudioMkvAtual = -1; dvAudioDe[0] = 0;
+#ifdef NV_NATIVE_SEEK_TEST
+  converterResumeRequested=converterResumeUsed=0;
+  converterResumeSeconds=converterResumePct=0;
+  fonteTocou=0;
+#endif
   ligado = pronto = tocando = 1;
   snprintf(midia, sizeof midia, "fixture-hdr10");
   snprintf(urlAtual, sizeof urlAtual, "http://h/remux.dv.mkv");
@@ -190,6 +199,33 @@ int main(void) {
     puts("dvaudio_lg: all 15 filtered LG selections hand off exact MKV ordinal/count out of 21 tracks");
   }
 #ifdef NV_NATIVE_SEEK_TEST
+  // The current TV clock is still zero while DTS startup is being prepared.
+  // The saved source position/percentage must reach the first worker instead
+  // of waiting for playing and then seeking through a second native Load.
+  { Tv t[]={{"pt","dts",6}};
+    for(int pct=0;pct<2;pct++) {
+      montar(NULL,0,t,1,0);posSeg=posNativa=0;seekEm=seekEnvEm=seekRetryEm=0;
+      converterResumeRequested=1;converterResumeSeconds=pct?0:1673.992;
+      converterResumePct=pct?67:0;dtsRevisao=0;partidas=0;
+      assert(iniciarDts(-1) && partidas==1);
+      assert(partidaPos==(pct?0:1673.992) && partidaPct==(pct?67:0));
+      assert(video_retomada_inicial_estado()==0);
+      dtsRevisao=1;assert(video_retomada_inicial_estado()==1);
+      dtsSessao=NULL;assert(video_retomada_inicial_estado()==-1);
+    }
+    // An explicit pending seek takes priority over remembered startup data.
+    montar(NULL,0,t,1,0);converterResumeRequested=1;converterResumeSeconds=100;
+    seekEm=1;seekAlvo=250;assert(iniciarDts(-1));
+    assert(partidaPos==250 && partidaPct==0 && !converterResumeUsed);dtsSessao=NULL;
+    // Switching an already playing native source to DTS uses its current
+    // clock, never the old account resume target.
+    montar(NULL,0,t,1,0);converterResumeRequested=1;converterResumeSeconds=100;
+    fonteTocou=1;posSeg=660;seekEm=seekEnvEm=seekRetryEm=0;
+    assert(iniciarDts(-1));
+    assert(partidaPos==660 && partidaPct==0 && !converterResumeUsed);dtsSessao=NULL;
+    converterResumeRequested=converterResumeUsed=0;seekEm=seekEnvEm=seekRetryEm=0;
+    puts("dvaudio_lg: initial DTS seconds/percent handoff, ack, native fallback and user seek priority passed");
+  }
   { Mkv m[]={{"A_EAC3","eng","DD+"}};Tv t[]={{"en","eac3",6}};
     fixtureMkvEnabled=0;
     for(int profile=5;profile<=8;profile+=3) {

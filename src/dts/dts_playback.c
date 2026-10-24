@@ -51,7 +51,7 @@ struct DtsPlayback {
   int audio_stream, major, native_audio_error, load_complete, suppress_events, clock_seen;
   DtsTrack selected;
   int source_ordinal, source_count, selected_known;
-  double target, presented, preroll_target;
+  double target, presented, preroll_target, resume_pct;
   DtsPlaybackStatus status;
 };
 
@@ -222,6 +222,18 @@ static int prepareMode(DtsPlayback *p, int stream, int core, double target,int r
     }
   }
   info = dts_engine_info(p->engine);
+  int pct_resume=p->resume_pct>0;
+  if(pct_resume) {
+    double pct=p->resume_pct;p->resume_pct=0;
+    if(!info || info->duration_ns<=0) { fail(p,"Resume duration unavailable");return 0; }
+    target=(info->duration_ns/1e9)*(pct/100.0);
+    defer_start=1;
+    pthread_mutex_lock(&p->lock);
+    p->presented=p->preroll_target=target;
+    if(!p->seek_dirty) p->target=target;
+    pthread_mutex_unlock(&p->lock);
+    nativeEvent(p,"{\"dtsStage\":{\"name\":\"startup-resume\"}}");
+  }
   if (stream < 0 && info && !reused) {
     int i, count = 0, desired = -1, matches = 0, first_audio = -1;
     for (i = 0; i < info->n_tracks; i++) {
@@ -266,6 +278,9 @@ static int prepareMode(DtsPlayback *p, int stream, int core, double target,int r
       fail(p,dts_engine_error(p->engine));return 0;
     }
   }
+  if(pct_resume && stream>=0 && dts_engine_seek(p->engine,target)<0) {
+    fail(p,dts_engine_error(p->engine));return 0;
+  }
   /* #203: stage lines print only after prepare, so they carry no time of
    * their own. Say how long the source open and the native Load took. */
   opened = clockSeconds(CLOCK_MONOTONIC);
@@ -301,6 +316,7 @@ static int prepareMode(DtsPlayback *p, int stream, int core, double target,int r
   pthread_mutex_lock(&p->lock);
   p->status.info = *info;
   p->status.prepared = 1;
+  p->status.start_position = target;
   p->status.revision++;
   p->status.eof = 0;
   snprintf(p->status.media_id, sizeof p->status.media_id, "%s",
@@ -445,6 +461,8 @@ static void *run(void *user) {
   double fast_since=0, fast_target=0;
   resetStall(&stall, position);
   if (!prepare(p, stream, core, position)) goto done;
+  pthread_mutex_lock(&p->lock);position=p->preroll_target;pthread_mutex_unlock(&p->lock);
+  timestamp_anchor=position;resetStall(&stall,position);
   stream = dts_engine_info(p->engine)->audio_stream;
   for (;;) {
     int stop, pause, pause_dirty, seek, audio, new_stream, audio_error, complete, clock_seen;
@@ -776,6 +794,10 @@ done:
 }
 
 static int dvNext, p7Next, seamlessNext;
+static double resumePctNext;
+void dts_playback_next_resume_pct(double pct) {
+  resumePctNext=isfinite(pct) && pct>0 && pct<100 ? pct : 0;
+}
 void dts_playback_next_seamless(int enabled) { seamlessNext=!!enabled; }
 void dts_playback_next_p7(int enabled) { p7Next = !!enabled; }
 void dts_playback_next_dv(int enabled) { dvNext = !!enabled; }
@@ -784,6 +806,7 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
                                int paused, const char *window, int major,
                                const DtsTrack *selected, int ordinal, int count) {
   DtsPlayback *p;
+  double resume_pct=resumePctNext;resumePctNext=0;
   if (!url || !*url || strlen(url) >= 4096 || (headers && strlen(headers) >= 2048) ||
       (window && strlen(window) >= 64) || !isfinite(position) || position >= 9e9 || !dts_engine_available()) return NULL;
   p = calloc(1, sizeof *p);
@@ -804,6 +827,7 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
   p->volume = 100; p->volume_dirty = 1;
   p->subtitle_stream = -1;
   p->major = major; p->target = position < 0 ? 0 : position;
+  p->resume_pct=p->target>0?0:resume_pct;
   p->presented = p->preroll_target = p->target;
   if (selected) { p->selected = *selected; p->selected_known = 1; }
   p->source_ordinal = ordinal; p->source_count = count;

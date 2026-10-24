@@ -36,13 +36,24 @@ and requires physical-firmware verification.
 See the [DTS guide](../../docs/features/dts/README.md) for limits and licenses,
 and [DTS Debug builds](DEBUG.md) for a separate test app.
 
-The v6 TV test primes one borrowed engine packet while the existing DV player
+The TV test primes one borrowed engine packet while the existing DV player
 is paused, before issuing native Seek. It uses the existing pending-frame slot,
 not another packet queue. A four-second DV no-progress guard allows bounded
 post-seek preroll; DTS retains its two-second guard. Startup audio selection
 reuses the validated demux and makes one final resume seek, with full reopen on
-reconfiguration failure. Confirmed native DV MP4 with AC-3/E-AC-3/DTS audio also
-tries the packet path in this test build; missing/unsupported DV metadata or
-ambiguous audio mapping returns to URI playback. AAC/TrueHD MP4 stays on URI.
+reconfiguration failure. Native DV MP4 stays on URI playback; native P5/P8 MKV
+respects the separate MKV preference. The v6 forced native-DV handoff was
+withdrawn after ambiguous audio mapping caused unnecessary startup reloads.
 The UI holds the selected seek position through stale clocks/keyframe preroll,
 with a bounded timeout; the native clock itself is not rewritten.
+
+In v8, initial DTS resume seconds or an account percentage are handed to the
+converter before its first native Load. Percentages use the demux duration;
+the main player acknowledges that initial position once rather than starting
+at zero and issuing another resume Load. Missing duration/failed preparation
+keeps the normal native fallback. A later audio switch uses the current clock,
+and an explicit pending seek takes precedence over remembered startup data.
+The opening artwork/loading state now remains until native playback starts,
+which also keeps the converted-audio notice from appearing during preroll.
+This does not remove the time needed to fetch/probe the source or initialize
+the audio converter. Cache byte limits and RAM safeguards are unchanged.

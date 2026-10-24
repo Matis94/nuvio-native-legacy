@@ -326,6 +326,12 @@ int video_luna(const char *uri, const char *carga, void (*cb)(const char *, void
   (void)uri; (void)carga; (void)cb; (void)ctx; return 0;
 }
 int  video_tocar(const char *u) { snprintf(urlAtual, sizeof urlAtual, "%s", u ? u : ""); return SIM.aceita; }
+#ifdef NV_NATIVE_SEEK_TEST
+int video_tocar_retomada(const char *u,double seconds,double pct) {
+  (void)seconds;(void)pct;return video_tocar(u);
+}
+int video_retomada_inicial_estado(void) { return -1; }
+#endif
 void video_bombear(void) {}
 void video_parar(void) {}
 void video_pausar(int p) { (void)p; }
@@ -2348,7 +2354,27 @@ int  video_reconectando(void) {
   return nv_recon_ativa(&recon) && (recon.pendente || !pronto) ? recon.tentativa : 0;
 }
 
+#ifdef NV_NATIVE_SEEK_TEST
+static double converterResumeSeconds, converterResumePct;
+static int converterResumeRequested, converterResumeUsed;
+int video_retomada_inicial_estado(void) {
+  if(!converterResumeRequested || !converterResumeUsed || !dtsSessao) return -1;
+  return dtsRevisao>0 ? 1 : 0;
+}
+int video_tocar_retomada(const char *url,double seconds,double pct) {
+  int ok=video_tocar(url);
+  if(ok && isfinite(seconds) && seconds>=0 && isfinite(pct) && pct>=0 && pct<100) {
+    converterResumeRequested=1;converterResumeSeconds=seconds;
+    converterResumePct=seconds>0?0:pct;
+  }
+  return ok;
+}
+#endif
 int video_tocar(const char *url) {
+#ifdef NV_NATIVE_SEEK_TEST
+  converterResumeRequested=converterResumeUsed=0;
+  converterResumeSeconds=converterResumePct=0;
+#endif
   dvRecuado = 0;
   dtsTentou = 0; dtsRevisao = 0; dtsSaida[0] = 0; dtsNativePending = 0; dtsEstado = 0;
   dtsHabilitado = dts_playback_enabled() && dtsLiberadoNestaTv();
@@ -3102,6 +3128,14 @@ static int iniciarDts(int stream) {
   // sonda): o caminho parte do ponto de partida, nao de onde a TV chegou.
   double alvo = dtsModoDv && dvSilencio ? dvEntradaSeg
               : (seekEm || seekEnvEm || seekRetryEm) ? seekAlvo : posSeg;
+#ifdef NV_NATIVE_SEEK_TEST
+  double resumePct=0;
+  if(!dtsModoDv && converterResumeRequested && !converterResumeUsed && !fonteTocou &&
+     !seekEm && !seekEnvEm && !seekRetryEm) {
+    alvo=converterResumeSeconds;resumePct=converterResumePct;converterResumeUsed=1;
+    marco("DTS: saved position goes into initial preparation");
+  }
+#endif
   int paused = pausaPedida, ordinal = audioAtual, count = nAudio, trocada = 0;
   memset(&selected, 0, sizeof selected);
   if (a) {
@@ -3140,6 +3174,9 @@ static int iniciarDts(int stream) {
   dts_engine_set_ahead_mib(cacheboost_backend_buffer_mb());   // #338: Settings > Buffer size
   dts_playback_next_dv(dtsModoDv);
   dts_playback_next_p7(ajustes_dv7());
+#ifdef NV_NATIVE_SEEK_TEST
+  dts_playback_next_resume_pct(resumePct);
+#endif
   // Isolated TV test only. Production retains the known-good Load path.
 #ifdef NV_NATIVE_SEEK_TEST
   dts_playback_next_seamless(1);
@@ -3238,6 +3275,11 @@ static void bombearDts(void) {
            st.info.audio_codec, st.info.channels, st.info.audio_stream);
     fflush(stdout);
     durSeg = st.info.duration_ns / 1e9;
+#ifdef NV_NATIVE_SEEK_TEST
+    if(initial && converterResumeUsed) {
+      posSeg=posNativa=st.start_position;
+    }
+#endif
     vidW = st.info.width; vidH = st.info.height;
     vidTaxa = st.info.fps_den ? st.info.fps_num / st.info.fps_den : 30;
     vuiPrim = st.info.color_primaries; vuiTrans = st.info.color_transfer;

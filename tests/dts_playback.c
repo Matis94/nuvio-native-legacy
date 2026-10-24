@@ -13,7 +13,8 @@
 static pthread_mutex_t fixture = PTHREAD_MUTEX_INITIALIZER;
 static int scenario, opens, loads, creates, destroys, nexts, accepted, feeds, plays, pauses, seeks, flushes, eoses;
 static int last_stream, backpressure_left, pending_serial, bad_retry;
-static double last_seek, last_open_target, last_audio_target;
+static double last_seek, last_open_target, last_audio_target, last_load_target;
+static int64_t fixture_duration;
 static int core_opens, volumes, last_volume, sub_decoded, sub_created, sub_destroyed, seek_rendered;
 static int64_t last_sub_pts;
 static atomic_int allow_decode_failure, transport_stalled, release_transport, stall_transport;
@@ -64,6 +65,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,
  }
  memset(&e->info,0,sizeof e->info);strcpy(e->info.video_codec,"hevc");strcpy(e->info.audio_codec,"aac");
  e->info.width=1920;e->info.height=1080;e->info.audio_stream=stream<0?4:stream;e->info.channels=2;e->info.sample_rate=48000;
+ e->info.duration_ns=fixture_duration;
  if(last_dv && !missing_dv) { e->info.dovi_profile=8;e->info.dovi_bl_present=e->info.dovi_rpu_present=1;strcpy(e->info.hdr,"DolbyVision"); }
  e->info.n_tracks=4;
  e->info.tracks[0]=(DtsTrack){.stream_index=0,.kind=DTS_VIDEO};
@@ -173,7 +175,7 @@ DtsPipeline *dts_pipeline_create(const char *a,const char *w,int m,void (*cb)(vo
 }
 int dts_pipeline_load(DtsPipeline *p,const DtsMediaInfo *m,double t) {
  (void)m; if(p->loaded) return 0;p->loaded=1;p->target=t;
- pthread_mutex_lock(&fixture);loads++;pthread_mutex_unlock(&fixture);return 1;
+ pthread_mutex_lock(&fixture);loads++;last_load_target=t;pthread_mutex_unlock(&fixture);return 1;
 }
 int dts_pipeline_feed(DtsPipeline *p,const DtsFrame *f) {
  assert(p->loaded);int refused=0;
@@ -281,6 +283,30 @@ static DtsPlayback *start(int paused,int stream,const DtsTrack *selected,int ord
 }
 int main(int argc,char **argv) {
  assert(argc==2);assert(!dts_playback_enabled());DtsPlayback *p;DtsPlaybackStatus s;
+ if(!strncmp(argv[1],"resume-init-",12)) {
+  int seconds=!strcmp(argv[1],"resume-init-seconds"),bad=!strcmp(argv[1],"resume-init-no-duration");
+  int rejected=!strcmp(argv[1],"resume-init-rejected"),changed=!strcmp(argv[1],"resume-init-audio");
+  int paused=!strcmp(argv[1],"resume-init-paused");
+  fixture_duration=bad?0:INT64_C(7200000000000);
+  dts_playback_next_resume_pct(67);
+  if(rejected) assert(!dts_playback_start(NULL,"",-1,0,0,"",0,NULL,0,0));
+  DtsTrack selected={.kind=DTS_AUDIO,.channels=changed?2:6};
+  strcpy(selected.language,changed?"ja":"pt");strcpy(selected.codec,"dts");
+  double expected=seconds?123.456:rejected?0:4824.0;
+  p=dts_playback_start("fixture://movie","",-1,seconds?expected:0,paused,"window",0,&selected,changed?2:1,3);assert(p);
+  s=wait_status(p,bad,0);
+  if(bad)assert(count(&loads)==0 && strstr(s.error,"duration"));
+  else {
+   assert(count(&opens)==1 && count(&loads)==1 && s.start_position==expected);
+   assert(last_load_target==expected && s.info.audio_stream==(changed?9:4));
+   assert(last_open_target==0 && (changed?last_audio_target:last_seek)==expected);
+   if(paused)assert(count(&plays)==0);
+   // An ordinary later seek must never reapply the initial percentage.
+   dts_playback_seek(p,100);wait_count(&loads,2);
+   assert(last_load_target==100);
+  }
+  dts_playback_close(p);puts("DTS initial resume: selected target in first Load, no startup reload and no percent leak passed");return 0;
+ }
  if(!strncmp(argv[1],"startup-",8)) {
   int same=!strcmp(argv[1],"startup-same"),fallback=!strcmp(argv[1],"startup-fallback");
   missing_dv=!strcmp(argv[1],"startup-no-dv");audio_fail_once=fallback;

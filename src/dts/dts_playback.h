@@ -10,6 +10,7 @@ typedef struct {
   char media_id[64], error[160];
   DtsBufferInfo buffer;
   double buffered_until;
+  double start_position; /* Position applied by the latest successful Load. */
 } DtsPlaybackStatus;
 /* All expensive work and native Feed calls are serialized on one worker.
  * Callers own a session; close joins it before freeing callback context. */
@@ -25,6 +26,9 @@ void dts_playback_next_p7(int enabled);
 /* Explicit TV-test opt-in. Reuse a healthy native pipeline across compatible
  * seeks/audio changes, with bounded fresh-Load fallback. Default disabled. */
 void dts_playback_next_seamless(int enabled);
+/* Optional initial account resume, resolved against demux duration before
+ * the first native Load. Consumed even when the next start is rejected. */
+void dts_playback_next_resume_pct(double percent);
 DtsPlayback *dts_playback_start(const char *url, const char *headers,
                                int audio_stream, double position,
                                int paused, const char *window, int webos_major,

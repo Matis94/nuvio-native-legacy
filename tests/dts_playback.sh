@@ -17,6 +17,9 @@ for scenario in startup-same startup-audio startup-fallback startup-no-dv resume
  "$tmp/test" "$scenario"
 done
 DV7_OFF=1 "$tmp/test" buffer
+for scenario in resume-init-pct resume-init-seconds resume-init-paused resume-init-audio resume-init-no-duration resume-init-rejected; do
+ "$tmp/test" "$scenario"
+done
 
 for scenario in buffered-seek buffered-audio buffered-paused buffered-dv buffered-refused buffered-format buffered-stall buffered-stale buffered-dv-stall buffered-dv-paused buffered-dv-prime buffered-dv-cancel; do
  "$tmp/test" "$scenario"

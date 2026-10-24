@@ -860,7 +860,7 @@ static long tmdbDoTocando(int *tt, int *te) {
   }
   return 0;
 }
-#ifdef NV_ANDROID
+#if defined(NV_ANDROID) || defined(NV_NATIVE_SEEK_TEST)
 static double retomarSeg;
 static int retomadaNaPreparacao;
 #endif
@@ -1905,7 +1905,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
   avLat0 = -1.0; avAtraso = 0.0; avPausaDesde = 0;
   retomadaAplicada=0; semRetomada=0; retomarFonteSeg = -1.0; baseT = baseE = -1;
   abertoEm = SDL_GetTicks(); medirAbertura = 1; tocouMedido = 0; loadEm = 0;
-#ifdef NV_ANDROID
+#if defined(NV_ANDROID) || defined(NV_NATIVE_SEEK_TEST)
   retomarSeg = 0.0; retomadaNaPreparacao = 0;
 #endif
   botao = PLR_PLAY;
@@ -2133,13 +2133,11 @@ static void tocarFonteInterno(const char *url) {
   memlog_evento("load"); memQuadroPendente = 1;
   cacheboost_backend_buffer(cacheboost_buffer_mb(ajustes_buffer_preset(), memlog_livre_mb()));
   { char px[96];
-#ifdef NV_ANDROID
-    // app.c define episodio e "do inicio" antes de entregar a fonte. O
-    // instante viaja junto da URL, nunca numa variavel pendente do Kotlin.
-    // So o percentual (retomada da conta, sem registro local com segundos):
-    // vai junto e o Media3 aplica com a duracao do container antes do
-    // primeiro quadro. Antes abria em 0, tocava e buscava depois do "pronto"
-    // (TCL, 2.0.3: +6,4 s e um primeiro quadro jogado fora).
+#if defined(NV_ANDROID) || defined(NV_NATIVE_SEEK_TEST)
+    // Resolve the saved source position before opening. Android applies it
+    // in Media3; the webOS test passes it into initial DTS preparation. An
+    // account percentage uses the actual container duration. Native URI
+    // playback keeps the existing late-seek fallback.
     double ponto = retomarFonteSeg >= 0.0 ? retomarFonteSeg : retomarSeg;
     retomadaNaPreparacao = !ehCanal() && (retomarFonteSeg >= 0.0 ||
                             (!semRetomada && (retomarSeg > 0.0 || retomarPct > 0)));
@@ -2328,7 +2326,13 @@ int player_duracao_midia(double *seg) {
 }
 
 // Esta abrindo o fluxo: ha video pedido, mas ainda nao ha imagem.
-int  player_carregando(void) { return esperandoFonte || (comVideo && !video_pronto()); }
+int  player_carregando(void) {
+  return esperandoFonte || (comVideo && (!video_pronto()
+#ifdef NV_NATIVE_SEEK_TEST
+    || video_iniciando()
+#endif
+  ));
+}
 int  player_controles_visiveis(void) { return visivel; }
 int   player_foco_na_barra(void) { return barraFoco; }
 // UP belongs to the player while controls are up (button row -> seek bar, bar ->
@@ -4696,9 +4700,9 @@ void player_atualizar(float dt, Uint32 agora) {
         (video_tocando() || (!video_iniciando() && (int)(agora - prontoDesde) >= 2500))
 #endif
         ) {
-#ifdef NV_ANDROID
-      // O ack chega antes do prepare. Se a ponte/Media3 recusou a posicao,
-      // recua ao seek de sempre; pendente nunca vira um segundo seek.
+#if defined(NV_ANDROID) || defined(NV_NATIVE_SEEK_TEST)
+      // Apply resume once. A prepared converter/Media3 already started at
+      // this target; native URI or rejected preparation uses the old seek.
       int estado = retomadaNaPreparacao ? video_retomada_inicial_estado() : -1;
       if (estado != 0) {
         retomadaAplicada = 1;
@@ -6301,6 +6305,12 @@ void player_desenhar(Uint32 agora) {
   GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
   int quadroMorno = player_carregando() && !erroFonte && cacheboost_backend_quadro(3);
   int furar = (player_com_video() && !esperandoFonte) || quadroMorno;   // abrindo a fonte: sem furo, so preto
+#ifdef NV_NATIVE_SEEK_TEST
+  // A converted source's loadCompleted precedes native playback. Keep its
+  // loading artwork over the empty plane; seeks in a playing session keep
+  // the existing picture and do not enter this startup state.
+  if(video_iniciando()) furar=0;
+#endif
 #ifdef NV_SHOT_HOOKS
   if (shotSemFuro && encolhe > 0.999f) furar = 0;   // capturas: a arte faz de video
 #endif

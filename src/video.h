@@ -39,11 +39,15 @@ int  video_tocar(const char *url);
 // MediaItem antes de prepare; o ack e da geracao desta abertura. Estado:
 // 0 aguardando, 1 aceito, -1 abertura normal (seek tardio como fallback).
 int  video_tocar_posicao(const char *url, double segundos);
-// Como a de cima, mais o percentual (0..100) para quando nao ha segundos
-// exatos (retomada da conta: Trakt/Simkl so dao percentual). O Kotlin aplica
-// sobre a duracao do container ANTES do primeiro quadro; mesmo ack/estado.
+#endif
+#if defined(NV_ANDROID) || defined(NV_NATIVE_SEEK_TEST)
+// Initial seconds, or an account percentage resolved with container duration.
+// Android applies it in Media3; the webOS experiment applies it to the first
+// DTS Load. State: 0 preparing, 1 applied, -1 use the ordinary native seek.
 int  video_tocar_retomada(const char *url, double segundos, double pct);
 int  video_retomada_inicial_estado(void);
+#endif
+#ifdef NV_ANDROID
 // Fonte preparada na pagina do titulo: player pausado, sem imagem, audio ou
 // eventos da sessao de reproducao. Token identifica o dono; zero cancela todos.
 int  video_precarregar(const char *url, const char *cabecalhos, double segundos,
