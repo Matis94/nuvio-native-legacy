@@ -27,8 +27,8 @@ jobs:
           persist-credentials: false
       - name: Verify application source
         run: |
-          git fetch --no-tags --depth=1 origin 6a2bb9275935e166266e80c8abf7b46ef60ced11
-          git diff --exit-code 6a2bb9275935e166266e80c8abf7b46ef60ced11 HEAD -- src rust tools deploy
+          git fetch --no-tags --depth=1 origin 5499a54e77a73b274d59a873e1c888ee50140949
+          git diff --exit-code 5499a54e77a73b274d59a873e1c888ee50140949 HEAD -- src rust tools deploy
           git fetch --no-tags --depth=1 origin 0ce56918b116dba810b642bec2c3ac8a9ef2adb0
           git diff --exit-code 0ce56918b116dba810b642bec2c3ac8a9ef2adb0 HEAD -- src/ajustes.c src/ajustes.h
           git diff --check
