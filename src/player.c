@@ -374,6 +374,11 @@ static void corFocoPlayer(float *r, float *g, float *b) { ajustes_acento(r, g, b
 static Uint32 inicioImagem = 0;
 static int memQuadroPendente; // Um primeiro quadro por load, nao por volta da ilha.
 static NvDtsNotice dtsConvertedNotice;
+#ifdef NV_DV_TRUEHD_TEST
+static NvDtsNotice truehdConvertedNotice;
+static Uint32 truehdDesde;
+static int truehdVisto;
+#endif
 // MEDIDA DO RETOMAR (05/10): desde player_abrir ate o pronto e ate o primeiro
 // "tocando" depois de aplicada a retomada. E o numero para comparar, na TV, o
 // Retomar sem reter (fonte guardada + posicao) com o retido ("retomada pronta").
@@ -2126,6 +2131,9 @@ static int preTituloLegendaUsar(const char *url) {
 static void tocarFonteInterno(const char *url);
 static void tocarFonteInterno(const char *url) {
   dtsConvertedNotice=(NvDtsNotice){0};
+#ifdef NV_DV_TRUEHD_TEST
+  truehdConvertedNotice=(NvDtsNotice){0};truehdDesde=0;truehdVisto=0;
+#endif
   marco("abrir: url ao pipeline");
   skipLiberado = 0;
   loadEm = SDL_GetTicks();   // #202: do pipeline ao primeiro quadro ("[player] load->1o quadro")
@@ -6288,6 +6296,27 @@ static void capaReabertura(GfxRect furo, const CatItem *c, Uint32 agora) {
 }
 #endif
 
+#ifdef NV_DV_TRUEHD_TEST
+static void avisarTruehd(Uint32 agora) {
+  int eligible=!player_carregando() && !ehCanal() && video_truehd_convertido() &&
+               video_tocando() && !video_iniciando();
+  if(!eligible) {
+    truehdVisto=0;nv_dts_notice_show(&truehdConvertedNotice,0,agora);return;
+  }
+  if(!truehdVisto) { truehdVisto=1;truehdDesde=agora; }
+  if(pgDesde && (float)(agora-pgDesde)/1000.0f<PG_SEG_TOTAL) truehdDesde=agora;
+  if(!nv_dts_notice_show(&truehdConvertedNotice,agora-truehdDesde>=1500u,agora))return;
+  // Reuse the existing localized conversion sentence, changing only its
+  // internationally named codec token. All current translations contain DTS.
+  static char text[256];
+  const char *localized=i18n("Áudio DTS convertido nesta TV"),*codec=strstr(localized,"DTS");
+  if(codec)snprintf(text,sizeof text,"%.*sTrueHD%s",(int)(codec-localized),localized,codec+3);
+  else snprintf(text,sizeof text,"TrueHD audio converted on this TV");
+  PlrIlhaPedido pd={0};pd.icone="aj_audio-lines";pd.texto=text;
+  pd.semFim=1;pd.aberta=1;plrilha_pedir(&pd);
+}
+#endif
+
 void player_desenhar(Uint32 agora) {
   if (!aberto) return;
   const CatItem *c = item();
@@ -6318,7 +6347,7 @@ void player_desenhar(Uint32 agora) {
   int furar = (player_com_video() && !esperandoFonte) || quadroMorno;   // abrindo a fonte: sem furo, so preto
 #ifdef NV_NATIVE_SEEK_TEST
   // Keep the initial cover through preroll/bind, but never restore it over
-  // an SDR/DTS source that has already played, including a seek reload.
+  // a packet source that has already played, including DV seek/audio reloads.
   if(video_iniciando() && !video_dts_imagem_exibida()) furar=0;
 #endif
 #ifdef NV_SHOT_HOOKS
@@ -6513,6 +6542,9 @@ void player_desenhar(Uint32 agora) {
         plrilha_pedir(&pd);
       }
     } }
+#ifdef NV_DV_TRUEHD_TEST
+  avisarTruehd(agora);
+#endif
   if (player_carregando() && ehCanal()) {
     // CANAL SINTONIZANDO: a versao COMPACTA, uma linha na propria ilha do
     // relogio (dono, 03/10: "no player do live tv vamos usar a versao compacta

@@ -97,3 +97,18 @@ image. `NV_TEST_TRUEHD=1` enables dedicated LG routing/controller tests and
 the real FFmpeg MEL/FEL engine fixture: TrueHD 5.1 to AAC/AC3, initial track
 selection, seeks and switches back to EAC3 must retain P8.1 RPU packets.
 The RAM overlay starts hidden; the existing green-button toggle is unchanged.
+
+In v11 the completed-opening latch also covers DV packet playback, but only
+after the TV has confirmed DolbyVision and the video-plane bind has finished.
+DV seek pauses, decoder recovery and audio changes then keep the startup poster
+and opening card closed. Real errors and each new source retain their cover.
+Selected, prepared TrueHD conversion gets its own localized island notice once
+per source, after native playback/bind and parental-card deferral, without a DTS
+badge or repeat announcements on seeks/reloads.
+
+Changing AC3 5.1 passthrough to stereo AAC still requires native audio-format
+renegotiation through Load. The v10 TV log shows the retained source/cache
+(`reused=1`, source seek 2 ms) and confirmed DV8 afterward. A prior no-progress
+seek had also disabled native reuse for that session. v11 preserves both format
+validation and that recovery safeguard; hiding the startup poster does not
+claim to eliminate the decoder interruption required by a format change.

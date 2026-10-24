@@ -284,9 +284,12 @@ int  video_iniciando(void);
 // 1 once the current source has played on webOS (kept across reloads of it).
 int video_fonte_tocou(void);
 #ifdef NV_NATIVE_SEEK_TEST
-// SDR/DTS has already played with its video plane bound on this source.
+// The packet player has already played with its video plane bound on this source.
 // Later seeks/reloads must not restore the initial loading artwork/card.
 int video_dts_imagem_exibida(void);
+#endif
+#ifdef NV_DV_TRUEHD_TEST
+int video_truehd_convertido(void); // Selected TrueHD audio has a prepared AAC/AC3 output.
 #endif
 const char *video_dts_saida(void);  // actual local conversion output, empty for native playback
 int    video_audio_nao_suportado(void);  // uMS errorCode 200: video segue sem som

@@ -127,11 +127,11 @@ int video_dv_ativo(void) { return dtsSessao && dtsModoDv; }
 // a source that failed to open. Other targets keep 0.
 static int fonteTocou;
 #ifdef NV_NATIVE_SEEK_TEST
-// UI only: an SDR converter's initial cover ends once playback and its
-// video-plane bind are both ready. Keep that fact across same-source seeks.
+// UI only: the packet player's initial cover ends after playback and its
+// video-plane bind are ready. Keep that fact across same-source seeks.
 static int dtsImagemExibida;
 int video_dts_imagem_exibida(void) {
-  return dtsImagemExibida && dtsSessao && !dtsModoDv &&
+  return dtsImagemExibida && dtsSessao &&
          !video_falhou() && !video_terminou();
 }
 #endif
@@ -146,6 +146,14 @@ int video_fonte_tocou(void) { return fonteTocou; }
 static int dvLiberadoNestaTv(void);
 static int dvPronto(void);
 const char *video_dts_saida(void) { return dtsSaida; }
+#ifdef NV_DV_TRUEHD_TEST
+int video_truehd_convertido(void) {
+  const VideoFaixa *f=video_audio(video_audio_atual());
+  return dtsSessao && dtsModoDv && f && nv_dts_truehd_codec(f->codec) &&
+         !strncmp(dtsSaida,"TrueHD → ",strlen("TrueHD → ")) &&
+         !video_falhou() && !video_terminou();
+}
+#endif
 
 int video_faixa_dts(const VideoFaixa *f) {
   char s[96];
@@ -2432,7 +2440,8 @@ static void mkvRetryBombear(void) {
 }
 #ifdef NV_NATIVE_SEEK_TEST
 static void dtsImagemAtualizar(void) {
-  if (dtsSessao && !dtsModoDv && pronto && tocando &&
+  if (dtsSessao && pronto && tocando &&
+      (!dtsModoDv || !strcmp(vidHdr,"DolbyVision")) &&
       !falhou && !terminou && !bindPendente && !bindAtivo())
     dtsImagemExibida=1;
 }

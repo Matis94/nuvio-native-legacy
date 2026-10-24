@@ -106,6 +106,17 @@ static int fake_startup_call(LSHandle *h,const char *uri,const char *payload,
   return 1;
 }
 int main(void) {
+#ifdef NV_DV_TRUEHD_TEST
+  dtsSessao=(DtsPlayback *)(uintptr_t)1;dtsModoDv=1;
+  nAudio=1;audioAtual=0;strcpy(faixaAudio[0].codec,"truehd");dtsSaida[0]=0;
+  assert(!video_truehd_convertido()); // Selection alone is not a prepared conversion.
+  strcpy(dtsSaida,"TrueHD → AAC Stereo");assert(video_truehd_convertido());
+  falhou=1;assert(!video_truehd_convertido());falhou=0;
+  terminou=1;assert(!video_truehd_convertido());terminou=0;
+  strcpy(faixaAudio[0].codec,"eac3");assert(!video_truehd_convertido());
+  strcpy(faixaAudio[0].codec,"truehd");dtsModoDv=0;assert(!video_truehd_convertido());
+  dtsSessao=NULL;nAudio=0;dtsSaida[0]=0;
+#endif
 #ifdef NV_NATIVE_SEEK_TEST
   dtsSessao=(DtsPlayback *)(uintptr_t)1;pronto=tocando=1;
   pausaPedida=falhou=terminou=0;bindPendente=1;
@@ -120,9 +131,16 @@ int main(void) {
   dtsImagemAtualizar();assert(video_dts_imagem_exibida()); // fallback Load
   falhou=1;assert(!video_dts_imagem_exibida());falhou=0;
   terminou=1;assert(!video_dts_imagem_exibida());terminou=0;
-  dtsModoDv=1;assert(!video_dts_imagem_exibida());
   dtsImagemExibida=0;pronto=tocando=1;bindPendente=0;
-  dtsImagemAtualizar();assert(!dtsImagemExibida); // DV never opts in
+  dtsModoDv=1;strcpy(vidHdr,"HDR10");
+  dtsImagemAtualizar();assert(!video_dts_imagem_exibida()); // First DV confirmation is still required.
+  strcpy(vidHdr,"DolbyVision");bindPendente=1;
+  dtsImagemAtualizar();assert(!video_dts_imagem_exibida());
+  bindPendente=0;bindVivo=1;dtsImagemAtualizar();assert(!video_dts_imagem_exibida());
+  bindVivo=0;dtsImagemAtualizar();assert(video_dts_imagem_exibida());
+  pronto=tocando=0;bindPendente=1;
+  dtsImagemAtualizar();assert(video_dts_imagem_exibida()); // DV seek/TrueHD native Load keeps cover closed.
+  dtsImagemExibida=0;pronto=tocando=1;strcpy(vidHdr,"none");
   dtsModoDv=0;bindPendente=1;dtsImagemAtualizar();assert(!dtsImagemExibida);
   bindPendente=0;bindVivo=1;dtsImagemAtualizar();assert(!dtsImagemExibida);
   bindVivo=0;tocando=0;dtsImagemAtualizar();assert(!dtsImagemExibida);
