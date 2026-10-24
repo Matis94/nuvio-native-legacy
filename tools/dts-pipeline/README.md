@@ -58,3 +58,16 @@ and the LG video-plane bind finishes,
 which also keeps the converted-audio notice from appearing during preroll.
 This does not remove the time needed to fetch/probe the source or initialize
 the audio converter. Cache byte limits and RAM safeguards are unchanged.
+
+In v9 the converted-DTS island notice is delivered once per source. Seeking,
+temporary loading and native reloads cannot restart it; failures still retain
+their separate warnings. A new source can announce conversion again.
+
+For the TV experiment only, a DV range actively blocking playback gets a
+five-second guard in addition to the existing idle guard on the first two
+attempts. This catches a slow trickle which otherwise evades the idle guard
+and holds later cached bytes behind a 15-second transport timeout. The same
+validated interval is retried; other queue slots remain allocated. Speculative
+ranges keep their normal timeout, and the final retry retains the full timeout.
+Completed valid responses are accepted even at the budget boundary. Byte caps,
+HTTP validation, cancellation and the SDR/DTS transport behavior are unchanged.

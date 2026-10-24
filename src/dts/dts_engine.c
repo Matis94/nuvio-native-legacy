@@ -596,8 +596,15 @@ static int read_range(void *opaque,uint8_t *dst,int n) {
          e->pos-e->ranges[i].start<(e->ranges[i].state==3?e->ranges[i].count:e->ranges[i].end-e->ranges[i].start+1)) job=&e->ranges[i];
     }
     if(!job) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EXIT; }
-    if(__atomic_load_n(&e->range_live,__ATOMIC_RELAXED))
+    if(__atomic_load_n(&e->range_live,__ATOMIC_RELAXED)) {
       __atomic_store_n(&job->urgent,1,__ATOMIC_RELAXED);
+#ifdef NV_NATIVE_SEEK_TEST
+      /* A slow trickle can evade the idle guard and block DV behind one
+       * missing range for the whole 15s transport timeout. Bound only the
+       * actively awaited DV interval; retries keep every other cached slot. */
+      if(e->dv && !e->remux) __atomic_store_n(&job->urgent,2,__ATOMIC_RELAXED);
+#endif
+    }
     int optional=optional_p2p_tail(e);
     struct timespec deadline;
     if(optional) { clock_gettime(CLOCK_REALTIME,&deadline); deadline.tv_sec++; }

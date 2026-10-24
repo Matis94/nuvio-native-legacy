@@ -45,6 +45,7 @@ static int bufferTestRamVisible=1;
 #include "posplay.h"
 #include "extras.h"
 #include "video.h"
+#include "player_dts_notice.h"
 #include "seekprobe.h"
 #include "faixas.h"
 #include "gfx.h"
@@ -372,6 +373,7 @@ static void corFocoPlayer(float *r, float *g, float *b) { ajustes_acento(r, g, b
 // A guia parental se apoia nisto para aparecer UMA vez, no comeco, e sumir.
 static Uint32 inicioImagem = 0;
 static int memQuadroPendente; // Um primeiro quadro por load, nao por volta da ilha.
+static NvDtsNotice dtsConvertedNotice;
 // MEDIDA DO RETOMAR (05/10): desde player_abrir ate o pronto e ate o primeiro
 // "tocando" depois de aplicada a retomada. E o numero para comparar, na TV, o
 // Retomar sem reter (fonte guardada + posicao) com o retido ("retomada pronta").
@@ -2123,6 +2125,7 @@ static int preTituloLegendaUsar(const char *url) {
 
 static void tocarFonteInterno(const char *url);
 static void tocarFonteInterno(const char *url) {
+  dtsConvertedNotice=(NvDtsNotice){0};
   marco("abrir: url ao pipeline");
   skipLiberado = 0;
   loadEm = SDL_GetTicks();   // #202: do pipeline ao primeiro quadro ("[player] load->1o quadro")
@@ -6486,9 +6489,11 @@ void player_desenhar(Uint32 agora) {
     // A guia parental (tambem na ilha, de prioridade baixa) vem primeiro: o
     // aviso do DTS espera ela fechar, em vez de derruba-la.
     if (pgDesde && (float)(agora - pgDesde) / 1000.0f < PG_SEG_TOTAL) dtsDesde = agora;
+    int convertedNotice=nv_dts_notice_show(&dtsConvertedNotice,
+      e==VIDEO_DTS_CONVERTIDO && agora-dtsDesde>=1500u,agora);
     if (e != VIDEO_DTS_NENHUM && e != VIDEO_DTS_PREPARANDO && agora - dtsDesde >= 1500u) {
       Uint32 dur = e == VIDEO_DTS_FALHOU || e == VIDEO_DTS_SEM_SOM ? 10000u : 5000u;
-      if (agora - dtsDesde < 1500u + dur) {
+      if (e==VIDEO_DTS_CONVERTIDO ? convertedNotice : agora-dtsDesde<1500u+dur) {
         PlrIlhaPedido pd;
         memset(&pd, 0, sizeof pd);
         pd.icone = "dts";

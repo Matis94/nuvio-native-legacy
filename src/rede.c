@@ -3166,7 +3166,8 @@ typedef struct {
   int status, valid, overflow, range_headers;
   int64_t start, end, total, requested, limit;
   volatile int *cancel, *urgent;
-  uint64_t progress_ms;
+  uint64_t progress_ms, urgent_ms;
+  int urgent_started;
   long long progress_bytes;
   unsigned idle_ms;
   int *stalled;
@@ -3259,8 +3260,20 @@ static int dtsRangeProgress(void *user, long long dt, long long dn,
   if(r->cancel && __atomic_load_n(r->cancel,__ATOMIC_RELAXED)) return 1;
   uint64_t now=pedidoAgoraMs();
   if(dn!=r->progress_bytes) { r->progress_bytes=dn; r->progress_ms=now; }
+  int urgent=r->urgent?__atomic_load_n(r->urgent,__ATOMIC_RELAXED):0;
+  if(urgent>=2) {
+    if(!r->urgent_started) { r->urgent_started=1;r->urgent_ms=now; }
+    int complete=r->valid && r->end>=r->start &&
+      r->body.n>=(uint64_t)(r->end-r->start+1);
+    if(!complete && now>=r->urgent_ms && now-r->urgent_ms>=5000u) {
+      if(r->stalled) *r->stalled=1;
+      printf("[range-budget] start=%lld waitMs=%llu got=%llu\n",(long long)r->requested,
+        (unsigned long long)(now-r->urgent_ms),(unsigned long long)r->body.n);
+      fflush(stdout);return 1;
+    }
+  } else r->urgent_started=0;
   if(r->urgent && r->idle_ms && now>=r->progress_ms &&
-     now-r->progress_ms>=r->idle_ms && __atomic_load_n(r->urgent,__ATOMIC_RELAXED)) {
+     now-r->progress_ms>=r->idle_ms && urgent) {
     if(r->stalled) *r->stalled=1;
     printf("[range-stall] start=%lld idleMs=%llu got=%llu\n",(long long)r->requested,
            (unsigned long long)(now-r->progress_ms),(unsigned long long)r->body.n);

@@ -72,7 +72,13 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Range', f'bytes {lo+wrong}-{hi+wrong}/{total}')
         self.send_header('Content-Length', str(len(body))); self.end_headers()
         try:
-            if live and lo==fault_at and mode=='bodyhang' and attempt==1:
+            if live and lo==fault_at and mode in ('drip','dripspec','dripall') and (attempt==1 or mode=='dripall'):
+                for off in range(0,len(body),65536):
+                    self.wfile.write(body[off:off+65536]); self.wfile.flush(); time.sleep(.1 if mode=='dripall' else .2)
+            elif live and lo==fault_at and mode=='dvsteady':
+                for off in range(0,len(body),65536):
+                    self.wfile.write(body[off:off+65536]); self.wfile.flush(); time.sleep(.04)
+            elif live and lo==fault_at and mode=='bodyhang' and attempt==1:
                 self.wfile.write(body[:65536]); self.wfile.flush(); time.sleep(8); self.wfile.write(body[65536:])
             elif live and lo==fault_at and mode=='steady':
                 for off in range(0,len(body),65536):

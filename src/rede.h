@@ -126,7 +126,9 @@ char *rede_baixar_trecho64_final(const char *url, const char *headers,
                               int64_t *total, int *status,
                               volatile int *cancelled, char *final, int *cross);
 /* Optional guard for an actively awaited range. Atomic urgent flag is owned
- * by the caller for this synchronous call. Last retry can omit this guard. */
+ * by the caller for this synchronous call: 1 = idle guard, 2 = idle plus a
+ * five-second awaited-range budget (DV TV experiment). Only awaited ranges
+ * get the budget; last retry can omit both guards. */
 char *rede_baixar_trecho64_vigiado(const char *url,const char *headers,
     int64_t start,int64_t end,long *size,int64_t *total,int *status,
     volatile int *cancelled,char *final,int *cross,volatile int *urgent,
