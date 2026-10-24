@@ -113,7 +113,19 @@ int main(void) {
   bindPendente=0;__atomic_store_n(&bindVivo,1,__ATOMIC_RELEASE);
   assert(video_iniciando());
   __atomic_store_n(&bindVivo,0,__ATOMIC_RELEASE);assert(!video_iniciando());
+  dtsImagemAtualizar();assert(video_dts_imagem_exibida());
   tocando=0;assert(video_iniciando());
+  dtsImagemAtualizar();assert(video_dts_imagem_exibida()); // seek pause
+  pronto=0;bindPendente=1;
+  dtsImagemAtualizar();assert(video_dts_imagem_exibida()); // fallback Load
+  falhou=1;assert(!video_dts_imagem_exibida());falhou=0;
+  terminou=1;assert(!video_dts_imagem_exibida());terminou=0;
+  dtsModoDv=1;assert(!video_dts_imagem_exibida());
+  dtsImagemExibida=0;pronto=tocando=1;bindPendente=0;
+  dtsImagemAtualizar();assert(!dtsImagemExibida); // DV never opts in
+  dtsModoDv=0;bindPendente=1;dtsImagemAtualizar();assert(!dtsImagemExibida);
+  bindPendente=0;bindVivo=1;dtsImagemAtualizar();assert(!dtsImagemExibida);
+  bindVivo=0;tocando=0;dtsImagemAtualizar();assert(!dtsImagemExibida);
   pausaPedida=1;assert(!video_iniciando()); // A deliberate pause is not startup.
   dtsSessao=NULL;pronto=tocando=pausaPedida=0;
   puts("LG converted startup: waits for native playback and completed video-plane bind");

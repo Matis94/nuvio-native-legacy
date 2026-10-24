@@ -2306,7 +2306,11 @@ void player_voltar_a_esperar(void) {
 // Consome o pedido de abrir a folha de faixas: quem le, zera.
 int  player_pediu_faixas(void) { int v = pedFaixas; pedFaixas = 0; return v; }
 
-int  player_com_video(void) { return comVideo && !retido && video_pronto(); }
+int  player_com_video(void) { return comVideo && !retido && (video_pronto()
+#ifdef NV_NATIVE_SEEK_TEST
+  || video_dts_imagem_exibida()
+#endif
+); }
 // Para o Discord (discord.c), que so le: pausado, duracao e se e canal ao vivo.
 int   player_pausado(void) { return !tocando; }
 // Pausa DA PESSOA (tecla/botao), nunca o `tocando` espelhado do backend: no
@@ -2330,7 +2334,11 @@ int player_duracao_midia(double *seg) {
 
 // Esta abrindo o fluxo: ha video pedido, mas ainda nao ha imagem.
 int  player_carregando(void) {
-  return esperandoFonte || (comVideo && (!video_pronto()
+  return esperandoFonte || (comVideo &&
+#ifdef NV_NATIVE_SEEK_TEST
+    !video_dts_imagem_exibida() &&
+#endif
+    (!video_pronto()
 #ifdef NV_NATIVE_SEEK_TEST
     || video_iniciando()
 #endif
@@ -6309,10 +6317,9 @@ void player_desenhar(Uint32 agora) {
   int quadroMorno = player_carregando() && !erroFonte && cacheboost_backend_quadro(3);
   int furar = (player_com_video() && !esperandoFonte) || quadroMorno;   // abrindo a fonte: sem furo, so preto
 #ifdef NV_NATIVE_SEEK_TEST
-  // A converted source's loadCompleted precedes native playback. Keep its
-  // loading artwork over the empty plane; seeks in a playing session keep
-  // the existing picture and do not enter this startup state.
-  if(video_iniciando()) furar=0;
+  // Keep the initial cover through preroll/bind, but never restore it over
+  // an SDR/DTS source that has already played, including a seek reload.
+  if(video_iniciando() && !video_dts_imagem_exibida()) furar=0;
 #endif
 #ifdef NV_SHOT_HOOKS
   if (shotSemFuro && encolhe > 0.999f) furar = 0;   // capturas: a arte faz de video

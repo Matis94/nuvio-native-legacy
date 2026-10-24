@@ -126,6 +126,15 @@ int video_dv_ativo(void) { return dtsSessao && dtsModoDv; }
 // (Dolby Vision/DTS path handing back to the TV player, audio switch) is not
 // a source that failed to open. Other targets keep 0.
 static int fonteTocou;
+#ifdef NV_NATIVE_SEEK_TEST
+// UI only: an SDR converter's initial cover ends once playback and its
+// video-plane bind are both ready. Keep that fact across same-source seeks.
+static int dtsImagemExibida;
+int video_dts_imagem_exibida(void) {
+  return dtsImagemExibida && dtsSessao && !dtsModoDv &&
+         !video_falhou() && !video_terminou();
+}
+#endif
 #ifdef NV_TPK
 // .tpk: so o fluxo DTS/TrueHD convertido responde aqui (video_tpk.c); o resto
 // segue 0, como antes.
@@ -2372,6 +2381,7 @@ int video_tocar_retomada(const char *url,double seconds,double pct) {
 #endif
 int video_tocar(const char *url) {
 #ifdef NV_NATIVE_SEEK_TEST
+  dtsImagemExibida=0;
   converterResumeRequested=converterResumeUsed=0;
   converterResumeSeconds=converterResumePct=0;
 #endif
@@ -2420,6 +2430,13 @@ static void mkvRetryBombear(void) {
   mkvPendente = 1;
   video_sondar_mkv_agora();
 }
+#ifdef NV_NATIVE_SEEK_TEST
+static void dtsImagemAtualizar(void) {
+  if (dtsSessao && !dtsModoDv && pronto && tocando &&
+      !falhou && !terminou && !bindPendente && !bindAtivo())
+    dtsImagemExibida=1;
+}
+#endif
 void video_bombear(void) {
   ack_publicar();
   bufferLoadBombear();
@@ -2473,6 +2490,9 @@ void video_bombear(void) {
       else { free(bind); __atomic_store_n(&bindVivo, 0, __ATOMIC_RELEASE); bindPendente = 1; }
     }
   }
+#ifdef NV_NATIVE_SEEK_TEST
+  dtsImagemAtualizar();
+#endif
   // SONDA DE MKV so com folga de buffer. 20 s a frente e o sinal de que a
   // fonte esta entregando mais rapido do que o decoder consome, e portanto de
   // que ha banda sobrando para os 320 KB do cabecalho.

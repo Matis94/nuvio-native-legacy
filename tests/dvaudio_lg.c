@@ -119,6 +119,11 @@ static const char *abrir(void) {
 }
 
 int main(void) {
+#ifdef NV_NATIVE_SEEK_TEST
+  dtsImagemExibida=1;ligado=0;
+  (void)video_tocar("");
+  assert(!dtsImagemExibida); // A new source must never inherit the old cover state.
+#endif
   setvbuf(stdout, NULL, _IOLBF, 0);
   lsCall = fakeCall; lsPayload = fakePayload;
   bus = (LSHandle *)(uintptr_t)1; sessao = 40;

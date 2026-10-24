@@ -71,3 +71,10 @@ validated interval is retried; other queue slots remain allocated. Speculative
 ranges keep their normal timeout, and the final retry retains the full timeout.
 Completed valid responses are accepted even at the budget boundary. Byte caps,
 HTTP validation, cancellation and the SDR/DTS transport behavior are unchanged.
+
+In v10, the SDR/DTS opening cover ends once playback and the LG video-plane
+bind are ready. Later seek pauses and same-source decoder reloads retain the
+open video hole without restoring the poster or the "opening source" island.
+A new source still gets the full startup cover; errors, actual rebuffering and
+the DV path retain their previous behavior. This is a UI state change only:
+packet seeking, conversion, HTTP buffering and RAM limits are unchanged.
