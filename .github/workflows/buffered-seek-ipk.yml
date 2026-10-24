@@ -20,15 +20,15 @@ jobs:
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'
       NUVIO_REQUIRE_ALL: '1'
-      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST
+      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
       - name: Verify application source
         run: |
-          git fetch --no-tags --depth=1 origin 5499a54e77a73b274d59a873e1c888ee50140949
-          git diff --exit-code 5499a54e77a73b274d59a873e1c888ee50140949 HEAD -- src rust tools deploy
+          git fetch --no-tags --depth=1 origin 115f3a0c049d10ae5b8c68d96f0c9e7067f8b522
+          git diff --exit-code 115f3a0c049d10ae5b8c68d96f0c9e7067f8b522 HEAD -- src rust tools deploy
           git fetch --no-tags --depth=1 origin 0ce56918b116dba810b642bec2c3ac8a9ef2adb0
           git diff --exit-code 0ce56918b116dba810b642bec2c3ac8a9ef2adb0 HEAD -- src/ajustes.c src/ajustes.h
           git diff --check
@@ -60,6 +60,11 @@ jobs:
           cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -Isrc src/cacheboost.c tests/buffer_tamanho.c -lpthread -lm -o /tmp/buffer-policy-test
           /tmp/buffer-policy-test
           cc -std=gnu11 -Wall -Wextra -Werror -Isrc -c src/dts/dts_engine.c -o /tmp/dts-noffmpeg.o
+      - name: TrueHD DV routing and audio controls
+        timeout-minutes: 6
+        run: |
+          NV_TEST_TRUEHD=1 bash tests/dvaudio_lg.sh
+          NV_TEST_TRUEHD=1 bash tests/dts_playback.sh
       - name: Build host FFmpeg and test real HTTP buffering
         timeout-minutes: 12
         env:
@@ -85,6 +90,7 @@ jobs:
         run: |
           bash tests/dv7.sh
           bash tests/dv7_engine.sh
+          NV_TEST_TRUEHD=1 bash tests/dv7_engine.sh
       - name: Restore application configuration from verified official release
         run: |
           mkdir -p .build-private
@@ -95,8 +101,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .build-cache/sdk.tar.zst
-          key: custom207-sdk-amd64-${{ hashFiles('tools/Dockerfile', 'tools/build-ass-arm.sh', 'tools/build-dts-ffmpeg.sh') }}
-          restore-keys: custom207-sdk-amd64-
+          key: native-v10-truehd-sdk-amd64-${{ hashFiles('tools/Dockerfile', 'tools/build-ass-arm.sh', 'tools/build-dts-ffmpeg.sh') }}
       - name: Build webOS SDK, libass, FFmpeg and Rust
         run: |
           if [ -f .build-cache/sdk.tar.zst ]; then
@@ -104,7 +109,7 @@ jobs:
           else
             cp tools/Dockerfile tools/Dockerfile.review
             python3 .github/build/sdk_links.py tools/Dockerfile.review
-            docker build -f tools/Dockerfile.review --platform linux/amd64 --build-arg SDK_URL=https://github.com/openlgtv/buildroot-nc4/releases/download/webos-a38c582/arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz -t nuvio-webos-sdk tools/
+            docker build -f tools/Dockerfile.review --platform linux/amd64 --build-arg NUVIO_DV_TRUEHD=1 --build-arg SDK_URL=https://github.com/openlgtv/buildroot-nc4/releases/download/webos-a38c582/arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz -t nuvio-webos-sdk tools/
             rm tools/Dockerfile.review
             mkdir -p .build-cache
             docker save nuvio-webos-sdk | zstd -T2 -3 -o .build-cache/sdk.tar.zst
@@ -113,7 +118,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .build-cache/sdk.tar.zst
-          key: custom207-sdk-amd64-${{ hashFiles('tools/Dockerfile', 'tools/build-ass-arm.sh', 'tools/build-dts-ffmpeg.sh') }}
+          key: native-v10-truehd-sdk-amd64-${{ hashFiles('tools/Dockerfile', 'tools/build-ass-arm.sh', 'tools/build-dts-ffmpeg.sh') }}
       - name: Restore P2P cache
         uses: actions/cache/restore@v4
         with:
