@@ -3180,6 +3180,11 @@ static int iniciarDts(int stream) {
   dtsTentou = 1;
   dvFonteAberta = 0;
   pararSessao();
+#ifdef NV_NATIVE_SEEK_TEST
+  // The retired URI player cannot send bufferingEnd after it is unloaded.
+  // Do not leave its spinner/watchdog stamp on a playing SDR converter.
+  if (!dtsModoDv) bufferandoDesde=0;
+#endif
   posSeg = alvo; pausaPedida = paused;
   ack_publicar();
   dtsRevisao = 0; dtsFalhaLogada = 0;

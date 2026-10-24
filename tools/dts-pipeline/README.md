@@ -78,3 +78,6 @@ open video hole without restoring the poster or the "opening source" island.
 A new source still gets the full startup cover; errors, actual rebuffering and
 the DV path retain their previous behavior. This is a UI state change only:
 packet seeking, conversion, HTTP buffering and RAM limits are unchanged.
+When the SDR converter takes over from the URI player, its retired
+bufferingStart stamp is also cleared: the old player cannot send bufferingEnd
+after unload. New converter buffering events still control the real indicator.

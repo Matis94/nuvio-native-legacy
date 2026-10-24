@@ -113,13 +113,20 @@ static void montar(const Mkv *m, int nm, const Tv *t, int nt, int atual) {
 static const char *abrir(void) {
   assert(dvPronto());
   dtsModoDv = 1; partidas = 0;
+#ifdef NV_NATIVE_SEEK_TEST
+  bufferandoDesde=12345;
+#endif
   assert(iniciarDts(-1) && partidas == 1);
+#ifdef NV_NATIVE_SEEK_TEST
+  assert(bufferandoDesde==12345); // DV buffering behavior is unchanged.
+#endif
   dtsSessao = NULL;
   return partidaComFaixa ? partidaFaixa.language : "";
 }
 
 int main(void) {
 #ifdef NV_NATIVE_SEEK_TEST
+  (void)SDL_GetTicks();SDL_Delay(2); // Keep test events away from the zero timestamp sentinel.
   dtsImagemExibida=1;ligado=0;
   (void)video_tocar("");
   assert(!dtsImagemExibida); // A new source must never inherit the old cover state.
@@ -212,7 +219,12 @@ int main(void) {
       montar(NULL,0,t,1,0);posSeg=posNativa=0;seekEm=seekEnvEm=seekRetryEm=0;
       converterResumeRequested=1;converterResumeSeconds=pct?0:1673.992;
       converterResumePct=pct?67:0;dtsRevisao=0;partidas=0;
+      bufferandoDesde=12345; // URI bufferingStart, with no bufferingEnd before unload.
       assert(iniciarDts(-1) && partidas==1);
+      assert(bufferandoDesde==0 && video_bufferando_ms()==0);
+      // Genuine buffering on the new converter still reports normally.
+      evento("{\"bufferingStart\":{}}");assert(video_bufferando_ms()>0);
+      evento("{\"bufferingEnd\":{}}");assert(video_bufferando_ms()==0);
       assert(partidaPos==(pct?0:1673.992) && partidaPct==(pct?67:0));
       assert(video_retomada_inicial_estado()==0);
       dtsRevisao=1;assert(video_retomada_inicial_estado()==1);
