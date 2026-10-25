@@ -377,13 +377,7 @@ static int uxEvento(SDL_Keycode k) {
       if(uxBufferDadosFoco) {
         if(uxOk(k) || k==SDLK_LEFT || k==SDLK_RIGHT)uxBufferDadosAlternar();
         else if(k==SDLK_UP)uxBufferDadosFoco=0;
-        else if(k==SDLK_DOWN) { uxBufferDadosFoco=0;uxRodape=2; }
-        return 1;
-      }
-      if(uxRodape>=2) {
-        if(uxOk(k)) { if(uxRodape==2)uxAplicar();else uxCancelar(); }
-        else if(k==SDLK_LEFT || k==SDLK_RIGHT)uxRodape=uxRodape==2?3:2;
-        else if(k==SDLK_UP) { uxRodape=0;uxBufferDadosFoco=1;uxPendente=uxOriginal; }
+        else if(k==SDLK_DOWN) { uxBufferDadosFoco=0;uxRodape=1; }
         return 1;
       }
       if(k==SDLK_DOWN && (uxRodape || uxPendente==nValores(uxOp)-1)) {

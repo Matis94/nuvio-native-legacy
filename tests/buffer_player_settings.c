@@ -29,7 +29,9 @@ int main(void) {
   // Mouse OFF also saves immediately; canceling a size change keeps OFF.
   open_buffer();ajPontBufferAlternar(0,0);ajPontEdValor(2,0);
   assert(!uxBufferDadosFoco && uxPendente==2 && !ajustes_buffer_dados());
-  switch_row();key(SDLK_DOWN);key(SDLK_RIGHT);assert(uxRodape==3);key(SDLK_RETURN);
+  switch_row();key(SDLK_DOWN);assert(uxRodape==1 && !uxBufferDadosFoco);
+  key(SDLK_UP);assert(uxBufferDadosFoco && !uxRodape);
+  key(SDLK_ESCAPE);
   assert(!uxEditor && !ajustes_buffer_dados() && ajustes_buffer_preset()==before);
   valor[AJ_BUFFER_DADOS]=0;ajustes_dir(dir);assert(!ajustes_buffer_dados());
   // Left/right work immediately, and confirming a size retains the toggle.

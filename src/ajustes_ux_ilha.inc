@@ -934,7 +934,7 @@ static void ajPontEdPasso(int d, int b) {
 }
 static void aj2RodapeEditor(GfxRect m, float colW, const AjDica *d, int n) {
   float y = m.y + m.h - 40 - 64;
-  if((uxOp==AJ_GUIA_CATEGORIAS || (uxOp==AJ_BUFFER && uxBufferDadosDisponivel())) && ajPontEditor)
+  if(uxOp==AJ_GUIA_CATEGORIAS && ajPontEditor)
     ajToqueBotoes(m.x+m.w-52.0f,y+32.0f,1.0f);
 #ifdef NV_TOUCH_UI
   // A phone saved in TV still needs explicit controls to select Mobile or Auto.
@@ -954,7 +954,6 @@ static void aj2RodapeEditor(GfxRect m, float colW, const AjDica *d, int n) {
     else ajIcone("aj_rotate-ccw-clock", m.x + 52 + 24, y + 20, 24, 0.85f);
     txt_desenhar_alpha(t, m.x + 52 + 58, y + (64 - t.h) * 0.5f, foco ? 1.0f : 0.85f);
   }
-  if(uxOp==AJ_BUFFER && uxBufferDadosDisponivel())return;
 #ifdef NV_TOUCH_UI
   if (ajPontEditor && (ajTelaCheia() || uxOp == AJ_INTERFACE_MODO)) return;
 #endif

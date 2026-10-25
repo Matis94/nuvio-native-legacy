@@ -500,7 +500,7 @@ static void ajToqueBotoes(float direita, float yc, float a) {
     GfxRect r = { direita - t.w - 40.0f, yc - 24.0f, t.w + 40.0f, 48.0f };
     if (i == 0) ajPilulaAcento(r, 24.0f, a);
     else ajNeutro(r, 24.0f, 0.10f, AJ_CHIP_SOL, a);
-    if((uxOp==AJ_GUIA_CATEGORIAS && uxRodape==i+1) || (uxOp==AJ_BUFFER && uxBufferDadosDisponivel() && uxRodape==i+2)) {
+    if(uxOp==AJ_GUIA_CATEGORIAS && uxRodape==i+1) {
       float ar,ag,ab;ajustes_acento(&ar,&ag,&ab);
       gfx_anel_fora(r,0.5f,0,3,ar,ag,ab,a);
     }
