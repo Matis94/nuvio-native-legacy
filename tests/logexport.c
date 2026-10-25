@@ -28,6 +28,9 @@ int main(void) {
     "[dts] stage=audio-format-reload ",
     "[dts] dv-audio-reload-prime target=3241.822 ms=4540 packet=1 kind=1 bytes=327759",
     "[dts] dv-fixed-audio mode=1 input=eac3 output=aac channels=2 rate=48000",
+    "[dts] audio-policy requested=1 fixed=1 dv=1 seamless=1 compiled=1",
+    "[dts] audio-policy requested=0 fixed=0 dv=1 seamless=1 compiled=1",
+    "[range-reuse] target=70617346365 retained=60 retainedBytes=251658180",
     "[dts] dv-fixed-audio mode=2 input=ac3 output=ac3 channels=6 rate=48000",
     "[dv] file: profile=7 level=6 rpu=1 el=1 bl=1 compat=6",
     "[dts] stage=dv-native-load profile=8 compatibility=1 bl=1 el=0 rpu=1 reused=1 target=123.000",
@@ -76,7 +79,8 @@ int main(void) {
   f = fopen(path, "rb"); assert(f); size_t n = fread(out, 1, sizeof out - 1, f); out[n] = 0; fclose(f);
   assert(strstr(out, safe) && strstr(out, "[video] error=300") && strstr(out, "recovery=1"));
 #ifdef NV_PLAYBACK_TEST_BUILD
-  assert(strstr(out,"Experimental playback build: v14"));
+  char build[64];snprintf(build,sizeof build,"Experimental playback build: v%d",NV_PLAYBACK_TEST_BUILD);
+  assert(strstr(out,build));
 #endif
   assert(!strstr(out, "shortpw") && !strstr(out, "secondpw") && !strstr(out, "ENDSECRET"));
   assert(strstr(out, "oversized log line")); unlink(path);

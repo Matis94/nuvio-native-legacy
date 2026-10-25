@@ -866,6 +866,15 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
   p->dv = dvNext; dvNext = 0;
   dts_engine_dv(p->engine, p->dv);
   dts_engine_dv_audio(p->engine,p->dv && p->seamless ? dv_audio : 0);
+  {
+    int compiled=0;
+#ifdef NV_DV_FIXED_AUDIO_TEST
+    compiled=1;
+#endif
+    printf("[dts] audio-policy requested=%d fixed=%d dv=%d seamless=%d compiled=%d\n",
+      dv_audio,compiled && p->dv && p->seamless ? dv_audio : 0,p->dv,p->seamless,compiled);
+    fflush(stdout);
+  }
   p->allow_p7 = p7Next; p7Next = 0;
   dts_engine_allow_p7(p->engine, p->allow_p7);
   snprintf(p->url, sizeof p->url, "%s", url);

@@ -353,13 +353,82 @@ static int start_ranges(DtsEngine *e) {
   int ok=e->range_threads>0;
   pthread_mutex_unlock(&e->range_lock); return ok;
 }
+#ifdef NV_NATIVE_SEEK_TEST
+/* Worker-owned repositions may need an earlier keyframe that has just left
+ * the active range. Replace ONE queued/completed slot, never the whole cache.
+ * No new payload allocation or slot: retain useful read-ahead within v12's cap.
+ * Startup, distant seeks, SDR/DTS and remux retain their existing behavior. */
+static int reuse_missing_range(DtsEngine *e) {
+  if(!e->dv || e->remux || !__atomic_load_n(&e->range_live,__ATOMIC_RELAXED) ||
+     !e->cache || e->cache_size<=0)return 0;
+  int64_t high=e->cache_start+e->cache_size;
+  for(int i=0;i<e->range_slots;i++) {
+    DtsRangeJob *j=&e->ranges[i];
+    if(j->state && j->end>high)high=j->end;
+  }
+  int64_t back=(int64_t)(e->range_slots+1)*e->range_bytes;
+  if(e->pos<e->cache_start-back || e->pos>high)return 0;
+  DtsRangeJob *slot=NULL;uint64_t farthest=0;
+  for(int i=0;i<e->range_slots;i++) {
+    DtsRangeJob *j=&e->ranges[i];
+    if(j->state==2)continue; // An HTTP lane owns this slot until completion.
+    if(!j->state || (j->state==3 && !j->data)) { slot=j;break; }
+    uint64_t distance=j->start>e->pos?(uint64_t)(j->start-e->pos):(uint64_t)(e->pos-j->start);
+    if(!slot || distance>farthest) { slot=j;farthest=distance; }
+  }
+  if(!slot)return 0;
+  free(slot->data);slot->data=NULL;slot->state=0;
+  int64_t end=e->pos>INT64_MAX-e->range_bytes?INT64_MAX:e->pos+e->range_bytes-1;
+  for(int i=0;i<e->range_slots;i++) {
+    DtsRangeJob *j=&e->ranges[i];
+    if(j->state && j->start>e->pos && j->start<=end)end=j->start-1;
+  }
+  slot->start=e->pos;slot->end=end;slot->count=0;slot->total=-1;slot->status=0;
+  __atomic_store_n(&slot->cancel,0,__ATOMIC_RELAXED);
+  __atomic_store_n(&slot->urgent,2,__ATOMIC_RELAXED);
+  slot->state=1;e->range_next=end==INT64_MAX?INT64_MAX:end+1;
+  int retained=0;int64_t bytes=0;
+  for(int i=0;i<e->range_slots;i++)if(e->ranges[i].state==3 && e->ranges[i].data) {
+    retained++;bytes+=e->ranges[i].count;
+  }
+  printf("[range-reuse] target=%lld retained=%d retainedBytes=%lld\n",(long long)e->pos,retained,(long long)bytes);
+  fflush(stdout);return 1;
+}
+/* Skip already queued/ready intervals after filling a hole. Do not overlap
+ * retained payloads or turn a capped short HTTP response into skipped bytes. */
+static void skip_queued_ranges(DtsEngine *e) {
+  for(int pass=0;pass<=e->range_slots;pass++) {
+    int moved=0;
+    for(int i=0;i<e->range_slots;i++) {
+      DtsRangeJob *j=&e->ranges[i];
+      if(!j->state || (j->state==3 && (!j->data || j->count<=0)))continue;
+      int64_t end=j->state==3?j->start+j->count-1:j->end;
+      if(e->range_next>=j->start && e->range_next<=end && end<INT64_MAX) {
+        e->range_next=end+1;moved=1;break;
+      }
+    }
+    if(!moved)break;
+  }
+}
+#endif
 /* Called under range_lock; only idle slots can receive new work. */
 static void queue_ranges(DtsEngine *e) {
   for(int i=0;i<e->range_slots && !cancelled(e);i++) {
     DtsRangeJob *job=&e->ranges[i];
-    if(job->state || (e->total>=0 && e->range_next>=e->total)) continue;
+    if(job->state)continue;
+#ifdef NV_NATIVE_SEEK_TEST
+    int preserve=e->dv && !e->remux && __atomic_load_n(&e->range_live,__ATOMIC_RELAXED);
+    if(preserve)skip_queued_ranges(e);
+#endif
+    if(e->total>=0 && e->range_next>=e->total)continue;
     job->start=e->range_next;
     job->end=job->start>INT64_MAX-e->range_bytes?INT64_MAX:job->start+e->range_bytes-1;
+#ifdef NV_NATIVE_SEEK_TEST
+    if(preserve)for(int k=0;k<e->range_slots;k++) {
+      DtsRangeJob *j=&e->ranges[k];
+      if(j!=job && j->state && j->start>job->start && j->start<=job->end)job->end=j->start-1;
+    }
+#endif
     job->count=0; job->status=0; job->total=-1;
     __atomic_store_n(&job->cancel,0,__ATOMIC_RELAXED);
     __atomic_store_n(&job->urgent,0,__ATOMIC_RELAXED);
@@ -588,6 +657,13 @@ static int read_range(void *opaque,uint8_t *dst,int n) {
       if(e->ranges[i].state && e->pos>=e->ranges[i].start &&
          e->pos-e->ranges[i].start<(e->ranges[i].state==3?e->ranges[i].count:e->ranges[i].end-e->ranges[i].start+1)) job=&e->ranges[i];
     if(!job) {
+#ifdef NV_NATIVE_SEEK_TEST
+      if(reuse_missing_range(e)) {
+        queue_ranges(e);
+        for(int i=0;i<e->range_slots;i++)if(e->ranges[i].state && e->ranges[i].start==e->pos)job=&e->ranges[i];
+      }
+      if(!job) {
+#endif
       pthread_mutex_unlock(&e->range_lock);
       /* Seek or short 206: discard obsolete speculative ranges and restart
        * at the exact next byte. Never jump over a short response's tail. */
@@ -596,6 +672,9 @@ static int read_range(void *opaque,uint8_t *dst,int n) {
       for(int i=0;i<RANGE_SLOTS_MAX;i++)
         if(e->ranges[i].state && e->pos>=e->ranges[i].start &&
          e->pos-e->ranges[i].start<(e->ranges[i].state==3?e->ranges[i].count:e->ranges[i].end-e->ranges[i].start+1)) job=&e->ranges[i];
+#ifdef NV_NATIVE_SEEK_TEST
+      }
+#endif
     }
     if(!job) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EXIT; }
     if(__atomic_load_n(&e->range_live,__ATOMIC_RELAXED)) {
@@ -627,6 +706,12 @@ static int read_range(void *opaque,uint8_t *dst,int n) {
       // A seek can enter a pending interval before the origin reveals its
       // smaller range cap. Its completed prefix does not cover that offset.
       if(count<e->range_bytes)e->range_bytes=count;
+#ifdef NV_NATIVE_SEEK_TEST
+      if(e->dv && !e->remux && __atomic_load_n(&e->range_live,__ATOMIC_RELAXED)) {
+        free(job->data);job->data=NULL;job->state=0;
+        pthread_mutex_unlock(&e->range_lock);return read_range(e,dst,n);
+      }
+#endif
       pthread_mutex_unlock(&e->range_lock);
       clear_ranges(e,"seek-short");
       return read_range(e,dst,n);
@@ -1361,7 +1446,13 @@ int dts_engine_next(DtsEngine *e,DtsFrame *f) {
 int dts_engine_seek(DtsEngine *e,double seconds) {
   if(!e || !e->fmt || !isfinite(seconds) || seconds<0 || seconds>INT64_MAX/1000000000.0) return -1;
   if(cancelled(e)) return fail(e,"Cancelled",0);
+#ifdef NV_NATIVE_SEEK_TEST
+  /* A live DV seek/audio change is not a new startup: keep the bounded
+   * awaited-range timeout/retry policy while fetching its first keyframe. */
+  if(!e->dv || e->remux)__atomic_store_n(&e->range_live,0,__ATOMIC_RELAXED);
+#else
   __atomic_store_n(&e->range_live,0,__ATOMIC_RELAXED);
+#endif
   int64_t timestamp=(int64_t)(seconds*1000000.0);
   int r=avformat_seek_file(e->fmt,-1,INT64_MIN,timestamp,timestamp,AVSEEK_FLAG_BACKWARD);
   if(r<0) return fail(e,"Container seek",r);

@@ -13,9 +13,10 @@ if [ "${NV_TEST_TRUEHD:-0}" = 1 ]; then
 fi
 if [ "${NV_TEST_FIXED_AUDIO:-0}" = 1 ]; then
   test_flags+=(-DNV_DV_FIXED_AUDIO_TEST)
-  audio_extra+=(-map 1:a -map 1:a)
-  truehd_opts+=(-c:a:4 ac3 -ac:a:4 6 -c:a:5 ac3 -ac:a:5 2)
+  audio_extra+=(-map 1:a -map 1:a -map 1:a)
+  truehd_opts+=(-c:a:4 ac3 -ac:a:4 6 -c:a:5 ac3 -ac:a:5 2 -c:a:6 ac3 -ac:a:6 1)
 fi
+if [ "${NV_TEST_CACHE_REUSE:-0}" = 1 ]; then test_flags+=(-DNV_NATIVE_SEEK_TEST); fi
 ffmpeg -hide_banner -loglevel error -f lavfi -i color=size=64x64:rate=25:duration=0.8 \
   -f lavfi -i sine=frequency=300:sample_rate=48000:duration=0.8 -c:v libx265 \
   -x265-params 'bframes=0:pools=1:frame-threads=1:log-level=error:keyint=10' \

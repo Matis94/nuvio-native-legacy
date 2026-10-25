@@ -7086,6 +7086,16 @@ static float fileiraFormato(Uint32 agora, float x, float y, float ac, int medir,
 #undef ENTRADA
   return H;
 }
+#ifdef NV_HTTP_BUFFER_DIAG
+static void bufferDadosDesenhar(float direita,float y,float alpha) {
+  if(!ajustes_buffer_dados())return;
+  char b[96];video_buffer_test_text(b,sizeof b);
+  TxtLinha l=txt_linha(TXT_G19M,b,230,230,230,210);
+  txt_desenhar_alpha(l,direita-l.w,y-l.h-14.0f,alpha);
+}
+#endif
+
+
 static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) {
   // O bloco inteiro desliza junto: titulo, barra e botoes sao UM objeto que
   // sobe, acompanhando o OSD (`anim`) e a abertura da tela (`entrada`, numa
@@ -7134,10 +7144,7 @@ static void desenharOsdCorpo(Uint32 agora, float a, float ac, const CatItem *c) 
     }
     plrui_barra(bx, yBarra, bw, frac, bufFrac, barraFoco, caps, nCaps, a); }
 #ifdef NV_HTTP_BUFFER_DIAG
-  { char b[96];video_buffer_test_text(b,sizeof b);
-    TxtLinha l=txt_linha(TXT_G19M,b,230,230,230,210);
-    txt_desenhar_alpha(l,bx+bw-l.w,yBarra-l.h-14.0f,a);
-  }
+  bufferDadosDesenhar(bx+bw,yBarra,a);
 #endif
 
   // --- O TITULO: o LOGO, e o texto so na falta dele -------------------------

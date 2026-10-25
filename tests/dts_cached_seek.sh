@@ -16,7 +16,10 @@ PY
 python3 tests/dts_engine_server.py "$tmp" "$tmp/port" "$tmp/requests" &
 server=$!
 for i in $(seq 50); do [ -s "$tmp/port" ] && break; sleep .1; done
-cc -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation -Isrc -I"$prefix/include" \
+extra=()
+if [ "${NV_TEST_CACHE_REUSE:-0}" = 1 ]; then extra+=(-DNV_NATIVE_SEEK_TEST); fi
+if [ "${SANITIZE:-0}" = 1 ]; then extra+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
+cc "${extra[@]}" -std=gnu11 -Wall -Wextra -Werror -Wno-misleading-indentation -Isrc -I"$prefix/include" \
   tests/dts_cached_seek.c src/rede.c src/redeurl.c -o "$tmp/test" -L"$prefix/lib" \
   -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread -ldl
 "$tmp/test" "http://127.0.0.1:$(cat "$tmp/port")/cache.bin"

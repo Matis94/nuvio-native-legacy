@@ -122,15 +122,16 @@ int main(int argc,char **argv) {
     dts_engine_allow_p7(e,1);dts_engine_dv(e,1);dts_engine_dv_audio(e,mode);
     dts_engine_set_ahead_mib(128);
     dts_engine_set_ac3(mode==1); // Fixed mode is independent of DTS preference.
-    check(e,dts_engine_open(e,argv[1],"",5,0,0));
-    for(int pass=0;pass<2;pass++) for(int track=1;track<=6;track++) {
+    check(e,dts_engine_open(e,argv[1],"",7,0,0));
+    for(int pass=0;pass<2;pass++) for(int track=1;track<=7;track++) {
       check(e,dts_engine_audio(e,track,0,0));
       const DtsMediaInfo *m=dts_engine_info(e);
       assert(!strcmp(m->audio_codec,mode==2?"ac3":"aac"));
       assert(m->channels==(mode==2?6:2) && m->sample_rate==48000);
-      assert(m->audio_stream==track && m->n_tracks==7);
+      assert(m->audio_stream==track && m->n_tracks==8);
       assert(!strcmp(m->tracks[5].codec,"ac3") && m->tracks[5].channels==6);
       assert(!strcmp(m->tracks[6].codec,"ac3") && m->tracks[6].channels==2);
+      assert(!strcmp(m->tracks[7].codec,"ac3") && m->tracks[7].channels==1);
       assert(drain(e)==20);check(e,dts_engine_seek(e,.4));assert(drain(e)>0);
       DtsBufferInfo b={0};dts_engine_buffer_info(e,&b);
       // v12 counts the active 4 MiB range as well as the 128 MiB queue.

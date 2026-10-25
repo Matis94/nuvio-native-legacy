@@ -725,6 +725,7 @@ typedef enum {
   // Hero logo and information size (0 Normal, 1 Grande, 2 Muito grande). LOCAL, append-only.
   AJ_HERO_TAMANHO,
   AJ_DV_AUDIO_FIXO, // experimental, append-only, device-local; off by default
+  AJ_BUFFER_DADOS, // nested in the buffer chooser, device-local; off by default
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1864,6 +1865,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Suavizar degradês", V_DEGRADES, 3),
   ESC("Tamanho do destaque", V_HERO_TAMANHO, 3),       // local: heroSizeLocal
   ESC("DV fixed audio (test)", V_DV_AUDIO_FIXO, 3),
+  ESC("Show buffer data in player", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2197,6 +2199,7 @@ static const char *CHAVE[] = {
   "suavizarDegradesLocal",
   "heroSizeLocal",
   "dvFixedAudioTestLocal",
+  "bufferPlayerDataLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2781,6 +2784,14 @@ static int uxVoltarOp = -1;
 void ajustes_voltar_de_lista(int plugins) { uxVoltarOp = plugins ? AJ_PLUGINS : AJ_ADDONS; }
 static int uxDifs[AJ_N], uxNDifs, uxDifFoco;
 static int uxEditor, uxOp, uxPendente, uxOriginal, uxRodape;
+static int uxBufferDados, uxBufferDadosOriginal, uxBufferDadosFoco;
+static int uxBufferDadosDisponivel(void) {
+#ifdef NV_HTTP_BUFFER_DIAG
+  return 1;
+#else
+  return 0;
+#endif
+}
 static GuiaCategoria *uxCategorias;
 static unsigned char *uxCategoriasAbertura;
 static int uxNCategorias;
@@ -3289,6 +3300,7 @@ int ajustes_buffer_preset(void) {
   int v = valor[AJ_BUFFER];
   return v >= 0 && v < 4 ? v : 0;
 }
+int ajustes_buffer_dados(void) { return lig(AJ_BUFFER_DADOS); }
 int ajustes_fonte_idioma_audio(void) { return valor[AJ_FONTE_IDIOMA_AUDIO] == 0; }
 int ajustes_cache_seek_mb(void) {
   static const int MB[] = { 0, 256, 512, 1024 };
@@ -6077,7 +6089,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_AUDIO_OFFSET:   /* audio presentation calibration belongs to this TV */
     case AJ_DTS_AC3:        /* o conversor de DTS e desta TV */
     case AJ_DV_MKV:         /* o demux e o decoder sao desta TV */
-    case AJ_DV7: case AJ_DV_AUDIO_FIXO:
+    case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS:
     case AJ_HIST_CONTA: case AJ_SOCIAL: /* por perfil desta TV (perfilLocal); o web nao tem */
     case AJ_TAM_MAX: case AJ_TAM_MIN: /* o web nao tem a faixa de tamanho */
     case AJ_ESPACO_FILEIRAS: case AJ_ESPACO_TITULOS: /* o web nao tem espacamento */
@@ -6172,7 +6184,7 @@ static int soNaTv(int op) {
     case AJ_LIVETV_DIAG: case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY:
     case AJ_P2P_LIGADO: case AJ_JF_LIGADO: case AJ_POSTER_PROV: case AJ_EPG_PAIS:
     case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: case AJ_RELOGIO_12H:
-    case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV_AUDIO_FIXO:
+    case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS:
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_BUFFER:
     case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
     case AJ_TUNNELING: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO:
@@ -6720,6 +6732,8 @@ static void focarOpcao(int op);
 // D1: "Posicao do relogio" 238 pessoas, "Sincronia por audio" 157, "Zoom do
 // trailer" 86, P2P no .wgt 6), escondendo o aviso que importa.
 static int foraDestaPlataforma(int op) {
+  // Child of AJ_BUFFER's editor, intentionally not a standalone Settings row.
+  if(op==AJ_BUFFER_DADOS)return 1;
   // Os limites dos provedores sao editados dentro da folha de ordem.
   if (op >= AJ_FALHA_RD_LIMITE && op <= AJ_FALHA_AD_LIMITE) return 1;
   // Only the shared parent appears in the category; these editors are its children.
