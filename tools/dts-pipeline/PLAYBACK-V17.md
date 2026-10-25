@@ -3,7 +3,8 @@
 Based on the tested v16 playback implementation, including the follow-up removal
 of redundant Confirm/Cancel buttons from the buffer-size editor. DV conversion,
 DTS/TrueHD decoding, native seeking, frame hold, buffered seeking and RAM limits
-are unchanged from v16. The build verifies those source files byte-for-byte.
+are unchanged from v16. The build verifies those source files byte-for-byte,
+except the read-only TrueHD notice getter, which now checks the prepared track.
 
 - Rename **DV fixed audio (test)** to **Dolby Vision audio output**. Modes are
   **Original audio**, **AAC stereo**, and **Dolby Digital 5.1**. Preserve stored

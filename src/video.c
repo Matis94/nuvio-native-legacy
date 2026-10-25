@@ -149,9 +149,11 @@ const char *video_dts_saida(void) { return dtsSaida; }
 #ifdef NV_DV_TRUEHD_TEST
 int video_truehd_convertido(void) {
   const VideoFaixa *f=video_audio(video_audio_atual());
-  return dtsSessao && dtsModoDv && f && nv_dts_truehd_codec(f->codec) &&
-         !strncmp(dtsSaida,"TrueHD → ",strlen("TrueHD → ")) &&
-         !video_falhou() && !video_terminou();
+  if(!dtsSessao || !dtsModoDv || !f || !nv_dts_truehd_codec(f->codec) ||
+     strncmp(dtsSaida,"TrueHD → ",strlen("TrueHD → ")) ||
+     video_falhou() || video_terminou())return 0;
+  DtsPlaybackStatus s;dts_playback_status(dtsSessao,&s);
+  return s.prepared && !s.failed && s.info.audio_stream==f->stream_index;
 }
 #endif
 

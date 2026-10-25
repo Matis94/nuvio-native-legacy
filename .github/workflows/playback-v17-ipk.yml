@@ -32,7 +32,16 @@ jobs:
           git fetch --no-tags --depth=1 origin add9152b778c4e8a2510ee23c6899334cece1dfa
           git diff --exit-code add9152b778c4e8a2510ee23c6899334cece1dfa HEAD -- src/dts/adapter src/dts/dts_pipeline.c src/dts/dts_pipeline.h src/cacheboost.c src/video_seekview.h
           git fetch --no-tags --depth=1 origin 5e7652f6637553ca53a4b9efd718d22302dbcd29
-          git diff --exit-code 5e7652f6637553ca53a4b9efd718d22302dbcd29 HEAD -- src/dts src/video.c src/video_seekview.h src/moviebuffer.c src/cacheboost.c
+          git diff --exit-code 5e7652f6637553ca53a4b9efd718d22302dbcd29 HEAD -- src/dts src/video_seekview.h src/moviebuffer.c src/cacheboost.c
+          python3 - <<'PYVERIFY'
+          import pathlib,subprocess
+          old=subprocess.check_output(['git','show','5e7652f6637553ca53a4b9efd718d22302dbcd29:src/video.c'],text=True)
+          new=pathlib.Path('src/video.c').read_text()
+          def without_notice(s):
+              a=s.index('int video_truehd_convertido(void) {');b=s.index('\n#endif',a)
+              return s[:a]+s[b:]
+          assert without_notice(old)==without_notice(new), 'Playback changed outside the read-only TrueHD notice getter'
+          PYVERIFY
           git diff --check
       - name: Install host test dependencies
         timeout-minutes: 6
@@ -52,6 +61,7 @@ jobs:
           bash tests/video_acb_lg.sh
           bash tests/player_loading.sh
           bash tests/player_truehd_notice.sh
+          bash tests/truehd_conversion_ready.sh
           cc -std=c11 -Wall -Wextra -Werror -Isrc tests/player_dts_notice.c -o /tmp/dts-notice-test
           /tmp/dts-notice-test
           cc -std=c11 -O1 -g -Wall -Wextra -Werror -Isrc tests/video_seekview.c -lm -o /tmp/seek-view-test
