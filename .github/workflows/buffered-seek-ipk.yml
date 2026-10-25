@@ -27,8 +27,8 @@ jobs:
           persist-credentials: false
       - name: Verify application source
         run: |
-          git fetch --no-tags --depth=1 origin 09631495f927caee792020c4cbf688d69a88b74f
-          git diff --exit-code 09631495f927caee792020c4cbf688d69a88b74f HEAD -- src rust tools deploy
+          git fetch --no-tags --depth=1 origin d1442dca6d58d43d5031e6b87d93a7f44f3090cd
+          git diff --exit-code d1442dca6d58d43d5031e6b87d93a7f44f3090cd HEAD -- src rust tools deploy
           git fetch --no-tags --depth=1 origin add9152b778c4e8a2510ee23c6899334cece1dfa
           git diff --exit-code add9152b778c4e8a2510ee23c6899334cece1dfa HEAD -- src/dts/adapter src/dts/dts_pipeline.c src/dts/dts_pipeline.h src/cacheboost.c src/video_seekview.h
           git diff --check
