@@ -1,4 +1,4 @@
-name: Build native seek DV7 DTS v14 test IPK
+name: Build native seek DV7 DTS v15 test IPK
 on:
   push:
     branches: [build/native-seek-dv7-dts-test]
@@ -20,17 +20,17 @@ jobs:
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'
       NUVIO_REQUIRE_ALL: '1'
-      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_PLAYBACK_TEST_BUILD=14
+      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_PLAYBACK_TEST_BUILD=15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
       - name: Verify application source
         run: |
-          git fetch --no-tags --depth=1 origin 89433220e9456f84f67c0ffd4b1b2cdef6d13589
-          git diff --exit-code 89433220e9456f84f67c0ffd4b1b2cdef6d13589 HEAD -- src rust tools deploy
+          git fetch --no-tags --depth=1 origin 8c5a2afdf0dc1b71c84c634be44c2309ad4c2f21
+          git diff --exit-code 8c5a2afdf0dc1b71c84c634be44c2309ad4c2f21 HEAD -- src rust tools deploy
           git fetch --no-tags --depth=1 origin add9152b778c4e8a2510ee23c6899334cece1dfa
-          git diff --exit-code add9152b778c4e8a2510ee23c6899334cece1dfa HEAD -- src/dts/adapter src/dts/dts_pipeline.c src/dts/dts_pipeline.h src/cacheboost.c src/player.c
+          git diff --exit-code add9152b778c4e8a2510ee23c6899334cece1dfa HEAD -- src/dts/adapter src/dts/dts_pipeline.c src/dts/dts_pipeline.h src/cacheboost.c src/video_seekview.h
           git diff --check
       - name: Install host test dependencies
         timeout-minutes: 6
@@ -39,8 +39,8 @@ jobs:
         timeout-minutes: 3
         run: |
           SANITIZE=1 bash tests/logexport.sh
-          cc -std=c11 -D_GNU_SOURCE -DNV_PLAYBACK_TEST_BUILD=14 -Isrc src/logexport.c tests/logexport.c -o /tmp/v14-log-test
-          /tmp/v14-log-test
+          cc -std=c11 -D_GNU_SOURCE -DNV_PLAYBACK_TEST_BUILD=15 -Isrc src/logexport.c tests/logexport.c -o /tmp/v15-log-test
+          /tmp/v15-log-test
           CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular_export.sh
       - name: Native buffering regressions
         timeout-minutes: 8
@@ -74,6 +74,8 @@ jobs:
         run: |
           bash tests/ajustes_secoes.sh
           bash tests/dv_fixed_audio_settings.sh
+          bash tests/player_buffer_data.sh
+          bash tests/buffer_player_settings.sh
           NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 bash tests/dvaudio_lg.sh
       - name: Build host FFmpeg and test real HTTP buffering
         timeout-minutes: 12
@@ -87,6 +89,7 @@ jobs:
           bash tests/moviebuffer.sh
           bash tests/dts_buffer_reporting.sh
           bash tests/dts_cached_seek.sh
+          SANITIZE=1 NV_TEST_CACHE_REUSE=1 bash tests/dts_cached_seek.sh
           bash tests/dts_range_retry.sh
       - name: Install package tool and Rust target
         run: |
@@ -101,7 +104,7 @@ jobs:
           bash tests/dv7.sh
           bash tests/dv7_engine.sh
           NV_TEST_TRUEHD=1 bash tests/dv7_engine.sh
-          NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 bash tests/dv7_engine.sh
+          NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 NV_TEST_CACHE_REUSE=1 bash tests/dv7_engine.sh
       - name: Restore application configuration from verified official release
         run: |
           mkdir -p .build-private
@@ -168,7 +171,7 @@ jobs:
           data = json.loads(p.read_text())
           assert data["version"] == "2.0.8"
           assert data["id"] == "space.nuvio.native.legacy"
-          data["title"] = "Nuvio Legacy (Native seek v14 QR)"
+          data["title"] = "Nuvio Legacy (Native seek v15 QR)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -181,7 +184,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-native-seek-dv7-dts-test-v14-qr.ipk
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-native-seek-dv7-dts-test-v15-qr.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -197,7 +200,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: native-seek-dv7-dts-test-v14-qr-ipk
+          name: native-seek-dv7-dts-test-v15-qr-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14
