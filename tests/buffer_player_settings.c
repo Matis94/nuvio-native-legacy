@@ -27,7 +27,7 @@ int main(void) {
   // Independent persistent switches on the second row, both initially OFF.
   open_buffer();switch_row();key(SDLK_DOWN);assert(uxBufferDadosFoco==2);
   key(SDLK_RETURN);assert(ajustes_ram_overlay() && !ajustes_ram_verde());
-  key(SDLK_RIGHT);assert(uxBufferDadosFoco==3);key(SDLK_RETURN);
+  key(SDLK_LEFT);assert(uxBufferDadosFoco==3);key(SDLK_RETURN);
   assert(ajustes_ram_overlay() && ajustes_ram_verde());
   key(SDLK_ESCAPE);valor[AJ_RAM_OVERLAY]=valor[AJ_RAM_VERDE]=1;ajustes_dir(dir);
   assert(ajustes_ram_overlay() && ajustes_ram_verde());

@@ -1227,20 +1227,24 @@ static void aj2EditorEscolha(GfxRect m) {
     aj2PilulaEstado(-1,row.x+row.w-24,row.y+row.h*0.5f,uxBufferDados==0,1);
     if(ajPontEditor)ponteiro_alvo(row.x,row.y,row.w,row.h,ajPontBufferDados,ajPontBufferAlternar,0,0);
     row.y+=72.0f;
-    GfxRect main={row.x,row.y,row.w-300.0f,row.h};
-    GfxRect green={main.x+main.w,row.y,300.0f,row.h};
+    GfxRect main=row;
+    float pillW=64.0f+fmaxf(ajTxt(TXT_V3_PILL,"Desligado").w,ajTxt(TXT_V3_PILL,"Ligado").w);
+    float greenW=fminf(300.0f,fmaxf(160.0f,row.w-pillW-172.0f));
+    GfxRect green={row.x+row.w-24.0f-pillW-24.0f-greenW,row.y,greenW,row.h};
     if(uxBufferDadosFoco==2)ajFocoLinha(main,28,1,1);
     if(uxBufferDadosFoco==3)ajFocoLinha(green,28,1,1);
-    const char *ramLabel=main.w<360.0f?"RAM":idiomaEfetivo==IDIOMA_PL?"Dane RAM":"RAM overlay";
-    t=ajTxtC(TXT_V2_24,ramLabel,main.w-190.0f);
+    float labelW=green.x-main.x-48.0f;
+    const char *ramLabel=labelW<160.0f?"RAM":idiomaEfetivo==IDIOMA_PL?"Dane RAM":"RAM overlay";
+    t=ajTxtC(TXT_V2_24,ramLabel,labelW);
     txt_desenhar_alpha(t,main.x+24,main.y+(main.h-t.h)*0.5f,0.85f);
-    aj2PilulaEstado(-1,main.x+main.w-12,main.y+main.h*0.5f,ajustes_ram_overlay(),1);
+    aj2PilulaEstado(-1,main.x+main.w-24,main.y+main.h*0.5f,ajustes_ram_overlay(),1);
     t=ajTxtC(TXT_V2_24,idiomaEfetivo==IDIOMA_PL?"Zielony przycisk":"Green button",green.w-110.0f);
     txt_desenhar_alpha(t,green.x+12,green.y+(green.h-t.h)*0.5f,0.85f);
     aj2ChipLiga(AJ_RAM_VERDE,green.x+green.w-24,green.y+green.h*0.5f,ajustes_ram_verde(),1);
     if(ajPontEditor) {
-      ponteiro_alvo(main.x,main.y,main.w,main.h,ajPontRamFoco,ajPontRamAlternar,2,0);
+      ponteiro_alvo(main.x,main.y,green.x-main.x,main.h,ajPontRamFoco,ajPontRamAlternar,2,0);
       ponteiro_alvo(green.x,green.y,green.w,green.h,ajPontRamFoco,ajPontRamAlternar,3,0);
+      ponteiro_alvo(green.x+green.w,main.y,main.x+main.w-green.x-green.w,main.h,ajPontRamFoco,ajPontRamAlternar,2,0);
     }
   }
   if (pw > 0 && uxOp == AJ_P2P_DESTINO) ajUsbPainel(m.x + m.w - 52 - pw, y0, pw, 1);

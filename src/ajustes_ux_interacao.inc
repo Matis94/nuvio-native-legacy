@@ -376,7 +376,7 @@ static int uxEvento(SDL_Keycode k) {
         if(uxOk(k))uxBufferOpcaoAlternar(uxBufferDadosFoco==1?AJ_BUFFER_DADOS:uxBufferDadosFoco==2?AJ_RAM_OVERLAY:AJ_RAM_VERDE);
         else if(k==SDLK_LEFT || k==SDLK_RIGHT) {
           if(uxBufferDadosFoco==1)uxBufferDadosAlternar();
-          else uxBufferDadosFoco=k==SDLK_LEFT?2:3;
+          else uxBufferDadosFoco=k==SDLK_LEFT?3:2;
         } else if(k==SDLK_UP)uxBufferDadosFoco=uxBufferDadosFoco==1?0:1;
         else if(k==SDLK_DOWN) {
           if(uxBufferDadosFoco==1)uxBufferDadosFoco=2;
