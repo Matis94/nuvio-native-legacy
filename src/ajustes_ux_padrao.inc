@@ -354,3 +354,5 @@
   0, /* hero logo and information size: Normal */
   0, /* fixed DV audio experiment: Off (v12) */
   1, /* buffer data in player: Off (V_LIGA) */
+  1, /* RAM overlay: Off */
+  1, /* green-button RAM shortcut: Off */

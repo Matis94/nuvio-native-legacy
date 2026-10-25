@@ -1,12 +1,12 @@
-name: Build native seek DV7 DTS v16 test IPK
+name: Build playback v17 IPK without QR log export
 on:
   push:
-    branches: [build/native-seek-dv7-dts-test]
+    branches: [build/playback-v17-no-qr]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: native-seek-dv7-dts-test
+  group: playback-v17-no-qr
   cancel-in-progress: true
 jobs:
   build:
@@ -20,7 +20,7 @@ jobs:
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'
       NUVIO_REQUIRE_ALL: '1'
-      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_PLAYBACK_TEST_BUILD=16
+      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_PLAYBACK_TEST_BUILD=17
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -31,17 +31,17 @@ jobs:
           git diff --exit-code 1b02b351e0c85c622a2fa2d87e9d27dff99747e5 HEAD -- src rust tools deploy
           git fetch --no-tags --depth=1 origin add9152b778c4e8a2510ee23c6899334cece1dfa
           git diff --exit-code add9152b778c4e8a2510ee23c6899334cece1dfa HEAD -- src/dts/adapter src/dts/dts_pipeline.c src/dts/dts_pipeline.h src/cacheboost.c src/video_seekview.h
+          git fetch --no-tags --depth=1 origin 5e7652f6637553ca53a4b9efd718d22302dbcd29
+          git diff --exit-code 5e7652f6637553ca53a4b9efd718d22302dbcd29 HEAD -- src/dts src/video.c src/video_seekview.h src/moviebuffer.c src/cacheboost.c
           git diff --check
       - name: Install host test dependencies
         timeout-minutes: 6
         run: bash .github/build/host_deps.sh
-      - name: QR diagnostic export regressions
+      - name: Diagnostic QR removal and normal phone input
         timeout-minutes: 3
         run: |
-          SANITIZE=1 bash tests/logexport.sh
-          cc -std=c11 -D_GNU_SOURCE -DNV_PLAYBACK_TEST_BUILD=16 -Isrc src/logexport.c tests/logexport.c -o /tmp/v16-log-test
-          /tmp/v16-log-test
-          CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular_export.sh
+          bash tests/no_qr_export.sh
+          CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular.sh
       - name: Native buffering regressions
         timeout-minutes: 8
         run: |
@@ -75,6 +75,7 @@ jobs:
           bash tests/ajustes_secoes.sh
           bash tests/dv_fixed_audio_settings.sh
           bash tests/player_buffer_data.sh
+          bash tests/player_ram_controls.sh
           bash tests/buffer_player_settings.sh
           NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 bash tests/dvaudio_lg.sh
       - name: Build host FFmpeg and test real HTTP buffering
@@ -171,7 +172,7 @@ jobs:
           data = json.loads(p.read_text())
           assert data["version"] == "2.0.8"
           assert data["id"] == "space.nuvio.native.legacy"
-          data["title"] = "Nuvio Legacy (Native seek v16 QR)"
+          data["title"] = "Nuvio Legacy (Playback v17)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -184,7 +185,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-native-seek-dv7-dts-test-v16-qr.ipk
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-playback-v17.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -200,7 +201,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: native-seek-dv7-dts-test-v16-qr-ipk
+          name: playback-v17-full-arm-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14

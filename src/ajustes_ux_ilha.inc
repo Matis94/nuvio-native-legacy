@@ -920,6 +920,17 @@ static void ajPontBufferAlternar(int a,int b) {
   ajPontBufferDados(a,b);
   if(ajPontEdVale() && uxOp==AJ_BUFFER && uxBufferDadosDisponivel())uxBufferDadosAlternar();
 }
+static void ajPontRamFoco(int a,int b) {
+  (void)b;
+  if(ajPontEdVale() && uxOp==AJ_BUFFER && uxBufferDadosDisponivel()) {
+    uxRodape=0;uxBufferDadosFoco=a;uxPendente=uxOriginal;
+  }
+}
+static void ajPontRamAlternar(int a,int b) {
+  ajPontRamFoco(a,b);
+  if(ajPontEdVale() && uxOp==AJ_BUFFER && uxBufferDadosDisponivel())
+    uxBufferOpcaoAlternar(a==2?AJ_RAM_OVERLAY:AJ_RAM_VERDE);
+}
 static void ajIptvToqueEscolher(int i,int b) {
   if(!ajPontEdVale() || (uxOp!=AJ_GUIA_CATEGORIAS && uxOp!=AJ_IPTV_CONTA && !ajIptvMenu(uxOp)) || i<0 || i>=nValores(uxOp))return;
   ajPontEdValor(i,b);
@@ -1007,7 +1018,7 @@ static float aj2PreviaEditor(int op, float x, float y, float w) {
   return ajPreviaEditor(op, x, y, w);
 }
 static float aj2EditorBase(GfxRect m) {
-  return m.y + m.h - 40.0f - 64.0f - 24.0f - (ajRetrato() ? 76.0f : 0.0f) - (uxOp==AJ_BUFFER && uxBufferDadosDisponivel()?88.0f:0.0f);
+  return m.y + m.h - 40.0f - 64.0f - 24.0f - (ajRetrato() ? 76.0f : 0.0f) - (uxOp==AJ_BUFFER && uxBufferDadosDisponivel()?160.0f:0.0f);
 }
 static void aj2EditorNumero(GfxRect m) {
   const Opcao *o = &OPCOES[uxOp];
@@ -1209,12 +1220,28 @@ static void aj2EditorEscolha(GfxRect m) {
 #endif
   if(uxOp==AJ_BUFFER && uxBufferDadosDisponivel()) {
     GfxRect row={lx,aj2EditorBase(m)+8.0f,lw,64.0f};
-    if(uxBufferDadosFoco)ajFocoLinha(row,28,1,1);
+    if(uxBufferDadosFoco==1)ajFocoLinha(row,28,1,1);
     const char *label=idiomaEfetivo==IDIOMA_PL ? "Dane bufora w playerze" : "Show buffer data in player";
     TxtLinha t=ajTxtC(TXT_V2_24,label,row.w-220.0f);
-    txt_desenhar_alpha(t,row.x+24,row.y+(row.h-t.h)*0.5f,uxBufferDadosFoco?1.0f:0.85f);
+    txt_desenhar_alpha(t,row.x+24,row.y+(row.h-t.h)*0.5f,uxBufferDadosFoco==1?1.0f:0.85f);
     aj2PilulaEstado(-1,row.x+row.w-24,row.y+row.h*0.5f,uxBufferDados==0,1);
     if(ajPontEditor)ponteiro_alvo(row.x,row.y,row.w,row.h,ajPontBufferDados,ajPontBufferAlternar,0,0);
+    row.y+=72.0f;
+    GfxRect main={row.x,row.y,row.w-300.0f,row.h};
+    GfxRect green={main.x+main.w,row.y,300.0f,row.h};
+    if(uxBufferDadosFoco==2)ajFocoLinha(main,28,1,1);
+    if(uxBufferDadosFoco==3)ajFocoLinha(green,28,1,1);
+    const char *ramLabel=main.w<360.0f?"RAM":idiomaEfetivo==IDIOMA_PL?"Dane RAM":"RAM overlay";
+    t=ajTxtC(TXT_V2_24,ramLabel,main.w-190.0f);
+    txt_desenhar_alpha(t,main.x+24,main.y+(main.h-t.h)*0.5f,0.85f);
+    aj2PilulaEstado(-1,main.x+main.w-12,main.y+main.h*0.5f,ajustes_ram_overlay(),1);
+    t=ajTxtC(TXT_V2_24,idiomaEfetivo==IDIOMA_PL?"Zielony przycisk":"Green button",green.w-110.0f);
+    txt_desenhar_alpha(t,green.x+12,green.y+(green.h-t.h)*0.5f,0.85f);
+    aj2ChipLiga(AJ_RAM_VERDE,green.x+green.w-24,green.y+green.h*0.5f,ajustes_ram_verde(),1);
+    if(ajPontEditor) {
+      ponteiro_alvo(main.x,main.y,main.w,main.h,ajPontRamFoco,ajPontRamAlternar,2,0);
+      ponteiro_alvo(green.x,green.y,green.w,green.h,ajPontRamFoco,ajPontRamAlternar,3,0);
+    }
   }
   if (pw > 0 && uxOp == AJ_P2P_DESTINO) ajUsbPainel(m.x + m.w - 52 - pw, y0, pw, 1);
   else if (pw > 0) aj2PreviaPendente(m.x + m.w - 52 - pw, y0, pw);

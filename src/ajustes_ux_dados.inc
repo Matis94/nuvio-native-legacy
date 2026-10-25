@@ -30,7 +30,7 @@ static int uxValorAtual(int op) {
 }
 
 static int uxDiferente(int op) {
-  if(op==AJ_BUFFER && uxBufferDadosDisponivel() && valor[AJ_BUFFER_DADOS]!=valorPadrao[AJ_BUFFER_DADOS])return 1;
+  if(op==AJ_BUFFER && uxBufferDadosDisponivel() && (valor[AJ_BUFFER_DADOS]!=valorPadrao[AJ_BUFFER_DADOS] || valor[AJ_RAM_OVERLAY]!=valorPadrao[AJ_RAM_OVERLAY] || valor[AJ_RAM_VERDE]!=valorPadrao[AJ_RAM_VERDE]))return 1;
   return uxTemPadrao(op) && uxValorAtual(op) != uxValorPadrao(op);
 }
 

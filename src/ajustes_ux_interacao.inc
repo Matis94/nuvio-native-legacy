@@ -219,15 +219,12 @@ static int uxRiscoFinal(int op, int novo) {
   if (op == AJ_ITENS_FILEIRA && novo > 0 && novo > uxValorAtual(op)) return SEG_AVISO_ITENS;
   return 0;
 }
-static void uxBufferDadosAlternar(void) {
-  int antes=valor[AJ_BUFFER_DADOS];
-  valor[AJ_BUFFER_DADOS]=!antes;
-  if(!gravar()) {
-    valor[AJ_BUFFER_DADOS]=antes;
-    uxNotificar("Não foi possível salvar. O valor anterior foi mantido.");
-  }
+static void uxBufferOpcaoAlternar(int op) {
+  if(!overlayAlternar(op))uxNotificar("Não foi possível salvar. O valor anterior foi mantido.");
   uxBufferDados=valor[AJ_BUFFER_DADOS];
 }
+static void uxBufferDadosAlternar(void) { uxBufferOpcaoAlternar(AJ_BUFFER_DADOS); }
+
 static void uxAplicar(void) {
   if(uxOp==AJ_BUFFER && uxBufferDadosDisponivel()) {
     if(valor[AJ_BUFFER]!=uxOriginal) {
@@ -236,11 +233,12 @@ static void uxAplicar(void) {
       uxRestaurar=uxConfirmar=0;
       uxNotificar("O valor mudou em outra tela. Confira antes de confirmar.");return;
     }
-    int old=valor[AJ_BUFFER],dados=valor[AJ_BUFFER_DADOS];
+    const int ops[]={AJ_BUFFER,AJ_BUFFER_DADOS,AJ_RAM_OVERLAY,AJ_RAM_VERDE};
+    int old[4];for(int i=0;i<4;i++)old[i]=valor[ops[i]];
     valor[AJ_BUFFER]=uxRestaurar?valorPadrao[AJ_BUFFER]:uxPendente;
-    if(uxRestaurar)valor[AJ_BUFFER_DADOS]=valorPadrao[AJ_BUFFER_DADOS];
+    if(uxRestaurar)for(int i=1;i<4;i++)valor[ops[i]]=valorPadrao[ops[i]];
     if(!gravar()) {
-      valor[AJ_BUFFER]=old;valor[AJ_BUFFER_DADOS]=dados;
+      for(int i=0;i<4;i++)valor[ops[i]]=old[i];
       uxNotificar("Não foi possível salvar. O valor anterior foi mantido.");return;
     }
     uxCancelar();return;
@@ -375,15 +373,21 @@ static int uxEvento(SDL_Keycode k) {
     }
     if(uxEditor==1 && uxOp==AJ_BUFFER && uxBufferDadosDisponivel()) {
       if(uxBufferDadosFoco) {
-        if(uxOk(k) || k==SDLK_LEFT || k==SDLK_RIGHT)uxBufferDadosAlternar();
-        else if(k==SDLK_UP)uxBufferDadosFoco=0;
-        else if(k==SDLK_DOWN) { uxBufferDadosFoco=0;uxRodape=1; }
+        if(uxOk(k))uxBufferOpcaoAlternar(uxBufferDadosFoco==1?AJ_BUFFER_DADOS:uxBufferDadosFoco==2?AJ_RAM_OVERLAY:AJ_RAM_VERDE);
+        else if(k==SDLK_LEFT || k==SDLK_RIGHT) {
+          if(uxBufferDadosFoco==1)uxBufferDadosAlternar();
+          else uxBufferDadosFoco=k==SDLK_LEFT?2:3;
+        } else if(k==SDLK_UP)uxBufferDadosFoco=uxBufferDadosFoco==1?0:1;
+        else if(k==SDLK_DOWN) {
+          if(uxBufferDadosFoco==1)uxBufferDadosFoco=2;
+          else { uxBufferDadosFoco=0;uxRodape=1; }
+        }
         return 1;
       }
       if(k==SDLK_DOWN && (uxRodape || uxPendente==nValores(uxOp)-1)) {
         uxRodape=0;uxBufferDadosFoco=1;uxPendente=uxOriginal;return 1;
       }
-      if(k==SDLK_UP && uxRodape) { uxRodape=0;uxBufferDadosFoco=1;uxPendente=uxOriginal;return 1; }
+      if(k==SDLK_UP && uxRodape) { uxRodape=0;uxBufferDadosFoco=2;uxPendente=uxOriginal;return 1; }
     }
     // NA LINHA (segmentado, interruptor, cor de destaque): as setas laterais
     // movem o valor pendente; nao ha rodape de "Restaurar padrao" ali.

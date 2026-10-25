@@ -6,6 +6,12 @@
 #define PG_SEG_TOTAL 6.0f
 static NvDtsNotice truehdConvertedNotice;
 static Uint32 truehdDesde,pgDesde;
+static int truehdTrack=-1;
+typedef struct { int stream_index; } VideoFaixa;
+static VideoFaixa selected={18};
+static int trackReady=1;
+int video_audio_atual(void) { return 0; }
+const VideoFaixa *video_audio(int n) { (void)n;return trackReady?&selected:NULL; }
 static int truehdVisto,loading,channel,converted,playing=1,starting,calls;
 static char message[256];
 int player_carregando(void) { return loading; }
@@ -31,11 +37,19 @@ int main(void) {
     loading=0;playing=1;avisarTruehd(14000+i*10000);avisarTruehd(16000+i*10000);
     converted=0;avisarTruehd(17000+i*10000);converted=1;
   }
-  assert(calls==2); // Neither seeks, reloads nor switching away/back repeats it.
-  truehdConvertedNotice=(NvDtsNotice){0};truehdVisto=0;truehdDesde=0;
+  assert(calls==2); // Same track: seeks/loading/reloads do not repeat it.
+  selected.stream_index=12;converted=0;avisarTruehd(65000);
+  selected.stream_index=18;converted=1;avisarTruehd(66000);avisarTruehd(67500);
+  assert(calls==3); // Returning to TrueHD announces the new conversion.
+  selected.stream_index=19;avisarTruehd(73000);avisarTruehd(74500);
+  assert(calls==4); // A different TrueHD track also announces once ready.
+  trackReady=0;loading=1;avisarTruehd(80000);trackReady=1;loading=0;
+  avisarTruehd(82000);avisarTruehd(84000);assert(calls==4);
+  calls=2;
+  truehdConvertedNotice=(NvDtsNotice){0};truehdVisto=0;truehdDesde=0;truehdTrack=-1;
   channel=1;avisarTruehd(70000);channel=0;pgDesde=71000;
   avisarTruehd(72000);avisarTruehd(76000);assert(calls==2);
   pgDesde=0;avisarTruehd(77499);assert(calls==2);
   avisarTruehd(77500);assert(calls==3); // A new source may announce after the parental card.
-  puts("TrueHD notice: localized actual renderer, selected conversion only, startup/bind/parental gates and once per source across seeks/reloads passed");
+  puts("TrueHD notice: localized actual renderer, selected conversion only, startup/bind/parental gates and once per selected track, repeat on return, no repeat for seeks/reloads passed");
 }

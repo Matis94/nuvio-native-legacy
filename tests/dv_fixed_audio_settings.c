@@ -5,7 +5,7 @@
 #include "../src/ajustes.c"
 #include <assert.h>
 int main(void) {
-  assert(AJ_DV_AUDIO_FIXO==AJ_N-2 && valor[AJ_DV_AUDIO_FIXO]==0);
+  assert(AJ_DV_AUDIO_FIXO==AJ_N-4 && valor[AJ_DV_AUDIO_FIXO]==0);
   assert(!strcmp(CHAVE[AJ_DV_AUDIO_FIXO],"dvFixedAudioTestLocal"));
   assert(ajustes_escopo(AJ_DV_AUDIO_FIXO)==ESC_TV);
   assert(!ajustePortavel(AJ_DV_AUDIO_FIXO) && !ajusteAparelho(AJ_DV_AUDIO_FIXO));
@@ -19,7 +19,7 @@ int main(void) {
 #endif
   }
   valor[AJ_DV_AUDIO_FIXO]=77;assert(!ajustes_dv_audio_fixo());
-  assert(strstr(OPCOES[AJ_DV_AUDIO_FIXO].rotulo,"DV fixed audio"));
+  assert(!strcmp(OPCOES[AJ_DV_AUDIO_FIXO].rotulo,"Dolby Vision audio output"));
   puts("Fixed DV audio settings: opt-in, invalid value, append-only ID, device-only scope and build gate passed");
   return 0;
 }

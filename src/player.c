@@ -30,7 +30,6 @@
 #include "memlog.h"
 #ifdef NV_HTTP_BUFFER_DIAG
 #include "ramoverlay.h"
-static int bufferTestRamVisible=0;
 #endif
 #include "dvtela.h"
 #include "abrecine.h"
@@ -377,7 +376,7 @@ static NvDtsNotice dtsConvertedNotice;
 #ifdef NV_DV_TRUEHD_TEST
 static NvDtsNotice truehdConvertedNotice;
 static Uint32 truehdDesde;
-static int truehdVisto;
+static int truehdVisto, truehdTrack=-1;
 #endif
 // MEDIDA DO RETOMAR (05/10): desde player_abrir ate o pronto e ate o primeiro
 // "tocando" depois de aplicada a retomada. E o numero para comparar, na TV, o
@@ -2132,7 +2131,7 @@ static void tocarFonteInterno(const char *url);
 static void tocarFonteInterno(const char *url) {
   dtsConvertedNotice=(NvDtsNotice){0};
 #ifdef NV_DV_TRUEHD_TEST
-  truehdConvertedNotice=(NvDtsNotice){0};truehdDesde=0;truehdVisto=0;
+  truehdConvertedNotice=(NvDtsNotice){0};truehdDesde=0;truehdVisto=0;truehdTrack=-1;
 #endif
   marco("abrir: url ao pipeline");
   skipLiberado = 0;
@@ -4158,13 +4157,18 @@ static int ativarBotao(int i, int repetiu) {
   return 1;
 }
 
+#ifdef NV_HTTP_BUFFER_DIAG
+static int bufferRamTecla(const SDL_Event *e) {
+  if(ajustes_ram_verde() && e->type==SDL_KEYDOWN && !e->key.repeat &&
+     (e->key.keysym.sym==SDLK_F2 || e->key.keysym.scancode==NV_SCANCODE_GREEN)) {
+    (void)ajustes_ram_overlay_alternar();return 1;
+  }
+  return 0;
+}
+#endif
 void player_evento(const SDL_Event *e) {
 #ifdef NV_HTTP_BUFFER_DIAG
-  // LG's green remote key is a webOS scancode, not the desktop F2 key.
-  if(e->type==SDL_KEYDOWN && !e->key.repeat &&
-     (e->key.keysym.sym==SDLK_F2 || e->key.keysym.scancode==NV_SCANCODE_GREEN)) {
-    bufferTestRamVisible=!bufferTestRamVisible;return;
-  }
+  if(bufferRamTecla(e))return;
 #endif
   // QUALQUER ENTRADA E ATIVIDADE, antes de qualquer return: tecla, clique ou roda
   // do Magic Remote/mouse, toque e botoes do controle. O painel de pausa so sobe
@@ -6298,6 +6302,13 @@ static void capaReabertura(GfxRect furo, const CatItem *c, Uint32 agora) {
 
 #ifdef NV_DV_TRUEHD_TEST
 static void avisarTruehd(Uint32 agora) {
+  const VideoFaixa *track=video_audio(video_audio_atual());
+  // Unknown metadata during a seek/reload does not represent a new selection.
+  // Demux indices identify the selected source track, not the output codec.
+  if(track && track->stream_index>=0 && track->stream_index!=truehdTrack) {
+    truehdTrack=track->stream_index;
+    truehdConvertedNotice=(NvDtsNotice){0};truehdVisto=0;truehdDesde=0;
+  }
   int eligible=!player_carregando() && !ehCanal() && video_truehd_convertido() &&
                video_tocando() && !video_iniciando();
   if(!eligible) {
@@ -6872,7 +6883,7 @@ void player_desenhar(Uint32 agora) {
     desenharLegendaExterna();
     desenharAcoesEpisodio();
 #ifdef NV_HTTP_BUFFER_DIAG
-    ramoverlay_desenhar(agora,bufferTestRamVisible);
+    ramoverlay_desenhar(agora,ajustes_ram_overlay());
 #endif
     return;
   }   // tocando limpo
@@ -6902,7 +6913,7 @@ void player_desenhar(Uint32 agora) {
   desenharLegendaExterna();
   desenharOsd(agora, a, ac, c);
 #ifdef NV_HTTP_BUFFER_DIAG
-  ramoverlay_desenhar(agora,bufferTestRamVisible);
+  ramoverlay_desenhar(agora,ajustes_ram_overlay());
 #endif
 }
 

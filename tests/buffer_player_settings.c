@@ -18,8 +18,21 @@ int main(void) {
   assert(SDL_Init(SDL_INIT_TIMER)==0);setenv("NUVIO_DADOS",dir,1);
   dados_iniciar(dir);snprintf(dirAjustes,sizeof dirAjustes,"%s",dir);ajustes_iniciar();
   assert(gravar());assert(!ajustes_buffer_dados());
-  assert(AJ_BUFFER_DADOS==AJ_N-1 && ajustes_escopo(AJ_BUFFER_DADOS)==ESC_TV);
+  assert(AJ_BUFFER_DADOS==AJ_N-3 && ajustes_escopo(AJ_BUFFER_DADOS)==ESC_TV);
   assert(!ajustePortavel(AJ_BUFFER_DADOS) && !ajusteAparelho(AJ_BUFFER_DADOS));
+  assert(!ajustes_ram_overlay() && !ajustes_ram_verde());
+  assert(ajustes_escopo(AJ_RAM_OVERLAY)==ESC_TV && ajustes_escopo(AJ_RAM_VERDE)==ESC_TV);
+  assert(!ajustePortavel(AJ_RAM_OVERLAY) && !ajustePortavel(AJ_RAM_VERDE));
+  assert(!ajusteAparelho(AJ_RAM_OVERLAY) && !ajusteAparelho(AJ_RAM_VERDE));
+  // Independent persistent switches on the second row, both initially OFF.
+  open_buffer();switch_row();key(SDLK_DOWN);assert(uxBufferDadosFoco==2);
+  key(SDLK_RETURN);assert(ajustes_ram_overlay() && !ajustes_ram_verde());
+  key(SDLK_RIGHT);assert(uxBufferDadosFoco==3);key(SDLK_RETURN);
+  assert(ajustes_ram_overlay() && ajustes_ram_verde());
+  key(SDLK_ESCAPE);valor[AJ_RAM_OVERLAY]=valor[AJ_RAM_VERDE]=1;ajustes_dir(dir);
+  assert(ajustes_ram_overlay() && ajustes_ram_verde());
+  open_buffer();ajPontRamAlternar(3,0);assert(!ajustes_ram_verde() && ajustes_ram_overlay());
+  ajPontRamAlternar(2,0);assert(!ajustes_ram_overlay());key(SDLK_ESCAPE);
   int before=ajustes_buffer_preset();
   open_buffer();switch_row();key(SDLK_RETURN);
   assert(uxEditor && uxPendente==before && uxBufferDados==0 && ajustes_buffer_dados());
@@ -29,8 +42,9 @@ int main(void) {
   // Mouse OFF also saves immediately; canceling a size change keeps OFF.
   open_buffer();ajPontBufferAlternar(0,0);ajPontEdValor(2,0);
   assert(!uxBufferDadosFoco && uxPendente==2 && !ajustes_buffer_dados());
-  switch_row();key(SDLK_DOWN);assert(uxRodape==1 && !uxBufferDadosFoco);
-  key(SDLK_UP);assert(uxBufferDadosFoco && !uxRodape);
+  switch_row();key(SDLK_DOWN);assert(uxBufferDadosFoco==2);
+  key(SDLK_DOWN);assert(uxRodape==1 && !uxBufferDadosFoco);
+  key(SDLK_UP);assert(uxBufferDadosFoco==2 && !uxRodape);
   key(SDLK_ESCAPE);
   assert(!uxEditor && !ajustes_buffer_dados() && ajustes_buffer_preset()==before);
   valor[AJ_BUFFER_DADOS]=0;ajustes_dir(dir);assert(!ajustes_buffer_dados());
@@ -41,8 +55,10 @@ int main(void) {
   ajPontEdValor(2,0);key(SDLK_RETURN);
   assert(!uxEditor && ajustes_buffer_dados() && ajustes_buffer_preset()==2);
   // One confirmation restores both the size and the diagnostic default.
-  open_buffer();uxRestaurar=1;uxAplicar();
-  assert(!uxEditor && !ajustes_buffer_dados() && ajustes_buffer_preset()==0);
+  open_buffer();ajPontRamAlternar(2,0);ajPontRamAlternar(3,0);
+  assert(ajustes_ram_overlay() && ajustes_ram_verde());
+  uxRestaurar=1;uxAplicar();
+  assert(!uxEditor && !ajustes_buffer_dados() && !ajustes_ram_overlay() && !ajustes_ram_verde() && ajustes_buffer_preset()==0);
   // Fixed audio preference uses the actual UI save/reload path, not just a getter.
   uxAbrirEditor(AJ_DV_AUDIO_FIXO);assert(uxEditor==1);
   uxPendente=1;uxAplicar();assert(ajustes_dv_audio_fixo()==1);
@@ -52,6 +68,10 @@ int main(void) {
   char saved[sizeof dirAjustes];memcpy(saved,dirAjustes,sizeof saved);
   snprintf(dirAjustes,sizeof dirAjustes,"/dev/null/not-a-directory");key(SDLK_RETURN);
   assert(uxEditor && uxBufferDados==1 && !ajustes_buffer_dados() && ajustes_buffer_preset()==0);
+  ajPontRamAlternar(2,0);ajPontRamAlternar(3,0);
+  assert(!ajustes_ram_overlay() && !ajustes_ram_verde());
+  assert(!ajustes_ram_overlay_alternar() && !ajustes_ram_overlay());
+  ajPontBufferDados(0,0);
   // Failing to save a size cannot affect an already saved ON toggle.
   memcpy(dirAjustes,saved,sizeof saved);key(SDLK_RETURN);assert(ajustes_buffer_dados());
   snprintf(dirAjustes,sizeof dirAjustes,"/dev/null/not-a-directory");uxPendente=3;uxAplicar();
