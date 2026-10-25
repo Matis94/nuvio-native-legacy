@@ -111,12 +111,15 @@ int main(void) {
   dtsSessao=(DtsPlayback *)(uintptr_t)1;dtsModoDv=1;
   nAudio=1;audioAtual=0;strcpy(faixaAudio[0].codec,"truehd");dtsSaida[0]=0;
   assert(!video_truehd_convertido()); // Selection alone is not a prepared conversion.
-  strcpy(dtsSaida,"TrueHD → AAC Stereo");assert(video_truehd_convertido());
+  strcpy(dtsSaida,"TrueHD → AAC Stereo");assert(!video_truehd_convertido());
+  faixaAudio[0].stream_index=18;pump_status.prepared=1;pump_status.info.audio_stream=17;
+  assert(!video_truehd_convertido()); // Previous track output is still prepared.
+  pump_status.info.audio_stream=18;assert(video_truehd_convertido());
   falhou=1;assert(!video_truehd_convertido());falhou=0;
   terminou=1;assert(!video_truehd_convertido());terminou=0;
   strcpy(faixaAudio[0].codec,"eac3");assert(!video_truehd_convertido());
   strcpy(faixaAudio[0].codec,"truehd");dtsModoDv=0;assert(!video_truehd_convertido());
-  dtsSessao=NULL;nAudio=0;dtsSaida[0]=0;
+  dtsSessao=NULL;nAudio=0;dtsSaida[0]=0;pump_status=(DtsPlaybackStatus){0};
 #endif
 #ifdef NV_NATIVE_SEEK_TEST
   dtsSessao=(DtsPlayback *)(uintptr_t)1;pronto=tocando=1;
