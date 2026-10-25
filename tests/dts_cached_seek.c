@@ -25,6 +25,34 @@ int main(int argc,char **argv) {
     dts_engine_destroy(e);
     puts("PASS cached pending seek past a short HTTP prefix");
   }
+#ifdef NV_NATIVE_SEEK_TEST
+  // All four HTTP lanes can be occupied by slow speculative requests while
+  // audio selection needs a preceding keyframe. Free one lane, not the cache.
+  {
+    DtsEngine *e=dts_engine_create();assert(e);
+    char url[1024];const char *path=strrchr(argv[1],'/');assert(path);
+    snprintf(url,sizeof url,"%.*s/audio-prefetch%s",(int)(path-argv[1]),argv[1],path);
+    e->url=strdup(url);e->headers=strdup("Authorization: Bearer engine-test\nX-Fixture: yes");
+    e->dv=1;e->range_bytes=RANGE_BYTES_DV;e->range_slots=8;
+    check(e,0);check(e,RANGE_BYTES_DV+123);
+    __atomic_store_n(&e->range_live,1,__ATOMIC_RELAXED);
+    int busy=0;
+    for(int n=0;n<200;n++) {
+      pthread_mutex_lock(&e->range_lock);busy=0;
+      for(int i=0;i<e->range_slots;i++)busy+=e->ranges[i].state==2;
+      pthread_mutex_unlock(&e->range_lock);if(busy==4)break;usleep(10000);
+    }
+    assert(busy==4);
+    uint64_t began=clock_ns(CLOCK_MONOTONIC);check(e,123);
+    assert(clock_ns(CLOCK_MONOTONIC)-began<UINT64_C(5000000000));
+    int canceled=0;
+    pthread_mutex_lock(&e->range_lock);
+    for(int i=0;i<e->range_slots;i++)canceled+=__atomic_load_n(&e->ranges[i].cancel,__ATOMIC_RELAXED)!=0;
+    pthread_mutex_unlock(&e->range_lock);assert(canceled==1);
+    dts_engine_destroy(e);
+    puts("PASS DV audio keyframe preempts one busy HTTP lane, exact bytes, no whole-queue cancellation");
+  }
+#endif
   for(int mib=64;mib<=256;mib*=2) {
     DtsEngine *e=dts_engine_create();assert(e);
     e->url=strdup(argv[1]);e->headers=strdup("Authorization: Bearer engine-test\nX-Fixture: yes");

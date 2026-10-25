@@ -387,11 +387,23 @@ static int reuse_missing_range(DtsEngine *e) {
   __atomic_store_n(&slot->cancel,0,__ATOMIC_RELAXED);
   __atomic_store_n(&slot->urgent,2,__ATOMIC_RELAXED);
   slot->state=1;e->range_next=end==INT64_MAX?INT64_MAX:end+1;
+  // If every lane is blocked on speculative data, the needed keyframe must
+  // not wait behind all of them. Ask only the farthest owner to cancel; its
+  // slot remains owned by that worker until it publishes completion.
+  int busy=0,interrupted=0;DtsRangeJob *victim=NULL;uint64_t distance_max=0;
+  for(int i=0;i<e->range_slots;i++)if(e->ranges[i].state==2) {
+    DtsRangeJob *j=&e->ranges[i];busy++;
+    uint64_t distance=j->start>e->pos?(uint64_t)(j->start-e->pos):(uint64_t)(e->pos-j->start);
+    if(!victim || distance>distance_max) { victim=j;distance_max=distance; }
+  }
+  if(victim && busy==e->range_threads) {
+    __atomic_store_n(&victim->cancel,1,__ATOMIC_RELAXED);interrupted=1;
+  }
   int retained=0;int64_t bytes=0;
   for(int i=0;i<e->range_slots;i++)if(e->ranges[i].state==3 && e->ranges[i].data) {
     retained++;bytes+=e->ranges[i].count;
   }
-  printf("[range-reuse] target=%lld retained=%d retainedBytes=%lld\n",(long long)e->pos,retained,(long long)bytes);
+  printf("[range-reuse] target=%lld retained=%d retainedBytes=%lld interrupted=%d\n",(long long)e->pos,retained,(long long)bytes,interrupted);
   fflush(stdout);return 1;
 }
 /* Skip already queued/ready intervals after filling a hole. Do not overlap

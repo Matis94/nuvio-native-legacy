@@ -30,6 +30,11 @@ a measurement of physical black-screen duration.
 - Retain existing future payload allocations. Refill the missing gap without
   overlapping retained requested/ready intervals; short HTTP prefixes remain
   exact and do not skip bytes.
+- If every HTTP lane is occupied by speculative reads, request cancellation
+  of only the farthest active interval to release a lane for the needed
+  keyframe. Never reuse that worker-owned slot before completion. A real HTTP
+  regression blocks all four lanes for eight seconds and verifies keyframe
+  retrieval in under five seconds with exactly one canceled interval.
 - Preserve the existing live awaited-range retry/timeout policy across DV
   seeks and audio changes. Startup, distant seeks, SDR/DTS and remux retain
   their existing paths. Provider stalls and the existing final retry can still

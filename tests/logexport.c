@@ -31,6 +31,7 @@ int main(void) {
     "[dts] audio-policy requested=1 fixed=1 dv=1 seamless=1 compiled=1",
     "[dts] audio-policy requested=0 fixed=0 dv=1 seamless=1 compiled=1",
     "[range-reuse] target=70617346365 retained=60 retainedBytes=251658180",
+    "[range-reuse] target=123 retained=2 retainedBytes=8388606 interrupted=1",
     "[dts] dv-fixed-audio mode=2 input=ac3 output=ac3 channels=6 rate=48000",
     "[dv] file: profile=7 level=6 rpu=1 el=1 bl=1 compat=6",
     "[dts] stage=dv-native-load profile=8 compatibility=1 bl=1 el=0 rpu=1 reused=1 target=123.000",
