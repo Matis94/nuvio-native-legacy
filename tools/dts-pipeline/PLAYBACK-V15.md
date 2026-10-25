@@ -48,9 +48,10 @@ a measurement of physical black-screen duration.
 ## Player buffer text
 
 The buffer-size editor now has a bottom **Show buffer data in player** toggle
-(Polish: **Dane bufora w playerze**), default off. It has remote and pointer
-controls, Confirm/Cancel and one atomic settings write for the size and toggle.
-Back cancels the draft; restoring defaults resets both. It stays local to this
+(Polish: **Dane bufora w playerze**), default off. Remote and pointer ON/OFF
+changes save immediately and stay active after Back/Cancel, without Confirm.
+The size choice still requires confirmation; restoring defaults resets both.
+A failed toggle save restores its previous state. It stays local to this
 TV. It controls only the numeric `Buffer: ...` text, not buffering, the buffered
 progress range or the separate green-button RAM overlay.
 

@@ -2784,7 +2784,7 @@ static int uxVoltarOp = -1;
 void ajustes_voltar_de_lista(int plugins) { uxVoltarOp = plugins ? AJ_PLUGINS : AJ_ADDONS; }
 static int uxDifs[AJ_N], uxNDifs, uxDifFoco;
 static int uxEditor, uxOp, uxPendente, uxOriginal, uxRodape;
-static int uxBufferDados, uxBufferDadosOriginal, uxBufferDadosFoco;
+static int uxBufferDados, uxBufferDadosFoco;
 static int uxBufferDadosDisponivel(void) {
 #ifdef NV_HTTP_BUFFER_DIAG
   return 1;

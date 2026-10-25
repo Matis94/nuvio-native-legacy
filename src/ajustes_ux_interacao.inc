@@ -131,7 +131,7 @@ static void uxAbrirEditor(int op) {
   }
   uxOp = op; uxOriginal = uxValorAtual(op); uxPendente = uxOriginal;
   if(op==AJ_BUFFER && uxBufferDadosDisponivel()) {
-    uxBufferDados=uxBufferDadosOriginal=valor[AJ_BUFFER_DADOS];
+    uxBufferDados=valor[AJ_BUFFER_DADOS];
     uxBufferDadosFoco=0;
   }
   if(op==AJ_IPTV_CONTA || ajIptvGerenciador(op))iptvListaSessao=nv_perfil_sessao_ler();
@@ -219,17 +219,26 @@ static int uxRiscoFinal(int op, int novo) {
   if (op == AJ_ITENS_FILEIRA && novo > 0 && novo > uxValorAtual(op)) return SEG_AVISO_ITENS;
   return 0;
 }
+static void uxBufferDadosAlternar(void) {
+  int antes=valor[AJ_BUFFER_DADOS];
+  valor[AJ_BUFFER_DADOS]=!antes;
+  if(!gravar()) {
+    valor[AJ_BUFFER_DADOS]=antes;
+    uxNotificar("Não foi possível salvar. O valor anterior foi mantido.");
+  }
+  uxBufferDados=valor[AJ_BUFFER_DADOS];
+}
 static void uxAplicar(void) {
   if(uxOp==AJ_BUFFER && uxBufferDadosDisponivel()) {
-    if(valor[AJ_BUFFER]!=uxOriginal || valor[AJ_BUFFER_DADOS]!=uxBufferDadosOriginal) {
+    if(valor[AJ_BUFFER]!=uxOriginal) {
       uxOriginal=uxPendente=valor[AJ_BUFFER];
-      uxBufferDados=uxBufferDadosOriginal=valor[AJ_BUFFER_DADOS];
+      uxBufferDados=valor[AJ_BUFFER_DADOS];
       uxRestaurar=uxConfirmar=0;
       uxNotificar("O valor mudou em outra tela. Confira antes de confirmar.");return;
     }
     int old=valor[AJ_BUFFER],dados=valor[AJ_BUFFER_DADOS];
     valor[AJ_BUFFER]=uxRestaurar?valorPadrao[AJ_BUFFER]:uxPendente;
-    valor[AJ_BUFFER_DADOS]=uxRestaurar?valorPadrao[AJ_BUFFER_DADOS]:uxBufferDados;
+    if(uxRestaurar)valor[AJ_BUFFER_DADOS]=valorPadrao[AJ_BUFFER_DADOS];
     if(!gravar()) {
       valor[AJ_BUFFER]=old;valor[AJ_BUFFER_DADOS]=dados;
       uxNotificar("Não foi possível salvar. O valor anterior foi mantido.");return;
@@ -366,7 +375,7 @@ static int uxEvento(SDL_Keycode k) {
     }
     if(uxEditor==1 && uxOp==AJ_BUFFER && uxBufferDadosDisponivel()) {
       if(uxBufferDadosFoco) {
-        if(uxOk(k) || k==SDLK_LEFT || k==SDLK_RIGHT)uxBufferDados=!uxBufferDados;
+        if(uxOk(k) || k==SDLK_LEFT || k==SDLK_RIGHT)uxBufferDadosAlternar();
         else if(k==SDLK_UP)uxBufferDadosFoco=0;
         else if(k==SDLK_DOWN) { uxBufferDadosFoco=0;uxRodape=2; }
         return 1;

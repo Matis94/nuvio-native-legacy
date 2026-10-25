@@ -918,7 +918,7 @@ static void ajPontBufferDados(int a,int b) {
 }
 static void ajPontBufferAlternar(int a,int b) {
   ajPontBufferDados(a,b);
-  if(ajPontEdVale() && uxOp==AJ_BUFFER && uxBufferDadosDisponivel())uxBufferDados=!uxBufferDados;
+  if(ajPontEdVale() && uxOp==AJ_BUFFER && uxBufferDadosDisponivel())uxBufferDadosAlternar();
 }
 static void ajIptvToqueEscolher(int i,int b) {
   if(!ajPontEdVale() || (uxOp!=AJ_GUIA_CATEGORIAS && uxOp!=AJ_IPTV_CONTA && !ajIptvMenu(uxOp)) || i<0 || i>=nValores(uxOp))return;
