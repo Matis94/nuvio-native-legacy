@@ -1,4 +1,4 @@
-name: Build playback v17 IPK without QR log export
+name: Build playback v17 UI update IPK
 on:
   push:
     branches: [build/playback-v17-no-qr]
@@ -27,8 +27,8 @@ jobs:
           persist-credentials: false
       - name: Verify application source
         run: |
-          git fetch --no-tags --depth=1 origin 204e432d0de7b4adea169681e0adf21e76e5d624
-          git diff --exit-code 204e432d0de7b4adea169681e0adf21e76e5d624 HEAD -- src rust tools deploy
+          git fetch --no-tags --depth=1 origin 137809c206a038f5e7a86f4d757a39c81c99f065
+          git diff --exit-code 137809c206a038f5e7a86f4d757a39c81c99f065 HEAD -- src rust tools deploy
           git fetch --no-tags --depth=1 origin add9152b778c4e8a2510ee23c6899334cece1dfa
           git diff --exit-code add9152b778c4e8a2510ee23c6899334cece1dfa HEAD -- src/dts/adapter src/dts/dts_pipeline.c src/dts/dts_pipeline.h src/cacheboost.c src/video_seekview.h
           git fetch --no-tags --depth=1 origin 5e7652f6637553ca53a4b9efd718d22302dbcd29
@@ -195,7 +195,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-playback-v17.ipk
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-playback-v17-ui.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -211,7 +211,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: playback-v17-full-arm-ipk
+          name: playback-v17-ui-full-arm-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14
