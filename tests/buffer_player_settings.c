@@ -22,10 +22,11 @@ int main(void) {
   assert(!ajustePortavel(AJ_BUFFER_DADOS) && !ajusteAparelho(AJ_BUFFER_DADOS));
   int before=ajustes_buffer_preset();
   open_buffer();switch_row();key(SDLK_RETURN);
-  assert(uxBufferDados==0 && !ajustes_buffer_dados());
+  assert(uxPendente==before && uxBufferDados==0 && !ajustes_buffer_dados());
   key(SDLK_ESCAPE);assert(!uxEditor && !ajustes_buffer_dados() && ajustes_buffer_preset()==before);
   // Save the toggle with an unchanged size: this must still write the file.
-  open_buffer();ajPontBufferAlternar(0,0);assert(uxBufferDadosFoco && uxBufferDados==0);
+  open_buffer();switch_row();key(SDLK_RETURN);
+  assert(uxPendente==before && uxBufferDadosFoco && uxBufferDados==0);
   key(SDLK_DOWN);assert(uxRodape==2);key(SDLK_RETURN);
   assert(!uxEditor && ajustes_buffer_dados() && ajustes_buffer_preset()==before);
   valor[AJ_BUFFER_DADOS]=1;ajustes_dir(dir);assert(ajustes_buffer_dados());

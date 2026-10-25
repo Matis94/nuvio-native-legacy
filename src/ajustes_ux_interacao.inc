@@ -374,13 +374,13 @@ static int uxEvento(SDL_Keycode k) {
       if(uxRodape>=2) {
         if(uxOk(k)) { if(uxRodape==2)uxAplicar();else uxCancelar(); }
         else if(k==SDLK_LEFT || k==SDLK_RIGHT)uxRodape=uxRodape==2?3:2;
-        else if(k==SDLK_UP) { uxRodape=0;uxBufferDadosFoco=1; }
+        else if(k==SDLK_UP) { uxRodape=0;uxBufferDadosFoco=1;uxPendente=uxOriginal; }
         return 1;
       }
       if(k==SDLK_DOWN && (uxRodape || uxPendente==nValores(uxOp)-1)) {
-        uxRodape=0;uxBufferDadosFoco=1;return 1;
+        uxRodape=0;uxBufferDadosFoco=1;uxPendente=uxOriginal;return 1;
       }
-      if(k==SDLK_UP && uxRodape) { uxRodape=0;uxBufferDadosFoco=1;return 1; }
+      if(k==SDLK_UP && uxRodape) { uxRodape=0;uxBufferDadosFoco=1;uxPendente=uxOriginal;return 1; }
     }
     // NA LINHA (segmentado, interruptor, cor de destaque): as setas laterais
     // movem o valor pendente; nao ha rodape de "Restaurar padrao" ali.

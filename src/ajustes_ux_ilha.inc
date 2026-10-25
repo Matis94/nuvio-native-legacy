@@ -912,7 +912,9 @@ static void ajPontEdValor(int i, int b) {
 }
 static void ajPontBufferDados(int a,int b) {
   (void)a;(void)b;
-  if(ajPontEdVale() && uxOp==AJ_BUFFER && uxBufferDadosDisponivel()) { uxRodape=0;uxBufferDadosFoco=1; }
+  if(ajPontEdVale() && uxOp==AJ_BUFFER && uxBufferDadosDisponivel()) {
+    uxRodape=0;uxBufferDadosFoco=1;uxPendente=uxOriginal;
+  }
 }
 static void ajPontBufferAlternar(int a,int b) {
   ajPontBufferDados(a,b);
