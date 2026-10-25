@@ -26,6 +26,39 @@ int main(int argc,char **argv) {
     puts("PASS cached pending seek past a short HTTP prefix");
   }
 #ifdef NV_NATIVE_SEEK_TEST
+  // A full FUTURE cache must not leave only one slot to refill a multi-range
+  // gap. Real delayed responses expose the old serial ~4 MiB/RTT behavior.
+  {
+    DtsEngine *e=dts_engine_create();assert(e);
+    char url[1024];const char *path=strrchr(argv[1],'/');assert(path);
+    snprintf(url,sizeof url,"%.*s/audio-gap%s",(int)(path-argv[1]),argv[1],path);
+    e->url=strdup(url);e->headers=strdup("Authorization: Bearer engine-test\nX-Fixture: yes");
+    e->dv=1;e->range_bytes=RANGE_BYTES_DV;e->range_slots=16;
+    check(e,0);check(e,20LL*RANGE_BYTES_DV);
+    __atomic_store_n(&e->range_live,1,__ATOMIC_RELAXED);
+    int full=0;
+    for(int n=0;n<2000;n++) {
+      pthread_mutex_lock(&e->range_lock);full=1;
+      for(int i=0;i<e->range_slots;i++)full&=e->ranges[i].state==3 && e->ranges[i].data;
+      pthread_mutex_unlock(&e->range_lock);if(full)break;usleep(10000);
+    }
+    assert(full);
+    char *saved[16];for(int i=0;i<16;i++)saved[i]=e->ranges[i].data;
+    uint64_t began=clock_ns(CLOCK_MONOTONIC);
+    int64_t target=16LL*RANGE_BYTES_DV+123;
+    for(int i=0;i<4;i++)check(e,target+(int64_t)i*RANGE_BYTES_DV);
+    assert(clock_ns(CLOCK_MONOTONIC)-began<UINT64_C(2500000000));
+    int kept=0;int64_t bytes=e->cache_size;
+    pthread_mutex_lock(&e->range_lock);
+    for(int i=0;i<16;i++)if(e->ranges[i].data) {
+      bytes+=e->ranges[i].count;
+      for(int k=0;k<16;k++)kept+=e->ranges[i].data==saved[k];
+    }
+    pthread_mutex_unlock(&e->range_lock);
+    assert(kept>=12 && bytes<=17LL*RANGE_BYTES_DV);
+    dts_engine_destroy(e);
+    puts("PASS full future DV cache: four missing ranges refill in parallel, exact bytes, retained payloads, unchanged RAM cap");
+  }
   // All four HTTP lanes can be occupied by slow speculative requests while
   // audio selection needs a preceding keyframe. Free one lane, not the cache.
   {
@@ -121,7 +154,7 @@ int main(int argc,char **argv) {
       for(int k=0;k<saved_count;k++)kept+=e->ranges[i].data==saved[k];
     }
     pthread_mutex_unlock(&e->range_lock);
-    assert(kept>=saved_count-1 && bytes<=(int64_t)(e->range_slots+1)*e->range_bytes);
+    assert(kept>=saved_count-RANGE_WORKERS && bytes<=(int64_t)(e->range_slots+1)*e->range_bytes);
     // Cross the replenished gap and the retained ranges byte-for-byte.
     check(e,retired+RANGE_BYTES_DV-4096);
     check(e,retired+RANGE_BYTES_DV+17);

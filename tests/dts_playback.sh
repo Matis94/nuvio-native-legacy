@@ -14,7 +14,7 @@ if [[ $(uname -s) == Darwin ]]; then
 else
  cc "${flags[@]}" -std=c11 -D_GNU_SOURCE -DNV_DTS_WEBOS_RECOVERY -Wall -Wextra -Werror -Isrc tests/dts_playback.c src/dts/dts_playback.c src/js.c src/linguas.c src/audioinfo.c -pthread -lm -Wl,--wrap=clock_gettime -o "$tmp/test"
 fi
-for scenario in fixed-aac fixed-ac3 fixed-aac-paused fixed-ac3-paused fixed-refused fixed-invalid fixed-nondv fixed-rejected handoff-format handoff-paused handoff-cancel handoff-disabled handoff-refused handoff-prime-error; do
+for scenario in audio-hold-ready audio-hold-gap audio-hold-paused audio-hold-deadline audio-hold-cancel audio-hold-readwait audio-hold-total fixed-aac fixed-ac3 fixed-aac-paused fixed-ac3-paused fixed-refused fixed-invalid fixed-nondv fixed-rejected handoff-format handoff-paused handoff-cancel handoff-disabled handoff-refused handoff-prime-error; do
  "$tmp/test" "$scenario"
 done
 if [[ ${NV_TEST_TRUEHD:-0} == 1 ]]; then "$tmp/test" dv-truehd;exit;fi

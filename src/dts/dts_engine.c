@@ -355,7 +355,7 @@ static int start_ranges(DtsEngine *e) {
 }
 #ifdef NV_NATIVE_SEEK_TEST
 /* Worker-owned repositions may need an earlier keyframe that has just left
- * the active range. Replace ONE queued/completed slot, never the whole cache.
+ * the active range. Reuse a small window of slots, never the whole cache.
  * No new payload allocation or slot: retain useful read-ahead within v12's cap.
  * Startup, distant seeks, SDR/DTS and remux retain their existing behavior. */
 static int reuse_missing_range(DtsEngine *e) {
@@ -387,6 +387,33 @@ static int reuse_missing_range(DtsEngine *e) {
   __atomic_store_n(&slot->cancel,0,__ATOMIC_RELAXED);
   __atomic_store_n(&slot->urgent,2,__ATOMIC_RELAXED);
   slot->state=1;e->range_next=end==INT64_MAX?INT64_MAX:end+1;
+  /* A nearly full cache can consist entirely of ranges AFTER the gap. With
+   * only one recycled slot the gap then downloads serially, ~4 MiB per RTT,
+   * regardless of the large ready-byte count. Give the existing HTTP lanes
+   * a contiguous window to fill; sacrifice at most three farthest payloads.
+   * Active slots remain owned by their workers, and the allocation cap stays
+   * exactly the same. Ordinary reads recycle these slots as they are consumed. */
+  int64_t window=e->pos>INT64_MAX-(int64_t)RANGE_WORKERS*e->range_bytes?
+    INT64_MAX:e->pos+(int64_t)RANGE_WORKERS*e->range_bytes;
+  for(int i=0;i<e->range_slots;i++) {
+    DtsRangeJob *j=&e->ranges[i];
+    if(j!=slot && j->state && !(j->state==3 && !j->data) &&
+       j->start>e->pos && j->start<window)window=j->start;
+  }
+  int needed=(int)((window-e->pos-1)/e->range_bytes)+1,idle=0;
+  for(int i=0;i<e->range_slots;i++)idle+=e->ranges[i].state==0;
+  int recycled=0;
+  while(idle<needed-1) {
+    DtsRangeJob *far=NULL;uint64_t dist_max=0;
+    for(int i=0;i<e->range_slots;i++) {
+      DtsRangeJob *j=&e->ranges[i];
+      if(!j->state || j->state==2 || j==slot || j->start<window)continue;
+      uint64_t dist=(uint64_t)(j->start-e->pos);
+      if(!far || dist>dist_max) { far=j;dist_max=dist; }
+    }
+    if(!far)break;
+    free(far->data);far->data=NULL;far->state=0;idle++;recycled++;
+  }
   // If every lane is blocked on speculative data, the needed keyframe must
   // not wait behind all of them. Ask only the farthest owner to cancel; its
   // slot remains owned by that worker until it publishes completion.
@@ -403,7 +430,8 @@ static int reuse_missing_range(DtsEngine *e) {
   for(int i=0;i<e->range_slots;i++)if(e->ranges[i].state==3 && e->ranges[i].data) {
     retained++;bytes+=e->ranges[i].count;
   }
-  printf("[range-reuse] target=%lld retained=%d retainedBytes=%lld interrupted=%d\n",(long long)e->pos,retained,(long long)bytes,interrupted);
+  printf("[range-reuse] target=%lld retained=%d retainedBytes=%lld interrupted=%d refillSlots=%d recycled=%d\n",
+    (long long)e->pos,retained,(long long)bytes,interrupted,needed<idle+1?needed:idle+1,recycled);
   fflush(stdout);return 1;
 }
 /* Skip already queued/ready intervals after filling a hole. Do not overlap

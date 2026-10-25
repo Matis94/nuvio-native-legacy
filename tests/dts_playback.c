@@ -26,13 +26,17 @@ static atomic_int prime_block, prime_entered, prime_release;
 static int prime_serial;
 static int seamless_fixture, flush_refuse, audio_format_change, stale_clock;
 static int handoff_fixture, pause_refuse, prime_failure;
+static int hold_fixture,hold_deadline;
+static atomic_int hold_slow_reads,hold_no_clock;
+static atomic_llong hold_wall_offset;
 static atomic_int handoff_cancelled;
 static int last_p7;
 static atomic_llong buffer_ready = 21*1048576LL;
+static atomic_llong buffer_contiguous = 20*1048576LL;
 void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *out) {
  (void)e;
  *out=(DtsBufferInfo){.ready_bytes=atomic_load(&buffer_ready),.capacity_bytes=68*1048576LL,
-                     .position=1048576,.total=300*1048576LL,.contiguous_bytes=20*1048576LL};
+                     .position=1048576,.total=300*1048576LL,.contiguous_bytes=atomic_load(&buffer_contiguous)};
 }
 static atomic_llong stall_wall_ns;
 static int64_t frozen_clock, original_stall_clock;
@@ -151,6 +155,8 @@ int dts_engine_next(DtsEngine *e,DtsFrame *f) {
   while(!atomic_load(&release_transport) && !atomic_load(&e->cancelled)) nap();
  }
  nap();e->serial++;e->packet[0]=(unsigned char)e->serial;
+ if(hold_slow_reads && creates==1 && e->base>0 && e->serial<=hold_slow_reads)
+  atomic_fetch_add(&hold_wall_offset,INT64_C(2000000000));
  *f=(DtsFrame){.kind=DTS_AUDIO,.stream_index=e->info.audio_stream,.data=e->packet,.size=4,.pts_ns=(int64_t)(e->base*1000000000.0)+(int64_t)e->serial*100000000};
  if(scenario==NATIVE_STALL && e->base==0) f->pts_ns=INT64_C(303381000000)+(int64_t)e->serial*5000000;
  if(scenario==SUSTAINED) {
@@ -228,12 +234,15 @@ int dts_pipeline_feed(DtsPipeline *p,const DtsFrame *f) {
   }
  }
  if(!p->completed) { p->completed=1;p->event(p->user,"{\"loadCompleted\":{}}"); }
- if(scenario==SEEK_SEGMENT || seamless_fixture) {
+ if((scenario==SEEK_SEGMENT || seamless_fixture) &&
+    (!hold_fixture || (p->running && !(hold_no_clock && p->flushed && p->generation==1) &&
+      !(hold_slow_reads && p->flushed && p->generation==1 && p->packets<hold_slow_reads)))) {
   int64_t native_pts=stale_clock && p->flushed && p->generation==1 ? (int64_t)((p->target+0.5)*1e9) : f->pts_ns;
   char clock[96];snprintf(clock,sizeof clock,"{\"currentTime\":{\"currentTime\":%lld}}",(long long)(native_pts/1000000));
   pthread_mutex_lock(&fixture);frozen_clock=f->pts_ns;pthread_mutex_unlock(&fixture);
   p->event(p->user,clock);
  }
+ if(hold_fixture)p->packets++;
  if(scenario>=NATIVE_STALL) {
   p->packets++;
   if(scenario!=NATIVE_NO_CLOCK && !(scenario==NATIVE_RECOVERY_NO_CLOCK && p->generation>1)) {
@@ -247,6 +256,11 @@ int dts_pipeline_feed(DtsPipeline *p,const DtsFrame *f) {
  return 1;
 }
 int dts_pipeline_play(DtsPipeline *p) {
+ if(hold_fixture && p->flushed && !hold_slow_reads && !hold_deadline) {
+  assert(fed_audio_pts>=(int64_t)((p->target+2)*1e9));
+  assert(fed_video_pts>=(int64_t)((p->target+2)*1e9));
+  assert(atomic_load(&buffer_contiguous)>=16*1048576LL);
+ }
  p->running=1;pthread_mutex_lock(&fixture);plays++;
  if(scenario==SEEK_PREROLL && p->flushed && p->audio_ready && p->video_ready) seek_rendered++;
  pthread_mutex_unlock(&fixture);return 1;
@@ -270,6 +284,7 @@ int dts_pipeline_flush(DtsPipeline *p,double t) {
  }
  if(scenario==NATIVE_STALL && atomic_load(&jam_native) && p->generation==1) return 0;
  (void)t;p->running=0;p->flushed=1;p->audio_ready=p->video_ready=0;
+ if(hold_fixture)p->packets=0;
  /* Firmware keeps the Load complete state but flushes its stopped decoder
   * queues. Presentation requires fresh A/V preroll and a new Play. */
  if(scenario==SEEK_PREROLL) p->event(p->user,"{\"currentTime\":{\"currentTime\":1697863}}");
@@ -309,6 +324,41 @@ static DtsPlayback *start(int paused,int stream,const DtsTrack *selected,int ord
 }
 int main(int argc,char **argv) {
  assert(argc==2);assert(!dts_playback_enabled());DtsPlayback *p;DtsPlaybackStatus s;
+ if(!strncmp(argv[1],"audio-hold-",11)) {
+  handoff_fixture=seamless_fixture=hold_fixture=1;scenario=SEEK_PREROLL;
+  int gap=strstr(argv[1],"gap")!=NULL,cancel=strstr(argv[1],"cancel")!=NULL;
+  int paused=strstr(argv[1],"paused")!=NULL;
+  int slow=strstr(argv[1],"readwait")!=NULL,total=strstr(argv[1],"total")!=NULL;
+  hold_deadline=strstr(argv[1],"deadline")!=NULL;
+  dts_playback_next_seamless(1);dts_playback_next_dv(1);dts_playback_next_dv_audio(1);
+  p=start(0,4,NULL,0,0);wait_count(&plays,1);wait_count(&accepted,4);
+  if(paused) { dts_playback_pause(p,1);wait_count(&pauses,1); }
+  if(gap || cancel || hold_deadline)atomic_store(&buffer_contiguous,4*1048576LL);
+  int before=count(&accepted);
+  if(slow || total) {
+   hold_slow_reads=total?100:4;hold_no_clock=total;
+   dts_playback_seek(p,2);wait_count(&flushes,1);
+   if(total) {
+    wait_count(&loads,2);int old=count(&flushes);
+    dts_playback_seek(p,4);wait_count(&loads,3);assert(count(&flushes)==old);
+   } else {
+    wait_count(&accepted,before+10);assert(count(&loads)==1);
+    dts_playback_seek(p,4);wait_count(&flushes,2);
+   }
+  } else {
+   dts_playback_audio_at(p,9,2);wait_count(&flushes,1);
+   if(gap || cancel || hold_deadline || paused) {
+    wait_count(&accepted,before+(paused?18:24));wait_settled();assert(count(&plays)==1);
+    if(cancel) { dts_playback_close(p);assert(count(&creates)==count(&destroys));return 0; }
+    if(hold_deadline)atomic_fetch_add(&hold_wall_offset,INT64_C(7000000000));
+    else atomic_store(&buffer_contiguous,20*1048576LL);
+    if(paused) { assert(count(&plays)==1);dts_playback_pause(p,0); }
+   }
+   wait_count(&plays,2);assert(count(&loads)==1 && count(&opens)==1);
+  }
+  dts_playback_close(p);assert(count(&creates)==count(&destroys));
+  printf("PASS %s: frame hold, contiguous readiness, pause/cancel or bounded data-aware recovery\n",argv[1]);return 0;
+ }
  if(!strncmp(argv[1],"fixed-",6)) {
   handoff_fixture=seamless_fixture=1;scenario=SEEK_PREROLL;
   int mode=strstr(argv[1],"ac3")?2:1;
@@ -511,9 +561,11 @@ int main(int argc,char **argv) {
    if(strstr(argv[1],"buffered-dv")) {
     assert(prime_serial>0);
     assert(last_dv && last_p7);
-    dts_playback_audio(p,9);wait_count(&flushes,2);wait_count(&plays,3);
+    int old_plays=count(&plays);
+    dts_playback_audio(p,9);wait_count(&flushes,2);wait_count(&plays,old_plays+1);
     assert(count(&loads)==1 && count(&opens)==1 && last_stream==9);
-    dts_playback_seek(p,0.25);wait_count(&flushes,3);wait_count(&plays,4);
+    old_plays=count(&plays);
+    dts_playback_seek(p,0.25);wait_count(&flushes,3);wait_count(&plays,old_plays+1);
     assert(count(&loads)==1 && count(&creates)==1 && count(&opens)==1);
    }
    char event[2048];while(dts_playback_event(p,event,sizeof event))assert(!strstr(event,"1697863"));
@@ -829,6 +881,10 @@ int dts_pipeline_volume(DtsPipeline *p,int pct) {
 /* Deterministic CPU-budget check; native waits still use the real wall clock. */
 int __real_clock_gettime(clockid_t,struct timespec *);
 int __wrap_clock_gettime(clockid_t clock,struct timespec *out) {
+ if(hold_fixture && clock==CLOCK_MONOTONIC) {
+  int r=__real_clock_gettime(clock,out);int64_t ns=out->tv_nsec+atomic_load(&hold_wall_offset);
+  out->tv_sec+=ns/INT64_C(1000000000);out->tv_nsec=ns%INT64_C(1000000000);return r;
+ }
  if(scenario>=NATIVE_STALL && clock==CLOCK_MONOTONIC) {
   int64_t ns=atomic_load(&stall_wall_ns);out->tv_sec=ns/INT64_C(1000000000);out->tv_nsec=ns%INT64_C(1000000000);return 0;
  }

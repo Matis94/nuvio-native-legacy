@@ -23,6 +23,9 @@
 #define DTS_STALL_SECONDS 8.0
 #define DTS_STALL_SEEK_SECONDS 2.0
 #define DTS_DV_SEEK_SECONDS 4.0
+#define DTS_DV_SEEK_TOTAL_SECONDS 12.0
+#define DTS_DV_AUDIO_HOLD_SECONDS 2.0
+#define DTS_DV_AUDIO_HOLD_MAX_SECONDS 6.0
 #define DTS_STALL_RETRIES 2
 #define DTS_TIMESTAMP_RETRIES 2
 /* Reset only after real presentation progress, not time spent reloading. */
@@ -495,7 +498,9 @@ static void *run(void *user) {
   double timestamp_anchor = position;
   int native_unhealthy = 0;
   int recovery_waiting = 0, fast_pending = 0;
-  double fast_since=0, fast_target=0;
+  int dv_audio_hold=0;
+  double hold_since=0,hold_target=0;
+  double fast_since=0, fast_started=0, fast_target=0;
   resetStall(&stall, position);
   if (!prepare(p, stream, core, position)) goto done;
   pthread_mutex_lock(&p->lock);position=p->preroll_target;pthread_mutex_unlock(&p->lock);
@@ -525,8 +530,8 @@ static void *run(void *user) {
       native_unhealthy = 0;
       recovery_waiting = 0;
     }
-    if ((recovery_waiting || (complete && clock_seen)) && stalled(&stall, wall, DTS_STALL_SEEK_SECONDS)) native_unhealthy = 1;
-    if (pause || (!recovery_waiting && (!complete || !clock_seen || seek_preroll)) || eof) stall.full_since = -1;
+    if (!dv_audio_hold && (recovery_waiting || (complete && clock_seen)) && stalled(&stall, wall, DTS_STALL_SEEK_SECONDS)) native_unhealthy = 1;
+    if (pause || dv_audio_hold || (!recovery_waiting && (!complete || !clock_seen || seek_preroll)) || eof) stall.full_since = -1;
     reportRate(p, &rate, presented, fed_audio, fed_video, clock_seen, pause, complete, seek_preroll);
     /* Media IDs may appear only after native Load/preroll. Publish them even
      * when the source metadata revision has not changed; ACB needs the actual
@@ -545,8 +550,26 @@ static void *run(void *user) {
       fail(p, DTS_PLAYBACK_STARVED);
       break;
     }
-    if(fast_pending && (pause || (seek_preroll && !have_frame))) fast_since=wall;
-    if(fast_pending && clock_seen && clock_advances>=2 && presented>fast_target+0.25) {
+    if(dv_audio_hold) {
+      DtsBufferInfo b;dts_engine_buffer_info(p->engine,&b);
+      int64_t goal=b.capacity_bytes/4;
+      if(goal>16*1024*1024)goal=16*1024*1024;
+      int enough=fed_audio>=hold_target+DTS_DV_AUDIO_HOLD_SECONDS &&
+                 fed_video>=hold_target+DTS_DV_AUDIO_HOLD_SECONDS;
+      int tail=b.total>0 && b.position>=b.total-b.contiguous_bytes;
+      int bytes_ready=b.capacity_bytes<=0 || b.contiguous_bytes>=goal || tail;
+      if(pause)hold_since=wall;
+      if((enough && bytes_ready) || (!pause && wall-hold_since>=DTS_DV_AUDIO_HOLD_MAX_SECONDS)) {
+        printf("[dts] dv-audio-hold-release reason=%s ms=%.0f aheadA=%.2f aheadV=%.2f contiguousKiB=%lld\n",
+          enough && bytes_ready?"ready":"deadline",(wall-hold_since)*1000,
+          fed_audio-hold_target,fed_video-hold_target,(long long)(b.contiguous_bytes/1024));
+        fflush(stdout);dv_audio_hold=0;pause_dirty=1;
+        fast_since=fast_started=wall;resetStall(&stall,hold_target);native_unhealthy=0;
+      }
+    }
+    if(fast_pending && (pause || dv_audio_hold || (seek_preroll && !have_frame)))
+      fast_since=fast_started=wall;
+    if(fast_pending && !dv_audio_hold && clock_seen && clock_advances>=2 && presented>fast_target+0.25) {
       fast_pending=0;
       pthread_mutex_lock(&p->lock);p->clock_guard=0;pthread_mutex_unlock(&p->lock);
       nativeEvent(p,"{\"dtsStage\":{\"name\":\"native-seek-progress-confirmed\"}}");
@@ -554,10 +577,13 @@ static void *run(void *user) {
     // A successful flush call is not proof that the firmware changed timeline.
     // Retry with fresh Load once after a bounded no-progress interval; disable
     // the experimental path for the rest of this playback session.
-    int fast_failed=fast_pending && !pause && wall-fast_since>=(p->dv?DTS_DV_SEEK_SECONDS:DTS_STALL_SEEK_SECONDS);
+    int fast_failed=fast_pending && !pause && !dv_audio_hold &&
+      (wall-fast_since>=(p->dv?DTS_DV_SEEK_SECONDS:DTS_STALL_SEEK_SECONDS) ||
+       (p->dv && wall-fast_started>=DTS_DV_SEEK_TOTAL_SECONDS));
     if(fast_failed) {
       p->seamless_disabled=1;fast_pending=0;
-      printf("[dts] native-seek-fallback reason=no-progress target=%.3f waitMs=%.0f\n",fast_target,(wall-fast_since)*1000);fflush(stdout);
+      printf("[dts] native-seek-fallback reason=no-progress target=%.3f waitMs=%.0f totalMs=%.0f\n",
+        fast_target,(wall-fast_since)*1000,(wall-fast_started)*1000);fflush(stdout);
       nativeEvent(p,"{\"dtsStage\":{\"name\":\"native-seek-fallback\",\"detail\":\"no presentation progress\"}}");
     }
     /* The adapter now requests a native segment seek and gates controls on
@@ -574,7 +600,10 @@ static void *run(void *user) {
         pause_dirty=volume_dirty=1;clock_seen=0;
         timestamp_retries=0;timestamp_anchor=target;
         resetStall(&stall,target);recovery_waiting=1;
-        fast_pending=1;fast_since=clockSeconds(CLOCK_MONOTONIC);fast_target=target;
+        fast_pending=1;fast_since=fast_started=clockSeconds(CLOCK_MONOTONIC);fast_target=target;
+        dv_audio_hold=audio && p->dv;
+        hold_since=fast_since;hold_target=target;
+        if(dv_audio_hold)nativeEvent(p,"{\"dtsStage\":{\"name\":\"dv-audio-hold-start\"}}");
         cpu_window=clockSeconds(CLOCK_MONOTONIC);cpu_used=0;
         seek=audio=0;
       } else if(moved==REPOSITION_FORMAT_CHANGED) {
@@ -589,7 +618,7 @@ static void *run(void *user) {
     int seek_reload = !audio && seek;
     int stall_seek = seek_reload && native_unhealthy;
     int stall_reload = !audio && !seek && !pause && !eof &&
-                       (fast_failed || ((recovery_waiting || (complete && clock_seen)) &&
+                       !dv_audio_hold && (fast_failed || (!fast_pending && (recovery_waiting || (complete && clock_seen)) &&
                        stalled(&stall, wall, DTS_STALL_SECONDS)));
     if (stall_reload || seek_reload) {
       if (stall_reload && stall_retries >= DTS_STALL_RETRIES) {
@@ -615,7 +644,7 @@ static void *run(void *user) {
        * invalidates only the renderer: retain the validated demux and cache.
        * prepareMode still reopens if engine_seek itself fails. */
       if (!prepareMode(p, stream, core, target,fast_failed || (seek_reload && !stall_seek))) break;
-      fast_pending=0;
+      fast_pending=0;dv_audio_hold=0;
       char event[256];
       snprintf(event, sizeof event,
         "{\"dtsStage\":{\"name\":\"%s\",\"detail\":\"at=%.3f attempt=%u seek=%d blocked=%d pts=%.3f stale=%.1fs\"}}",
@@ -641,6 +670,8 @@ static void *run(void *user) {
       if (!prepareModePrimed(p, stream, core, target,1,
                             p->dv && p->seamless ? &primed : NULL,audio_prepared)) break;
       fast_pending=0;
+      dv_audio_hold=p->dv && p->seamless;hold_since=clockSeconds(CLOCK_MONOTONIC);hold_target=target;
+      if(dv_audio_hold)nativeEvent(p,"{\"dtsStage\":{\"name\":\"dv-audio-hold-start\"}}");
       position = preroll = presented = target; complete = clock_seen = 0;
       fed_audio = fed_video = target;
       frame=primed;have_frame=primed.data && primed.size;
@@ -653,17 +684,18 @@ static void *run(void *user) {
     if (subtitle && !selectSubtitle(p, subtitle_stream)) {
       fail(p, "DTS subtitle decoder unavailable"); break;
     }
-    if ((complete && pause_dirty) || paused != pause) {
-      if (!(pause ? dts_pipeline_pause(p->pipeline) : dts_pipeline_play(p->pipeline))) {
+    int hold_pause=pause || dv_audio_hold;
+    if ((complete && pause_dirty) || paused != hold_pause) {
+      if (!(hold_pause ? dts_pipeline_pause(p->pipeline) : dts_pipeline_play(p->pipeline))) {
         fail(p, "DTS pause/play failed"); break;
       }
-      paused = pause;
+      paused = hold_pause;
     }
     /* Native volume is optional. Reapply after each Load completion. */
     if (volume_dirty) (void)dts_pipeline_volume(p->pipeline, volume);
     reportBuffer(p, fed_audio, fed_video);
     /* Native load completion needs preroll even when opened paused. */
-    if (paused && !seek_preroll && (complete || position > preroll + 2.0)) {
+    if (paused && !seek_preroll && !dv_audio_hold && (complete || position > preroll + 2.0)) {
       cpu_window = clockSeconds(CLOCK_MONOTONIC); cpu_used = 0;
       rest(p); continue;
     }
@@ -674,6 +706,11 @@ static void *run(void *user) {
       int r = dts_engine_next(p->engine, &frame);
       double ended = clockSeconds(CLOCK_THREAD_CPUTIME_ID);
       double now = clockSeconds(CLOCK_MONOTONIC);
+      /* HTTP/demux preparation can block the sole worker. Count that time
+       * separately from renderer no-progress, while retaining an absolute
+       * post-resume deadline so a bad timeline still gets bounded recovery. */
+      if(fast_pending && p->dv && !dv_audio_hold && read_started>=0 && now-read_started>=0.25)
+        fast_since+=now-read_started;
       if (begun >= 0 && ended >= begun) cpu_used += ended - begun;
       if (begun >= 0 && ended >= begun) rate.decode_cpu += ended - begun;
       if (read_started >= 0 && now >= read_started) rate.read_wall += now - read_started;
@@ -714,6 +751,7 @@ static void *run(void *user) {
         nativeEvent(p, event);
         position = fed_audio = fed_video = target;
         have_frame = eof = seek_preroll = seek_audio = seek_video = 0;
+        dv_audio_hold=fast_pending=0;
         resetStall(&stall, target);
         recovery_waiting = stall.advanced = 1;
         native_unhealthy = 0; p->starved = 0;
@@ -730,7 +768,7 @@ static void *run(void *user) {
       if (decode_error || encoder_error || cpu_overrun) {
         pthread_mutex_lock(&p->lock); presented = p->presented; pthread_mutex_unlock(&p->lock);
         if (recover(p, &core, &core_tried, stream, presented, decode_error || cpu_overrun)) {
-          seek_preroll = 0;
+          seek_preroll = 0;dv_audio_hold=0;fast_pending=0;
           position = presented; have_frame = 0; eof = 0;
           fed_audio = fed_video = presented;
           cpu_window = clockSeconds(CLOCK_MONOTONIC); cpu_used = 0;
@@ -744,6 +782,7 @@ static void *run(void *user) {
       }
       if (r < 0) { fail(p, error); break; }
       if (r == 0) {
+        if(dv_audio_hold) { dv_audio_hold=0;pause_dirty=1; }
         seek_preroll = 0;
         if (!dts_pipeline_eos(p->pipeline)) { fail(p, "DTS end of stream failed"); break; }
         pthread_mutex_lock(&p->lock);
