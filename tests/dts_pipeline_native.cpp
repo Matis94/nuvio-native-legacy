@@ -14,12 +14,9 @@ static std::atomic<bool> complete{false}, loaded{false};
 static int play_calls, pause_calls;
 static bool playing, seeking;
 static int seek_calls;
-static int audio_config_calls;
-extern "C" int dts_fixture_audio_config_calls() { return audio_config_calls; }
-extern "C" int dts_fixture_modern_abi() { return _GLIBCXX_USE_CXX11_ABI; }
 StarfishMediaAPIs::StarfishMediaAPIs(const char *uid) {
  // UID names a native media instance. Supplying app ID here aliases instances.
- assert(uid==nullptr); retained=nullptr; complete=false; loaded=false;play_calls=pause_calls=0;playing=false;seeking=false;seek_calls=0;audio_config_calls=0;
+ assert(uid==nullptr); retained=nullptr; complete=false; loaded=false;play_calls=pause_calls=0;playing=false;seeking=false;seek_calls=0;
 }
 StarfishMediaAPIs::~StarfishMediaAPIs() { if (retained) assert(retained[0]==3); callback=nullptr; }
 bool StarfishMediaAPIs::Load(const char *j,void (*cb)(int,long long,const char *,void *),void *ctx) {
@@ -83,23 +80,6 @@ std::string StarfishMediaAPIs::Feed(const char *j) {
 bool StarfishMediaAPIs::Play() { assert(complete && !seeking);play_calls++;playing=true; callback(0x1a,0,"",context); return true; }
 bool StarfishMediaAPIs::Pause() { assert(!seeking);pause_calls++;playing=false;callback(0x1b,0,"",context); return true; }
 bool StarfishMediaAPIs::flush(const char *) { assert(!"Raw flush must not be used for a native seek");return false; }
-#ifndef DTS_NO_AUDIO_CONFIG
-bool StarfishMediaAPIs::changeAudioCodec(const std::string &codec,const std::string &opt) {
- assert(loaded && complete && !playing && !seeking);audio_config_calls++;
- assert(codec=="AAC" || codec=="AC3" || codec=="AC3 PLUS");
- char config[256];
- assert(js_bruto(opt.c_str(),nullptr,codec=="AAC"?"aacInfo":"ac3PlusInfo",config,sizeof config));
- assert(js_num(config,nullptr,"channels",-1)>0);
- assert(js_num(config,nullptr,"frequency",-1)==48);
- if(codec=="AAC") {
-  char format[32];assert(js_num(config,nullptr,"profile",-1)==2);
-  assert(js_texto_raiz(config,"format",format,sizeof format) && !strcmp(format,"raw"));
- }
- // Audio reconfiguration must not contain Load, video, window or HDR options.
- assert(!strstr(opt.c_str(),"video") && !strstr(opt.c_str(),"Dolby") && !strstr(opt.c_str(),"window"));
- return !getenv("DTS_REFUSE_AUDIO_CONFIG");
-}
-#endif
 extern "C" int dts_fixture_seek_calls() { return seek_calls; }
 extern "C" void dts_fixture_complete_seek() {
  if(!seeking) return;

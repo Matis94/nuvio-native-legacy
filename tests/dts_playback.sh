@@ -5,7 +5,6 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 flags=()
 if [[ ${NV_TEST_TRUEHD:-0} == 1 ]]; then flags+=(-DNV_DV_TRUEHD_TEST); fi
-if [[ ${NV_TEST_AUDIO_RECONFIG:-0} == 1 ]]; then flags+=(-DNV_DV_AUDIO_RECONFIG_TEST); fi
 if [[ ${SANITIZE:-0} == 1 ]]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 if [[ $(uname -s) == Darwin ]]; then
  cc "${flags[@]}" -std=c11 -D_GNU_SOURCE -Wall -Wextra -Werror -Isrc \
@@ -15,13 +14,7 @@ if [[ $(uname -s) == Darwin ]]; then
 else
  cc "${flags[@]}" -std=c11 -D_GNU_SOURCE -DNV_DTS_WEBOS_RECOVERY -Wall -Wextra -Werror -Isrc tests/dts_playback.c src/dts/dts_playback.c src/js.c src/linguas.c src/audioinfo.c -pthread -lm -Wl,--wrap=clock_gettime -o "$tmp/test"
 fi
-if [[ ${NV_TEST_AUDIO_RECONFIG:-0} == 1 ]]; then
- for scenario in reconfig-format reconfig-paused reconfig-cancel reconfig-refused reconfig-seek-refused reconfig-sync-error reconfig-async-error reconfig-stale; do
-  "$tmp/test" "$scenario"
- done
- exit
-fi
-for scenario in handoff-format handoff-paused handoff-cancel handoff-disabled handoff-refused handoff-prime-error; do
+for scenario in fixed-aac fixed-ac3 fixed-aac-paused fixed-ac3-paused fixed-refused fixed-invalid fixed-nondv fixed-rejected handoff-format handoff-paused handoff-cancel handoff-disabled handoff-refused handoff-prime-error; do
  "$tmp/test" "$scenario"
 done
 if [[ ${NV_TEST_TRUEHD:-0} == 1 ]]; then "$tmp/test" dv-truehd;exit;fi

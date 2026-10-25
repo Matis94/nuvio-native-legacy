@@ -3208,6 +3208,9 @@ static int iniciarDts(int stream) {
   dts_engine_set_ahead_mib(cacheboost_backend_buffer_mb());   // #338: Settings > Buffer size
   dts_playback_next_dv(dtsModoDv);
   dts_playback_next_p7(ajustes_dv7());
+#ifdef NV_DV_FIXED_AUDIO_TEST
+  dts_playback_next_dv_audio(dtsModoDv ? ajustes_dv_audio_fixo() : 0);
+#endif
 #ifdef NV_NATIVE_SEEK_TEST
   dts_playback_next_resume_pct(resumePct);
 #endif

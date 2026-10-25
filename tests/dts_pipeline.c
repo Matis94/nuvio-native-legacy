@@ -81,32 +81,10 @@ int main(int argc,char **argv) {
  for(int i=0;i<500;i++) { frame.kind=i%2?DTS_AUDIO:DTS_VIDEO;assert(dts_pipeline_feed(p,&frame)==1);assert(dts_pipeline_play(p)); }
  assert(play_calls()==1 && pause_calls()==0);
  assert(!strcmp(dts_pipeline_media_id(p),"fake-media"));
- int (*audio_calls)(void),(*modern_abi)(void);
- *(void **)(&audio_calls)=dlsym(native,"dts_fixture_audio_config_calls");assert(audio_calls);
- *(void **)(&modern_abi)=dlsym(native,"dts_fixture_modern_abi");assert(modern_abi);
- assert(!dts_pipeline_audio_config(p,&m)); // Must pause the existing renderer first.
- assert(audio_calls()==0);
  if (getenv("DTS_EXPECT_NO_VOLUME")) assert(!dts_pipeline_volume(p,50));
  else { assert(dts_pipeline_volume(p,999));assert(dts_pipeline_volume(p,-5)); }
  for(int i=0;i<50;i++) assert(dts_pipeline_pause(p));
  assert(pause_calls()==1 && play_calls()==1);
- if(!modern_abi() || getenv("DTS_EXPECT_NO_AUDIO_CONFIG")) {
-  assert(!dts_pipeline_audio_config(p,&m) && audio_calls()==0);
- } else {
-  int old_loads=loads;
-  strcpy(m.audio_codec,"aac");m.channels=6;assert(!dts_pipeline_audio_config(p,&m));
-  m.channels=2;m.sample_rate=44100;assert(!dts_pipeline_audio_config(p,&m));
-  m.sample_rate=48000;
-  setenv("DTS_REFUSE_AUDIO_CONFIG","1",1);assert(!dts_pipeline_audio_config(p,&m));
-  assert(strstr(dts_pipeline_error(p),"refused"));unsetenv("DTS_REFUSE_AUDIO_CONFIG");
-  assert(dts_pipeline_audio_config(p,&m));
-  strcpy(m.audio_codec,"ac3");m.channels=6;assert(dts_pipeline_audio_config(p,&m));
-  m.channels=1;assert(dts_pipeline_audio_config(p,&m));
-  strcpy(m.audio_codec,"eac3");m.channels=6;assert(dts_pipeline_audio_config(p,&m));
-  strcpy(m.audio_codec,"aac");m.channels=2;assert(dts_pipeline_audio_config(p,&m));
-  assert(audio_calls()==6 && loads==old_loads && play_calls()==1 && pause_calls()==1);
-  assert(!strcmp(dts_pipeline_media_id(p),"fake-media"));
- }
  for(int i=0;i<50;i++) assert(dts_pipeline_feed(p,&frame)==1);
  assert(play_calls()==1); // Feeding preroll while paused cannot resume it.
  for(int i=0;i<50;i++) assert(dts_pipeline_play(p));

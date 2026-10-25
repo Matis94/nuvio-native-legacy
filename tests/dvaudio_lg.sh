@@ -13,6 +13,7 @@ mkdir -p "$NUVIO_DADOS"
 # actual RPU conversion is exercised separately by dv7_engine.sh.
 flags=(-DNV_NATIVE_SEEK_TEST -DNV_DV7_CONVERSION -O0 -g -std=gnu11 -D_GNU_SOURCE -ffunction-sections -fdata-sections -Isrc -Wno-deprecated-declarations)
 if [ "${NV_TEST_TRUEHD:-0}" = 1 ]; then flags+=(-DNV_DV_TRUEHD_TEST); fi
+if [ "${NV_TEST_FIXED_AUDIO:-0}" = 1 ]; then flags+=(-DNV_DV_FIXED_AUDIO_TEST); fi
 if [[ $(uname -s) == Darwin ]]; then
   flags+=(-I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -Wno-macro-redefined)
   libs=(-L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL -Wl,-dead_strip)

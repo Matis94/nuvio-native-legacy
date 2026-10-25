@@ -352,3 +352,4 @@
   0, /* show the audio codec in the format row: On (V_LIGA 0) */
   0, /* gradient smoothing: Automatic */
   0, /* hero logo and information size: Normal */
+  0, /* fixed DV audio experiment: Off (v12) */

@@ -7,8 +7,14 @@ trap 'rm -rf "$dir"' EXIT
 NV_DV7_FIXTURE_OUT="$dir" cargo test --locked --manifest-path tools/dv7/Cargo.toml
 NUVIO_DV7_ROOT="$PWD/build/dv7-host" bash tools/build-dv7.sh
 audio_extra=();truehd_opts=();test_flags=()
+if [ "${NV_TEST_FIXED_AUDIO:-0}" = 1 ]; then export NV_TEST_TRUEHD=1; fi
 if [ "${NV_TEST_TRUEHD:-0}" = 1 ]; then
   audio_extra=(-map 1:a);truehd_opts=(-c:a:3 truehd -ac:a:3 6);test_flags=(-DNV_DV_TRUEHD_TEST)
+fi
+if [ "${NV_TEST_FIXED_AUDIO:-0}" = 1 ]; then
+  test_flags+=(-DNV_DV_FIXED_AUDIO_TEST)
+  audio_extra+=(-map 1:a -map 1:a)
+  truehd_opts+=(-c:a:4 ac3 -ac:a:4 6 -c:a:5 ac3 -ac:a:5 2)
 fi
 ffmpeg -hide_banner -loglevel error -f lavfi -i color=size=64x64:rate=25:duration=0.8 \
   -f lavfi -i sine=frequency=300:sample_rate=48000:duration=0.8 -c:v libx265 \

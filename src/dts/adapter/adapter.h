@@ -18,8 +18,6 @@ typedef struct {
   const char *(*media_id)(void *);
   const char *(*error)(void *);
   int (*volume)(void *, int); /* Optional firmware capability; NULL is permitted. */
-  /* Optional tail extension. Older ABI-2 tables end before this member. */
-  int (*audio_config)(void *, const DtsMediaInfo *);
 } DtsAdapter;
 #ifdef __cplusplus
 extern "C" {

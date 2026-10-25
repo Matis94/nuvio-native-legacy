@@ -71,6 +71,13 @@ static int fixtureDvEnabled(void) { return fixtureMkvEnabled; }
 static int fixtureP7Enabled(void) { return 1; }
 #define ajustes_dv_mkv fixtureDvEnabled
 #define ajustes_dv7 fixtureP7Enabled
+static int fixtureFixedPref(void) { return 2; }
+static int partidaFixedAudio;
+static void fixtureNextDvAudio(int mode) { partidaFixedAudio=mode; }
+#ifdef NV_DV_FIXED_AUDIO_TEST
+#define ajustes_dv_audio_fixo fixtureFixedPref
+#define dts_playback_next_dv_audio fixtureNextDvAudio
+#endif
 #undef __APPLE__
 #include "../src/video.c"
 
@@ -126,6 +133,9 @@ static const char *abrir(void) {
   bufferandoDesde=12345;
 #endif
   assert(iniciarDts(-1) && partidas == 1);
+#ifdef NV_DV_FIXED_AUDIO_TEST
+  assert(partidaFixedAudio==2);
+#endif
 #ifdef NV_NATIVE_SEEK_TEST
   assert(bufferandoDesde==12345); // DV buffering behavior is unchanged.
 #endif

@@ -52,6 +52,9 @@ static const Item TELA[] = {
 #ifdef NV_DV7_CONVERSION
       OPC(AJ_DV7),
 #endif
+#if defined(NV_DV_FIXED_AUDIO_TEST) && defined(NV_WEBOS)
+      OPC(AJ_DV_AUDIO_FIXO),
+#endif
 #endif
       OPC(AJ_CACHE_SEEK), OPC(AJ_MANTER_VIDEO), OPC(AJ_RETOMADA_MORNA), OPC(AJ_MANTER_PRAZO), OPC(AJ_SEEKR_AJUSTE),
 #if defined(NV_ANDROID) || (!defined(NV_TPK) && !defined(__EMSCRIPTEN__))

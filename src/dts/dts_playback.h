@@ -27,6 +27,9 @@ void dts_playback_next_p7(int enabled);
 /* Explicit TV-test opt-in. Reuse a healthy native pipeline across compatible
  * seeks/audio changes, with bounded fresh-Load fallback. Default disabled. */
 void dts_playback_next_seamless(int enabled);
+/* Snapshot before start; 0 v12, 1 AAC stereo, 2 fixed AC3 5.1. DV only.
+ * Consumed even if start is rejected; changes apply to the next source. */
+void dts_playback_next_dv_audio(int mode);
 /* Optional initial account resume, resolved against demux duration before
  * the first native Load. Consumed even when the next start is rejected. */
 void dts_playback_next_resume_pct(double percent);

@@ -45,8 +45,10 @@ if [ "$TARGET" = tpk ]; then
   fi
 else
   if [ "${NUVIO_DV_TRUEHD:-0}" = 1 ]; then
-    DECODERS=$DECODERS,truehd
-    PARSERS=$PARSERS,mlp
+    # Experimental DV builds can opt into fixed output across native AC3,
+    # EAC3, DTS and TrueHD tracks. Normal SDKs retain their decoder list.
+    DECODERS=$DECODERS,truehd,ac3,eac3
+    PARSERS=$PARSERS,mlp,ac3
   fi
   CC=${CC:-arm-webos-linux-gnueabi-gcc}
   archive="$BUILD/ffmpeg-$VERSION.tar.xz"

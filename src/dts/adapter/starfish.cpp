@@ -28,7 +28,6 @@ struct Native {
        (*unload)(SF *) = nullptr, (*foreground)(SF *) = nullptr;
   const char *(*id)(SF *) = nullptr;
   bool (*volume)(SF *,const char *) = nullptr;
-  bool (*audio_config)(SF *,const std::string &,const std::string &) = nullptr;
   ~Native() { if (lib) dlclose(lib); }
   template<typename T> bool symbol(T &out, const char *name) {
     out = reinterpret_cast<T>(dlsym(lib, name));
@@ -50,10 +49,6 @@ struct Native {
     }
 #if _GLIBCXX_USE_CXX11_ABI
     const char *feed_symbol = "_ZN17StarfishMediaAPIs4FeedB5cxx11EPKc";
-    /* Public webOS 6+ capability. Resolve within this matching C++ ABI only;
-     * native std::string stays entirely on the adapter side of the C table. */
-    audio_config = reinterpret_cast<decltype(audio_config)>(dlsym(lib,
-      "_ZN17StarfishMediaAPIs16changeAudioCodecERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEES7_"));
 #else
     const char *feed_symbol = "_ZN17StarfishMediaAPIs4FeedEPKc";
 #endif
@@ -378,33 +373,7 @@ static int volume(void *ctx,int pct) {
   if (!p->n.volume(p->sf,j.c_str())) { p->error = "Starfish volume refused"; return 0; }
   return 1;
 }
-static int audio_config(void *ctx,const DtsMediaInfo *m) {
-  auto *p=static_cast<Pipeline *>(ctx);
-  if(!p->n.audio_config) {
-    p->error="Starfish changeAudioCodec unavailable";
-    stage(p,"native-audio-change-unavailable");return 0;
-  }
-  const bool ac3=!strcmp(m->audio_codec,"ac3"),eac3=!strcmp(m->audio_codec,"eac3");
-  const char *codec=ac3?"AC3":eac3?"AC3 PLUS":!strcmp(m->audio_codec,"aac")?"AAC":nullptr;
-  if(!p->loaded || !p->completed || p->poisoned || p->seeking || !p->pause_issued ||
-     !codec || m->channels<1 || m->channels>8 || m->sample_rate<1 || m->sample_rate>384000 ||
-     ((!ac3 && !eac3) && (m->channels!=2 || m->sample_rate!=48000))) {
-    p->error="Invalid audio configuration or pipeline not paused/ready";return 0;
-  }
-  std::ostringstream opt;
-  opt << "{\"" << (ac3||eac3?"ac3PlusInfo":"aacInfo") << "\":{\"channels\":"
-      << m->channels << ",\"frequency\":" << m->sample_rate/1000.0;
-  if(!ac3 && !eac3) opt << ",\"profile\":2,\"format\":\"raw\"";
-  opt << "}}";
-  if(!p->n.audio_config(p->sf,std::string(codec),opt.str())) {
-    p->error="Starfish changeAudioCodec refused";
-    stage(p,"native-audio-change-refused");return 0;
-  }
-  /* The worker next issues its existing segment Seek and A/V preroll. The
-   * native video configuration, completed Load and media ID remain intact. */
-  p->error.clear();stage(p,"native-audio-change-accepted",codec);return 1;
-}
 extern "C" const DtsAdapter *nuvio_dts_adapter_v2() {
-  static const DtsAdapter api = {DTS_ADAPTER_ABI,sizeof(DtsAdapter),probe,create,destroy,load,feed,play,pause,flush,eos,media_id,error,volume,audio_config};
+  static const DtsAdapter api = {DTS_ADAPTER_ABI,sizeof(DtsAdapter),probe,create,destroy,load,feed,play,pause,flush,eos,media_id,error,volume};
   return &api;
 }

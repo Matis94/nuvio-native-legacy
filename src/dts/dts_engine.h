@@ -46,6 +46,10 @@ int dts_engine_available(void);
  * pass through undecoded; HTTP ranges are larger and reuse the final address.
  * NV_DV_TRUEHD_TEST also enables TrueHD conversion to AAC/AC3 on this path. */
 void dts_engine_dv(DtsEngine *, int enabled);
+/* Worker-owned, before open. Experimental fixed DV output: 0 = v12 routing,
+ * 1 = AAC stereo, 2 = AC3 5.1 (stereo input does not gain surround content).
+ * Ignored outside the DV packet path and without NV_DV_FIXED_AUDIO_TEST. */
+void dts_engine_dv_audio(DtsEngine *, int mode);
 /* Explicit opt-in before open: P7 conversion and webOS recovery. Default off. */
 void dts_engine_allow_p7(DtsEngine *, int enabled);
 /* Open and seek return 0 on success, negative on error. */

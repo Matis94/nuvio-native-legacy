@@ -37,6 +37,7 @@ int64_t dts_engine_source_total(DtsEngine *e) { (void)e;return -1; }
 DtsEngine *dts_engine_create(void) { return calloc(1, sizeof(DtsEngine)); }
 int dts_engine_available(void) { return 0; }
 void dts_engine_dv(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
+void dts_engine_dv_audio(DtsEngine *e,int mode) { (void)e;(void)mode; }
 void dts_engine_allow_p7(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
 void dts_engine_metrics(DtsEngine *e,DtsEngineMetrics *out) { (void)e; if(out) memset(out,0,sizeof(*out)); }
 int dts_engine_open(DtsEngine *e,const char *u,const char *h,int a,int c,double s) {
@@ -109,7 +110,7 @@ struct DtsEngine {
   volatile int range_live;
   int64_t range_next;
   long range_bytes;
-  int dv, passthrough, range_slots, final_cross, opening;
+  int dv, dv_audio, passthrough, range_slots, final_cross, opening;
   int source_stream; /* Native HTTP cache; conversion readers retain their behavior. */
   volatile int source_cancel;
   /* Samsung remux (dts_engine_open_demux): container only, large ranges and
@@ -804,6 +805,13 @@ int64_t dts_engine_source_total(DtsEngine *e) {
   return total;
 }
 void dts_engine_dv(DtsEngine *e, int enabled) { if (e) e->dv = !!enabled; }
+void dts_engine_dv_audio(DtsEngine *e,int mode) {
+#ifdef NV_DV_FIXED_AUDIO_TEST
+  if(e) e->dv_audio=mode==1 || mode==2 ? mode : 0;
+#else
+  (void)e;(void)mode;
+#endif
+}
 void dts_engine_allow_p7(DtsEngine *e, int enabled) { if (e) e->allow_p7 = !!enabled; }
 int dts_engine_available(void) {
   return avcodec_find_decoder(AV_CODEC_ID_DTS) && avcodec_find_encoder(AV_CODEC_ID_AAC) && av_bsf_get_by_name("h264_mp4toannexb")
@@ -847,8 +855,12 @@ static int reset_encoder(DtsEngine *e) {
 static int configure_audio(DtsEngine *e,int core,double start) {
   int r;
   AVCodecParameters *ap=e->fmt->streams[e->info.audio_stream]->codecpar;
+  /* Pick once for this engine/session, not on the first track change. The
+   * native decoder must see the same codec, channel layout and rate from its
+   * initial Load onward. Reuse v12 Seek; never call changeAudioCodec. */
+  int fixed=e->dv && e->dv_audio;
   e->passthrough=ap->codec_id!=AV_CODEC_ID_DTS &&
-    !(e->dv && nv_dts_truehd_codec(avcodec_get_name(ap->codec_id)));
+    !(e->dv && nv_dts_truehd_codec(avcodec_get_name(ap->codec_id))) && !fixed;
   if(e->passthrough) {
     e->in=av_packet_alloc(); e->out=av_packet_alloc();
     if(!e->in || !e->out) return fail(e,"Audio queue allocation",0);
@@ -872,11 +884,12 @@ static int configure_audio(DtsEngine *e,int core,double start) {
   if(core && ap->codec_id==AV_CODEC_ID_DTS && av_opt_set_int(e->dec->priv_data,"core_only",1,0)<0) return fail(e,"DTS core-only unavailable",0);
   if((r=avcodec_open2(e->dec,decoder,NULL))<0) return fail(e,"DTS decoder open",r);
   /* AC3 5.1 only when asked and the build has the encoder; else stereo AAC. */
-  const AVCodec *encoder=g_surround_ac3?avcodec_find_encoder(AV_CODEC_ID_AC3):NULL;
+  const AVCodec *encoder=(fixed ? e->dv_audio==2 : g_surround_ac3)?avcodec_find_encoder(AV_CODEC_ID_AC3):NULL;
+  if(fixed && e->dv_audio==2 && !encoder) return fail(e,"Fixed DV AC3 encoder absent",0);
   int out_channels=2;
   if(encoder) {
     int in_channels=ap->ch_layout.nb_channels;
-    out_channels=(in_channels==0 || in_channels>2)?6:2;
+    out_channels=(fixed || in_channels==0 || in_channels>2)?6:2;
   } else encoder=avcodec_find_encoder(AV_CODEC_ID_AAC);
   if(!encoder) return fail(e,"Audio encoder absent",0);
   e->enc=avcodec_alloc_context3(encoder);
@@ -889,6 +902,11 @@ static int configure_audio(DtsEngine *e,int core,double start) {
   if(!e->fifo || !e->in || !e->out || !e->decoded || !e->encoded) return fail(e,"Audio queue allocation",0);
   e->info.channels=e->enc->ch_layout.nb_channels; e->info.sample_rate=48000;
   snprintf(e->info.audio_codec,sizeof(e->info.audio_codec),"%s",avcodec_get_name(e->enc->codec_id));
+  if(fixed) {
+    printf("[dts] dv-fixed-audio mode=%d input=%s output=%s channels=%d rate=%d\n",
+      e->dv_audio,avcodec_get_name(ap->codec_id),e->info.audio_codec,e->info.channels,e->info.sample_rate);
+    fflush(stdout);
+  }
   if(nv_dts_truehd_codec(avcodec_get_name(ap->codec_id))) {
     printf("[dts] audio-convert input=truehd output=%s channels=%d rate=%d\n",
            e->info.audio_codec,e->info.channels,e->info.sample_rate);
@@ -945,7 +963,8 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
       return fail(e,"Encrypted media is unsupported",0);
     if(p->codec_type==AVMEDIA_TYPE_VIDEO && e->info.video_stream<0 && !(s->disposition&AV_DISPOSITION_ATTACHED_PIC))
       e->info.video_stream=i;
-    /* Dolby Vision path: AC-3/E-AC-3 go to the TV untouched (passthrough). */
+    /* Dolby Vision path: AC-3/E-AC-3 normally pass through; the fixed-output
+     * test still selects by SOURCE metadata before configuring its encoder. */
     if(nv_dts_audio_feeds(avcodec_get_name(p->codec_id),e->dv)
        && e->info.audio_stream<0 && (audio<0 || audio==(int)i)) e->info.audio_stream=i;
     int kind=p->codec_type==AVMEDIA_TYPE_VIDEO?DTS_VIDEO:p->codec_type==AVMEDIA_TYPE_AUDIO?DTS_AUDIO:p->codec_type==AVMEDIA_TYPE_SUBTITLE?DTS_SUBTITLE:0;

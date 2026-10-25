@@ -138,33 +138,3 @@ metadata-only switches do not rebind the picture. Actual black-frame duration
 and firmware frame retention still require TV comparison with v11: a changed
 audio format continues to need a native Load, so zero visible interruption is
 not guaranteed. Native URI playback is unchanged.
-
-The v13 TV build additionally enables `NV_DV_AUDIO_RECONFIG_TEST`. For a
-healthy DV packet session, a changed audio codec/channel configuration can use
-the optional public `StarfishMediaAPIs::changeAudioCodec` method rather than
-Unload/Load. Its matching modern C++ ABI is resolved with `dlsym`; strings stay
-inside the adapter and the C ABI-2 table gains an optional, size-checked tail.
-Older adapters/firmware remain usable without this capability. Reference:
-[Kodi's webOS audio switching and SetupAudio options](https://github.com/xbmc/xbmc/blob/caf3155643d3aec7195ed2532eb48ebbf9076b91/xbmc/cores/VideoPlayer/MediaPipelineWebOS.cpp),
-and the [public SDK header](https://github.com/webosbrew/webos-userland/blob/00a5f8721e15d5c10030b99b2f3e73e0c527bcce/include/starfish-media-pipeline/StarfishMediaAPIs.h).
-
-The worker pauses, prepares one borrowed packet, requests the new audio codec
-options and uses the existing native Seek/preroll protocol. An accepted change
-keeps the video/HDR configuration, media ID and Load generation; metadata-only
-publication therefore retains the v12 video-plane behavior. No supported track
-is additionally transcoded, and no second player, packet queue or buffer-budget
-increase is introduced. Missing/refused codec changes use the v12 Load path,
-including the already primed first packet. Refused Seek, no presentation
-progress or an audio codec error triggers bounded fresh-Load recovery with the
-exact selected audio and DV metadata. Real failed reuse stays disabled for the
-session. Codec errors are preserved even during the synchronous change call
-and after video progress; they do not directly send this experiment to HDR10.
-
-`NV_TEST_AUDIO_RECONFIG=1 NV_TEST_TRUEHD=1 SANITIZE=1 bash tests/dts_playback.sh`
-exercises format/channel changes, paused switches, cancellation, missing/refused
-capabilities, retained first packets, refused Seek, synchronous/late audio errors
-and no-progress fallback. `tests/dts_pipeline.sh` validates both native string
-ABIs and an older table without the optional tail. QR-safe diagnostics include
-`dv-audio-reconfigure ... accepted=1` and `native-audio-buffered-switch` followed
-by presentation progress; only actual TV testing can establish audible output
-and absence of visible black frames. The RAM overlay remains off by default.

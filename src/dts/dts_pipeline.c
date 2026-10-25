@@ -43,7 +43,7 @@ static void *open_adapter(int major, const DtsAdapter **api) {
   *(void **)(&entry) = dlsym(library, "nuvio_dts_adapter_v2");
   if (!entry) goto fail;
   *api = entry();
-  if (!*api || (*api)->abi != DTS_ADAPTER_ABI || (*api)->size < offsetof(DtsAdapter,audio_config) ||
+  if (!*api || (*api)->abi != DTS_ADAPTER_ABI || (*api)->size != sizeof(DtsAdapter) ||
       !(*api)->probe || !(*api)->create || !(*api)->destroy || !(*api)->load ||
       !(*api)->feed || !(*api)->play || !(*api)->pause || !(*api)->flush ||
       !(*api)->eos || !(*api)->media_id || !(*api)->error || !(*api)->probe()) goto fail;
@@ -119,8 +119,4 @@ const char *dts_pipeline_error(DtsPipeline *p) { return p ? p->api->error(p->nat
 
 int dts_pipeline_volume(DtsPipeline *p, int pct) {
   return p && p->api->volume ? p->api->volume(p->native, pct) : 0;
-}
-int dts_pipeline_audio_config(DtsPipeline *p, const DtsMediaInfo *m) {
-  return p && m && p->api->size >= sizeof(DtsAdapter) && p->api->audio_config
-    ? p->api->audio_config(p->native,m) : 0;
 }

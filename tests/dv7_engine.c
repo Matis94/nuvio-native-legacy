@@ -111,6 +111,44 @@ int main(int argc,char **argv) {
   puts("DV7 TrueHD: real 5.1 decode to AAC/AC3, seek, EAC3 return and initial selection retain P8.1 RPU; no DTS core fallback");
 #endif
   dts_engine_destroy(e);
+#ifdef NV_DV_FIXED_AUDIO_TEST
+  // Real AC3 2.0/5.1, EAC3 2.0, DTS and TrueHD 5.1 all produce identical
+  // output parameters from the FIRST Load. Still require P8.1 RPU on every
+  // picture, decoded audio, correct track metadata, seek and bounded cache.
+  for(int mode=1;mode<=2;mode++) {
+    e=dts_engine_create();assert(e);
+    dts_engine_allow_p7(e,1);dts_engine_dv(e,1);dts_engine_dv_audio(e,mode);
+    dts_engine_set_ahead_mib(128);
+    dts_engine_set_ac3(mode==1); // Fixed mode is independent of DTS preference.
+    check(e,dts_engine_open(e,argv[1],"",5,0,0));
+    for(int pass=0;pass<2;pass++) for(int track=1;track<=6;track++) {
+      check(e,dts_engine_audio(e,track,0,0));
+      const DtsMediaInfo *m=dts_engine_info(e);
+      assert(!strcmp(m->audio_codec,mode==2?"ac3":"aac"));
+      assert(m->channels==(mode==2?6:2) && m->sample_rate==48000);
+      assert(m->audio_stream==track && m->n_tracks==7);
+      assert(!strcmp(m->tracks[5].codec,"ac3") && m->tracks[5].channels==6);
+      assert(!strcmp(m->tracks[6].codec,"ac3") && m->tracks[6].channels==2);
+      assert(drain(e)==20);check(e,dts_engine_seek(e,.4));assert(drain(e)>0);
+      DtsBufferInfo b={0};dts_engine_buffer_info(e,&b);
+      // v12 counts the active 4 MiB range as well as the 128 MiB queue.
+      assert(b.capacity_bytes==33*(4*1048576LL-1) && b.ready_bytes<=b.capacity_bytes);
+    }
+    dts_engine_cancel(e);DtsFrame cancelled;
+    assert(dts_engine_next(e,&cancelled)<0);dts_engine_destroy(e);
+  }
+  // Setter cannot enable conversion on a non-DV path, and invalid mode is off.
+  dts_engine_set_ac3(0);
+  e=dts_engine_create();dts_engine_allow_p7(e,1);dts_engine_dv_audio(e,2);
+  check(e,dts_engine_open(e,argv[1],"",3,0,0));
+  assert(!strcmp(dts_engine_info(e)->audio_codec,"aac") && dts_engine_info(e)->channels==2);
+  dts_engine_destroy(e);
+  e=dts_engine_create();dts_engine_dv(e,1);dts_engine_allow_p7(e,1);dts_engine_dv_audio(e,99);
+  check(e,dts_engine_open(e,argv[1],"",1,0,0));
+  assert(!strcmp(dts_engine_info(e)->audio_codec,"eac3") && drain(e)==20);
+  dts_engine_destroy(e);dts_engine_set_ac3(0);dts_engine_set_ahead_mib(0);
+  puts("Fixed DV audio: real AC3/EAC3/DTS/TrueHD, stereo/surround, repeated switching/seeking, unchanged bounded cache, opt-in and cancellation passed");
+#endif
   e=dts_engine_create(); dts_engine_allow_p7(e,1); dts_engine_dv(e,1);
   check(e,dts_engine_open(e,argv[2],"",-1,0,0));
   DtsFrame f; int r;
