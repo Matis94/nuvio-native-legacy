@@ -1,4 +1,4 @@
-name: Build native seek DV7 DTS v12 test IPK
+name: Build native seek DV7 DTS v13 test IPK
 on:
   push:
     branches: [build/native-seek-dv7-dts-test]
@@ -20,15 +20,15 @@ jobs:
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'
       NUVIO_REQUIRE_ALL: '1'
-      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST
+      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_AUDIO_RECONFIG_TEST
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
       - name: Verify application source
         run: |
-          git fetch --no-tags --depth=1 origin af7022adc243b9634b9036bc90883204f3da7f01
-          git diff --exit-code af7022adc243b9634b9036bc90883204f3da7f01 HEAD -- src rust tools deploy
+          git fetch --no-tags --depth=1 origin ce7d5bb7e323fe99f135b915195f57bf3a0b7bf2
+          git diff --exit-code ce7d5bb7e323fe99f135b915195f57bf3a0b7bf2 HEAD -- src rust tools deploy
           git fetch --no-tags --depth=1 origin 0ce56918b116dba810b642bec2c3ac8a9ef2adb0
           git diff --exit-code 0ce56918b116dba810b642bec2c3ac8a9ef2adb0 HEAD -- src/ajustes.c src/ajustes.h
           git diff --check
@@ -61,12 +61,13 @@ jobs:
           cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -Isrc src/cacheboost.c tests/buffer_tamanho.c -lpthread -lm -o /tmp/buffer-policy-test
           /tmp/buffer-policy-test
           cc -std=gnu11 -Wall -Wextra -Werror -Isrc -c src/dts/dts_engine.c -o /tmp/dts-noffmpeg.o
-      - name: TrueHD DV routing and audio controls
+      - name: TrueHD DV routing and native audio reconfiguration
         timeout-minutes: 6
         run: |
           NV_TEST_TRUEHD=1 bash tests/dvaudio_lg.sh
           NV_TEST_TRUEHD=1 bash tests/video_acb_lg.sh
           NV_TEST_TRUEHD=1 SANITIZE=1 bash tests/dts_playback.sh
+          NV_TEST_AUDIO_RECONFIG=1 NV_TEST_TRUEHD=1 SANITIZE=1 bash tests/dts_playback.sh
       - name: Build host FFmpeg and test real HTTP buffering
         timeout-minutes: 12
         env:
@@ -159,7 +160,7 @@ jobs:
           data = json.loads(p.read_text())
           assert data["version"] == "2.0.8"
           assert data["id"] == "space.nuvio.native.legacy"
-          data["title"] = "Nuvio Legacy (Native seek v12 QR)"
+          data["title"] = "Nuvio Legacy (Native seek v13 QR)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -172,7 +173,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-native-seek-dv7-dts-test-v12-qr.ipk
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-native-seek-dv7-dts-test-v13-qr.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -188,7 +189,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: native-seek-dv7-dts-test-v12-qr-ipk
+          name: native-seek-dv7-dts-test-v13-qr-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14
