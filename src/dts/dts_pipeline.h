@@ -20,6 +20,8 @@ int dts_pipeline_flush(DtsPipeline *, double);
 int dts_pipeline_eos(DtsPipeline *);
 /* Optional native capability: returns zero when unavailable/refused. */
 int dts_pipeline_volume(DtsPipeline *, int pct);
+/* Optional in-place audio codec/channel change. Does not Load or bind video. */
+int dts_pipeline_audio_config(DtsPipeline *, const DtsMediaInfo *);
 void dts_pipeline_destroy(DtsPipeline *);
 const char *dts_pipeline_media_id(DtsPipeline *);
 const char *dts_pipeline_error(DtsPipeline *);

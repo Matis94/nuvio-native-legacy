@@ -10,6 +10,7 @@ class StarfishMediaAPIs {
   bool Load(const char *,void (*)(int,long long,const char *,void *),void *);
   bool Play(); bool Pause(); bool flush(const char *); bool Seek(const char *); bool pushEOS();
   bool Unload(); const char *getMediaID(); bool notifyForeground(); bool setVolume(const char *);
+  bool changeAudioCodec(const std::string &, const std::string &);
  private: char storage[8192];
 };
 enum {

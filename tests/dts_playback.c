@@ -27,6 +27,8 @@ static int prime_serial;
 static int seamless_fixture, flush_refuse, audio_format_change, stale_clock;
 static int handoff_fixture, pause_refuse, prime_failure;
 static atomic_int handoff_cancelled;
+static int reconfig_fixture,reconfig_calls,reconfig_refuse,reconfig_sync_error;
+static int reconfig_first_feed;
 static int last_p7;
 static atomic_llong buffer_ready = 21*1048576LL;
 void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *out) {
@@ -95,6 +97,10 @@ int dts_engine_audio(DtsEngine *e,int stream,int core,double target) {
  if(handoff_fixture) {
   strcpy(e->info.audio_codec,stream==9?"ac3":"aac");
   e->info.channels=stream==9?6:2;
+ }
+ if(reconfig_fixture) {
+  strcpy(e->info.audio_codec,stream==4?"aac":stream==12?"eac3":"ac3");
+  e->info.channels=stream==4||stream==11?2:stream==10?1:6;
  }
  pthread_mutex_lock(&fixture);audio_reconfigs++;last_stream=stream;last_audio_target=target;pthread_mutex_unlock(&fixture);
  return 0;
@@ -188,6 +194,11 @@ int dts_pipeline_load(DtsPipeline *p,const DtsMediaInfo *m,double t) {
 }
 int dts_pipeline_feed(DtsPipeline *p,const DtsFrame *f) {
  assert(p->loaded);int refused=0;
+ if(reconfig_fixture && !reconfig_first_feed && p->generation==2 && p->target==2.0) {
+  // A refused audio change must feed the already primed first packet into
+  // fallback Load, not read/discard its keyframe and begin with packet two.
+  assert(f->data[0]==1);reconfig_first_feed=1;
+ }
  if(scenario==SEEK_SEGMENT && p->broken_segment && f->kind==DTS_VIDEO) return 0;
  if(scenario>=NATIVE_STALL &&
     ((scenario==NATIVE_REPEAT && p->packets>=4) ||
@@ -246,6 +257,15 @@ int dts_pipeline_pause(DtsPipeline *p) {
  if(pause_refuse && p->generation==1)return 0;
  p->running=0;pthread_mutex_lock(&fixture);pauses++;pthread_mutex_unlock(&fixture);return 1;
 }
+int dts_pipeline_audio_config(DtsPipeline *p,const DtsMediaInfo *m) {
+ if(!reconfig_fixture)return 0;
+ assert(last_dv && !p->running && p->loaded && p->completed);
+ assert(m->sample_rate==48000 && m->dovi_profile==8);
+ assert(!strcmp(m->audio_codec,"aac") || !strcmp(m->audio_codec,"ac3") || !strcmp(m->audio_codec,"eac3"));
+ pthread_mutex_lock(&fixture);reconfig_calls++;pthread_mutex_unlock(&fixture);
+ if(reconfig_sync_error)p->event(p->user,"{\"error\":{\"errorCode\":200}}");
+ return !reconfig_refuse;
+}
 int dts_pipeline_flush(DtsPipeline *p,double t) {
  if(last_dv) {
   // DV seeks must hold the old frame and fetch one borrowed packet first.
@@ -269,7 +289,8 @@ int dts_pipeline_flush(DtsPipeline *p,double t) {
 int dts_pipeline_eos(DtsPipeline *p) { (void)p;pthread_mutex_lock(&fixture);eoses++;pthread_mutex_unlock(&fixture);return 1; }
 void dts_pipeline_destroy(DtsPipeline *p) {
  if(!p)return;
- if(handoff_fixture && p->generation==1 && atomic_load(&prime_block)) {
+ if(handoff_fixture && p->generation==1 && atomic_load(&prime_block) &&
+    (!reconfig_fixture || !atomic_load(&prime_release))) {
   assert(!p->running);
   assert(atomic_load(&prime_entered));
   assert(atomic_load(&prime_release) || atomic_load(&handoff_cancelled));
@@ -300,6 +321,75 @@ static DtsPlayback *start(int paused,int stream,const DtsTrack *selected,int ord
 }
 int main(int argc,char **argv) {
  assert(argc==2);assert(!dts_playback_enabled());DtsPlayback *p;DtsPlaybackStatus s;
+#ifdef NV_DV_AUDIO_RECONFIG_TEST
+ if(!strncmp(argv[1],"reconfig-",9)) {
+  reconfig_fixture=handoff_fixture=seamless_fixture=1;scenario=SEEK_PREROLL;
+  int paused=strstr(argv[1],"paused")!=NULL,cancel=strstr(argv[1],"cancel")!=NULL;
+  int error=strstr(argv[1],"error")!=NULL;
+  reconfig_sync_error=strstr(argv[1],"sync-error")!=NULL;
+  reconfig_refuse=strstr(argv[1],"refused")!=NULL;
+  stale_clock=strstr(argv[1],"stale")!=NULL;
+  int seek_refused=strstr(argv[1],"seek-refused")!=NULL;
+  if(seek_refused)reconfig_refuse=0;
+  dts_playback_next_seamless(1);dts_playback_next_dv(1);
+  p=start(paused,4,NULL,0,0);wait_count(&accepted,paused?1:4);
+  if(paused)wait_count(&pauses,1);else wait_count(&plays,1);
+  atomic_store(&prime_block,1);
+  dts_playback_audio_at(p,9,2.0);
+  for(int i=0;i<1500 && !atomic_load(&prime_entered);i++)nap();
+  assert(atomic_load(&prime_entered));
+  assert(count(&loads)==1 && count(&destroys)==0 && count(&reconfig_calls)==0);
+  if(cancel) { dts_playback_close(p);assert(count(&loads)==1 && count(&creates)==count(&destroys));return 0; }
+  flush_refuse=seek_refused;
+  atomic_store(&prime_release,1);wait_count(&reconfig_calls,1);
+  int fallback=reconfig_refuse || seek_refused || error || stale_clock;
+  if(reconfig_refuse || seek_refused || reconfig_sync_error)wait_count(&loads,2);
+  else {
+   wait_count(&flushes,1);
+   if(paused) { wait_count(&pauses,2);dts_playback_pause(p,0); }
+   wait_count(&plays,paused?1:2);
+   if(error) {
+    char event[2048];int confirmed=0;
+    for(int i=0;i<1500 && !confirmed;i++) {
+     while(dts_playback_event(p,event,sizeof event)) confirmed|=strstr(event,"native-seek-progress-confirmed")!=NULL;
+     if(!confirmed)nap();
+    }
+    assert(confirmed); // Even a codec error AFTER video progress must recover.
+    emit("{\"error\":{\"errorCode\":200}}");wait_count(&loads,2);
+   }
+   if(stale_clock) { for(int i=0;i<6500 && count(&loads)<2;i++)nap();assert(count(&loads)==2); }
+  }
+  s=wait_status(p,0,0);
+  assert(!s.failed && s.info.audio_stream==9 && s.info.dovi_profile==8 && count(&opens)==1);
+  assert(s.load_revision==(fallback?2:1) && count(&loads)==(fallback?2:1));
+  assert(count(&audio_reconfigs)==1 && last_audio_target==2.0);
+  if(reconfig_refuse)assert(reconfig_first_feed);
+  if(fallback) {
+   wait_count(&plays,2);
+   // A real codec/Seek error disables reuse. A simple unsupported codec
+   // capability does not disable ordinary compatible native seeks.
+   stale_clock=0;flush_refuse=0;int old_flush=count(&flushes);
+   dts_playback_seek(p,3.0);
+   if(!reconfig_refuse || seek_refused) { wait_count(&loads,3);assert(count(&flushes)==old_flush); }
+   else wait_count(&flushes,old_flush+1);
+  } else {
+   int streams[]={10,11,12,4}; // AC3 mono/stereo, EAC3, converted TrueHD/AAC.
+   for(int i=0;i<4;i++) {
+    dts_playback_audio_at(p,streams[i],3.0+i);
+    wait_count(&reconfig_calls,i+2);wait_count(&flushes,i+2);wait_count(&plays,i+(paused?2:3));
+    s=wait_status(p,0,0);assert(s.info.audio_stream==streams[i] && s.info.dovi_profile==8);
+    assert(s.load_revision==1 && count(&loads)==1 && count(&creates)==1 && count(&opens)==1);
+   }
+   char event[2048];int switched=0;
+   while(dts_playback_event(p,event,sizeof event)) {
+    switched|=strstr(event,"native-audio-buffered-switch")!=NULL;
+   }
+   assert(switched);
+  }
+  dts_playback_close(p);assert(count(&creates)==count(&destroys));
+  printf("DV %s: codec/channel change retains one Load or safely falls back with DV/cache preserved.\n",argv[1]);return 0;
+ }
+#endif
  if(!strncmp(argv[1],"handoff-",8)) {
   handoff_fixture=seamless_fixture=1;scenario=SEEK_PREROLL;
   int paused=strstr(argv[1],"paused")!=NULL;

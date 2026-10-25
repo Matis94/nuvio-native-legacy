@@ -26,6 +26,10 @@ int main(void) {
     "[dts] dv-seek-prime ms=2100 kind=1 pts=4645.563 bytes=327759",
     "[dts] stage=dv-audio-prepared-before-unload ",
     "[dts] stage=audio-format-reload ",
+    "[dts] stage=native-audio-buffered-switch ",
+    "[dts] stage=native-audio-change-accepted AC3",
+    "[dts] dv-audio-reconfigure codec=aac channels=2 rate=48000 accepted=1",
+    "[dts] native-audio-fallback reason=codec-error target=6131.959",
     "[dts] dv-audio-reload-prime target=3241.822 ms=4540 packet=1 kind=1 bytes=327759",
     "[dv] file: profile=7 level=6 rpu=1 el=1 bl=1 compat=6",
     "[dts] stage=dv-native-load profile=8 compatibility=1 bl=1 el=0 rpu=1 reused=1 target=123.000",
@@ -45,6 +49,9 @@ int main(void) {
   hides("[dts] stage=dv-audio-prepared-before-unloadSECRETVALUE", "SECRETVALUE");
   hides("[net] dv-audio-prepared-before-unload", "dv-audio-prepared-before-unload");
   hides("[dts] stage=dv-audio-prepared-before-unload token=shortpw", "shortpw");
+  hides("[dts] stage=native-audio-buffered-switchSECRETVALUE", "SECRETVALUE");
+  hides("[net] native-audio-buffered-switch", "native-audio-buffered-switch");
+  hides("[dts] stage=native-audio-buffered-switch token=shortpw", "shortpw");
   hides("[net] https://person:shortpw@host.example/key/movie?api=x#y", "person");
   hides("[net] HtTpS://private.example/shortpw", "shortpw");
   hides("[net] https:\\/\\/private.example/key", "private.example");
