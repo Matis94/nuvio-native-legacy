@@ -1,4 +1,4 @@
-# Experimental MP4 BD REMUX test 1
+# Experimental MP4 BD REMUX test 2
 
 Base: v17-ui, commit `85ca963f28afb9ddd0edded0e013fca579493fbc`.
 Branch: `build/mp4-bd-remux-test`. The `build/playback-v17-no-qr` branch is not modified.
@@ -45,6 +45,18 @@ text-input QR flow and bounded socket writes are retained.
 New numeric/technical log entries use `[mp4-bd-test]` and `MP4 test:`. They
 identify the native 204 trigger, verified BL/EL indices, P7 -> P8.1 output,
 pair alignment and bounded failure reasons without exposing stream URLs.
+
+Test 2 reproduces the TV's initial configuration rejection using a 23-byte
+hvcC and no MP4 colr box. The minimal FFmpeg HEVC parser reads dimensions but
+does not publish SPS VUI colour fields. For verified separate-track P7 only,
+missing HDR fields are recovered from a bounded base SPS read (hvcC arrays or
+in-band packets), without decoding pictures or assuming unknown colour is HDR.
+The probe is limited to 64 packets / 4 MiB and an 8 KiB SPS, within the same
+16 MiB reservation. An in-band probe rewinds before audio setup/resume so the
+opening pictures and audio are retained. Missing SPS, explicit SDR, colour
+conflicts and invalid headers still fail. Logs now give individual BL/EL
+parameters, specific rejection reasons and native numeric errors even if the
+backend JSON has been removed by diagnostic redaction.
 
 ## Validation and TV testing
 

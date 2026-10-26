@@ -2,6 +2,82 @@
  * unchanged unless this particular engine was explicitly opened for the test.
  * Bounded compressed BL/RPU queues are paired by exact timestamps; four
  * HTTP slots are reserved before any range workers start. */
+#include "mp4_hevc_sps.h"
+
+static int mp4_sps_packet(const uint8_t *p,size_t n,int length,NvMp4Sps *s) {
+  if(!p || n>NV_MP4_PACKET_MAX || length<1 || length>4)return -1;
+  for(unsigned count=0;n && count<512;count++) {
+    if(n<(size_t)length)return -1;
+    uint32_t size=0;for(int i=0;i<length;i++)size=(size<<8)|p[i];
+    p+=length;n-=(size_t)length;
+    if(size<2 || size>n)return -1;
+    if(((p[0]>>1)&63)==33)return nv_mp4_sps(p,size,s);
+    p+=size;n-=size;
+  }
+  return n?-1:0;
+}
+static int mp4_sps_hvcc(const AVCodecParameters *p,NvMp4Sps *s) {
+  const uint8_t *h=p->extradata;size_t n=(size_t)p->extradata_size,at=23;
+  if(!h || n<23 || n>NV_MP4_PACKET_MAX || h[0]!=1)return -1;
+  unsigned total=0;
+  for(unsigned a=0;a<h[22];a++) {
+    if(n-at<3)return -1;
+    unsigned type=h[at]&63,count=((unsigned)h[at+1]<<8)|h[at+2];at+=3;
+    if(count>512-total)return -1;
+    total+=count;
+    for(unsigned k=0;k<count;k++) {
+      if(n-at<2)return -1;
+      unsigned size=((unsigned)h[at]<<8)|h[at+1];at+=2;
+      if(size<2 || size>n-at)return -1;
+      if(type==33)return nv_mp4_sps(h+at,size,s);
+      at+=size;
+    }
+  }
+  return 0;
+}
+static int mp4_restore_hdr(DtsEngine *e,int base) {
+  AVCodecParameters *p=e->fmt->streams[base]->codecpar;
+  if(p->color_primaries!=AVCOL_PRI_UNSPECIFIED && p->color_trc!=AVCOL_TRC_UNSPECIFIED)return 0;
+  NvMp4Sps s={0};int result=mp4_sps_hvcc(p,&s),read=0;
+  if(!result) {
+    AVPacket *packet=av_packet_alloc();
+    if(!packet)return fail(e,"MP4 SPS probe allocation",AVERROR(ENOMEM));
+    size_t bytes=0;
+    /* This temporary packet is covered by the existing 16 MiB reservation.
+     * Probe only at initial open, before audio setup, frame delivery or resume. */
+    for(unsigned i=0;i<64 && bytes<NV_MP4_PACKET_MAX && !result;i++) {
+      if(cancelled(e)) {result=-1;break;}
+      int r=av_read_frame(e->fmt,packet);read=1;
+      if(r<0) {result=-1;break;}
+      if(packet->size<0 || (size_t)packet->size>NV_MP4_PACKET_MAX-bytes)result=-1;
+      else {
+        bytes+=(size_t)packet->size;
+        if(packet->stream_index==base)result=mp4_sps_packet(packet->data,(size_t)packet->size,(p->extradata[21]&3)+1,&s);
+      }
+      av_packet_unref(packet);
+    }
+    av_packet_free(&packet);
+  }
+  if(result!=1)return fail(e,"MP4 base SPS missing or invalid within probe budget",0);
+  printf("[mp4-bd-test] base SPS: size=%dx%d depth=%d hdr=%d/%d/%d; from=%s\n",
+         s.width,s.height,s.depth,s.primaries,s.transfer,s.matrix,read?"in-band":"hvcC");fflush(stdout);
+  if(s.width!=p->width || s.height!=p->height || s.depth!=10 ||
+     s.primaries!=AVCOL_PRI_BT2020 || s.transfer!=AVCOL_TRC_SMPTE2084)
+    return fail(e,"MP4 base SPS does not confirm HDR10 Main10",0);
+  if((p->color_primaries!=AVCOL_PRI_UNSPECIFIED && (int)p->color_primaries!=s.primaries) ||
+     (p->color_trc!=AVCOL_TRC_UNSPECIFIED && (int)p->color_trc!=s.transfer) ||
+     (p->color_space!=AVCOL_SPC_UNSPECIFIED && (int)p->color_space!=s.matrix))
+    return fail(e,"MP4 container and base SPS colour conflict",0);
+  if(read) {
+    int r=av_seek_frame(e->fmt,base,0,AVSEEK_FLAG_BACKWARD);
+    if(r<0)return fail(e,"MP4 SPS probe rewind",r);
+    avformat_flush(e->fmt);
+  }
+  p->color_primaries=s.primaries;p->color_trc=s.transfer;p->color_space=s.matrix;
+  if(p->color_range==AVCOL_RANGE_UNSPECIFIED)p->color_range=s.full_range?AVCOL_RANGE_JPEG:AVCOL_RANGE_MPEG;
+  puts("[mp4-bd-test] restored HDR10 colour metadata from base SPS; no video decode");fflush(stdout);
+  return 0;
+}
 static void mp4_pair_reset(DtsEngine *e) {
   NvMp4Pair *m=e->mp4;
   if(!m)return;
@@ -42,13 +118,23 @@ static int mp4_configure(DtsEngine *e) {
   if(videos!=2 || base<0 || el<0)return fail(e,"MP4 test requires separate BL and P7 EL tracks",0);
   AVStream *b=e->fmt->streams[base],*v=e->fmt->streams[el];
   AVCodecParameters *bp=b->codecpar,*ep=v->codecpar;
-  if(bp->width<=0 || bp->height<=0 || ep->width<=0 || ep->height<=0 ||
-     bp->width<ep->width || bp->height<ep->height ||
-     bp->color_trc!=AVCOL_TRC_SMPTE2084 || bp->color_primaries!=AVCOL_PRI_BT2020 ||
-     b->time_base.num<=0 || b->time_base.den<=0 || v->time_base.num<=0 || v->time_base.den<=0 ||
-     b->avg_frame_rate.num<=0 || av_cmp_q(b->avg_frame_rate,v->avg_frame_rate) ||
-     bp->extradata_size<23 || ep->extradata_size<23 || bp->extradata[0]!=1 || ep->extradata[0]!=1)
-    return fail(e,"MP4 BL/EL configuration is incompatible",0);
+  printf("[mp4-bd-test] BL track=%d size=%dx%d hdr=%d/%d/%d fps=%d/%d timebase=%d/%d hvcc=%d; EL track=%d size=%dx%d fps=%d/%d timebase=%d/%d hvcc=%d\n",
+         base,bp->width,bp->height,bp->color_primaries,bp->color_trc,bp->color_space,
+         b->avg_frame_rate.num,b->avg_frame_rate.den,b->time_base.num,b->time_base.den,bp->extradata_size,
+         el,ep->width,ep->height,v->avg_frame_rate.num,v->avg_frame_rate.den,v->time_base.num,v->time_base.den,ep->extradata_size);
+  fflush(stdout);
+  if(bp->width<=0 || bp->height<=0 || ep->width<=0 || ep->height<=0 || bp->width<ep->width || bp->height<ep->height)
+    return fail(e,"MP4 BL/EL dimensions are incompatible",0);
+  if(b->time_base.num<=0 || b->time_base.den<=0 || v->time_base.num<=0 || v->time_base.den<=0)
+    return fail(e,"MP4 BL/EL time bases are invalid",0);
+  if(b->avg_frame_rate.num<=0 || b->avg_frame_rate.den<=0 || v->avg_frame_rate.num<=0 ||
+     v->avg_frame_rate.den<=0 || av_cmp_q(b->avg_frame_rate,v->avg_frame_rate))
+    return fail(e,"MP4 BL/EL frame rates are incompatible",0);
+  if(!bp->extradata || !ep->extradata || bp->extradata_size<23 || ep->extradata_size<23 || bp->extradata[0]!=1 || ep->extradata[0]!=1)
+    return fail(e,"MP4 BL/EL HEVC configuration is invalid",0);
+  if(mp4_restore_hdr(e,base)<0)return -1;
+  if(bp->color_trc!=AVCOL_TRC_SMPTE2084 || bp->color_primaries!=AVCOL_PRI_BT2020)
+    return fail(e,"MP4 base colour metadata is not HDR10",0);
   e->mp4=av_mallocz(sizeof *e->mp4);
   if(!e->mp4)return fail(e,"MP4 pairing allocation",AVERROR(ENOMEM));
   for(int i=0;i<MP4_BASE_QUEUE;i++) {

@@ -18,6 +18,10 @@ int main(void) {
   const char *safe = "[playback-diag] tick=123 generation=2 pos=123.456 readyBytes=268435456 availableKiB=245760";
   logexport_redact(safe, out, sizeof out); assert(!strcmp(safe, out));
   const char *range_logs[]={
+    "[mp4-bd-test] native error code=204 enabled=1 started=0 converter=0 tried=0",
+    "[mp4-bd-test] BL track=0 size=3840x2160 hdr=2/2/2 fps=24000/1001 timebase=1/480000 hvcc=23; EL track=1 size=1920x1080 fps=24000/1001 timebase=1/480000 hvcc=23",
+    "[mp4-bd-test] base SPS: size=3840x2160 depth=10 hdr=9/16/9; from=in-band",
+    "[mp4-bd-test] restored HDR10 colour metadata from base SPS; no video decode",
     "[dts] stage=native-buffered-reposition ",
     "[dts] stage=native-seek-progress-confirmed ",
     "[dts] stage=native-seek-accepted 1234567",

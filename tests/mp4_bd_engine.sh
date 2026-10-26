@@ -34,6 +34,7 @@ cc -std=gnu11 -O1 -g -Wall -Wextra -Werror "${flags[@]}" -I"$prefix/include" \
 for kind in mel fel;do
  "$dir/engine" "$dir/$kind.mkv" "$dir/$kind-bad.mkv" "$dir/p8.mp4" \
   "$dir/$kind-dual.mp4" "$dir/$kind-bad-rpu.mp4" "$dir/$kind-mismatch.mp4" \
-  "$dir/$kind-missing-rpu.mp4" "$dir/$kind-dual-reverse.mp4" "$dir/$kind-output.nal" "$dir/$kind-inband.mp4" "$dir/output.h265"
+  "$dir/$kind-missing-rpu.mp4" "$dir/$kind-dual-reverse.mp4" "$dir/$kind-output.nal" "$dir/$kind-inband.mp4" "$dir/output.h265" \
+  "$dir/$kind-inband-nocolr.mp4" "$dir/$kind-hvcc-nocolr.mp4" "$dir/$kind-inband-nosps.mp4" "$dir/$kind-sdr-colr.mp4" "$dir/$kind-inband-conflict.mp4"
  ffmpeg -hide_banner -loglevel error -i "$dir/output.h265" -f null -
 done

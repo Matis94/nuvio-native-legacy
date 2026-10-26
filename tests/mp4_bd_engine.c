@@ -26,7 +26,7 @@ static int drain_split(DtsEngine *e,const char *rpu_path,FILE *pictures) {
   check(e,result);assert(videos>0 && audios>0);return videos;
 }
 int main(int argc,char **argv) {
-  assert(argc==12);
+  assert(argc==17);
   char *baseline[]={argv[0],argv[1],argv[2],argv[3]};
   if(!getenv("NV_MP4_ONLY"))assert(!mkv_baseline_main(4,baseline));
   for(int mode=0;mode<=2;mode++) {
@@ -62,12 +62,32 @@ int main(int argc,char **argv) {
     check(e,dts_engine_open(e,argv[10],"",-1,0,0));
     assert(drain_split(e,argv[9],NULL)==20);
     check(e,dts_engine_seek(e,.4));assert(drain_split(e,argv[9],NULL)>0);
+    // Reproduce the TV failure: empty hvcC arrays and no container colr.
+    // The minimal FFmpeg parser cannot publish colour fields from the SPS.
+    for(int variant=12;variant<=13;variant++) {
+      check(e,dts_engine_open(e,argv[variant],"",-1,0,0));
+      const DtsMediaInfo *m=dts_engine_info(e);
+      assert(m->color_primaries==9 && m->color_transfer==16 && m->color_matrix==9);
+      FILE *recovered=mode==0 && variant==12?fopen(argv[11],"wb"):NULL;
+      if(mode==0 && variant==12)assert(recovered);
+      assert(drain_split(e,argv[9],recovered)==20);if(recovered)fclose(recovered);
+      check(e,dts_engine_seek(e,.4));assert(drain_split(e,argv[9],NULL)>0);
+      check(e,dts_engine_audio(e,3,0,0));assert(drain_split(e,argv[9],NULL)==20);
+      check(e,dts_engine_open(e,argv[variant],"",-1,0,.4));assert(drain_split(e,argv[9],NULL)>0);
+    }
+    // Unknown colour is not proof of HDR10: SPS must actually confirm it.
+    assert(dts_engine_open(e,argv[14],"",-1,0,0)<0);
+    assert(strstr(dts_engine_error(e),"SPS missing or invalid"));
+    assert(dts_engine_open(e,argv[15],"",-1,0,0)<0);
+    assert(strstr(dts_engine_error(e),"not HDR10"));
+    assert(dts_engine_open(e,argv[16],"",-1,0,0)<0);
+    assert(strstr(dts_engine_error(e),"colour conflict"));
     // Turning the per-engine experiment off restores the baseline path.
     dts_engine_mp4_test(e,0);check(e,dts_engine_open(e,argv[4],"",-1,0,0));
     assert(!dts_engine_info(e)->dovi_profile);
     dts_engine_cancel(e);DtsFrame f;assert(dts_engine_next(e,&f)<0);dts_engine_destroy(e);
   }
   dts_engine_set_ahead_mib(0);
-  puts("PASS real dual-track MEL/FEL MP4: P8.1 RPU on each base picture, B-frames, seeks, audio changes, OFF baseline, MKV/P8 isolation, bounded cache, corrupt/missing/mismatched RPU and cancellation");
+  puts("PASS real dual-track MEL/FEL MP4: P8.1 RPU on each base picture, in-band/hvcC SPS HDR10 recovery without colr, B-frames, seeks, audio changes, OFF baseline, MKV/P8 isolation, bounded cache, missing SPS, SDR refusal, corrupt/missing/mismatched RPU and cancellation");
   return 0;
 }

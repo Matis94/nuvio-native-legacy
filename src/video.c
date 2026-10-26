@@ -1436,6 +1436,14 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
   // esse campo em resposta NORMAL — os marcos encheram de
   // `pipeline erro: errorText":"No Error"`, que e ruido escondendo o sinal.
   if (strstr(p, "errorText") && !strstr(p, "\"No Error\"")) {
+#ifdef NV_MP4_BD_TEST
+    /* Export numeric diagnostics separately from the private backend JSON. */
+    if(fonteMp4 || nv_url_e_mp4(urlAtual)) {
+      printf("[mp4-bd-test] native error code=%.0f enabled=%d started=%d converter=%d tried=%d\n",
+             js_num(p,NULL,"errorCode",-1),mp4TestEnabled,fonteTocou,dtsSessao!=NULL,dtsTentou);
+      fflush(stdout);
+    }
+#endif
     const char *q = strstr(p, "errorText");
     char m[96];
     snprintf(m, sizeof m, "pipeline erro: %.60s", q);

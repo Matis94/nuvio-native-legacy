@@ -67,7 +67,7 @@ def write(kind, variant, reverse=False):
         samples = []
         for number, p in enumerate(packets[i]):
             raw = unhex(p['data'])
-            if i < 2 and variant == 'inband' and 'K' in p['flags']:
+            if i < 2 and variant.startswith('inband') and 'K' in p['flags']:
                 # The user's MP4 has a 23-byte hvcC (no parameter-set arrays).
                 # Carry the actual VPS/SPS/PPS in each random-access sample.
                 hvcc = unhex(stream['extradata'])
@@ -78,7 +78,8 @@ def write(kind, variant, reverse=False):
                     for _ in range(count):
                         size = int.from_bytes(hvcc[pos:pos+2], 'big')
                         pos += 2
-                        params += size.to_bytes(4, 'big') + hvcc[pos:pos+size]
+                        if variant != 'inband-nosps' or (hvcc[pos] >> 1) & 63 != 33:
+                            params += size.to_bytes(4, 'big') + hvcc[pos:pos+size]
                         pos += size
                 raw = params + raw
             if i == 1 and not (variant == 'missing-rpu' and number == 5):
@@ -105,10 +106,14 @@ def write(kind, variant, reverse=False):
             entry += struct.pack('>HH', width, height) + ints(0x480000, 0x480000, 0)
             entry += struct.pack('>H', 1) + bytes(32) + struct.pack('>Hh', 24, -1)
             hvcc = unhex(s['extradata'])
-            if variant == 'inband':
+            if variant.startswith('inband'):
                 hvcc = hvcc[:22] + b'\0'
             entry += box('hvcC', hvcc)
-            entry += box('colr', b'nclx' + struct.pack('>HHHB', 9, 16, 9, 0))
+            if variant not in ['inband-nocolr', 'hvcc-nocolr', 'inband-nosps']:
+                colour = (1, 1, 1, 0) if variant == 'sdr-colr' else (9, 16, 9, 0)
+                if variant == 'inband-conflict':
+                    colour = (1, 2, 9, 0)
+                entry += box('colr', b'nclx' + struct.pack('>HHHB', *colour))
             if i == 1:
                 entry += box('dvcC', bytes([1, 0, 7 << 1, (6 << 3) | 6, 6 << 4]) + bytes(19))
             entry = box(tag, entry)
@@ -151,7 +156,8 @@ def write(kind, variant, reverse=False):
 
 
 for kind in ['mel', 'fel']:
-    for variant in ['dual', 'bad-rpu', 'missing-rpu', 'mismatch', 'inband']:
+    for variant in ['dual', 'bad-rpu', 'missing-rpu', 'mismatch', 'inband',
+                    'inband-nocolr', 'hvcc-nocolr', 'inband-nosps', 'sdr-colr', 'inband-conflict']:
         write(kind, variant)
     write(kind, 'dual', reverse=True)
 print('Generated MEL/FEL dual-track MP4: B-frames, reversed track order, bad/missing RPU and timestamp mismatch')

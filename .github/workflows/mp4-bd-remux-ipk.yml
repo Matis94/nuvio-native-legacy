@@ -20,7 +20,7 @@ jobs:
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'
       NUVIO_REQUIRE_ALL: '1'
-      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=18
+      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=19
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -77,6 +77,8 @@ jobs:
           bash tests/mp4_bd_settings.sh
           cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined tests/mp4_bd_rpu.c -o /tmp/mp4-rpu-test
           /tmp/mp4-rpu-test
+          cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined tests/mp4_hevc_sps.c -o /tmp/mp4-sps-test
+          /tmp/mp4-sps-test
           NV_TEST_MP4=1 bash tests/dvaudio_lg.sh
           bash tests/player_buffer_data.sh
           bash tests/player_ram_controls.sh
@@ -182,7 +184,7 @@ jobs:
           data = json.loads(p.read_text())
           assert data["version"] == "2.0.8"
           assert data["id"] == "space.nuvio.native.legacy"
-          data["title"] = "Nuvio Legacy (MP4 test 1)"
+          data["title"] = "Nuvio Legacy (MP4 test 2)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -195,7 +197,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-mp4-bd-remux-test1.ipk
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-mp4-bd-remux-test2.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -211,7 +213,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: mp4-bd-remux-test1-full-arm-ipk
+          name: mp4-bd-remux-test2-full-arm-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14
