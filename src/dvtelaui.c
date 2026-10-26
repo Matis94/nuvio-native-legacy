@@ -349,7 +349,14 @@ void dvtela_abertura_zonas(float marca[4], float linha[4]) {
 // Acende no acento quando o perfil aparece no arquivo.
 void dvtela_abertura_marca(int canto, float x, float topo, float a) {
   float r, g, b, luz = molas.luz;
-  a *= dvtela_alfa();
+  VideoDvFase mp4;
+  video_dv_fase(&mp4);
+  if(mp4.mp4Inicial && !dvtela_estado()->ativa) {
+    /* Reuse the same opening-only gate as the status line. The accent lights
+     * after the worker validates the source; the caller supplies the normal
+     * cinema fade. No playback, mute, focus or MKV screen state is changed. */
+    luz=mp4.fonteAberta?1.0f:0.0f;
+  } else a *= dvtela_alfa();
   ZONA(zonaMarca, ((GfxRect){ 0, 0, 0, 0 }));
   if (a < 0.004f) return;
   ajustes_acento(&r, &g, &b);

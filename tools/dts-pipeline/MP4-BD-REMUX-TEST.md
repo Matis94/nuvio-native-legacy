@@ -1,7 +1,9 @@
-# Experimental MP4 BD REMUX test 4
+# Playback v22 — Dolby Vision MP4 integration without QR log export
 
 Base: v17-ui, commit `85ca963f28afb9ddd0edded0e013fca579493fbc`.
-Branch: `build/mp4-bd-remux-test`. The `build/playback-v17-no-qr` branch is not modified.
+Branch: `build/playback-v17-no-qr`, integrating the validated MP4 test 4 (v21)
+playback changes and the matching Dolby Vision opening mark.
+The separate `build/mp4-bd-remux-test` branch retains its diagnostic QR build.
 
 ## Scope and settings
 
@@ -40,11 +42,10 @@ reserve applies only to the new MP4 engine, not MKV or normal HTTP buffering.
 
 ## Diagnostics
 
-Restores the previous sanitized diagnostic QR export in this test branch.
-Open the log with the red remote button, then press blue (F10 on a keyboard).
-Scan the QR using a device on the same LAN and download the frozen text log.
-The export expires after five minutes; Back closes it. The ordinary phone
-text-input QR flow and bounded socket writes are retained.
+The normal on-TV log panel remains available with the red remote button.
+Diagnostic QR export, downloadable snapshots and the report HTTP endpoints
+are absent in this version. Ordinary phone text-input/login QR features are
+retained. Their source files match the previous no-QR branch exactly.
 
 New numeric/technical log entries use `[mp4-bd-test]` and `MP4 test:`. They
 identify the native 204 trigger, verified BL/EL indices, P7 -> P8.1 output,
@@ -60,7 +61,7 @@ The probe is limited to 64 packets / 4 MiB and an 8 KiB SPS, within the same
 opening pictures and audio are retained. Missing SPS, explicit SDR, colour
 conflicts and invalid headers still fail. Logs now give individual BL/EL
 parameters, specific rejection reasons and native numeric errors even if the
-backend JSON has been removed by diagnostic redaction.
+backend JSON does not carry a useful error description.
 
 ## Validation and TV testing
 
@@ -70,7 +71,8 @@ seeking and audio switching with Original/AAC/AC3 output, bad/missing RPU,
 timestamp mismatch and cancellation. They also re-run the existing real MKV
 and single-track P8 MP4 regression fixture with the feature compiled in.
 ASAN/UBSAN, actual webOS callback routing, settings default/scope/persistence,
-normal HTTP buffering and QR redaction/HTTP tests are included in CI.
+normal HTTP buffering, diagnostic-export removal and ordinary phone-input
+HTTP tests are included in CI.
 
 On TV compare the same failing 117 GB seleZen MP4 with the new option Off and
 On, reopening the movie each time. Prefer a 128/256 MiB setting for a heavy
@@ -127,7 +129,7 @@ buffering and its safety reductions remain separate and unchanged.
 
 On TV specifically resume the previously failing 117 GB movie near 3835 s
 (about 1:04), seek forward/back, close/reopen, then test successive seeks and
-audio changes. Export the QR diagnostic log if any step fails.
+audio changes. Inspect the on-TV log panel if any step fails.
 
 ## Test 4: missing P8 compatibility ID and startup text
 
@@ -160,3 +162,14 @@ audio reload. Renderer tests cover both opening layouts; the real webOS routing
 fixture covers startup, native/OFF isolation, errors and post-startup hiding.
 The option help is reduced to three short sentences. On TV retest both the
 working 117 GB P7 remux and the 46.91 GB P8 file with this option enabled.
+
+## V22 opening mark
+
+The existing DOLBY VISION mark above the title now also appears during MP4
+recovery startup, in the same center/corner position with the same accent glow
+and decorative rules. Its accent lights when the source is validated. The
+mark uses the existing opening-only gate, disappears after the first picture,
+and cannot reopen the artwork during seeking or audio changes. Renderer tests
+exercise both layouts, subdued/verified states, hiding and the unchanged MKV
+presentation. Playback logic, buffering and memory guards remain unchanged
+from the validated MP4 test 4 integration.

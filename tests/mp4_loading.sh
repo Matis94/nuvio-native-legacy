@@ -6,7 +6,7 @@ python3 - "$dir/mp4-loading-render.c" <<'PY'
 from pathlib import Path
 import sys
 s=Path('src/dvtelaui.c').read_text()
-a=s.index('float dvtela_abertura_linha(')
+a=s.index('void dvtela_abertura_marca(')
 b=s.index('\n// When the DV status',a)
 c=s.index('static const char *nomeCodec(')
 d=s.index('\n// O vidro',c)
