@@ -688,7 +688,7 @@ static char      erroTexto[96];
 static int       audioNaoSup;
 static int dtsHabilitado, dtsTentou, dtsRevisao, dtsLoadRevisao, dtsFalhaLogada;
 #ifdef NV_MP4_BD_TEST
-static int mp4TestEnabled,mp4TestPending;
+static int mp4TestEnabled,mp4TestPending,mp4TestStarted;
 #endif
 static int modoLoad;   // video_modo_live_consumir do load em curso
 static int dtsLegAntes = -1, dtsLegCount;
@@ -1511,7 +1511,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
               fonteMp4 || nv_url_e_mp4(urlAtual),fonteTocou,modoLoad,
               dtsSessao!=NULL,dtsTentou,recuperando)) {
       if(!mp4TestPending)marco("MP4 test: native demux error 204; checking DV compatibility");
-      mp4TestPending=1;reconErroPend=0;tocando=pronto=falhou=0;
+      mp4TestPending=mp4TestStarted=1;reconErroPend=0;tocando=pronto=falhou=0;
     }
 #endif
     else if (!recuperando) {
@@ -2421,7 +2421,7 @@ int video_tocar(const char *url) {
   dtsHabilitado = dts_playback_enabled() && dtsLiberadoNestaTv();
 #ifdef NV_MP4_BD_TEST
   mp4TestEnabled=ajustes_mp4_bd_test() && dtsHabilitado;
-  mp4TestPending=0;
+  mp4TestPending=mp4TestStarted=0;
 #endif
   printf("[dts] fallback %s\n", dtsHabilitado ? "available" : "unavailable");
   dvSondado = dvMkvPerfil = dvAudios = 0; dtsModoDv = 0; dvAudioMkvOrd = dvAudioMkvAtual = -1; dvSegurar = 0;
@@ -2946,6 +2946,9 @@ static int carregarNativo(const char *url,const char *loadUrl,int ownBuffer,
 // Sair do video (ou trocar de fonte) cancela a queda em curso: sem isto o
 // video_bombear recarregaria a fonte velha depois de a tela ja ter fechado.
 void video_parar(void) {
+#ifdef NV_MP4_BD_TEST
+  mp4TestPending=mp4TestStarted=0;
+#endif
   nv_recon_zerar(&recon);
   reconErroPend = 0;
   pararSessao();
@@ -3161,6 +3164,9 @@ static int dvPronto(void) {
 // Antes o player fechava (log da C9: "playback failed" e logo "saida").
 static void dtsVoltarNativo(const char *motivo) {
   char lu[sizeof legUrlAtual];
+#ifdef NV_MP4_BD_TEST
+  mp4TestStarted=0;
+#endif
   dtsEstado = VIDEO_DTS_FALHOU;
   printf("[dts] conversao falhou (%s): volta ao player nativo em %.1fs\n", motivo, posSeg);
   fflush(stdout);
@@ -3808,6 +3814,14 @@ void video_dv_fase(VideoDvFase *f) {
   f->tocando = nosso && tocando;
   f->recusa = dvNao;
   f->falhou = falhou;
+#ifdef NV_MP4_BD_TEST
+  f->mp4Inicial=mp4TestStarted && !falhou && !terminou;
+#ifdef NV_NATIVE_SEEK_TEST
+  f->mp4Inicial=f->mp4Inicial && !dtsImagemExibida;
+#else
+  f->mp4Inicial=f->mp4Inicial && !(nosso && tocando && f->dvConfirmado);
+#endif
+#endif
 }
 int video_dv_candidato(const char *url) {
   return dvPedido && !fonteMp4 && url && !nv_url_e_mp4(url) && dvLiberadoNestaTv();

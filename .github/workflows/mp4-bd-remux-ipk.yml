@@ -78,6 +78,7 @@ jobs:
           bash tests/ajustes_secoes.sh
           bash tests/dv_fixed_audio_settings.sh
           bash tests/mp4_bd_settings.sh
+          SANITIZE=1 bash tests/mp4_loading.sh
           cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined tests/mp4_bd_rpu.c -o /tmp/mp4-rpu-test
           /tmp/mp4-rpu-test
           cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined tests/mp4_hevc_sps.c -o /tmp/mp4-sps-test

@@ -259,6 +259,7 @@ typedef struct {
   int tocando;         // `playing` no caminho
   int recusa;          // VIDEO_DV_NAO_*: o DV desta fonte nao vai acontecer
   int falhou;          // a fonte falhou de vez (video_falhou)
+  int mp4Inicial;      // MP4 recovery opening only; never a same-source seek/audio change
 } VideoDvFase;
 void video_dv_fase(VideoDvFase *f);
 // 1 quando a PROXIMA abertura de `url` vai tentar Dolby Vision em MKV: a fonte
