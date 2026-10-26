@@ -84,6 +84,44 @@ static void mp4_pair_reset(DtsEngine *e) {
   for(int i=0;i<MP4_BASE_QUEUE;i++)av_packet_unref(m->base[i]);
   for(int i=0;i<MP4_RPU_QUEUE;i++)m->rpu[i].size=0;
   m->base_count=m->rpu_count=m->aligned=m->align_drops=0;m->base_bytes=0;
+  m->anchor_valid=m->first_base_seen=m->preroll_skipped=0;m->preroll_bytes=0;
+}
+/* MOV seeks the tracks independently. A coarse EL sync index can deliver
+ * obsolete RPUs long before the first BL keyframe. Determine the actual BL
+ * anchor, then repeat the identical seek to retain all required A/V packets.
+ * The probe and discard are bounded; neither queue nor range budget grows. */
+static int mp4_seek_anchor(DtsEngine *e,int64_t timestamp) {
+  NvMp4Pair *m=e->mp4;
+  int r=avformat_seek_file(e->fmt,-1,INT64_MIN,timestamp,timestamp,AVSEEK_FLAG_BACKWARD);
+  if(r<0)return r;
+  AVPacket *p=av_packet_alloc();
+  if(!p)return AVERROR(ENOMEM);
+  unsigned count=0;size_t bytes=0;int found=0;
+  while(count<1024 && bytes<2*NV_MP4_PACKET_MAX) {
+    if(cancelled(e))break;
+    r=av_read_frame(e->fmt,p);if(r<0)break;
+    count++;
+    if(p->size<0 || (unsigned)p->size>NV_MP4_PACKET_MAX ||
+       (unsigned)p->size>2*NV_MP4_PACKET_MAX-bytes ||
+       av_packet_get_side_data(p,AV_PKT_DATA_ENCRYPTION_INFO,NULL))break;
+    bytes+=(size_t)p->size;
+    if(p->stream_index==e->info.video_stream) {
+      if(p->dts!=AV_NOPTS_VALUE && p->pts!=AV_NOPTS_VALUE && (p->flags&AV_PKT_FLAG_KEY)) {
+        m->anchor_dts=p->dts;m->anchor_pts=p->pts;found=1;
+      }
+      break;
+    }
+    av_packet_unref(p);
+  }
+  av_packet_free(&p);
+  if(!found)return fail(e,"MP4 seek base keyframe absent within probe budget",0);
+  r=avformat_seek_file(e->fmt,-1,INT64_MIN,timestamp,timestamp,AVSEEK_FLAG_BACKWARD);
+  if(r<0)return r;
+  m->anchor_valid=1;
+  printf("[mp4-bd-test] seek anchor: target=%.3f BL-dts-ns=%lld BL-pts-ns=%lld probePackets=%u probeBytes=%zu\n",
+    timestamp/1000000.0,(long long)ns(m->anchor_dts,e->fmt->streams[e->info.video_stream]->time_base),
+    (long long)ns(m->anchor_pts,e->fmt->streams[e->info.video_stream]->time_base),count,bytes);fflush(stdout);
+  return 0;
 }
 static void mp4_pop_base(NvMp4Pair *m) {
   AVPacket *first=m->base[0];m->base_bytes-=(size_t)first->size;
@@ -91,11 +129,68 @@ static void mp4_pop_base(NvMp4Pair *m) {
   for(int i=1;i<m->base_count;i++)m->base[i-1]=m->base[i];
   m->base[--m->base_count]=first;
 }
+static int mp4_p8_first_rpu(DtsEngine *e,int base) {
+  AVPacket *p=av_packet_alloc();if(!p)return fail(e,"MP4 P8 probe allocation",AVERROR(ENOMEM));
+  uint8_t rpu[NV_MP4_RPU_MAX];size_t bytes=0,size=0;int valid=0;
+  for(int i=0;i<64 && bytes<NV_MP4_PACKET_MAX;i++) {
+    if(cancelled(e) || av_read_frame(e->fmt,p)<0)break;
+    if(p->size<0 || (unsigned)p->size>NV_MP4_PACKET_MAX-bytes ||
+       av_packet_get_side_data(p,AV_PKT_DATA_ENCRYPTION_INFO,NULL))break;
+    bytes+=(size_t)p->size;
+    if(p->stream_index==base) {
+      AVCodecParameters *c=e->fmt->streams[base]->codecpar;
+      valid=nv_mp4_rpu(p->data,p->size,(c->extradata[21]&3)+1,rpu,&size)==0 && nv_mp4_p8_valid(rpu,size);
+      break;
+    }
+    av_packet_unref(p);
+  }
+  av_packet_free(&p);
+  if(!valid)return fail(e,"MP4 first P8 RPU absent or invalid within probe budget",0);
+  int r=av_seek_frame(e->fmt,base,0,AVSEEK_FLAG_BACKWARD);
+  if(r<0)return fail(e,"MP4 P8 probe rewind",r);
+  avformat_flush(e->fmt);
+  printf("[mp4-bd-test] first P8 RPU validated: bytes=%zu; metadata unchanged\n",size);fflush(stdout);
+  return 0;
+}
+/* Return 1 only for a verified single-track HDR10-compatible P8.1 source.
+ * Reuse the ordinary Annex-B path; never run the P7 metadata converter. */
+static int mp4_single_p8(DtsEngine *e) {
+  int base=-1,videos=0;
+  const AVDOVIDecoderConfigurationRecord *c=NULL;
+  for(unsigned i=0;i<e->fmt->nb_streams;i++) {
+    AVCodecParameters *p=e->fmt->streams[i]->codecpar;
+    if(p->codec_type!=AVMEDIA_TYPE_VIDEO || (e->fmt->streams[i]->disposition&AV_DISPOSITION_ATTACHED_PIC))continue;
+    videos++;base=(int)i;
+    const AVPacketSideData *d=av_packet_side_data_get(p->coded_side_data,p->nb_coded_side_data,AV_PKT_DATA_DOVI_CONF);
+    if(d && d->size>=sizeof *c)c=(const AVDOVIDecoderConfigurationRecord *)d->data;
+  }
+  if(videos!=1 || !c || c->dv_profile!=8)return 0;
+  AVStream *b=e->fmt->streams[base];AVCodecParameters *p=b->codecpar;
+  printf("[mp4-bd-test] single P8 track=%d videos=%d version=%d.%d compat=%d bl=%d el=%d rpu=%d size=%dx%d hdr=%d/%d/%d hvcc=%d\n",
+    base,videos,c->dv_version_major,c->dv_version_minor,c->dv_bl_signal_compatibility_id,
+    c->bl_present_flag,c->el_present_flag,c->rpu_present_flag,p->width,p->height,
+    p->color_primaries,p->color_trc,p->color_space,p->extradata_size);fflush(stdout);
+  if(c->dv_version_major!=1 || c->dv_version_minor || c->dv_bl_signal_compatibility_id!=1 ||
+     !c->bl_present_flag || c->el_present_flag || !c->rpu_present_flag || p->codec_id!=AV_CODEC_ID_HEVC ||
+     p->width<=0 || p->height<=0 || b->time_base.num<=0 || b->time_base.den<=0 ||
+     b->avg_frame_rate.num<=0 || b->avg_frame_rate.den<=0 || !p->extradata ||
+     p->extradata_size<23 || p->extradata[0]!=1)
+    return fail(e,"MP4 P8 recovery requires a single verified P8.1 track",0);
+  if(mp4_restore_hdr(e,base)<0)return -1;
+  if(p->color_primaries!=AVCOL_PRI_BT2020 || p->color_trc!=AVCOL_TRC_SMPTE2084)
+    return fail(e,"MP4 P8 base colour metadata is not HDR10",0);
+  if(mp4_p8_first_rpu(e,base)<0)return -1;
+  e->info.video_stream=base;e->dv7=0;
+  printf("[mp4-bd-test] verified single-track P8.1: video=%d; RPU passthrough; reserved=16 MiB\n",base);fflush(stdout);
+  return 1;
+}
 static int mp4_configure(DtsEngine *e) {
   if(!e->allow_mp4)return 0;
-  if(!e->dv || !e->allow_p7 || !nv_dv7_available() ||
+  if(!e->dv ||
      !e->fmt->iformat || !strstr(e->fmt->iformat->name,"mov"))
-    return fail(e,"MP4 test requires a dual-track P7 MP4",0);
+    return fail(e,"MP4 test requires a Dolby Vision MP4",0);
+  int single=mp4_single_p8(e);if(single)return single<0?-1:0;
+  if(!e->allow_p7 || !nv_dv7_available())return fail(e,"MP4 P7 conversion unavailable",0);
   int base=-1,el=-1,videos=0;
   for(unsigned i=0;i<e->fmt->nb_streams;i++) {
     AVCodecParameters *p=e->fmt->streams[i]->codecpar;
@@ -105,8 +200,8 @@ static int mp4_configure(DtsEngine *e) {
     const AVPacketSideData *d=av_packet_side_data_get(p->coded_side_data,p->nb_coded_side_data,AV_PKT_DATA_DOVI_CONF);
     if(d && d->size>=sizeof(AVDOVIDecoderConfigurationRecord)) {
       const AVDOVIDecoderConfigurationRecord *c=(const AVDOVIDecoderConfigurationRecord *)d->data;
-      printf("[mp4-bd-test] track=%u tag=%08x profile=%d bl=%d el=%d rpu=%d\n",i,p->codec_tag,
-             c->dv_profile,c->bl_present_flag,c->el_present_flag,c->rpu_present_flag);fflush(stdout);
+      printf("[mp4-bd-test] track=%u tag=%08x profile=%d bl=%d el=%d rpu=%d compat=%d\n",i,p->codec_tag,
+             c->dv_profile,c->bl_present_flag,c->el_present_flag,c->rpu_present_flag,c->dv_bl_signal_compatibility_id);fflush(stdout);
       if(c->dv_profile!=7 || c->bl_present_flag || !c->el_present_flag || !c->rpu_present_flag || el>=0)
         return fail(e,"MP4 test refuses unrelated Dolby Vision tracks",0);
       el=(int)i;
@@ -209,12 +304,28 @@ static int mp4_read_packet(DtsEngine *e) {
       av_packet_unref(e->in);return fail(e,"Encrypted MP4 packet unsupported",0);
     }
     if(e->in->stream_index==e->info.video_stream) {
+      if(m->anchor_valid && !m->first_base_seen) {
+        if(e->in->dts!=m->anchor_dts || e->in->pts!=m->anchor_pts || !(e->in->flags&AV_PKT_FLAG_KEY))
+          return fail(e,"MP4 seek base anchor changed after rewind",0);
+        m->first_base_seen=1;
+      }
       if(m->base_count==MP4_BASE_QUEUE || e->in->size<=0 ||
          (unsigned)e->in->size>NV_MP4_PACKET_MAX-m->base_bytes)
         return fail(e,"MP4 BL interleave exceeds its bounded queue",0);
       m->base_bytes+=(size_t)e->in->size;
       av_packet_move_ref(m->base[m->base_count++],e->in);
     } else if(e->in->stream_index==m->el_stream) {
+      if(e->in->dts==AV_NOPTS_VALUE || e->in->pts==AV_NOPTS_VALUE)
+        return fail(e,"MP4 RPU timestamps absent",0);
+      if(m->anchor_valid && !m->aligned &&
+         av_compare_ts(e->in->dts,e->fmt->streams[m->el_stream]->time_base,
+                       m->anchor_dts,e->fmt->streams[e->info.video_stream]->time_base)<0) {
+        if(++m->preroll_skipped>1024 || e->in->size<0 ||
+           (unsigned)e->in->size>2*NV_MP4_PACKET_MAX-m->preroll_bytes)
+          return fail(e,"MP4 obsolete EL preroll exceeds scan budget",0);
+        m->preroll_bytes+=(size_t)e->in->size;
+        av_packet_unref(e->in);continue;
+      }
       int slot=0;while(slot<MP4_RPU_QUEUE && m->rpu[slot].size)slot++;
       if(slot==MP4_RPU_QUEUE)return fail(e,"MP4 RPU interleave exceeds its bounded queue",0);
       if(nv_mp4_rpu(e->in->data,e->in->size,m->el_length,m->rpu[slot].data,&m->rpu[slot].size)<0)

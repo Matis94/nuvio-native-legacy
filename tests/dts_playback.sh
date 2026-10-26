@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 flags=()
+if [[ ${NV_TEST_MP4:-0} == 1 || ${NV_TEST_MP4_BUILD:-0} == 1 ]]; then flags+=(-DNV_MP4_BD_TEST); fi
 if [[ ${NV_TEST_TRUEHD:-0} == 1 ]]; then flags+=(-DNV_DV_TRUEHD_TEST); fi
 if [[ ${SANITIZE:-0} == 1 ]]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 if [[ $(uname -s) == Darwin ]]; then
@@ -13,6 +14,10 @@ if [[ $(uname -s) == Darwin ]]; then
   -Dclock_gettime=__wrap_clock_gettime "$tmp/fixture.o" src/dts/dts_playback.c src/js.c src/linguas.c src/audioinfo.c -pthread -lm -o "$tmp/test"
 else
  cc "${flags[@]}" -std=c11 -D_GNU_SOURCE -DNV_DTS_WEBOS_RECOVERY -Wall -Wextra -Werror -Isrc tests/dts_playback.c src/dts/dts_playback.c src/js.c src/linguas.c src/audioinfo.c -pthread -lm -Wl,--wrap=clock_gettime -o "$tmp/test"
+fi
+if [[ ${NV_TEST_MP4:-0} == 1 ]];then
+ for scenario in mp4-seek-series mp4-seek-off mp4-seek-timeout mp4-seek-paused mp4-seek-cancel mp4-seek-audio;do "$tmp/test" "$scenario";done
+ exit
 fi
 for scenario in audio-hold-ready audio-hold-gap audio-hold-paused audio-hold-deadline audio-hold-cancel audio-hold-readwait audio-hold-total fixed-aac fixed-ac3 fixed-aac-paused fixed-ac3-paused fixed-refused fixed-invalid fixed-nondv fixed-rejected handoff-format handoff-paused handoff-cancel handoff-disabled handoff-refused handoff-prime-error; do
  "$tmp/test" "$scenario"

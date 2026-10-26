@@ -1510,7 +1510,7 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
     else if(nv_mp4_bd_retry(mp4TestEnabled,js_num(p,NULL,"errorCode",-1),
               fonteMp4 || nv_url_e_mp4(urlAtual),fonteTocou,modoLoad,
               dtsSessao!=NULL,dtsTentou,recuperando)) {
-      if(!mp4TestPending)marco("MP4 test: native demux error 204; checking separate-track P7");
+      if(!mp4TestPending)marco("MP4 test: native demux error 204; checking DV compatibility");
       mp4TestPending=1;reconErroPend=0;tocando=pronto=falhou=0;
     }
 #endif

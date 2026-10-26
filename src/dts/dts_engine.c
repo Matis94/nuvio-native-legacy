@@ -104,6 +104,9 @@ typedef struct {
   AVPacket *base[MP4_BASE_QUEUE];
   int base_count, rpu_count, aligned, align_drops, el_stream, base_length, el_length;
   size_t base_bytes;
+  int anchor_valid, first_base_seen, preroll_skipped;
+  int64_t anchor_dts, anchor_pts;
+  size_t preroll_bytes;
   struct { uint8_t data[NV_MP4_RPU_MAX]; size_t size; int64_t pts,dts; } rpu[MP4_RPU_QUEUE];
 } NvMp4Pair;
 #endif
@@ -1561,7 +1564,12 @@ int dts_engine_seek(DtsEngine *e,double seconds) {
   __atomic_store_n(&e->range_live,0,__ATOMIC_RELAXED);
 #endif
   int64_t timestamp=(int64_t)(seconds*1000000.0);
-  int r=avformat_seek_file(e->fmt,-1,INT64_MIN,timestamp,timestamp,AVSEEK_FLAG_BACKWARD);
+  int r;
+#ifdef NV_MP4_BD_TEST
+  if(e->mp4)r=mp4_seek_anchor(e,timestamp);
+  else
+#endif
+  r=avformat_seek_file(e->fmt,-1,INT64_MIN,timestamp,timestamp,AVSEEK_FLAG_BACKWARD);
   if(r<0) return fail(e,"Container seek",r);
   if(e->passthrough) {
     if(e->bsf) av_bsf_flush(e->bsf);

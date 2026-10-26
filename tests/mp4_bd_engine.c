@@ -25,7 +25,10 @@ static int drain_split(DtsEngine *e,const char *rpu_path,FILE *pictures) {
   }
   check(e,result);assert(videos>0 && audios>0);return videos;
 }
-int main(int argc,char **argv) {
+#ifndef MP4_BD_MAIN
+#define MP4_BD_MAIN main
+#endif
+int MP4_BD_MAIN(int argc,char **argv) {
   assert(argc==17);
   char *baseline[]={argv[0],argv[1],argv[2],argv[3]};
   if(!getenv("NV_MP4_ONLY"))assert(!mkv_baseline_main(4,baseline));
@@ -37,7 +40,7 @@ int main(int argc,char **argv) {
     check(e,dts_engine_open(e,argv[4],"",-1,0,0));check_dv(e);
     assert(dts_engine_info(e)->video_stream==0);
     DtsBufferInfo b;dts_engine_buffer_info(e,&b);
-    assert(b.capacity_bytes<=(int64_t)64*1024*1024);
+    assert(b.capacity_bytes==13LL*(4*1024*1024-1));
     FILE *out=mode==0?fopen(argv[11],"wb"):NULL;if(mode==0)assert(out);
     assert(drain_split(e,argv[9],out)==20);if(out)fclose(out);
     for(int i=0;i<3;i++) {

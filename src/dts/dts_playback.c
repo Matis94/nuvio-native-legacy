@@ -33,6 +33,9 @@
 typedef struct { DtsSubtitle cue; unsigned revision; } DtsQueuedSubtitle;
 #define DTS_DV_STARVED_WINDOWS 4
 struct DtsPlayback {
+#ifdef NV_MP4_BD_TEST
+  int mp4_recovery;
+#endif
   int seamless, seamless_disabled, clock_guard;
   double clock_target, clock_anchor;
   int clock_advances;
@@ -498,6 +501,9 @@ static void *run(void *user) {
   double timestamp_anchor = position;
   int native_unhealthy = 0;
   int recovery_waiting = 0, fast_pending = 0;
+#ifdef NV_MP4_BD_TEST
+  int queued_seek=0;double queued_target=0;
+#endif
   int dv_audio_hold=0;
   double hold_since=0,hold_target=0;
   double fast_since=0, fast_started=0, fast_target=0;
@@ -586,6 +592,26 @@ static void *run(void *user) {
         fast_target,(wall-fast_since)*1000,(wall-fast_started)*1000);fflush(stdout);
       nativeEvent(p,"{\"dtsStage\":{\"name\":\"native-seek-fallback\",\"detail\":\"no presentation progress\"}}");
     }
+#ifdef NV_MP4_BD_TEST
+    /* A second command can arrive before firmware reports the first accepted
+     * seek's clock. Feed that seek to completion and retain only the latest
+     * target, instead of treating the missing intermediate clock as failure.
+     * Existing no-progress deadlines and reload fallback remain authoritative. */
+    if(p->mp4_recovery) {
+      if(seek && fast_pending && !fast_failed && !pause && !audio &&
+         p->seamless && !p->seamless_disabled && !native_unhealthy && complete && !eof) {
+        queued_seek=1;queued_target=target;seek=0;
+        printf("[mp4-seek] deferred target=%.3f pending=%.3f\n",queued_target,fast_target);fflush(stdout);
+      }
+      if(queued_seek && (!fast_pending || pause || audio)) {
+        if(!seek)target=queued_target;
+        if(fast_failed)fast_target=target;
+        else if(!audio)seek=1;
+        printf("[mp4-seek] latest target=%.3f reload=%d audio=%d\n",target,fast_failed,audio);fflush(stdout);
+        queued_seek=0;
+      }
+    }
+#endif
     /* The adapter now requests a native segment seek and gates controls on
      * SEEKDONE. Test both DV and DTS while retaining one bounded cache/player. */
     int audio_prepared=0;
@@ -899,6 +925,9 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
       (window && strlen(window) >= 64) || !isfinite(position) || position >= 9e9 || !dts_engine_available()) return NULL;
   p = calloc(1, sizeof *p);
   if (!p) return NULL;
+#ifdef NV_MP4_BD_TEST
+  p->mp4_recovery=mp4_test;
+#endif
   pthread_mutex_init(&p->lock, NULL);
   pthread_cond_init(&p->wake, NULL);
   p->engine = dts_engine_create();

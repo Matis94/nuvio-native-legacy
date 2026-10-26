@@ -30,7 +30,8 @@ static int hold_fixture,hold_deadline;
 static atomic_int hold_slow_reads,hold_no_clock;
 static atomic_llong hold_wall_offset;
 static atomic_int handoff_cancelled;
-static int last_p7;
+static int last_p7,mp4_fixture,mp4_seek_case;
+static atomic_int mp4_no_clock;
 static atomic_llong buffer_ready = 21*1048576LL;
 static atomic_llong buffer_contiguous = 20*1048576LL;
 void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *out) {
@@ -60,7 +61,7 @@ void dts_engine_allow_p7(DtsEngine *e,int on) { (void)e; (void)on;
  last_p7=on;
 }
 void dts_engine_dv(DtsEngine *e,int on) { (void)e; last_dv=on; }
-void dts_engine_mp4_test(DtsEngine *e,int on) { (void)e;assert(!on); }
+void dts_engine_mp4_test(DtsEngine *e,int on) { (void)e;assert(on==mp4_fixture); }
 void dts_engine_dv_audio(DtsEngine *e,int mode) { e->dv_audio=mode; }
 static void fixedInfo(DtsEngine *e) {
  if(e->dv_audio) {
@@ -236,6 +237,7 @@ int dts_pipeline_feed(DtsPipeline *p,const DtsFrame *f) {
  }
  if(!p->completed) { p->completed=1;p->event(p->user,"{\"loadCompleted\":{}}"); }
  if((scenario==SEEK_SEGMENT || seamless_fixture) &&
+    !(mp4_seek_case && atomic_load(&mp4_no_clock) && p->flushed && p->generation==1) &&
     (!hold_fixture || (p->running && !(hold_no_clock && p->flushed && p->generation==1) &&
       !(hold_slow_reads && p->flushed && p->generation==1 && p->packets<hold_slow_reads)))) {
   int64_t native_pts=stale_clock && p->flushed && p->generation==1 ? (int64_t)((p->target+0.5)*1e9) : f->pts_ns;
@@ -325,6 +327,42 @@ static DtsPlayback *start(int paused,int stream,const DtsTrack *selected,int ord
 }
 int main(int argc,char **argv) {
  assert(argc==2);assert(!dts_playback_enabled());DtsPlayback *p;DtsPlaybackStatus s;
+ if(!strncmp(argv[1],"mp4-seek-",9)) {
+  int off=!strcmp(argv[1],"mp4-seek-off"),timeout=!strcmp(argv[1],"mp4-seek-timeout");
+  int pause=!strcmp(argv[1],"mp4-seek-paused"),cancel=!strcmp(argv[1],"mp4-seek-cancel");
+  int audio=!strcmp(argv[1],"mp4-seek-audio");
+  mp4_fixture=!off;mp4_seek_case=seamless_fixture=1;scenario=SEEK_PREROLL;
+  dts_playback_next_mp4_test(mp4_fixture);dts_playback_next_dv(1);dts_playback_next_seamless(1);
+  p=start(0,4,NULL,0,0);wait_count(&plays,1);wait_count(&accepted,4);
+  atomic_store(&mp4_no_clock,1);dts_playback_seek(p,2);wait_count(&flushes,1);wait_count(&plays,2);
+  dts_playback_seek(p,8);
+  if(off) {wait_count(&loads,2);assert(count(&opens)==1);}
+  else {
+   wait_settled();assert(count(&loads)==1 && count(&flushes)==1);
+   dts_playback_seek(p,12);wait_settled();assert(count(&loads)==1 && count(&flushes)==1);
+   if(cancel) {dts_playback_close(p);assert(count(&creates)==count(&destroys));return 0;}
+   if(timeout) {
+    atomic_fetch_add(&hold_wall_offset,INT64_C(13000000000));wait_count(&loads,2);
+    assert(last_load_target==12 && count(&opens)==1);
+   } else if(pause) {
+    dts_playback_pause(p,1);wait_count(&flushes,2);assert(last_seek==12);
+   } else if(audio) {
+    dts_playback_audio_at(p,9,2);wait_count(&loads,2);
+    assert(last_audio_target==12 && last_stream==9);
+   } else {
+    atomic_store(&mp4_no_clock,0);
+    for(int i=0;i<4;i++) {
+     char event[96];snprintf(event,sizeof event,"{\"currentTime\":{\"currentTime\":%d}}",2600+i*100);
+     emit(event);nap();
+    }
+    wait_count(&flushes,2);assert(last_seek==12);
+   }
+   if(!timeout && !audio)assert(count(&loads)==1 && count(&opens)==1);
+   if(audio)assert(count(&loads)==2 && count(&opens)==1);
+  }
+  dts_playback_status(p,&s);assert(!s.failed);dts_playback_close(p);
+  assert(count(&creates)==count(&destroys));printf("PASS %s: latest target, bounded fallback and one source cache\n",argv[1]);return 0;
+ }
  if(!strncmp(argv[1],"audio-hold-",11)) {
   handoff_fixture=seamless_fixture=hold_fixture=1;scenario=SEEK_PREROLL;
   int gap=strstr(argv[1],"gap")!=NULL,cancel=strstr(argv[1],"cancel")!=NULL;
@@ -882,7 +920,7 @@ int dts_pipeline_volume(DtsPipeline *p,int pct) {
 /* Deterministic CPU-budget check; native waits still use the real wall clock. */
 int __real_clock_gettime(clockid_t,struct timespec *);
 int __wrap_clock_gettime(clockid_t clock,struct timespec *out) {
- if(hold_fixture && clock==CLOCK_MONOTONIC) {
+ if((hold_fixture || mp4_seek_case) && clock==CLOCK_MONOTONIC) {
   int r=__real_clock_gettime(clock,out);int64_t ns=out->tv_nsec+atomic_load(&hold_wall_offset);
   out->tv_sec+=ns/INT64_C(1000000000);out->tv_nsec=ns%INT64_C(1000000000);return r;
  }

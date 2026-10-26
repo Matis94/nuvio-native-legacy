@@ -1,4 +1,4 @@
-# Experimental MP4 BD REMUX test 2
+# Experimental MP4 BD REMUX test 3
 
 Base: v17-ui, commit `85ca963f28afb9ddd0edded0e013fca579493fbc`.
 Branch: `build/mp4-bd-remux-test`. The `build/playback-v17-no-qr` branch is not modified.
@@ -6,7 +6,7 @@ Branch: `build/mp4-bd-remux-test`. The `build/playback-v17-no-qr` branch is not 
 ## Scope and settings
 
 Settings > Playback > this TV's sound/video section:
-**BD REMUX MP4 compatibility (test)**, default **Off**, stored on this TV only.
+**Dolby Vision MP4 (Experimental)**, default **Off**, stored on this TV only.
 Reopen the video after changing it. Old preferences retain their IDs and keys.
 
 Off retains the v17-ui playback policy. On retries a native startup demux error
@@ -14,7 +14,10 @@ Off retains the v17-ui playback policy. On retries a native startup demux error
 MKV, live source and an already attempted converter do not enter this retry.
 The worker then verifies the real container metadata: exactly two HEVC video
 tracks, one HDR10-compatible base and a separate P7 EL/RPU track. Unrelated
-MP4, P5/P8, ambiguous tracks and encryption are rejected. A BD REMUX filename
+MP4, P5, ambiguous tracks and encryption are rejected. A single-track P8.1
+source is also accepted only with version 1.0, compatibility ID 1, BL/RPU
+present, EL absent, verified HDR10 base metadata and a valid first P8 RPU.
+Its metadata passes through unchanged; the P7 converter is never invoked. A BD REMUX filename
 alone is never evidence of this layout. The normal MKV P7 preference remains
 independent; enabling this explicit test allows P7 for this MP4 retry only.
 
@@ -73,5 +76,54 @@ On, reopening the movie each time. Prefer a 128/256 MiB setting for a heavy
 remux. Check actual Dolby Vision activation, sound, seeking and audio changes.
 Also verify known-good MKV and native P5/P8/HDR10 MP4 with the option On.
 The synthetic fixture tests validate routing and packet integrity; they do
-not establish playback or picture quality on a physical LG TV. The separate
-46.91 GB P8 release is not assumed to have the same dual-track P7 problem.
+not establish playback or picture quality on a physical LG TV. Also test the separate 46.91 GB P8 release; recovery requires its actual
+compatibility ID to be 1 and valid P8 metadata, rather than guessing from
+the filename.
+
+## Test 3 seek/resume corrections
+
+A MOV demuxer can seek the EL track to a much older sync sample than the BL.
+Obsolete RPUs then fill the 64-entry queue before its matching base picture
+arrives. Reopening at the saved position repeats this failure. The dual-track
+reader probes the actual first base keyframe's DTS/PTS, repeats the identical
+seek before output, and discards only EL samples strictly older than that
+verified anchor. The first BL after replay must match the anchor exactly.
+Probe/discard work is limited to 1024 packets / 8 MiB; base packets retain their
+4 MiB limit, exact DTS/PTS pairing and all existing queue limits. No video is
+decoded and the HTTP read-ahead allocation is unchanged.
+
+For opt-in MP4 sessions only, consecutive seek commands retain the latest
+requested target while the first accepted native seek awaits a valid clock.
+The existing 4/12-second no-progress deadlines and reload fallback remain in
+force. Pause, cancellation and audio selection retain bounded behavior. Other
+playback sessions retain the v17-ui controller policy.
+
+The real-engine regression has a deliberately coarse EL sync index and over
+64 old RPUs. It covers saved-position startup, repeated forward/back seeks,
+audio selection, reopening, all three audio outputs, decoded HEVC, exact RPUs,
+monotonic DTS and the unchanged memory capacity. P8 tests compare every RPU
+byte and decoded frame hash, reject unsupported metadata, and exercise
+64/128/256 MiB presets. The native seek controller has separate rapid-command,
+feature-off, timeout, pause, stop and audio tests.
+
+## Buffer comparison with v17-ui
+
+The cacheboost/moviebuffer implementations, pipeline/adapters, HTTP range
+transport, source readers, memory guards and refill policy are unchanged.
+This MP4 recovery reserves four existing 4 MiB prefetch slots (about 16 MiB)
+for bounded metadata work. Conversion diagnostics count prefetch slots plus
+one active read block; the reported capacity is therefore approximately:
+
+| Selected preset | v17 conversion path | MP4 recovery |
+| --- | --- | --- |
+| 64 MiB | 68 MiB | 52 MiB |
+| 128 MiB | 132 MiB | 116 MiB |
+| 256 MiB | 260 MiB | 244 MiB |
+
+For `240/244 (256 selected)`, 240 is current buffered payload, 244 is capacity,
+and 256 is the preset. This is not total application RAM. Regular HTTP RAM
+buffering and its safety reductions remain separate and unchanged.
+
+On TV specifically resume the previously failing 117 GB movie near 3835 s
+(about 1:04), seek forward/back, close/reopen, then test successive seeks and
+audio changes. Export the QR diagnostic log if any step fails.

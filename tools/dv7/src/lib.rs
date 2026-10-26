@@ -1,6 +1,18 @@
 //! Small, stateless C bridge to libdovi. No video decoding or frame buffering.
 use dolby_vision::rpu::dovi_rpu::DoviRpu;
 
+/// Validate an existing P8 RPU without converting or modifying its metadata.
+/// # Safety
+/// Input must reference `len` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn nv_dv8_rpu_valid(input: *const u8, len: usize) -> i32 {
+    if input.is_null() || !(3..=8192).contains(&len) { return 0; }
+    match DoviRpu::parse_unspec62_nalu(std::slice::from_raw_parts(input, len)) {
+        Ok(rpu) if rpu.dovi_profile == 8 => 1,
+        _ => 0,
+    }
+}
+
 /// Convert one escaped HEVC UNSPEC62 NAL (including its two-byte header).
 /// Returns its output size, or -1 on malformed/unsupported metadata or capacity.
 ///
@@ -34,6 +46,22 @@ mod tests {
     use super::*;
     const FEL: &[u8] = include_bytes!("../../../tests/fixtures/dv7/fel_orig.bin");
     const MEL: &[u8] = include_bytes!("../../../tests/fixtures/dv7/mel_orig.bin");
+
+    #[test]
+    fn p8_validation_leaves_metadata_unchanged() {
+        let mut rpu = DoviRpu::parse_unspec62_nalu(MEL).unwrap();
+        let p7 = rpu.write_hevc_unspec62_nalu().unwrap();
+        rpu.convert_with_mode(2).unwrap();
+        let p8 = rpu.write_hevc_unspec62_nalu().unwrap();
+        let before = p8.clone();
+        assert_eq!(unsafe { nv_dv8_rpu_valid(p8.as_ptr(), p8.len()) }, 1);
+        assert_eq!(p8, before);
+        assert_eq!(unsafe { nv_dv8_rpu_valid(p7.as_ptr(), p7.len()) }, 0);
+        assert_eq!(unsafe { nv_dv8_rpu_valid(std::ptr::null(), 20) }, 0);
+        assert_eq!(unsafe { nv_dv8_rpu_valid(p8.as_ptr(), 8193) }, 0);
+        let bad = [0x7c, 1, 0x19, 0, 0, 0];
+        assert_eq!(unsafe { nv_dv8_rpu_valid(bad.as_ptr(), bad.len()) }, 0);
+    }
 
     #[test]
     fn mel_and_fel_become_single_layer_profile_81() {

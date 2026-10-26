@@ -8,6 +8,16 @@
  * decode or append its picture slices to the base-layer picture. */
 #define NV_MP4_RPU_MAX 8192
 #define NV_MP4_PACKET_MAX (4u * 1024u * 1024u)
+#ifdef NV_DV7_CONVERSION
+extern int nv_dv8_rpu_valid(const uint8_t *,size_t);
+#endif
+static inline int nv_mp4_p8_valid(const uint8_t *p,size_t n) {
+#ifdef NV_DV7_CONVERSION
+  return nv_dv8_rpu_valid(p,n)==1;
+#else
+  (void)p;(void)n;return 0;
+#endif
+}
 static inline int nv_mp4_rpu(const uint8_t *p,size_t n,int length,
                              uint8_t out[NV_MP4_RPU_MAX],size_t *written) {
   if(!p || !out || !written || length<1 || length>4 || n>NV_MP4_PACKET_MAX)return -1;

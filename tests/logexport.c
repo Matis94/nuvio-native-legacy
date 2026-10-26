@@ -18,6 +18,11 @@ int main(void) {
   const char *safe = "[playback-diag] tick=123 generation=2 pos=123.456 readyBytes=268435456 availableKiB=245760";
   logexport_redact(safe, out, sizeof out); assert(!strcmp(safe, out));
   const char *range_logs[]={
+    "[mp4-bd-test] seek anchor: target=3835.660 BL-dts-ns=3830000000000 BL-pts-ns=3831000000000 probePackets=155 probeBytes=63349",
+    "[mp4-bd-test] single P8 track=0 videos=1 version=1.0 compat=1 bl=1 el=0 rpu=1 size=3840x2160 hdr=9/16/9 hvcc=23",
+    "[mp4-bd-test] first P8 RPU validated: bytes=160; metadata unchanged",
+    "[mp4-seek] deferred target=12.000 pending=2.000",
+    "[mp4-seek] latest target=12.000 reload=1 audio=0",
     "[mp4-bd-test] native error code=204 enabled=1 started=0 converter=0 tried=0",
     "[mp4-bd-test] BL track=0 size=3840x2160 hdr=2/2/2 fps=24000/1001 timebase=1/480000 hvcc=23; EL track=1 size=1920x1080 fps=24000/1001 timebase=1/480000 hvcc=23",
     "[mp4-bd-test] base SPS: size=3840x2160 depth=10 hdr=9/16/9; from=in-band",

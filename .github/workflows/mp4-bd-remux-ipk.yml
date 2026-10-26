@@ -20,7 +20,7 @@ jobs:
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'
       NUVIO_REQUIRE_ALL: '1'
-      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=19
+      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -59,10 +59,13 @@ jobs:
           bash tests/dvaudio.sh
           bash tests/dvaudio_lg.sh
           bash tests/dts_pipeline.sh
-          bash tests/dts_playback.sh
+          NV_TEST_MP4_BUILD=1 bash tests/dts_playback.sh
           cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -Isrc src/cacheboost.c tests/buffer_tamanho.c -lpthread -lm -o /tmp/buffer-policy-test
           /tmp/buffer-policy-test
           cc -std=gnu11 -Wall -Wextra -Werror -Isrc -c src/dts/dts_engine.c -o /tmp/dts-noffmpeg.o
+      - name: Consecutive MP4 seek reuse and bounded fallback
+        timeout-minutes: 3
+        run: NV_TEST_MP4=1 SANITIZE=1 bash tests/dts_playback.sh
       - name: TrueHD DV routing and audio controls
         timeout-minutes: 6
         run: |
@@ -112,7 +115,7 @@ jobs:
           bash tests/dv7_engine.sh
           NV_TEST_TRUEHD=1 bash tests/dv7_engine.sh
           NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 NV_TEST_CACHE_REUSE=1 bash tests/dv7_engine.sh
-      - name: Dual-track MP4 conversion and MKV/P8 isolation
+      - name: MP4 P7/P8 recovery and MKV isolation
         timeout-minutes: 8
         env:
           RUSTUP_TOOLCHAIN: 1.88.0
@@ -184,7 +187,7 @@ jobs:
           data = json.loads(p.read_text())
           assert data["version"] == "2.0.8"
           assert data["id"] == "space.nuvio.native.legacy"
-          data["title"] = "Nuvio Legacy (MP4 test 2)"
+          data["title"] = "Nuvio Legacy (MP4 test 3)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -197,7 +200,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-mp4-bd-remux-test2.ipk
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-mp4-bd-remux-test3.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -213,7 +216,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: mp4-bd-remux-test2-full-arm-ipk
+          name: mp4-bd-remux-test3-full-arm-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14
