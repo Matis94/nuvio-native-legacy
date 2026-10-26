@@ -1,4 +1,4 @@
-# Experimental MP4 BD REMUX test 3
+# Experimental MP4 BD REMUX test 4
 
 Base: v17-ui, commit `85ca963f28afb9ddd0edded0e013fca579493fbc`.
 Branch: `build/mp4-bd-remux-test`. The `build/playback-v17-no-qr` branch is not modified.
@@ -15,7 +15,8 @@ MKV, live source and an already attempted converter do not enter this retry.
 The worker then verifies the real container metadata: exactly two HEVC video
 tracks, one HDR10-compatible base and a separate P7 EL/RPU track. Unrelated
 MP4, P5, ambiguous tracks and encryption are rejected. A single-track P8.1
-source is also accepted only with version 1.0, compatibility ID 1, BL/RPU
+source is also accepted only with version 1.0, compatibility ID 1 (or the
+strictly verified ID-0 recovery described below), BL/RPU
 present, EL absent, verified HDR10 base metadata and a valid first P8 RPU.
 Its metadata passes through unchanged; the P7 converter is never invoked. A BD REMUX filename
 alone is never evidence of this layout. The normal MKV P7 preference remains
@@ -127,3 +128,35 @@ buffering and its safety reductions remain separate and unchanged.
 On TV specifically resume the previously failing 117 GB movie near 3835 s
 (about 1:04), seek forward/back, close/reopen, then test successive seeks and
 audio changes. Export the QR diagnostic log if any step fails.
+
+## Test 4: missing P8 compatibility ID and startup text
+
+The 46.91 GB TV log identifies one P8 HEVC video track with BL/RPU present,
+EL absent, a 23-byte hvcC, unspecified colour fields and compatibility ID 0.
+Test 3 stopped at the ID guard, before checking the actual SPS or RPU.
+
+The opt-in recovery now permits an ID-0 candidate to proceed only if its
+actual SPS proves 10-bit 4:2:0 PQ/BT.2020 with a non-constant BT.2020 matrix,
+matching dimensions and no explicit container colour conflict. This SPS check
+is mandatory even when the container claims HDR10. A valid first P8 RPU is
+also required. Only after both checks pass does output signaling use ID 1.
+The original input configuration, picture packets and RPU bytes are retained.
+The existing 64-packet/4 MiB probe limits and 16 MiB reserve are unchanged.
+Explicit non-HDR10 compatibility IDs, SDR, HLG, missing SPS, missing/corrupt/P7
+RPU, ambiguous tracks and encryption remain rejected. P7 pairing/seek behavior
+is unchanged. Logs explicitly distinguish input ID 0 and verified output ID 1.
+
+Real FFmpeg tests include empty-hvcC/in-band recovery, all three audio outputs,
+all buffer presets, seek/resume/audio/reopen, source configuration preservation,
+byte-identical RPU and identical decoded picture hashes. Actual encoded SDR
+and HLG samples are refused even with false HDR10 container tags. The
+verification flag is reset before another source opens; OFF retains ID 0.
+
+The MP4 fallback now uses the existing startup text slot for Reading the file,
+Opening source and Preparing the image, based on actual backend state. It does
+not activate the MKV screen's input/mute controls or change the opening art.
+The text ends after the first presented picture and cannot return on seek or
+audio reload. Renderer tests cover both opening layouts; the real webOS routing
+fixture covers startup, native/OFF isolation, errors and post-startup hiding.
+The option help is reduced to three short sentences. On TV retest both the
+working 117 GB P7 remux and the 46.91 GB P8 file with this option enabled.

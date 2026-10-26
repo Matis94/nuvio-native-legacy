@@ -60,16 +60,24 @@ def dac3(raw):
 
 def write(kind, variant, reverse=False):
     single = variant.startswith('p8') or variant == 'p5'
-    rpu = bytearray((root / (kind + ('-output.nal' if single and variant != 'p81-p7-rpu' else '-input.nal'))).read_bytes())
-    if variant in ['bad-rpu', 'p81-bad-rpu']:
+    zero = variant.startswith('p8-zero') or variant == 'p8-unknown'
+    inband = variant.startswith('inband') or variant in ['p81-inband-nocolr', 'p8-zero-inband', 'p8-zero-nosps', 'p8-zero-sdr', 'p8-zero-hlg']
+    nosps = variant in ['inband-nosps', 'p8-zero-nosps']
+    nocolr = variant in ['inband-nocolr', 'hvcc-nocolr', 'inband-nosps', 'p81-inband-nocolr', 'p8-zero-inband', 'p8-zero-nosps', 'p8-zero-sdr', 'p8-zero-hlg']
+    source = data
+    if variant in ['p8-zero-sdr', 'p8-zero-colr-sdr', 'p8-zero-hlg', 'p8-zero-colr-hlg']:
+        colour = 'hlg' if variant.endswith('hlg') else 'sdr'
+        source = json.loads((root / f'split-{colour}.json').read_text())
+    samples_by_track = [[p for p in source['packets'] if p['stream_index'] == i] for i in range(4)]
+    rpu = bytearray((root / (kind + ('-output.nal' if single and variant not in ['p81-p7-rpu', 'p8-zero-p7-rpu'] else '-input.nal'))).read_bytes())
+    if variant in ['bad-rpu', 'p81-bad-rpu', 'p8-zero-bad-rpu']:
         rpu[-2] ^= 0x5a
-    single = variant.startswith('p8') or variant == 'p5'
     tracks = []
-    for i, stream in enumerate(data['streams']):
+    for i, stream in enumerate(source['streams']):
         samples = []
-        for number, p in enumerate(packets[i]):
+        for number, p in enumerate(samples_by_track[i]):
             raw = unhex(p['data'])
-            if i < 2 and (variant.startswith('inband') or variant == 'p81-inband-nocolr') and 'K' in p['flags']:
+            if i < 2 and inband and 'K' in p['flags']:
                 # The user's MP4 has a 23-byte hvcC (no parameter-set arrays).
                 # Carry the actual VPS/SPS/PPS in each random-access sample.
                 hvcc = unhex(stream['extradata'])
@@ -80,15 +88,15 @@ def write(kind, variant, reverse=False):
                     for _ in range(count):
                         size = int.from_bytes(hvcc[pos:pos+2], 'big')
                         pos += 2
-                        if variant != 'inband-nosps' or (hvcc[pos] >> 1) & 63 != 33:
+                        if not nosps or (hvcc[pos] >> 1) & 63 != 33:
                             params += size.to_bytes(4, 'big') + hvcc[pos:pos+size]
                         pos += size
                 raw = params + raw
-            if (i == 0 if single else i == 1) and not (variant == 'missing-rpu' and number == 5):
+            if (i == 0 if single else i == 1) and not (variant == 'missing-rpu' and number == 5) and variant != 'p8-zero-no-rpu':
                 raw += len(rpu).to_bytes(4, 'big') + rpu
             samples.append(raw)
         tracks.append({'stream': stream, 'samples': samples, 'offsets': [0] * len(samples)})
-    order = [0, 2, 3] if single and variant != 'p81-extra-video' else ([1, 0, 2, 3] if reverse else [0, 1, 2, 3])
+    order = [0, 2, 3] if single and variant not in ['p81-extra-video', 'p8-zero-extra-video'] else ([1, 0, 2, 3] if reverse else [0, 1, 2, 3])
 
     def trak(i):
         t = tracks[i]
@@ -108,18 +116,18 @@ def write(kind, variant, reverse=False):
             entry += struct.pack('>HH', width, height) + ints(0x480000, 0x480000, 0)
             entry += struct.pack('>H', 1) + bytes(32) + struct.pack('>Hh', 24, -1)
             hvcc = unhex(s['extradata'])
-            if variant.startswith('inband') or variant == 'p81-inband-nocolr':
+            if inband:
                 hvcc = hvcc[:22] + b'\0'
             entry += box('hvcC', hvcc)
-            if variant not in ['inband-nocolr', 'hvcc-nocolr', 'inband-nosps', 'p81-inband-nocolr']:
+            if not nocolr:
                 colour = (1, 1, 1, 0) if variant in ['sdr-colr', 'p81-sdr'] else (9, 16, 9, 0)
                 if variant == 'inband-conflict':
                     colour = (1, 2, 9, 0)
                 entry += box('colr', b'nclx' + struct.pack('>HHHB', *colour))
             if (i == 0 if single else i == 1):
                 profile = 5 if variant == 'p5' else (8 if single else 7)
-                compat = 4 if variant == 'p84' else (0 if variant == 'p8-unknown' else (1 if single else 6))
-                flags = 6 if not single else (7 if variant == 'p81-with-el' else (4 if variant == 'p81-no-bl' else 5))
+                compat = 4 if variant == 'p84' else (2 if variant == 'p8-compat2' else (0 if zero else (1 if single else 6)))
+                flags = 6 if not single else (7 if variant in ['p81-with-el', 'p8-zero-with-el'] else (4 if variant in ['p81-no-bl', 'p8-zero-no-bl'] else 5))
                 entry += box('dvcC', bytes([1, 0, profile << 1, (6 << 3) | flags, compat << 4]) + bytes(19))
             entry = box(tag, entry)
             media_header = full('vmhd', bytes(8), flags=1)
@@ -131,11 +139,11 @@ def write(kind, variant, reverse=False):
         stbl = full('stsd', ints(1) + entry)
         stbl += full('stts', ints(1, count, duration))
         if video:
-            offsets = [round(float(p['pts_time'])*1000) - n*40 for n, p in enumerate(packets[i])]
+            offsets = [round(float(p['pts_time'])*1000) - n*40 for n, p in enumerate(samples_by_track[i])]
             if variant == 'mismatch' and i == 1:
                 offsets = [v+1 for v in offsets]
             stbl += full('ctts', ints(count) + b''.join(ints(1) + struct.pack('>i', v) for v in offsets), version=1)
-            key = [n+1 for n, p in enumerate(packets[i]) if 'K' in p['flags']]
+            key = [n+1 for n, p in enumerate(samples_by_track[i]) if 'K' in p['flags']]
             if variant == 'seek-preroll' and i == 1:
                 key = key[:1]
             stbl += full('stss', ints(len(key), *key))
@@ -148,7 +156,7 @@ def write(kind, variant, reverse=False):
         return box('trak', tkhd + tref + box('mdia', mdhd + hdlr + minf))
 
     def moov():
-        mvhd = full('mvhd', ints(0, 0, 1000, len(packets[0])*40, 0x10000)
+        mvhd = full('mvhd', ints(0, 0, 1000, len(samples_by_track[0])*40, 0x10000)
                     + struct.pack('>HH', 256, 0) + bytes(8) + matrix + bytes(24) + ints(5))
         return box('moov', mvhd + b''.join(trak(i) for i in order))
     entries = sorted((n*(.04 if i < 2 else .032), order.index(i), i, n)
@@ -171,6 +179,10 @@ print('Generated MEL/FEL dual-track MP4: B-frames, reversed track order, bad/mis
 
 for kind in ['mel', 'fel']:
     for variant in ['p81','p81-inband-nocolr','p84','p8-unknown','p81-extra-video','p81-with-el','p81-no-bl','p81-bad-rpu','p81-p7-rpu','p81-sdr','p5']:
+        write(kind, variant)
+    for variant in ['p8-zero-inband','p8-zero-nosps','p8-zero-sdr','p8-zero-hlg',
+                    'p8-zero-colr-sdr','p8-zero-colr-hlg','p8-zero-bad-rpu','p8-zero-p7-rpu',
+                    'p8-zero-no-rpu','p8-zero-extra-video','p8-zero-with-el','p8-zero-no-bl','p8-compat2']:
         write(kind, variant)
 if (root / 'split-long.json').exists():
     data = json.loads((root / 'split-long.json').read_text())

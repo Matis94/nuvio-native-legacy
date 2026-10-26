@@ -32,6 +32,15 @@ ffmpeg -y -hide_banner -loglevel error \
  -x265-params 'bframes=2:b-adapt=0:pools=1:frame-threads=1:log-level=error:keyint=25:min-keyint=25:scenecut=0' \
  -color_primaries bt2020 -color_trc smpte2084 -colorspace bt2020nc -c:a ac3 -ac 2 -b:a 192k "$dir/split-long.mkv"
 ffprobe -v error -show_streams -show_packets -show_data -of json "$dir/split-long.mkv" > "$dir/split-long.json"
+for colour in sdr hlg;do
+ primaries=bt2020;transfer=arib-std-b67;matrix=bt2020nc
+ if [[ $colour == sdr ]];then primaries=bt709;transfer=bt709;matrix=bt709;fi
+ ffmpeg -y -hide_banner -loglevel error -i "$dir/split.mkv" -map 0 -c copy \
+  -c:v libx265 -pix_fmt yuv420p10le \
+  -x265-params 'bframes=2:b-adapt=0:pools=1:frame-threads=1:log-level=error:keyint=10' \
+  -color_primaries "$primaries" -color_trc "$transfer" -colorspace "$matrix" "$dir/split-$colour.mkv"
+ ffprobe -v error -show_streams -show_packets -show_data -of json "$dir/split-$colour.mkv" > "$dir/split-$colour.json"
+done
 python3 tests/mp4_bd_fixture.py "$dir"
 flags=(-DNV_DTS_FFMPEG -DNV_DTS_WEBOS_RECOVERY -DNV_DV7_CONVERSION -DNV_MP4_BD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_DV_TRUEHD_TEST)
 if [[ ${SANITIZE:-0} == 1 ]];then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer);fi

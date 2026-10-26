@@ -35,9 +35,9 @@ static int mp4_sps_hvcc(const AVCodecParameters *p,NvMp4Sps *s) {
   }
   return 0;
 }
-static int mp4_restore_hdr(DtsEngine *e,int base) {
+static int mp4_restore_hdr(DtsEngine *e,int base,int verify_sps) {
   AVCodecParameters *p=e->fmt->streams[base]->codecpar;
-  if(p->color_primaries!=AVCOL_PRI_UNSPECIFIED && p->color_trc!=AVCOL_TRC_UNSPECIFIED)return 0;
+  if(!verify_sps && p->color_primaries!=AVCOL_PRI_UNSPECIFIED && p->color_trc!=AVCOL_TRC_UNSPECIFIED)return 0;
   NvMp4Sps s={0};int result=mp4_sps_hvcc(p,&s),read=0;
   if(!result) {
     AVPacket *packet=av_packet_alloc();
@@ -64,6 +64,8 @@ static int mp4_restore_hdr(DtsEngine *e,int base) {
   if(s.width!=p->width || s.height!=p->height || s.depth!=10 ||
      s.primaries!=AVCOL_PRI_BT2020 || s.transfer!=AVCOL_TRC_SMPTE2084)
     return fail(e,"MP4 base SPS does not confirm HDR10 Main10",0);
+  if(verify_sps && s.matrix!=AVCOL_SPC_BT2020_NCL)
+    return fail(e,"MP4 P8 base SPS does not confirm BT2020 non-constant matrix",0);
   if((p->color_primaries!=AVCOL_PRI_UNSPECIFIED && (int)p->color_primaries!=s.primaries) ||
      (p->color_trc!=AVCOL_TRC_UNSPECIFIED && (int)p->color_trc!=s.transfer) ||
      (p->color_space!=AVCOL_SPC_UNSPECIFIED && (int)p->color_space!=s.matrix))
@@ -166,20 +168,27 @@ static int mp4_single_p8(DtsEngine *e) {
   }
   if(videos!=1 || !c || c->dv_profile!=8)return 0;
   AVStream *b=e->fmt->streams[base];AVCodecParameters *p=b->codecpar;
+  int compatibility=c->dv_bl_signal_compatibility_id;
   printf("[mp4-bd-test] single P8 track=%d videos=%d version=%d.%d compat=%d bl=%d el=%d rpu=%d size=%dx%d hdr=%d/%d/%d hvcc=%d\n",
     base,videos,c->dv_version_major,c->dv_version_minor,c->dv_bl_signal_compatibility_id,
     c->bl_present_flag,c->el_present_flag,c->rpu_present_flag,p->width,p->height,
     p->color_primaries,p->color_trc,p->color_space,p->extradata_size);fflush(stdout);
-  if(c->dv_version_major!=1 || c->dv_version_minor || c->dv_bl_signal_compatibility_id!=1 ||
+  if(c->dv_version_major!=1 || c->dv_version_minor || (compatibility!=0 && compatibility!=1) ||
      !c->bl_present_flag || c->el_present_flag || !c->rpu_present_flag || p->codec_id!=AV_CODEC_ID_HEVC ||
      p->width<=0 || p->height<=0 || b->time_base.num<=0 || b->time_base.den<=0 ||
      b->avg_frame_rate.num<=0 || b->avg_frame_rate.den<=0 || !p->extradata ||
      p->extradata_size<23 || p->extradata[0]!=1)
     return fail(e,"MP4 P8 recovery requires a single verified P8.1 track",0);
-  if(mp4_restore_hdr(e,base)<0)return -1;
+  /* A zero compatibility ID is not proof of HDR10. Require the real Main10
+   * 4:2:0 PQ/BT.2020 SPS even when the container already advertises HDR10. */
+  if(mp4_restore_hdr(e,base,compatibility==0)<0)return -1;
   if(p->color_primaries!=AVCOL_PRI_BT2020 || p->color_trc!=AVCOL_TRC_SMPTE2084)
     return fail(e,"MP4 P8 base colour metadata is not HDR10",0);
   if(mp4_p8_first_rpu(e,base)<0)return -1;
+  if(compatibility==0) {
+    e->mp4_p8_compat_verified=1;
+    puts("[mp4-bd-test] P8 compatibility verified: input=0 output=1; HDR10 SPS and P8 RPU confirmed");fflush(stdout);
+  }
   e->info.video_stream=base;e->dv7=0;
   printf("[mp4-bd-test] verified single-track P8.1: video=%d; RPU passthrough; reserved=16 MiB\n",base);fflush(stdout);
   return 1;
@@ -227,7 +236,7 @@ static int mp4_configure(DtsEngine *e) {
     return fail(e,"MP4 BL/EL frame rates are incompatible",0);
   if(!bp->extradata || !ep->extradata || bp->extradata_size<23 || ep->extradata_size<23 || bp->extradata[0]!=1 || ep->extradata[0]!=1)
     return fail(e,"MP4 BL/EL HEVC configuration is invalid",0);
-  if(mp4_restore_hdr(e,base)<0)return -1;
+  if(mp4_restore_hdr(e,base,0)<0)return -1;
   if(bp->color_trc!=AVCOL_TRC_SMPTE2084 || bp->color_primaries!=AVCOL_PRI_BT2020)
     return fail(e,"MP4 base colour metadata is not HDR10",0);
   e->mp4=av_mallocz(sizeof *e->mp4);

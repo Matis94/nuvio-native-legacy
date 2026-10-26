@@ -18,6 +18,7 @@ int main(void) {
   const char *safe = "[playback-diag] tick=123 generation=2 pos=123.456 readyBytes=268435456 availableKiB=245760";
   logexport_redact(safe, out, sizeof out); assert(!strcmp(safe, out));
   const char *range_logs[]={
+    "[mp4-bd-test] P8 compatibility verified: input=0 output=1; HDR10 SPS and P8 RPU confirmed",
     "[mp4-bd-test] seek anchor: target=3835.660 BL-dts-ns=3830000000000 BL-pts-ns=3831000000000 probePackets=155 probeBytes=63349",
     "[mp4-bd-test] single P8 track=0 videos=1 version=1.0 compat=1 bl=1 el=0 rpu=1 size=3840x2160 hdr=9/16/9 hvcc=23",
     "[mp4-bd-test] first P8 RPU validated: bytes=160; metadata unchanged",

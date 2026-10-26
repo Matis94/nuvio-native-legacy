@@ -159,7 +159,7 @@ struct DtsEngine {
   uint8_t *dv7_buffer;
   unsigned dv7_capacity;
 #ifdef NV_MP4_BD_TEST
-  int allow_mp4;
+  int allow_mp4, mp4_p8_compat_verified;
   NvMp4Pair *mp4;
 #endif
   AVFrame *decoded, *encoded;
@@ -881,6 +881,7 @@ static void close_media(DtsEngine *e) {
   av_bsf_free(&e->bsf); swr_free(&e->swr); av_audio_fifo_free(e->fifo); e->fifo=NULL;
   av_freep(&e->dv7_buffer); e->dv7_capacity=0; e->dv7=0;
 #ifdef NV_MP4_BD_TEST
+  e->mp4_p8_compat_verified=0;
   if(e->mp4) {
     for(int i=0;i<MP4_BASE_QUEUE;i++)av_packet_free(&e->mp4->base[i]);
     av_freep(&e->mp4);
@@ -1181,6 +1182,12 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
     if(e->mp4)e->info.dovi_bl_present=1; /* verified separate base track */
 #endif
     e->info.dovi_bl_compatibility_id=conf->dv_bl_signal_compatibility_id;
+#ifdef NV_MP4_BD_TEST
+    /* The opt-in single-track recovery proved PQ/BT.2020 from the actual SPS
+     * and validated P8 RPU before this output-only compatibility correction.
+     * Preserve the input record and every compressed picture/RPU byte. */
+    if(e->mp4_p8_compat_verified)e->info.dovi_bl_compatibility_id=1;
+#endif
     if ((conf->dv_profile == 7 && !e->allow_p7) ||
         !nv_dv7_profile(conf->dv_profile,conf->el_present_flag,
                        e->info.dovi_bl_present,conf->rpu_present_flag) || vp->codec_id!=AV_CODEC_ID_HEVC)
