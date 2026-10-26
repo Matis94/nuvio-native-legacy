@@ -71,6 +71,11 @@ static int fixtureDvEnabled(void) { return fixtureMkvEnabled; }
 static int fixtureP7Enabled(void) { return 1; }
 #define ajustes_dv_mkv fixtureDvEnabled
 #define ajustes_dv7 fixtureP7Enabled
+#ifdef NV_MP4_BD_TEST
+static int fixtureNextMp4Mode;
+static void fixtureNextMp4(int enabled) {fixtureNextMp4Mode=enabled;}
+#define dts_playback_next_mp4_test fixtureNextMp4
+#endif
 static int fixtureFixedPref(void) { return 2; }
 static int partidaFixedAudio;
 static void fixtureNextDvAudio(int mode) { partidaFixedAudio=mode; }
@@ -316,6 +321,35 @@ int main(void) {
     fonteMp4=0;
     puts("dvaudio_lg: native DV MP4 stays on the URI player without conversion/HDR10 fallback");
   }
+#ifdef NV_MP4_BD_TEST
+  {
+    const char *failure="{\"errorCode\":204,\"errorText\":\"Fail To Demultiplex\"}";
+    Tv t[]={{"en","ac3",6}};
+    // Native startup refuses a MP4: OFF keeps the error path; ON intercepts
+    // exactly that startup event. No source-name or DV badge is required.
+    for(int enabled=0;enabled<2;enabled++) {
+      montar(NULL,0,t,1,0);mp4TestEnabled=enabled;mp4TestPending=0;
+      snprintf(urlAtual,sizeof urlAtual,"http://h/dual.mp4");fonteMp4=1;
+      reconErroPend=recuperando=modoLoad=0;fonteTocou=0;
+      eventoPayload(failure,sessao);
+      assert(mp4TestPending==enabled && reconErroPend==!enabled);
+    }
+    assert(mp4TestPending);dtsModoDv=1;fixtureNextMp4Mode=0;
+    converterResumeRequested=1;converterResumeSeconds=246;converterResumePct=0;
+    converterResumeUsed=0;seekEm=seekEnvEm=seekRetryEm=0;
+    assert(iniciarDts(-1) && fixtureNextMp4Mode==1 && partidaPos==246 && converterResumeUsed);
+    dtsSessao=NULL;
+    for(int variant=0;variant<3;variant++) {
+      montar(NULL,0,t,1,0);mp4TestEnabled=1;mp4TestPending=0;
+      snprintf(urlAtual,sizeof urlAtual,"http://h/%s",variant==0?"healthy.mkv":"native.mp4");
+      fonteMp4=variant!=0;fonteTocou=variant==1;dtsTentou=variant==2;
+      reconErroPend=recuperando=modoLoad=0;eventoPayload(failure,sessao);
+      assert(!mp4TestPending && reconErroPend);
+    }
+    mp4TestEnabled=mp4TestPending=0;fonteMp4=0;dtsTentou=0;reconErroPend=0;
+    puts("PASS real webOS MP4 retry: OFF/native MKV/native playing MP4/repeated failures unchanged; ON startup 204 handoff and resume");
+  }
+#endif
 #endif
   return 0;
 }

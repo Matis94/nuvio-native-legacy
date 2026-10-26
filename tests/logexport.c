@@ -1,0 +1,101 @@
+#define _POSIX_C_SOURCE 200809L
+#include "logexport.h"
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+static void hides(const char *line, const char *secret) {
+  char out[2048]; logexport_redact(line, out, sizeof out);
+  assert(!strstr(out, secret));
+}
+int main(void) {
+  char out[4096], source[] = "/tmp/nuvio-logtest-XXXXXX", path[128];
+  int fd = mkstemp(source); assert(fd >= 0);
+  FILE *f = fdopen(fd, "wb"); assert(f);
+  const char *safe = "[playback-diag] tick=123 generation=2 pos=123.456 readyBytes=268435456 availableKiB=245760";
+  logexport_redact(safe, out, sizeof out); assert(!strcmp(safe, out));
+  const char *range_logs[]={
+    "[dts] stage=native-buffered-reposition ",
+    "[dts] stage=native-seek-progress-confirmed ",
+    "[dts] stage=native-seek-accepted 1234567",
+    "[dts] stage=native-seek-fallback no presentation progress",
+    "[dts] stage=startup-audio-reuse ",
+    "[dts] dv-seek-prime ms=2100 kind=1 pts=4645.563 bytes=327759",
+    "[dts] stage=dv-audio-prepared-before-unload ",
+    "[dts] stage=audio-format-reload ",
+    "[dts] dv-audio-reload-prime target=3241.822 ms=4540 packet=1 kind=1 bytes=327759",
+    "[dts] dv-fixed-audio mode=1 input=eac3 output=aac channels=2 rate=48000",
+    "[dts] audio-policy requested=1 fixed=1 dv=1 seamless=1 compiled=1",
+    "[dts] audio-policy requested=0 fixed=0 dv=1 seamless=1 compiled=1",
+    "[range-reuse] target=70617346365 retained=60 retainedBytes=251658180",
+    "[range-reuse] target=123 retained=2 retainedBytes=8388606 interrupted=1",
+    "[range-reuse] target=67108971 retained=12 retainedBytes=50331636 interrupted=0 refillSlots=4 recycled=3",
+    "[dts] dv-audio-hold-release reason=ready ms=1200 aheadA=2.10 aheadV=2.00 contiguousKiB=20480",
+    "[dts] native-seek-fallback reason=no-progress target=7786.988 waitMs=4000 totalMs=12000",
+    "[dts] dv-fixed-audio mode=2 input=ac3 output=ac3 channels=6 rate=48000",
+    "[dv] file: profile=7 level=6 rpu=1 el=1 bl=1 compat=6",
+    "[dts] stage=dv-native-load profile=8 compatibility=1 bl=1 el=0 rpu=1 reused=1 target=123.000",
+    "[video] HDR do pipeline: HDR10 (fonte afirmava DV=1)",
+    "[video] HDR do pipeline: DolbyVision (fonte afirmava DV=1)",
+    "[range-stall] start=2456400780 idleMs=3000 got=65536",
+    "[range-http] start=10737418240 end=10738466815 curl=28 http=206 got=524288 valid=1 overflow=0 responseStart=10737418240 responseEnd=10738466815 total=30000000000",
+    "[range-result] start=4194304 end=5242879 attempts=2 ok=1 http=206 bytes=1048576 ms=15020",
+    "[range-read] pos=4194304 waitMs=2150 http=206 ok=1 readyBytes=64000000 contiguousBytes=64000000",
+    "[range-reset] reason=seek pos=100000000 ready=32 readyBytes=33554432 active=4"};
+  for(size_t i=0;i<sizeof range_logs/sizeof range_logs[0];i++) {
+    logexport_redact(range_logs[i],out,sizeof out);assert(!strcmp(out,range_logs[i]));
+  }
+  hides("[dts] stage=native-seek-progress-confirmedSECRETVALUE", "SECRETVALUE");
+  hides("[net] native-seek-progress-confirmedSECRETVALUE", "SECRETVALUE");
+  hides("[dts] stage=native-seek-progress-confirmed token=shortpw", "shortpw");
+  hides("[dts] stage=dv-audio-prepared-before-unloadSECRETVALUE", "SECRETVALUE");
+  hides("[net] dv-audio-prepared-before-unload", "dv-audio-prepared-before-unload");
+  hides("[dts] stage=dv-audio-prepared-before-unload token=shortpw", "shortpw");
+  hides("[net] https://person:shortpw@host.example/key/movie?api=x#y", "person");
+  hides("[net] HtTpS://private.example/shortpw", "shortpw");
+  hides("[net] https:\\/\\/private.example/key", "private.example");
+  hides("[net] url:https://a/shortpw", "shortpw");
+  hides("[addon] authorization: Basic YTpi", "YTpi");
+  hides("[addon] Cookie: a=shortpw; b=123", "shortpw");
+  hides("[addon] apiKey=shortpw", "shortpw");
+  hides("[addon] accessToken=shortpw", "shortpw");
+  hides("[addon] {\"password\":\"shortpw\"}", "shortpw");
+  hides("[addon] url=http%3A%2F%2Fprivate.example%2Fshortpw", "shortpw");
+  hides("[auth] pin=1234", "1234");
+  hides("[auth] username=someone", "someone");
+  hides("[net] contact foo@example.test", "foo@example.test");
+  hides("[net] 192.168.1.100", "192.168.1.100");
+  hides("[net] aa:bb:cc:dd:ee:ff", "aa:bb:cc:dd:ee:ff");
+  hides("[net] 2001:db8:1234::abcd", "2001:db8:1234::abcd");
+  hides("[net] 1234567890abcdef1234567890abcdef", "1234567890abcdef1234567890abcdef");
+  hides("[net] /media/private-user/file.mkv", "private-user");
+  hides("[net] eyJabc.def.ghi", "eyJabc");
+  char tiny[3] = {1,2,3}; logexport_redact("password=shortpw", tiny, sizeof tiny); assert(!tiny[2]);
+  fprintf(f, "%s\n[auth] password:  \nshortpw\n  \"secondpw\"\n[video] error=300\n", safe);
+  /* An oversized line must be omitted as a whole, never export its chunks. */
+  for (int i = 0; i < 70000; i++) fputc('x', f);
+  fputs("ENDSECRET\n[video] recovery=1\n", f); fclose(f);
+  assert(logexport_create(source, path, sizeof path));
+  struct stat st; assert(!stat(path, &st) && (st.st_mode & 0777) == 0600);
+  f = fopen(path, "rb"); assert(f); size_t n = fread(out, 1, sizeof out - 1, f); out[n] = 0; fclose(f);
+  assert(strstr(out, safe) && strstr(out, "[video] error=300") && strstr(out, "recovery=1"));
+#ifdef NV_PLAYBACK_TEST_BUILD
+  char build[64];snprintf(build,sizeof build,"Experimental playback build: v%d",NV_PLAYBACK_TEST_BUILD);
+  assert(strstr(out,build));
+#endif
+  assert(!strstr(out, "shortpw") && !strstr(out, "secondpw") && !strstr(out, "ENDSECRET"));
+  assert(strstr(out, "oversized log line")); unlink(path);
+  /* Taking a tail cannot leak the partial first line. */
+  f = fopen(source, "wb"); assert(f);
+  for (int i = 0; i < 17 * 1024 * 1024; i++) fputc('x', f);
+  fputs("TRUNCATEDSECRET\n[video] tail=1\n", f); fclose(f);
+  assert(logexport_create(source, path, sizeof path));
+  f = fopen(path, "rb"); assert(f); n = fread(out, 1, sizeof out - 1, f); out[n] = 0; fclose(f);
+  assert(strstr(out, "tail=1") && !strstr(out, "TRUNCATEDSECRET"));
+  unlink(path); unlink(source);
+  assert(!logexport_create("/nonexistent/nuvio.log", path, sizeof path) && !path[0]);
+  puts("PASS: log export redaction, numeric diagnostics, multiline secrets, bounds, private permissions");
+}

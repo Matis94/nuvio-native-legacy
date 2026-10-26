@@ -60,6 +60,7 @@ void dts_engine_allow_p7(DtsEngine *e,int on) { (void)e; (void)on;
  last_p7=on;
 }
 void dts_engine_dv(DtsEngine *e,int on) { (void)e; last_dv=on; }
+void dts_engine_mp4_test(DtsEngine *e,int on) { (void)e;assert(!on); }
 void dts_engine_dv_audio(DtsEngine *e,int mode) { e->dv_audio=mode; }
 static void fixedInfo(DtsEngine *e) {
  if(e->dv_audio) {

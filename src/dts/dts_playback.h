@@ -24,6 +24,7 @@ int dts_playback_enabled(void);
 void dts_playback_next_dv(int enabled);
 /* Main thread: snapshot the P7/recovery opt-in for the next session. */
 void dts_playback_next_p7(int enabled);
+void dts_playback_next_mp4_test(int enabled);
 /* Explicit TV-test opt-in. Reuse a healthy native pipeline across compatible
  * seeks/audio changes, with bounded fresh-Load fallback. Default disabled. */
 void dts_playback_next_seamless(int enabled);

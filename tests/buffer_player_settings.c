@@ -18,7 +18,7 @@ int main(void) {
   assert(SDL_Init(SDL_INIT_TIMER)==0);setenv("NUVIO_DADOS",dir,1);
   dados_iniciar(dir);snprintf(dirAjustes,sizeof dirAjustes,"%s",dir);ajustes_iniciar();
   assert(gravar());assert(!ajustes_buffer_dados());
-  assert(AJ_BUFFER_DADOS==AJ_N-3 && ajustes_escopo(AJ_BUFFER_DADOS)==ESC_TV);
+  assert(AJ_BUFFER_DADOS==AJ_N-4 && ajustes_escopo(AJ_BUFFER_DADOS)==ESC_TV);
   assert(!ajustePortavel(AJ_BUFFER_DADOS) && !ajusteAparelho(AJ_BUFFER_DADOS));
   assert(!ajustes_ram_overlay() && !ajustes_ram_verde());
   assert(ajustes_escopo(AJ_RAM_OVERLAY)==ESC_TV && ajustes_escopo(AJ_RAM_VERDE)==ESC_TV);
@@ -63,6 +63,12 @@ int main(void) {
   uxAbrirEditor(AJ_DV_AUDIO_FIXO);assert(uxEditor==1);
   uxPendente=1;uxAplicar();assert(ajustes_dv_audio_fixo()==1);
   valor[AJ_DV_AUDIO_FIXO]=0;ajustes_dir(dir);assert(ajustes_dv_audio_fixo()==1);
+#ifdef NV_MP4_BD_TEST
+  assert(!ajustes_mp4_bd_test());
+  uxAbrirEditor(AJ_MP4_BD_TEST);assert(uxEditor==1);
+  uxPendente=0;uxAplicar();assert(ajustes_mp4_bd_test());
+  valor[AJ_MP4_BD_TEST]=1;ajustes_dir(dir);assert(ajustes_mp4_bd_test());
+#endif
   // A failed immediate save restores the visible and live toggle state.
   open_buffer();switch_row();
   char saved[sizeof dirAjustes];memcpy(saved,dirAjustes,sizeof saved);

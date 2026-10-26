@@ -728,6 +728,7 @@ typedef enum {
   AJ_BUFFER_DADOS, // nested in the buffer chooser, device-local; off by default
   AJ_RAM_OVERLAY, // nested playback RAM overlay, device-local, off by default
   AJ_RAM_VERDE, // optional green-key RAM shortcut, device-local, off by default
+  AJ_MP4_BD_TEST, // experimental separate-track P7 MP4, append-only, default OFF
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -1870,6 +1871,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Show buffer data in player", V_LIGA, 2),
   ESC("RAM overlay", V_LIGA, 2),
   ESC("Green button shortcut", V_LIGA, 2),
+  ESC("BD REMUX MP4 compatibility (test)", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2206,6 +2208,7 @@ static const char *CHAVE[] = {
   "bufferPlayerDataLocal",
   "ramOverlayLocal",
   "ramGreenShortcutLocal",
+  "mp4BdRemuxTestLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3309,6 +3312,13 @@ int ajustes_buffer_preset(void) {
 int ajustes_buffer_dados(void) { return lig(AJ_BUFFER_DADOS); }
 int ajustes_ram_overlay(void) { return lig(AJ_RAM_OVERLAY); }
 int ajustes_ram_verde(void) { return lig(AJ_RAM_VERDE); }
+int ajustes_mp4_bd_test(void) {
+#if defined(NV_MP4_BD_TEST) && defined(NV_WEBOS) && defined(NV_DV7_CONVERSION)
+  return valor[AJ_MP4_BD_TEST]==0;
+#else
+  return 0;
+#endif
+}
 static int overlayAlternar(int op) {
   int antes=valor[op];valor[op]=!antes;
   if(gravar())return 1;
@@ -6103,7 +6113,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_AUDIO_OFFSET:   /* audio presentation calibration belongs to this TV */
     case AJ_DTS_AC3:        /* o conversor de DTS e desta TV */
     case AJ_DV_MKV:         /* o demux e o decoder sao desta TV */
-    case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE:
+    case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST:
     case AJ_HIST_CONTA: case AJ_SOCIAL: /* por perfil desta TV (perfilLocal); o web nao tem */
     case AJ_TAM_MAX: case AJ_TAM_MIN: /* o web nao tem a faixa de tamanho */
     case AJ_ESPACO_FILEIRAS: case AJ_ESPACO_TITULOS: /* o web nao tem espacamento */
@@ -6198,7 +6208,7 @@ static int soNaTv(int op) {
     case AJ_LIVETV_DIAG: case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY:
     case AJ_P2P_LIGADO: case AJ_JF_LIGADO: case AJ_POSTER_PROV: case AJ_EPG_PAIS:
     case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: case AJ_RELOGIO_12H:
-    case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE:
+    case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST:
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_BUFFER:
     case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
     case AJ_TUNNELING: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO:
@@ -6786,6 +6796,9 @@ static int foraDestaPlataforma(int op) {
 #endif
 #if !defined(NV_DV_FIXED_AUDIO_TEST) || !defined(NV_WEBOS)
   if(op==AJ_DV_AUDIO_FIXO) return 1;
+#endif
+#if !defined(NV_MP4_BD_TEST) || !defined(NV_WEBOS) || !defined(NV_DV7_CONVERSION)
+  if(op==AJ_MP4_BD_TEST)return 1;
 #endif
 #ifndef NV_ANDROID
   if (op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO || op == AJ_TUNNELING) return 1;
@@ -8091,6 +8104,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_DV_MKV: return "Arquivos MKV em Dolby Vision perfil 5 ou 8 tocam com o Dolby Vision ligado, em vez de HDR10. O áudio Dolby Digital e Dolby Digital Plus vai direto para a TV. Se a conexão não acompanhar, o vídeo continua em HDR10. Só em TVs LG com webOS 4 ou mais novo.";
     case AJ_DV7: return "Converte MKV Dolby Vision perfil 7 para 8.1. Mantém o vídeo base e os metadados dinâmicos; descarta a camada de melhoria, incluindo FEL. Vale para o próximo vídeo.";
     case AJ_DV_AUDIO_FIXO: return "Choose the audio output for Dolby Vision conversion playback. Original audio uses standard playback behavior and may briefly reload video when switching audio formats. AAC stereo and Dolby Digital 5.1 convert supported tracks to a fixed output for smoother switching. Conversion does not preserve lossless audio (including TrueHD) or Dolby Atmos/DTS:X metadata. Changes apply when you reopen the video.";
+    case AJ_MP4_BD_TEST: return "Experimental recovery for MP4 files that fail to open on the TV and contain Dolby Vision Profile 7 in separate base and enhancement video tracks. Combines the base video with converted P8.1 metadata without re-encoding the picture or decoding the enhancement layer. Other files keep their existing playback path. Off by default. Changes apply when you reopen the video.";
     case AJ_CW_RETIDO_TAMBEM: return "Quando o título está na ilha ou em Retomar agora, mostra também na fileira Continuar assistindo.";
     case AJ_EP_TAMANHO: return "Pequeno, Médio (padrão) ou Grande. Só vale no layout Moderno, na página de séries. Vale só nesta TV.";
     case AJ_ABERTURA_ADDON: return "Desligado (padrão): a tela Cinema mostra só a arte, o logo e a barra. Ligado: o nome do add-on aparece sob a barra. Vale só nesta TV.";

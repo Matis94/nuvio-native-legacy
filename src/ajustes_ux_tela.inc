@@ -52,6 +52,9 @@ static const Item TELA[] = {
 #ifdef NV_DV7_CONVERSION
       OPC(AJ_DV7),
 #endif
+#if defined(NV_MP4_BD_TEST) && defined(NV_WEBOS) && defined(NV_DV7_CONVERSION)
+      OPC(AJ_MP4_BD_TEST),
+#endif
 #if defined(NV_DV_FIXED_AUDIO_TEST) && defined(NV_WEBOS)
       OPC(AJ_DV_AUDIO_FIXO),
 #endif

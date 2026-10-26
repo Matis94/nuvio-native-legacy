@@ -877,7 +877,7 @@ done:
   return NULL;
 }
 
-static int dvNext, p7Next, seamlessNext, dvAudioNext;
+static int dvNext, p7Next, seamlessNext, dvAudioNext, mp4Next;
 static double resumePctNext;
 void dts_playback_next_resume_pct(double pct) {
   resumePctNext=isfinite(pct) && pct>0 && pct<100 ? pct : 0;
@@ -885,6 +885,7 @@ void dts_playback_next_resume_pct(double pct) {
 void dts_playback_next_seamless(int enabled) { seamlessNext=!!enabled; }
 void dts_playback_next_dv_audio(int mode) { dvAudioNext=mode==1 || mode==2 ? mode : 0; }
 void dts_playback_next_p7(int enabled) { p7Next = !!enabled; }
+void dts_playback_next_mp4_test(int enabled) { mp4Next=!!enabled; }
 void dts_playback_next_dv(int enabled) { dvNext = !!enabled; }
 DtsPlayback *dts_playback_start(const char *url, const char *headers,
                                int audio_stream, double position,
@@ -893,6 +894,7 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
   DtsPlayback *p;
   double resume_pct=resumePctNext;resumePctNext=0;
   int dv_audio=dvAudioNext;dvAudioNext=0;
+  int mp4_test=mp4Next;mp4Next=0;
   if (!url || !*url || strlen(url) >= 4096 || (headers && strlen(headers) >= 2048) ||
       (window && strlen(window) >= 64) || !isfinite(position) || position >= 9e9 || !dts_engine_available()) return NULL;
   p = calloc(1, sizeof *p);
@@ -916,6 +918,7 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
   }
   p->allow_p7 = p7Next; p7Next = 0;
   dts_engine_allow_p7(p->engine, p->allow_p7);
+  dts_engine_mp4_test(p->engine,mp4_test);
   snprintf(p->url, sizeof p->url, "%s", url);
   snprintf(p->headers, sizeof p->headers, "%s", headers ? headers : "");
   snprintf(p->window, sizeof p->window, "%s", window ? window : "");

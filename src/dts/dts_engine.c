@@ -1,6 +1,7 @@
 #include "dts_engine.h"
 #include "dts_audio_codec.h"
 #include "dv7.h"
+#include "dv7_mp4.h"
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -39,6 +40,7 @@ int dts_engine_available(void) { return 0; }
 void dts_engine_dv(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
 void dts_engine_dv_audio(DtsEngine *e,int mode) { (void)e;(void)mode; }
 void dts_engine_allow_p7(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
+void dts_engine_mp4_test(DtsEngine *e,int enabled) { (void)e;(void)enabled; }
 void dts_engine_metrics(DtsEngine *e,DtsEngineMetrics *out) { (void)e; if(out) memset(out,0,sizeof(*out)); }
 int dts_engine_open(DtsEngine *e,const char *u,const char *h,int a,int c,double s) {
   (void)e;(void)u;(void)h;(void)a;(void)c;(void)s; return -1;
@@ -95,6 +97,16 @@ typedef struct {
   uint64_t elapsed;
 } DtsRangeJob;
 static const AVRational NS = {1,1000000000};
+#ifdef NV_MP4_BD_TEST
+#define MP4_BASE_QUEUE 8
+#define MP4_RPU_QUEUE 64
+typedef struct {
+  AVPacket *base[MP4_BASE_QUEUE];
+  int base_count, rpu_count, aligned, align_drops, el_stream, base_length, el_length;
+  size_t base_bytes;
+  struct { uint8_t data[NV_MP4_RPU_MAX]; size_t size; int64_t pts,dts; } rpu[MP4_RPU_QUEUE];
+} NvMp4Pair;
+#endif
 struct DtsEngine {
   DtsMediaInfo info;
   char error[160], *url, *headers, *cache;
@@ -143,6 +155,10 @@ struct DtsEngine {
   int allow_p7, dv7;
   uint8_t *dv7_buffer;
   unsigned dv7_capacity;
+#ifdef NV_MP4_BD_TEST
+  int allow_mp4;
+  NvMp4Pair *mp4;
+#endif
   AVFrame *decoded, *encoded;
   AVChannelLayout input_layout;
   enum AVSampleFormat input_format;
@@ -829,6 +845,21 @@ static void copy_metadata(char *out,size_t size,AVDictionary *m,const char *key)
   AVDictionaryEntry *v=av_dict_get(m,key,NULL,0);
   snprintf(out,size,"%s",v?v->value:"");
 }
+#ifdef NV_MP4_BD_TEST
+#include "dts_mp4_dual.inc"
+#endif
+static int read_packet(DtsEngine *e) {
+#ifdef NV_MP4_BD_TEST
+  if(e->mp4)return mp4_read_packet(e);
+#endif
+  return av_read_frame(e->fmt,e->in);
+}
+static int packet_read_error(DtsEngine *e,int code) {
+#ifdef NV_MP4_BD_TEST
+  if(e->mp4 && e->error[0])return -1;
+#endif
+  return fail(e,"Container read",code);
+}
 static void close_media(DtsEngine *e) {
   fx_close(e);
   pthread_mutex_lock(&e->range_lock);
@@ -846,6 +877,12 @@ static void close_media(DtsEngine *e) {
   avcodec_free_context(&e->dec); avcodec_free_context(&e->enc);
   av_bsf_free(&e->bsf); swr_free(&e->swr); av_audio_fifo_free(e->fifo); e->fifo=NULL;
   av_freep(&e->dv7_buffer); e->dv7_capacity=0; e->dv7=0;
+#ifdef NV_MP4_BD_TEST
+  if(e->mp4) {
+    for(int i=0;i<MP4_BASE_QUEUE;i++)av_packet_free(&e->mp4->base[i]);
+    av_freep(&e->mp4);
+  }
+#endif
   av_channel_layout_uninit(&e->input_layout);
   avformat_close_input(&e->fmt);
   if (e->io) { av_freep(&e->io->buffer); avio_context_free(&e->io); }
@@ -938,6 +975,13 @@ void dts_engine_dv_audio(DtsEngine *e,int mode) {
 #endif
 }
 void dts_engine_allow_p7(DtsEngine *e, int enabled) { if (e) e->allow_p7 = !!enabled; }
+void dts_engine_mp4_test(DtsEngine *e,int enabled) {
+#ifdef NV_MP4_BD_TEST
+  if(e)e->allow_mp4=!!enabled;
+#else
+  (void)e;(void)enabled;
+#endif
+}
 int dts_engine_available(void) {
   return avcodec_find_decoder(AV_CODEC_ID_DTS) && avcodec_find_encoder(AV_CODEC_ID_AAC) && av_bsf_get_by_name("h264_mp4toannexb")
       && av_bsf_get_by_name("hevc_mp4toannexb");
@@ -1053,6 +1097,14 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
   e->pos=0; e->total=-1; e->cache_size=0; e->has_core=0;
   e->range_bytes=e->dv?RANGE_BYTES_DV:RANGE_BYTES; e->range_slots=e->dv?RANGE_SLOTS_DV:RANGE_SLOTS;
   if(g_ahead_mib>0) { e->range_bytes=RANGE_BYTES_DV; e->range_slots=(g_ahead_mib+3)/4; }
+#ifdef NV_MP4_BD_TEST
+  /* Reserve pairing scratch from this engine's existing payload budget. No
+   * extra HTTP lane, second demuxer or video decoder is created. */
+  if(e->allow_mp4) {
+    if(!e->dv || e->range_slots<=4)return fail(e,"MP4 pairing buffer unavailable",0);
+    e->range_slots-=4;
+  }
+#endif
   e->final_url[0]=0; e->final_cross=0; e->passthrough=0; e->remux=0; e->opening=1;
   e->demux_eof=e->decoder_eof=e->resampler_eof=e->encoder_sent_eof=e->timeline=0;
   if (cancelled(e)) return fail(e,"Cancelled",0);
@@ -1102,21 +1154,33 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
     }
   }
   if(e->info.audio_stream<0 || e->info.video_stream<0) return fail(e,"Selected DTS track or video absent",0);
+#ifdef NV_MP4_BD_TEST
+  if(mp4_configure(e)<0)return -1;
+#endif
   AVStream *v=e->fmt->streams[e->info.video_stream]; AVCodecParameters *vp=v->codecpar;
   const char *filter=vp->codec_id==AV_CODEC_ID_H264?"h264_mp4toannexb":vp->codec_id==AV_CODEC_ID_HEVC?"hevc_mp4toannexb":NULL;
   if(!filter && vp->codec_id!=AV_CODEC_ID_VP9 && vp->codec_id!=AV_CODEC_ID_AV1)
     return fail(e,"Compressed video codec unsupported",0);
   const AVPacketSideData *dv=av_packet_side_data_get(vp->coded_side_data,vp->nb_coded_side_data,AV_PKT_DATA_DOVI_CONF);
+#ifdef NV_MP4_BD_TEST
+  if(e->mp4) {
+    AVCodecParameters *ep=e->fmt->streams[e->mp4->el_stream]->codecpar;
+    dv=av_packet_side_data_get(ep->coded_side_data,ep->nb_coded_side_data,AV_PKT_DATA_DOVI_CONF);
+  }
+#endif
   if(dv && dv->size>=sizeof(AVDOVIDecoderConfigurationRecord)) {
     const AVDOVIDecoderConfigurationRecord *conf=(const AVDOVIDecoderConfigurationRecord *)dv->data;
     e->info.dovi_profile=conf->dv_profile; e->info.dovi_level=conf->dv_level;
     e->info.dovi_rpu_present=conf->rpu_present_flag;
     e->info.dovi_el_present=conf->el_present_flag;
     e->info.dovi_bl_present=conf->bl_present_flag;
+#ifdef NV_MP4_BD_TEST
+    if(e->mp4)e->info.dovi_bl_present=1; /* verified separate base track */
+#endif
     e->info.dovi_bl_compatibility_id=conf->dv_bl_signal_compatibility_id;
     if ((conf->dv_profile == 7 && !e->allow_p7) ||
         !nv_dv7_profile(conf->dv_profile,conf->el_present_flag,
-                       conf->bl_present_flag,conf->rpu_present_flag) || vp->codec_id!=AV_CODEC_ID_HEVC)
+                       e->info.dovi_bl_present,conf->rpu_present_flag) || vp->codec_id!=AV_CODEC_ID_HEVC)
       return fail(e,"Dolby Vision layer/profile unsupported",0);
     if (conf->dv_profile == 7) {
       e->dv7=1;
@@ -1333,13 +1397,13 @@ static int next_frame_passthrough(DtsEngine *e,DtsFrame *f) {
       if(r!=AVERROR(EAGAIN)) return fail(e,"Compressed video output",r);
     }
     if(e->demux_eof) return 0;
-    r=av_read_frame(e->fmt,e->in);
+    r=read_packet(e);
     if(r==AVERROR_EOF) {
       e->demux_eof=1;
       if(e->bsf && (r=av_bsf_send_packet(e->bsf,NULL))<0) return fail(e,"Video filter drain",r);
       continue;
     }
-    if(r<0) return fail(e,"Container read",r);
+    if(r<0) return packet_read_error(e,r);
     if(av_packet_get_side_data(e->in,AV_PKT_DATA_ENCRYPTION_INFO,NULL)) { av_packet_unref(e->in); return fail(e,"Encrypted packet unsupported",0); }
     AVRational tb=e->fmt->streams[e->in->stream_index]->time_base;
     if(e->fmt->streams[e->in->stream_index]->codecpar->codec_type==AVMEDIA_TYPE_SUBTITLE) {
@@ -1398,14 +1462,14 @@ static int next_frame(DtsEngine *e,DtsFrame *f) {
       e->encoder_sent_eof=1; continue;
     }
     if(e->demux_eof) return fail(e,"Unexpected DTS drain state",0);
-    r=av_read_frame(e->fmt,e->in);
+    r=read_packet(e);
     if(r==AVERROR_EOF) {
       e->demux_eof=1;
       if((r=avcodec_send_packet(e->dec,NULL))<0) return fail(e,"DTS decoder drain",r);
       if(e->bsf && (r=av_bsf_send_packet(e->bsf,NULL))<0) return fail(e,"Video filter drain",r);
       continue;
     }
-    if(r<0) return fail(e,"Container read",r);
+    if(r<0) return packet_read_error(e,r);
     if(av_packet_get_side_data(e->in,AV_PKT_DATA_ENCRYPTION_INFO,NULL)) { av_packet_unref(e->in); return fail(e,"Encrypted packet unsupported",0); }
     if(e->fmt->streams[e->in->stream_index]->codecpar->codec_type==AVMEDIA_TYPE_SUBTITLE) {
       AVRational tb=e->fmt->streams[e->in->stream_index]->time_base;
@@ -1486,6 +1550,9 @@ int dts_engine_next(DtsEngine *e,DtsFrame *f) {
 int dts_engine_seek(DtsEngine *e,double seconds) {
   if(!e || !e->fmt || !isfinite(seconds) || seconds<0 || seconds>INT64_MAX/1000000000.0) return -1;
   if(cancelled(e)) return fail(e,"Cancelled",0);
+#ifdef NV_MP4_BD_TEST
+  if(e->mp4)mp4_pair_reset(e);
+#endif
 #ifdef NV_NATIVE_SEEK_TEST
   /* A live DV seek/audio change is not a new startup: keep the bounded
    * awaited-range timeout/retry policy while fetching its first keyframe. */

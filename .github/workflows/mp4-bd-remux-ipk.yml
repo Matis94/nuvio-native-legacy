@@ -1,12 +1,12 @@
-name: Build playback v17 UI update IPK
+name: Build MP4 BD REMUX test IPK
 on:
   push:
-    branches: [build/playback-v17-no-qr]
+    branches: [build/mp4-bd-remux-test]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: playback-v17-no-qr
+  group: mp4-bd-remux-test
   cancel-in-progress: true
 jobs:
   build:
@@ -20,36 +20,26 @@ jobs:
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'
       NUVIO_REQUIRE_ALL: '1'
-      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_PLAYBACK_TEST_BUILD=17
+      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=18
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
       - name: Verify application source
         run: |
-          git fetch --no-tags --depth=1 origin 137809c206a038f5e7a86f4d757a39c81c99f065
-          git diff --exit-code 137809c206a038f5e7a86f4d757a39c81c99f065 HEAD -- src rust tools deploy
-          git fetch --no-tags --depth=1 origin add9152b778c4e8a2510ee23c6899334cece1dfa
-          git diff --exit-code add9152b778c4e8a2510ee23c6899334cece1dfa HEAD -- src/dts/adapter src/dts/dts_pipeline.c src/dts/dts_pipeline.h src/cacheboost.c src/video_seekview.h
-          git fetch --no-tags --depth=1 origin 5e7652f6637553ca53a4b9efd718d22302dbcd29
-          git diff --exit-code 5e7652f6637553ca53a4b9efd718d22302dbcd29 HEAD -- src/dts src/video_seekview.h src/moviebuffer.c src/cacheboost.c
-          python3 - <<'PYVERIFY'
-          import pathlib,subprocess
-          old=subprocess.check_output(['git','show','5e7652f6637553ca53a4b9efd718d22302dbcd29:src/video.c'],text=True)
-          new=pathlib.Path('src/video.c').read_text()
-          def without_notice(s):
-              a=s.index('int video_truehd_convertido(void) {');b=s.index('\n#endif',a)
-              return s[:a]+s[b:]
-          assert without_notice(old)==without_notice(new), 'Playback changed outside the read-only TrueHD notice getter'
-          PYVERIFY
+          git fetch --no-tags --depth=1 origin 85ca963f28afb9ddd0edded0e013fca579493fbc
+          git diff --exit-code 85ca963f28afb9ddd0edded0e013fca579493fbc HEAD -- src/dts/adapter src/dts/dts_pipeline.c src/dts/dts_pipeline.h src/cacheboost.c src/moviebuffer.c src/video_seekview.h
+          git fetch --no-tags --depth=1 origin APPLICATION_SOURCE_SHA
+          git diff --exit-code APPLICATION_SOURCE_SHA HEAD -- src rust tools deploy
           git diff --check
       - name: Install host test dependencies
         timeout-minutes: 6
         run: bash .github/build/host_deps.sh
-      - name: Diagnostic QR removal and normal phone input
+      - name: Diagnostic QR export and normal phone input
         timeout-minutes: 3
         run: |
-          bash tests/no_qr_export.sh
+          SANITIZE=1 bash tests/logexport.sh
+          CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular_export.sh
           CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular.sh
       - name: Native buffering regressions
         timeout-minutes: 8
@@ -84,9 +74,13 @@ jobs:
         run: |
           bash tests/ajustes_secoes.sh
           bash tests/dv_fixed_audio_settings.sh
+          bash tests/mp4_bd_settings.sh
+          cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined tests/mp4_bd_rpu.c -o /tmp/mp4-rpu-test
+          /tmp/mp4-rpu-test
+          NV_TEST_MP4=1 bash tests/dvaudio_lg.sh
           bash tests/player_buffer_data.sh
           bash tests/player_ram_controls.sh
-          bash tests/buffer_player_settings.sh
+          NV_TEST_MP4=1 bash tests/buffer_player_settings.sh
           NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 bash tests/dvaudio_lg.sh
       - name: Build host FFmpeg and test real HTTP buffering
         timeout-minutes: 12
@@ -116,6 +110,12 @@ jobs:
           bash tests/dv7_engine.sh
           NV_TEST_TRUEHD=1 bash tests/dv7_engine.sh
           NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 NV_TEST_CACHE_REUSE=1 bash tests/dv7_engine.sh
+      - name: Dual-track MP4 conversion and MKV/P8 isolation
+        timeout-minutes: 8
+        env:
+          RUSTUP_TOOLCHAIN: 1.88.0
+          NUVIO_DTS_ROOT: /tmp/nuvio-dts-host
+        run: SANITIZE=1 bash tests/mp4_bd_engine.sh
       - name: Restore application configuration from verified official release
         run: |
           mkdir -p .build-private
@@ -182,7 +182,7 @@ jobs:
           data = json.loads(p.read_text())
           assert data["version"] == "2.0.8"
           assert data["id"] == "space.nuvio.native.legacy"
-          data["title"] = "Nuvio Legacy (Playback v17)"
+          data["title"] = "Nuvio Legacy (MP4 test 1)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -195,7 +195,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-playback-v17-ui.ipk
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-mp4-bd-remux-test1.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -211,7 +211,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: playback-v17-ui-full-arm-ipk
+          name: mp4-bd-remux-test1-full-arm-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14
