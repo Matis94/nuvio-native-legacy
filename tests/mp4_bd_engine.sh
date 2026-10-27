@@ -43,21 +43,24 @@ for colour in sdr hlg;do
 done
 python3 tests/mp4_bd_fixture.py "$dir"
 flags=(-DNV_DTS_FFMPEG -DNV_DTS_WEBOS_RECOVERY -DNV_DV7_CONVERSION -DNV_MP4_BD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_DV_TRUEHD_TEST)
+if [[ ${NV_TEST_P7_MAPPING:-0} == 1 ]];then flags+=(-DNV_DV7_MAPPING_TEST);fi
 if [[ ${SANITIZE:-0} == 1 ]];then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer);fi
 cc -std=gnu11 -O1 -g -Wall -Wextra -Werror "${flags[@]}" -I"$prefix/include" \
  src/dts/dts_engine.c tests/mp4_bd_engine.c -o "$dir/engine" -L"$prefix/lib" \
  -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group \
  build/dv7-host/libnuvio_dv7.a -lm -lpthread -ldl
 for kind in mel fel;do
- "$dir/engine" "$dir/$kind.mkv" "$dir/$kind-bad.mkv" "$dir/p8.mp4" \
+ rpu="$dir/$kind-output.nal";extra=()
+ if [[ ${NV_TEST_P7_MAPPING:-0} == 1 ]];then rpu="$dir/$kind-mapping-output.nal";extra=(env "NV_DV7_EXPECT_RPU=$rpu");fi
+ "${extra[@]}" "$dir/engine" "$dir/$kind.mkv" "$dir/$kind-bad.mkv" "$dir/p8.mp4" \
   "$dir/$kind-dual.mp4" "$dir/$kind-bad-rpu.mp4" "$dir/$kind-mismatch.mp4" \
-  "$dir/$kind-missing-rpu.mp4" "$dir/$kind-dual-reverse.mp4" "$dir/$kind-output.nal" "$dir/$kind-inband.mp4" "$dir/output.h265" \
+  "$dir/$kind-missing-rpu.mp4" "$dir/$kind-dual-reverse.mp4" "$rpu" "$dir/$kind-inband.mp4" "$dir/output.h265" \
   "$dir/$kind-inband-nocolr.mp4" "$dir/$kind-hvcc-nocolr.mp4" "$dir/$kind-inband-nosps.mp4" "$dir/$kind-sdr-colr.mp4" "$dir/$kind-inband-conflict.mp4"
  ffmpeg -y -hide_banner -loglevel error -i "$dir/output.h265" -f null -
 done
 
 for test in mp4_p8_engine mp4_seek_preroll;do
- extra=();if [[ $test == mp4_p8_engine ]];then extra+=(-Wl,--wrap=nv_dv7_rpu);fi
+ extra=();if [[ $test == mp4_p8_engine ]];then extra+=(-Wl,--wrap=nv_dv7_rpu -Wl,--wrap=nv_dv7_rpu_mapping -Wl,--wrap=nv_dv7_rpu_mapping_report);fi
  cc -std=gnu11 -O1 -g -Wall -Wextra -Werror "${flags[@]}" -I"$prefix/include" \
   src/dts/dts_engine.c "tests/$test.c" -o "$dir/$test" -L"$prefix/lib" \
   -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group \

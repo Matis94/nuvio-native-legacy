@@ -33,7 +33,7 @@ int MP4_BD_MAIN(int argc,char **argv) {
   char *baseline[]={argv[0],argv[1],argv[2],argv[3]};
   if(!getenv("NV_MP4_ONLY"))assert(!mkv_baseline_main(4,baseline));
   for(int mode=0;mode<=2;mode++) {
-    DtsEngine *e=dts_engine_create();assert(e);
+    DtsEngine *e=mapping_engine_create();assert(e);
     dts_engine_dv(e,1);dts_engine_allow_p7(e,1);dts_engine_dv_audio(e,mode);
     dts_engine_mp4_test(e,1);dts_engine_set_ahead_mib(64);
     fprintf(stderr,"MP4 fixture: mode=%d initial open/drain\n",mode);

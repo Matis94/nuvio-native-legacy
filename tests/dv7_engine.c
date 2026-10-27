@@ -55,6 +55,19 @@ static void check_dv(DtsEngine *e) {
          m->dovi_bl_present && m->dovi_bl_compatibility_id==1);
   assert(!strcmp(m->hdr,"DolbyVision"));
 }
+static uint8_t mapping_expected[8192];
+static size_t mapping_expected_size;
+static void mapping_expected_load(void) {
+  mapping_expected_size=0;const char *path=getenv("NV_DV7_EXPECT_RPU");
+  if(path) {FILE *f=fopen(path,"rb");assert(f);mapping_expected_size=fread(mapping_expected,1,sizeof mapping_expected,f);fclose(f);assert(mapping_expected_size>2);}
+}
+static DtsEngine *mapping_engine_create(void) {
+  DtsEngine *e=dts_engine_create();assert(e);
+#ifdef NV_DV7_MAPPING_TEST
+  dts_engine_p7_mapping(e,getenv("NV_TEST_P7_MAPPING")!=NULL);
+#endif
+  return e;
+}
 static int drain(DtsEngine *e) {
   check_dv(e);
   DtsFrame f; int r,video=0,audio=0,rpu=0;
@@ -69,7 +82,10 @@ static int drain(DtsEngine *e) {
       assert(end-begin>=2);
       int type=(f.data[begin]>>1)&63;
       assert(type!=63 && !(f.data[begin]&1) && !(f.data[begin+1]>>3));
-      if (type==62) rpu++;
+      if (type==62) {
+        rpu++;
+        if(mapping_expected_size)assert(end-begin==mapping_expected_size && !memcmp(f.data+begin,mapping_expected,mapping_expected_size));
+      }
       at=end; pre=nextpre;
     }
   }
@@ -78,8 +94,8 @@ static int drain(DtsEngine *e) {
   return video;
 }
 int main(int argc,char **argv) {
-  assert(argc==4);
-  DtsEngine *e=dts_engine_create(); assert(e);
+  assert(argc==4);mapping_expected_load();
+  DtsEngine *e=mapping_engine_create(); assert(e);
   dts_engine_allow_p7(e,1); dts_engine_dv(e,1); check(e,dts_engine_open(e,argv[1],"",-1,0,0));
   check_dv(e);
   assert(!strcmp(dts_engine_info(e)->audio_codec,"eac3"));
@@ -118,7 +134,7 @@ int main(int argc,char **argv) {
   // output parameters from the FIRST Load. Still require P8.1 RPU on every
   // picture, decoded audio, correct track metadata, seek and bounded cache.
   for(int mode=1;mode<=2;mode++) {
-    e=dts_engine_create();assert(e);
+    e=mapping_engine_create();assert(e);
     dts_engine_allow_p7(e,1);dts_engine_dv(e,1);dts_engine_dv_audio(e,mode);
     dts_engine_set_ahead_mib(128);
     dts_engine_set_ac3(mode==1); // Fixed mode is independent of DTS preference.
@@ -142,23 +158,24 @@ int main(int argc,char **argv) {
   }
   // Setter cannot enable conversion on a non-DV path, and invalid mode is off.
   dts_engine_set_ac3(0);
-  e=dts_engine_create();dts_engine_allow_p7(e,1);dts_engine_dv_audio(e,2);
+  e=mapping_engine_create();dts_engine_allow_p7(e,1);dts_engine_dv_audio(e,2);
   check(e,dts_engine_open(e,argv[1],"",3,0,0));
   assert(!strcmp(dts_engine_info(e)->audio_codec,"aac") && dts_engine_info(e)->channels==2);
   dts_engine_destroy(e);
-  e=dts_engine_create();dts_engine_dv(e,1);dts_engine_allow_p7(e,1);dts_engine_dv_audio(e,99);
+  e=mapping_engine_create();dts_engine_dv(e,1);dts_engine_allow_p7(e,1);dts_engine_dv_audio(e,99);
   check(e,dts_engine_open(e,argv[1],"",1,0,0));
   assert(!strcmp(dts_engine_info(e)->audio_codec,"eac3") && drain(e)==20);
   dts_engine_destroy(e);dts_engine_set_ac3(0);dts_engine_set_ahead_mib(0);
   puts("Fixed DV audio: real AC3/EAC3/DTS/TrueHD, stereo/surround, repeated switching/seeking, unchanged bounded cache, opt-in and cancellation passed");
 #endif
-  e=dts_engine_create(); dts_engine_allow_p7(e,1); dts_engine_dv(e,1);
+  e=mapping_engine_create(); dts_engine_allow_p7(e,1); dts_engine_dv(e,1);
   check(e,dts_engine_open(e,argv[2],"",-1,0,0));
   DtsFrame f; int r;
   while ((r=dts_engine_next(e,&f))>0) {}
   assert(r<0 && strstr(dts_engine_error(e),"DV7 RPU conversion failed"));
   dts_engine_destroy(e);
-  e=dts_engine_create();assert(e);dts_engine_dv(e,1);
+  e=mapping_engine_create();assert(e);dts_engine_dv(e,1);
+  mapping_expected_size=0;
   dts_engine_allow_p7(e,0); // Native MP4 P8 requires no P7 conversion.
   check(e,dts_engine_open(e,argv[3],"",-1,0,0));check_dv(e);
   assert(drain(e)==20);check(e,dts_engine_seek(e,.4));assert(drain(e)>0);

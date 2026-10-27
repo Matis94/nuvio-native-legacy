@@ -904,6 +904,10 @@ done:
 }
 
 static int dvNext, p7Next, seamlessNext, dvAudioNext, mp4Next;
+#ifdef NV_DV7_MAPPING_TEST
+static int p7MappingNext;
+void dts_playback_next_p7_mapping(int enabled) { p7MappingNext=!!enabled; }
+#endif
 static double resumePctNext;
 void dts_playback_next_resume_pct(double pct) {
   resumePctNext=isfinite(pct) && pct>0 && pct<100 ? pct : 0;
@@ -921,6 +925,9 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
   double resume_pct=resumePctNext;resumePctNext=0;
   int dv_audio=dvAudioNext;dvAudioNext=0;
   int mp4_test=mp4Next;mp4Next=0;
+#ifdef NV_DV7_MAPPING_TEST
+  int p7_mapping=p7MappingNext;p7MappingNext=0;
+#endif
   if (!url || !*url || strlen(url) >= 4096 || (headers && strlen(headers) >= 2048) ||
       (window && strlen(window) >= 64) || !isfinite(position) || position >= 9e9 || !dts_engine_available()) return NULL;
   p = calloc(1, sizeof *p);
@@ -947,6 +954,9 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
   }
   p->allow_p7 = p7Next; p7Next = 0;
   dts_engine_allow_p7(p->engine, p->allow_p7);
+#ifdef NV_DV7_MAPPING_TEST
+  dts_engine_p7_mapping(p->engine,p->dv && p->allow_p7 && p7_mapping);
+#endif
   dts_engine_mp4_test(p->engine,mp4_test);
   snprintf(p->url, sizeof p->url, "%s", url);
   snprintf(p->headers, sizeof p->headers, "%s", headers ? headers : "");

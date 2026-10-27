@@ -51,6 +51,9 @@ static const Item TELA[] = {
       OPC(AJ_DV_MKV),
 #ifdef NV_DV7_CONVERSION
       OPC(AJ_DV7),
+#if defined(NV_DV7_MAPPING_TEST) && defined(NV_WEBOS)
+      OPC(AJ_DV7_MAPPING),
+#endif
 #endif
 #if defined(NV_MP4_BD_TEST) && defined(NV_WEBOS) && defined(NV_DV7_CONVERSION)
       OPC(AJ_MP4_BD_TEST),

@@ -7,6 +7,14 @@
 ptrdiff_t __wrap_nv_dv7_rpu(const uint8_t *p,size_t n,uint8_t *out,size_t cap) {
   (void)p;(void)n;(void)out;(void)cap;assert(!"P8 must retain its original metadata");return -1;
 }
+#ifdef NV_DV7_MAPPING_TEST
+ptrdiff_t __wrap_nv_dv7_rpu_mapping(const uint8_t *p,size_t n,uint8_t *out,size_t cap,int mode) {
+  (void)p;(void)n;(void)out;(void)cap;(void)mode;assert(!"P8 must not invoke experimental P7 conversion");return -1;
+}
+ptrdiff_t __wrap_nv_dv7_rpu_mapping_report(const uint8_t *p,size_t n,uint8_t *out,size_t cap,int mode,uint32_t *report) {
+  (void)p;(void)n;(void)out;(void)cap;(void)mode;(void)report;assert(!"P8 must not invoke P7 diagnostic conversion");return -1;
+}
+#endif
 int main(int argc,char **argv) {
   assert(argc==4);char path[4096],rpu[4096];
   snprintf(rpu,sizeof rpu,"%s/%s-output.nal",argv[1],argv[2]);
@@ -17,7 +25,7 @@ int main(int argc,char **argv) {
     "p8-zero-bad-rpu","p8-zero-p7-rpu","p8-zero-no-rpu","p8-zero-extra-video",
     "p8-zero-with-el","p8-zero-no-bl"};
   for(int mode=0;mode<=2;mode++)for(int mib=64;mib<=256;mib*=2) {
-    DtsEngine *e=dts_engine_create();assert(e);
+    DtsEngine *e=mapping_engine_create();assert(e);
     dts_engine_dv(e,1);dts_engine_allow_p7(e,0);dts_engine_mp4_test(e,1);
     dts_engine_dv_audio(e,mode);dts_engine_set_ahead_mib(mib);
     for(size_t i=0;i<sizeof good/sizeof good[0];i++) {
