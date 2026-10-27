@@ -1873,7 +1873,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("RAM overlay", V_LIGA, 2),
   ESC("Green button shortcut", V_LIGA, 2),
   ESC("Dolby Vision MP4 (experimental)", V_LIGA, 2),
-  ESC("Preserve P7 mapping (experimental)", V_LIGA, 2),
+  ESC("Dolby Vision P7 mapping (experimental)", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por

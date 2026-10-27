@@ -4,7 +4,7 @@ Base: `build/playback-v17-no-qr`, commit `65499610db565ca038b0d0ca130585f238d599
 Ported from `build/dv7-mapping-test` into `build/playback-v17-no-qr`.
 
 In Settings > Playback > sound/video, enable P7 to P8.1 conversion, then use
-**Preserve P7 mapping (experimental)** immediately below it. Default OFF is the
+**Dolby Vision P7 mapping (experimental)** immediately below it. Default OFF is the
 existing Mode 2 conversion. ON uses libdovi's named `To81MappingPreserved`
 variant (library enum index 4, dovi_tool CLI Mode 5; numeric `4` must not be
 passed to `convert_with_mode`, because its numeric adapter selects P8.4).
