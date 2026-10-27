@@ -1871,7 +1871,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Show buffer data in player", V_LIGA, 2),
   ESC("RAM overlay", V_LIGA, 2),
   ESC("Green button shortcut", V_LIGA, 2),
-  ESC("Dolby Vision MP4 (Experimental)", V_LIGA, 2),
+  ESC("Dolby Vision MP4 (experimental)", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -8103,8 +8103,8 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_SOCIAL: return "Ligado (padrão): amigos, atividade deles e recomendações. Desligado: tudo isso some, com a fileira de amigos da Home, e o app para de falar com o serviço social. Salvos e Avisos continuam. Vale só para este perfil.";
     case AJ_DV_MKV: return "Arquivos MKV em Dolby Vision perfil 5 ou 8 tocam com o Dolby Vision ligado, em vez de HDR10. O áudio Dolby Digital e Dolby Digital Plus vai direto para a TV. Se a conexão não acompanhar, o vídeo continua em HDR10. Só em TVs LG com webOS 4 ou mais novo.";
     case AJ_DV7: return "Converte MKV Dolby Vision perfil 7 para 8.1. Mantém o vídeo base e os metadados dinâmicos; descarta a camada de melhoria, incluindo FEL. Vale para o próximo vídeo.";
-    case AJ_DV_AUDIO_FIXO: return "Original audio may reload video when switching formats. AAC stereo / Dolby Digital 5.1 converts supported tracks for smoother switching, without lossless audio or Atmos/DTS:X. Reopen the video to apply.";
-    case AJ_MP4_BD_TEST: return "Experimental playback recovery for compatible Dolby Vision MP4 files. Off by default. Reopen the video after changing this setting.";
+    case AJ_DV_AUDIO_FIXO: return "Original audio may reload video when switching formats. AAC stereo / Dolby Digital 5.1 converts supported tracks for smoother switching. Conversion does not preserve lossless audio or Atmos/DTS:X metadata. Reopen the video to apply.";
+    case AJ_MP4_BD_TEST: return "Helps play compatible Dolby Vision MP4 files that fail to open normally. Off by default. Reopen the video to apply.";
     case AJ_CW_RETIDO_TAMBEM: return "Quando o título está na ilha ou em Retomar agora, mostra também na fileira Continuar assistindo.";
     case AJ_EP_TAMANHO: return "Pequeno, Médio (padrão) ou Grande. Só vale no layout Moderno, na página de séries. Vale só nesta TV.";
     case AJ_ABERTURA_ADDON: return "Desligado (padrão): a tela Cinema mostra só a arte, o logo e a barra. Ligado: o nome do add-on aparece sob a barra. Vale só nesta TV.";
