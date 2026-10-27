@@ -5,7 +5,7 @@
 #include "../src/ajustes.c"
 #include <assert.h>
 int main(void) {
-  assert(AJ_DV_AUDIO_FIXO==AJ_N-5 && valor[AJ_DV_AUDIO_FIXO]==0);
+  assert(AJ_DV_AUDIO_FIXO==AJ_MP4_BD_TEST-4 && valor[AJ_DV_AUDIO_FIXO]==0);
   assert(!strcmp(CHAVE[AJ_DV_AUDIO_FIXO],"dvFixedAudioTestLocal"));
   assert(ajustes_escopo(AJ_DV_AUDIO_FIXO)==ESC_TV);
   assert(!ajustePortavel(AJ_DV_AUDIO_FIXO) && !ajusteAparelho(AJ_DV_AUDIO_FIXO));

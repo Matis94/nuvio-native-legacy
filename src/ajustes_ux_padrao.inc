@@ -357,3 +357,4 @@
   1, /* RAM overlay: Off */
   1, /* green-button RAM shortcut: Off */
   1, /* BD REMUX MP4 test: Off (V_LIGA), device-local opt-in */
+  1, /* preserve P7 mapping experiment: Off (V_LIGA), device-local opt-in */

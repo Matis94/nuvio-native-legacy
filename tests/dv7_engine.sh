@@ -17,6 +17,7 @@ if [ "${NV_TEST_FIXED_AUDIO:-0}" = 1 ]; then
   truehd_opts+=(-c:a:4 ac3 -ac:a:4 6 -c:a:5 ac3 -ac:a:5 2 -c:a:6 ac3 -ac:a:6 1)
 fi
 if [ "${NV_TEST_CACHE_REUSE:-0}" = 1 ]; then test_flags+=(-DNV_NATIVE_SEEK_TEST); fi
+if [[ ${NV_TEST_P7_MAPPING:-0} == 1 ]];then test_flags+=(-DNV_DV7_MAPPING_TEST);fi
 ffmpeg -hide_banner -loglevel error -f lavfi -i color=size=64x64:rate=25:duration=0.8 \
   -f lavfi -i sine=frequency=300:sample_rate=48000:duration=0.8 -c:v libx265 \
   -x265-params 'bframes=0:pools=1:frame-threads=1:log-level=error:keyint=10' \
@@ -31,5 +32,7 @@ cc -std=gnu11 -Wall -Wextra -Werror -DNV_DTS_FFMPEG ${NV_TEST_DTS_RECOVERY_CFLAG
   -I"$prefix/include" src/dts/dts_engine.c tests/dv7_engine.c -o "$dir/engine" \
   -L"$prefix/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil \
   -Wl,--end-group build/dv7-host/libnuvio_dv7.a -lm -lpthread -ldl
-"$dir/engine" "$dir/fel.mkv" "$dir/fel-bad.mkv" "$dir/p8.mp4"
-"$dir/engine" "$dir/mel.mkv" "$dir/mel-bad.mkv" "$dir/p8.mp4"
+for kind in fel mel;do
+ extra=();if [[ ${NV_TEST_P7_MAPPING:-0} == 1 ]];then extra=(env "NV_DV7_EXPECT_RPU=$dir/$kind-mapping-output.nal");fi
+ "${extra[@]}" "$dir/engine" "$dir/$kind.mkv" "$dir/$kind-bad.mkv" "$dir/p8.mp4"
+done

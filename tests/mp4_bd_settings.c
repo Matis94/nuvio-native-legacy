@@ -2,7 +2,7 @@
 #include "../src/ajustes.c"
 #include <assert.h>
 int main(void) {
-  assert(AJ_MP4_BD_TEST==AJ_N-1 && AJ_MP4_BD_TEST==AJ_RAM_VERDE+1);
+  assert(AJ_MP4_BD_TEST==AJ_DV7_MAPPING-1 && AJ_MP4_BD_TEST==AJ_RAM_VERDE+1);
   assert(valor[AJ_MP4_BD_TEST]==1 && valorPadrao[AJ_MP4_BD_TEST]==1);
   assert(!ajustes_mp4_bd_test());
   assert(!strcmp(CHAVE[AJ_MP4_BD_TEST],"mp4BdRemuxTestLocal"));

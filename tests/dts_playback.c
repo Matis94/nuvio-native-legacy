@@ -57,6 +57,10 @@ static void emit(const char *json) {
  assert(cb);cb(u,json);
 }
 int dts_engine_available(void) { return 1; }
+#ifdef NV_DV7_MAPPING_TEST
+static int last_p7_mapping;
+void dts_engine_p7_mapping(DtsEngine *e,int enabled) {assert(e);last_p7_mapping=enabled;}
+#endif
 void dts_engine_allow_p7(DtsEngine *e,int on) { (void)e; (void)on;
  last_p7=on;
 }
@@ -327,6 +331,27 @@ static DtsPlayback *start(int paused,int stream,const DtsTrack *selected,int ord
 }
 int main(int argc,char **argv) {
  assert(argc==2);assert(!dts_playback_enabled());DtsPlayback *p;DtsPlaybackStatus s;
+#ifdef NV_DV7_MAPPING_TEST
+ if(!strcmp(argv[1],"p7-mapping")) {
+  dts_playback_next_p7_mapping(1);
+  assert(!dts_playback_start(NULL,"",-1,0,0,"window",0,NULL,0,0));
+  dts_playback_next_dv(1);p=start(0,1,NULL,0,0);wait_status(p,0,0);
+  assert(last_p7_mapping==0);dts_playback_close(p);
+  dts_playback_next_p7_mapping(1);dts_playback_next_dv(1);dts_playback_next_seamless(1);
+  p=start(0,1,NULL,0,0);wait_status(p,0,0);assert(last_p7_mapping==1);
+  dts_playback_seek(p,2);wait_count(&seeks,1);
+  dts_playback_audio_at(p,2,2);wait_count(&audio_reconfigs,1);
+  assert(last_p7_mapping==1);dts_playback_close(p);
+  // Preference is consumed per session; the next movie starts at default.
+  dts_playback_next_dv(1);p=start(0,1,NULL,0,0);wait_status(p,0,0);
+  assert(last_p7_mapping==0);dts_playback_close(p);
+  setenv("DV7_OFF","1",1);dts_playback_next_p7_mapping(1);dts_playback_next_dv(1);
+  p=start(0,1,NULL,0,0);wait_status(p,0,0);assert(last_p7_mapping==0);dts_playback_close(p);
+  unsetenv("DV7_OFF");dts_playback_next_p7_mapping(1);dts_playback_next_dv(0);
+  p=start(0,1,NULL,0,0);wait_status(p,0,0);assert(last_p7_mapping==0);dts_playback_close(p);
+  puts("PASS P7 mapping session snapshot: OFF, ON, rejected start, seek/audio retention, no leak, DV/P7 gating");return 0;
+ }
+#endif
  if(!strncmp(argv[1],"mp4-seek-",9)) {
   int off=!strcmp(argv[1],"mp4-seek-off"),timeout=!strcmp(argv[1],"mp4-seek-timeout");
   int pause=!strcmp(argv[1],"mp4-seek-paused"),cancel=!strcmp(argv[1],"mp4-seek-cancel");

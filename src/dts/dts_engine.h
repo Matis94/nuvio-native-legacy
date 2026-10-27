@@ -52,6 +52,8 @@ void dts_engine_dv(DtsEngine *, int enabled);
 void dts_engine_dv_audio(DtsEngine *, int mode);
 /* Explicit opt-in before open: P7 conversion and webOS recovery. Default off. */
 void dts_engine_allow_p7(DtsEngine *, int enabled);
+/* Snapshot before open; P7 RPU only, no extra video or HTTP buffers. */
+void dts_engine_p7_mapping(DtsEngine *, int enabled);
 /* Strict experimental dual-track P7 MP4 open; never enabled for MKV or native
  * P5/P8 playback. Only the test build implements this device-local opt-in. */
 void dts_engine_mp4_test(DtsEngine *, int enabled);
