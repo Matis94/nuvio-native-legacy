@@ -29,8 +29,8 @@ jobs:
         run: |
           git fetch --no-tags --depth=1 origin 65499610db565ca038b0d0ca130585f238d59911
           git diff --exit-code 65499610db565ca038b0d0ca130585f238d59911 HEAD -- src/dts/adapter src/dts/dts_pipeline.c src/dts/dts_pipeline.h src/cacheboost.c src/moviebuffer.c src/video_seekview.h src/dts/dts_mp4_dual.inc src/player.c src/dvtelaui.c
-          git fetch --no-tags --depth=1 origin a167690cbf917bf570ddc182df1e7996f39d8132
-          git diff --exit-code a167690cbf917bf570ddc182df1e7996f39d8132 HEAD -- src rust tools deploy
+          git fetch --no-tags --depth=1 origin 7e349836467c1fe8bb4218d469c04eb83dd82d09
+          git diff --exit-code 7e349836467c1fe8bb4218d469c04eb83dd82d09 HEAD -- src rust tools deploy
           git diff --check
       - name: Install host test dependencies
         timeout-minutes: 6
