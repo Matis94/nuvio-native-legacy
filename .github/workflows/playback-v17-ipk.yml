@@ -1,4 +1,4 @@
-name: Build playback v22 no-QR IPK
+name: Build playback v24 P7 mapping no-QR IPK
 on:
   push:
     branches: [build/playback-v17-no-qr]
@@ -20,23 +20,32 @@ jobs:
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'
       NUVIO_REQUIRE_ALL: '1'
-      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=22
+      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
       - name: Verify application source
         run: |
-          git fetch --no-tags --depth=1 origin 85ca963f28afb9ddd0edded0e013fca579493fbc
-          git diff --exit-code 85ca963f28afb9ddd0edded0e013fca579493fbc HEAD -- src/dts/adapter src/dts/dts_pipeline.c src/dts/dts_pipeline.h src/cacheboost.c src/moviebuffer.c src/video_seekview.h
-          git diff --exit-code 85ca963f28afb9ddd0edded0e013fca579493fbc HEAD -- src/app.c src/celbotao.c src/celbotao.h src/celular.c src/celular.h src/registro.c src/registro_ilha.inc
-          git fetch --no-tags --depth=1 origin ac41d1b86c908b95763c69661b452976343d6d78
-          git diff --exit-code ac41d1b86c908b95763c69661b452976343d6d78 HEAD -- src rust tools deploy
+          git fetch --no-tags --depth=1 origin 65499610db565ca038b0d0ca130585f238d59911
+          git diff --exit-code 65499610db565ca038b0d0ca130585f238d59911 HEAD -- src/dts/adapter src/dts/dts_pipeline.c src/dts/dts_pipeline.h src/cacheboost.c src/moviebuffer.c src/video_seekview.h src/dts/dts_mp4_dual.inc src/player.c src/dvtelaui.c
+          git diff --exit-code 65499610db565ca038b0d0ca130585f238d59911 HEAD -- src/app.c src/celbotao.c src/celbotao.h src/celular.c src/celular.h src/registro.c src/registro_ilha.inc
+          git fetch --no-tags --depth=1 origin 61ecf81ab8ecac43e8d5f5a673a46cf5ba957b15
+          git diff --exit-code 61ecf81ab8ecac43e8d5f5a673a46cf5ba957b15 HEAD -- src rust tools deploy
           git diff --check
       - name: Install host test dependencies
         timeout-minutes: 6
         run: bash .github/build/host_deps.sh
-      - name: Diagnostic QR removal and normal phone input
+      - name: P7 mapping settings, metadata and session isolation
+        timeout-minutes: 6
+        env:
+          RUSTUP_TOOLCHAIN: 1.88.0
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal
+          bash tests/dv7_mapping_settings.sh
+          bash tests/dv7.sh
+          NV_TEST_P7_MAPPING=1 SANITIZE=1 bash tests/dts_playback.sh
+      - name: Diagnostic QR absence and normal phone input
         timeout-minutes: 3
         run: |
           bash tests/no_qr_export.sh
@@ -87,7 +96,7 @@ jobs:
           bash tests/player_buffer_data.sh
           bash tests/player_ram_controls.sh
           NV_TEST_MP4=1 bash tests/buffer_player_settings.sh
-          NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 bash tests/dvaudio_lg.sh
+          NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 NV_TEST_P7_MAPPING=1 bash tests/dvaudio_lg.sh
       - name: Build host FFmpeg and test real HTTP buffering
         timeout-minutes: 12
         env:
@@ -116,12 +125,15 @@ jobs:
           bash tests/dv7_engine.sh
           NV_TEST_TRUEHD=1 bash tests/dv7_engine.sh
           NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 NV_TEST_CACHE_REUSE=1 bash tests/dv7_engine.sh
+          NV_TEST_P7_MAPPING=1 NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 NV_TEST_CACHE_REUSE=1 bash tests/dv7_engine.sh
       - name: MP4 P7/P8 recovery and MKV isolation
-        timeout-minutes: 8
+        timeout-minutes: 12
         env:
           RUSTUP_TOOLCHAIN: 1.88.0
           NUVIO_DTS_ROOT: /tmp/nuvio-dts-host
-        run: SANITIZE=1 bash tests/mp4_bd_engine.sh
+        run: |
+          SANITIZE=1 bash tests/mp4_bd_engine.sh
+          NV_TEST_P7_MAPPING=1 SANITIZE=1 bash tests/mp4_bd_engine.sh
       - name: Restore application configuration from verified official release
         run: |
           mkdir -p .build-private
@@ -174,7 +186,7 @@ jobs:
         with:
           path: .build-p2p
           key: custom207-p2p-amd64-${{ hashFiles('tools/p2p-motor/build-arm.sh', 'tools/p2p-motor/pasta.sh', 'tools/p2p-motor/janela-334.patch') }}
-      - name: Compile and package buffered seek test
+      - name: Compile and package P7 mapping comparison
         run: |
           export RUSTUP_HOME="$HOME/.rustup"
           export CARGO_HOME="$HOME/.cargo"
@@ -188,7 +200,7 @@ jobs:
           data = json.loads(p.read_text())
           assert data["version"] == "2.0.8"
           assert data["id"] == "space.nuvio.native.legacy"
-          data["title"] = "Nuvio Legacy (v22 no QR)"
+          data["title"] = "Nuvio Legacy (v24 no QR)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -201,7 +213,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-playback-v22-no-qr.ipk
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-playback-v24-no-qr.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -217,7 +229,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: playback-v22-no-qr-full-arm-ipk
+          name: playback-v24-no-qr-full-arm-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14
