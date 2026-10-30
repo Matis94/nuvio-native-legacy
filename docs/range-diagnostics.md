@@ -60,3 +60,12 @@ seconds are recorded independently of sampling; cancelled requests are omitted.
 There are no extra network requests, payload copies or per-request heap
 allocations for this diagnostic. Small fixed counters and stack buffers are
 used, with the existing bounded log export.
+
+The DV range recovery experiment also reports `[range-gap]` when the interval
+the demuxer currently needs is incomplete while at least two later intervals
+are ready. Only that awaited interval gets an earlier three-second retry
+budget while below 75% completion. A nearly complete body retains five seconds;
+startup, paused/speculative reads and the final retry retain their existing
+limits. `[range-budget]` includes the selected `budgetMs`. Completed later
+payloads remain cached; lane count and memory budgets do not change. This
+handles one slow CDN response and is independent of HTTP 429 cooldowns.

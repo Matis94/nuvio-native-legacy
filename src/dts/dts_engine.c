@@ -733,6 +733,27 @@ static int optional_p2p_tail(DtsEngine *e) {
   while(*port>='0' && *port<='9') port++;
   return !strncmp(port,"/stream/",8) && port[8];
 }
+/* Under range_lock. Only the actively awaited DV interval can escalate; a
+ * paused consumer or an ordinary speculative download keeps its full budget.
+ * Two later payloads prove a local hole rather than a generally slow origin. */
+static void range_wait_priority(DtsEngine *e,DtsRangeJob *job) {
+#if defined(NV_NATIVE_SEEK_TEST) && defined(NV_DTS_WEBOS_RECOVERY)
+  if(!e->dv || e->remux || !__atomic_load_n(&e->range_live,__ATOMIC_RELAXED) ||
+     __atomic_load_n(&job->urgent,__ATOMIC_RELAXED)!=2)return;
+  int later=0;int64_t bytes=0;
+  for(int i=0;i<e->range_slots;i++) {
+    DtsRangeJob *j=&e->ranges[i];
+    if(j->start>job->end && j->state==3 && j->data && j->count>0){later++;bytes+=j->count;}
+  }
+  if(later>=2) {
+    __atomic_store_n(&job->urgent,3,__ATOMIC_RELAXED);
+    printf("[range-gap] start=%lld later=%d laterBytes=%lld budgetMs=3000\n",
+      (long long)job->start,later,(long long)bytes);fflush(stdout);
+  }
+#else
+  (void)e;(void)job;
+#endif
+}
 static int read_range(void *opaque,uint8_t *dst,int n) {
   DtsEngine *e=opaque;
   if (cancelled(e) || __atomic_load_n(&e->interrupt,__ATOMIC_RELAXED)) return AVERROR_EXIT;
@@ -779,6 +800,7 @@ static int read_range(void *opaque,uint8_t *dst,int n) {
     struct timespec deadline;
     if(optional) { clock_gettime(CLOCK_REALTIME,&deadline); deadline.tv_sec++; }
     while(job->state!=3 && !cancelled(e) && !__atomic_load_n(&e->interrupt,__ATOMIC_RELAXED)) {
+      range_wait_priority(e,job);
       if(optional) {
         if(pthread_cond_timedwait(&e->range_wake,&e->range_lock,&deadline)==ETIMEDOUT && job->state!=3) {
           pthread_mutex_unlock(&e->range_lock);

@@ -1,13 +1,13 @@
 // Presentation only: source ranking, filters, track selection and playback
 // continue to use the same Stream. Called only for visible From addon cards.
 static void addonDesenharPecas(const LinhaAddon *ls,const AddonDesenho *ds,int nd,
-                               float x,float y,float largura,int fechadas,float abertura,
+                               float x,float y,float largura,
                                float altura,TxtEstilo estilo,int sel,float anim) {
   for(int j=0;j<nd;j++) {
     const AddonDesenho *d=&ds[j];
     float dy=d->visual*FOLHA_ADDON_LD;
     if(dy+22>altura+.5f)break;
-    float a=anim*(d->visual>=fechadas ? abertura : 1);
+    float a=anim;
     if(a<.01f)continue;
     const LinhaAddon *l=&ls[d->linha];
     int c=sel ? (d->linha?205:230) : (d->linha?165:195);
@@ -29,9 +29,9 @@ static void addonDesenharPecas(const LinhaAddon *ls,const AddonDesenho *ds,int n
 static void desenharCartaoAddon(int i,int row,GfxRect r,float tx,float tr,
                                 int automatica,int sel,float anim,Uint32 agora) {
   const Stream *s=&lista[i];const TextoAddon *t=textoAddonDa(i);
-  float y=r.y+20,largura=tr-tx;
+  float y=r.y+FOLHA_ADDON_TOPO,largura=tr-tx;
   float bodyX=tx,bodyW=largura;
-  float abr=grupo==1 && row==foco ? abreFoco : row==linhaAnt ? abreAnt : 0;
+  (void)row;
   if(sel)gfx_anel(r,FOLHA_RAIO/r.h,2,.72f,.72f,.76f,.9f*anim);
   if(temMarca(i,automatica)) {
     const char *marca=i==atual ? "Reproduzindo agora" : i==preferida ? "Sua escolha anterior" :
@@ -39,7 +39,7 @@ static void desenharCartaoAddon(int i,int row,GfxRect r,float tx,float tr,
       (!canalFolha && stream_vod_falhou_ha(i)>=0) ? "Falhou" : "Escolha automática";
     txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,marca,185,185,183,255,largura-32),tx,y,anim);
     if(i==atual)desenharAudioBars(tr-60,y+3,14,anim,agora);
-    y+=FOLHA_MARCA_H;
+    y+=FOLHA_ADDON_MARCA;
   }
   // Badges live in their own full-width row and do not compete with filename,
   // language flags or the addon identity for horizontal space.
@@ -60,13 +60,10 @@ static void desenharCartaoAddon(int i,int row,GfxRect r,float tx,float tr,
     if(!s->dolbyVision && badges_fonte_hdr_marca(s->badges)<0 && used+64<bw)
       marca_formato(FMT_SDR,tx+used+(used?12:0),y,FOLHA_SELO_H,.7f,.7f,.7f,anim);
   }
-  y+=36;
-  addonDesenharPecas(&t->cabecalho,t->nome,t->nn,bodyX,y,bodyW,1,1,36,TXT_CALLOUT,sel,anim);
-  y+=40;
-  int fechadas=linhasAddonContar(s);if(fechadas>FOLHA_ADDON_FECHADA)fechadas=FOLHA_ADDON_FECHADA;
-  float vis=(float)fechadas;
-  if(t->nv>vis)vis+=(t->nv-vis)*abr;
-  addonDesenharPecas(t->linhas,t->desenhos,t->nd,bodyX,y,bodyW,fechadas,abr,
-                     vis*FOLHA_ADDON_LD,TXT_PG_FIM,sel,anim);
-  if(!fechadas)desenharFaixas(s,bodyX,y,bodyW,sel,anim);
+  y+=FOLHA_ADDON_SELOS;
+  addonDesenharPecas(&t->cabecalho,t->nome,t->nn,bodyX,y,bodyW,36,TXT_CALLOUT,sel,anim);
+  y+=FOLHA_ADDON_TITULO;
+  addonDesenharPecas(t->linhas,t->desenhos,t->nd,bodyX,y,bodyW,
+                     t->nv*FOLHA_ADDON_LD,TXT_PG_FIM,sel,anim);
+  if(!t->nl)desenharFaixas(s,bodyX,y,bodyW,sel,anim);
 }

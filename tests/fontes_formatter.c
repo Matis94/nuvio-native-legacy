@@ -34,7 +34,7 @@ static int utf8Boundary(const char *s,size_t off) {
   return !s[off] || ((unsigned char)s[off]&0xc0)!=0x80;
 }
 static void inspectLayout(const TextoAddon *t) {
-  assert(t->nv>FOLHA_ADDON_FECHADA && t->nv<=FOLHA_ADDON_VISUAIS);
+  assert(t->nv>0 && t->nv<=FOLHA_ADDON_VISUAIS);
   assert(t->nd<=ADDON_DESENHOS);
   for(int j=0;j<t->nd;j++) {
     const AddonDesenho *d=&t->desenhos[j];
@@ -96,7 +96,7 @@ static void geometry(const char *dir) {
   assert(textoAddonPreparados==built);
   grupo=1;foco=CARDS-1;abreFoco=1;linhaAnt=-1;
   montar(automaticaDaFolha());
-  assert(textoAddonPreparados<=1);
+  assert(textoAddonPreparados==0); // Focus alone never measures hidden rows.
   assert(expansaoFoco>=0 && alturaTotal>=linhaTopo(foco)+linhaAltura(foco));
   int before=cleanCalls;
   for(int j=0;j<120;j++)montar(automaticaDaFolha());
@@ -109,7 +109,93 @@ static void geometry(const char *dir) {
   assert(!strcmp(lista[CARDS-1].audioIdiomas,"pl,en"));
   setting(dir,0);montar(automaticaDaFolha());
   setting(dir,1);montar(automaticaDaFolha());
-  puts("PASS: 2000-row prefixes, binary lookup, focused expansion and style switching");
+  puts("PASS: 2000-row prefixes, binary lookup, focus-independent heights and style switching");
+}
+static void cardPixels(void) {
+  assert(tex_iniciar(64));gfx_icones_dir("deploy/app/art");glViewport(0,0,1920,1080);
+  for(int frame=0;frame<40;frame++) {
+    tex_bombear(8);glClearColor(.05f,.05f,.06f,1);glClear(GL_COLOR_BUFFER_BIT);
+    for(int row=0;row<3;row++) {
+      GfxRect r={40,80+linhaTopo(row),FOLHA_W-FOLHA_PAD_E-FOLHA_PAD_D,linhaAltura(row)};
+      desenharCartaoAddon(ordem[row],row,r,r.x+FOLHA_TXT,r.x+r.w-FOLHA_TXT,
+        automaticaDaFolha(),row==foco,1,SDL_GetTicks());
+    }
+    SDL_Delay(5);
+  }
+  unsigned char *pixels=malloc(820*1080*4);assert(pixels);glFinish();
+  glReadPixels(0,0,820,1080,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+  for(int row=0;row<3;row++) {
+    const TextoAddon *t=textoAddonDa(ordem[row]);
+    float body=80+linhaTopo(row)+FOLHA_ADDON_TOPO+FOLHA_ADDON_SELOS+FOLHA_ADDON_TITULO+
+      (temMarca(ordem[row],automaticaDaFolha())?FOLHA_ADDON_MARCA:0);
+    // The last metadata row must actually render on ALL three cards,
+    // including the two cards without focus (the original screenshot bug).
+    int y0=(int)(body+(t->nv-1)*FOLHA_ADDON_LD),ink=0;
+    for(int y=y0;y<y0+(int)FOLHA_ADDON_LD;y++)for(int x=66;x<730;x++) {
+      unsigned char *p=pixels+((1079-y)*820+x)*4;
+      if(p[0]>90 && p[1]>90 && p[2]>90)ink++;
+    }
+    assert(ink>60);
+  }
+  const char *shot=getenv("NUVIO_FORMATTER_SHOT");
+  if(shot) {
+    SDL_Surface *s=SDL_CreateRGBSurfaceWithFormat(0,820,1080,32,SDL_PIXELFORMAT_RGBA32);assert(s);
+    for(int y=0;y<1080;y++)memcpy((char *)s->pixels+y*s->pitch,pixels+(1079-y)*820*4,820*4);
+    assert(IMG_SavePNG(s,shot)==0);SDL_FreeSurface(s);
+  }
+  free(pixels);tex_encerrar();puts("PASS: final formatter metadata renders on three complete cards, including unfocused neighbors");
+}
+static void completeCards(const char *dir,int pixels) {
+  Stream cards[4]={0};
+  for(int i=0;i<3;i++) {
+    cards[i].altura=1080;cards[i].emCache=1;cards[i].fileIdx=-1;
+    snprintf(cards[i].url,sizeof cards[i].url,"https://fixture.invalid/%d.mkv",i);
+    snprintf(cards[i].provedor,sizeof cards[i].provedor,"AIOStreams");
+    snprintf(cards[i].rotulo,sizeof cards[i].rotulo,"🇵🇱 [TB ⚡] %s 1080p",i==1?"MF|Midnight":"ST Store");
+    snprintf(cards[i].arquivo,sizeof cards[i].arquivo,"Chicago.Fire.S09E11.A.Couple.Hundred.Degrees.1080p.BluRay.REMUX.AVC.DTS-HD.MA.5.1-NOGRP.mkv");
+    snprintf(cards[i].descricao,sizeof cards[i].descricao,
+      "🎬 %s\n📺 WEB-DL\n🎨 HEVC\n🎧 DTS-HD MA 5.1\n🗣 🇵🇱 🇬🇧 🇩🇪\n💾 9.6 GB ⚙ RARBG",cards[i].arquivo);
+  }
+  snprintf(cards[0].rotulo,sizeof cards[0].rotulo,"[TB+] Torrentio 1080p");
+  snprintf(cards[0].descricao,sizeof cards[0].descricao,
+    "Chicago.Fire.S09.1080p.BluRay.REMUX.AVC.DTS-HD.MA.5.1-NOGRP[artv]\n%s\n"
+    "👤 2 💾 9.6 GB ⚙ RARBG\n🎧 DTS-HD MA 5.1 🇵🇱 🇬🇧",cards[0].arquivo);
+  stream_definir_lista(cards,3);setting(dir,1);folhaRelogio=1;folhaGeometria();
+  grupo=1;foco=0;abreFoco=1;linhaAnt=-1;rolagem=0;
+  montar(automaticaDaFolha());prepararCartoesAddon(automaticaDaFolha());
+  assert(textoAddonPreparados==3);
+  assert(linhaTopo(2)+linhaAltura(2)<=areaLista());
+  float heights[3],tops[3];
+  for(int row=0;row<3;row++) {
+    const TextoAddon *t=textoAddonDa(ordem[row]);
+    assert(hasText(t,"DTS-HD MA 5.1") && hasText(t,"9.6 GB"));
+    assert(hasIcon(t,"emoji_1f1f5-1f1f1") && hasText(t,"NOGRP.mkv"));
+    if(ordem[row]!=0)assert(t->nv<linhasAddonContar(&lista[ordem[row]]));
+    heights[row]=linhaAltura(row);tops[row]=linhaTopo(row);
+    float body=FOLHA_ADDON_TOPO+FOLHA_ADDON_SELOS+FOLHA_ADDON_TITULO+
+      (temMarca(ordem[row],automaticaDaFolha())?FOLHA_ADDON_MARCA:0);
+    assert(body+t->nv*FOLHA_ADDON_LD+FOLHA_ADDON_BASE==heights[row]);
+  }
+  int cleaned=cleanCalls;
+  for(int frame=0;frame<120;frame++) {
+    linhaAnt=foco;foco=(foco+1)%3;abreFoco=(frame%10)/10.f;abreAnt=1-abreFoco;
+    montar(automaticaDaFolha());prepararCartoesAddon(automaticaDaFolha());
+    for(int row=0;row<3;row++)assert(linhaAltura(row)==heights[row] && linhaTopo(row)==tops[row]);
+  }
+  assert(cleanCalls==cleaned);
+  if(pixels)cardPixels();
+  cards[3]=cards[2];snprintf(cards[3].url,sizeof cards[3].url,"https://fixture.invalid/3.mkv");
+  stream_definir_lista(cards,4);rolagem=0;grupo=1;foco=0;linhaAnt=-1;
+  montar(automaticaDaFolha());prepararCartoesAddon(automaticaDaFolha());
+  for(foco=0;foco<3;foco++)assert(alvoRolagem()==0);
+  foco=3;rolagem=alvoRolagem();prepararCartoesAddon(automaticaDaFolha());
+  assert(linhaTopo(1)>=rolagem && linhaTopo(3)+linhaAltura(3)<=rolagem+areaLista());
+  // A measured height survives replacement of all rich LRU entries.
+  stream_definir_lista(fixtures,CARDS);montar(automaticaDaFolha());
+  const TextoAddon *t=textoAddonDa(0);int rows=t->nv;
+  for(int i=1;i<=TEXTO_ADDON_CACHE;i++)textoAddonDa(i);
+  assert(addonLinhasVisuais(0)==rows);
+  puts("PASS: three complete compact cards, audio/flags/size/filename retained, no collapse or parsing on focus");
 }
 static void emojiPixels(void) {
   assert(tex_iniciar(64));gfx_icones_dir("deploy/app/art");
@@ -179,7 +265,7 @@ int main(int argc,char **argv) {
   for(int k=0;k<arq->n;k++){assert(arq->off[k]==end);end+=arq->tam[k];}
   assert(end==strlen(longname) && arq->n>1);
   assert(arquivoAltura(longname)==arq->n*FOLHA_ARQ_H);
-  setting(dir,1);parserAndCache();geometry(dir);if(!logicOnly)emojiPixels();
+  setting(dir,1);parserAndCache();geometry(dir);completeCards(dir,!logicOnly);if(!logicOnly)emojiPixels();
   txt_encerrar();stream_definir_lista(NULL,0);
   if(gl)SDL_GL_DeleteContext(gl);if(win)SDL_DestroyWindow(win);IMG_Quit();SDL_Quit();
   char path[512];snprintf(path,sizeof path,"%s/ajustes.txt",dir);unlink(path);rmdir(dir);

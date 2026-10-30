@@ -72,7 +72,9 @@ int main(void) {
     "[range-read] pos=4194304 waitMs=2150 http=206 ok=1 readyBytes=64000000 contiguousBytes=64000000",
     "[range-reset] reason=seek pos=100000000 ready=32 readyBytes=33554432 active=4",
     "[range-route] cached=1 sdr=1 cross=1",
-    "[range-cooldown] http=429 retrySec=28 waitMs=28000 lanes=shared"};
+    "[range-cooldown] http=429 retrySec=28 waitMs=28000 lanes=shared",
+    "[range-gap] start=49129332191 later=18 laterBytes=75497454 budgetMs=3000",
+    "[range-budget] start=49129332191 waitMs=3023 got=1208320 budgetMs=3000"};
   for(size_t i=0;i<sizeof range_logs/sizeof range_logs[0];i++) {
     logexport_redact(range_logs[i],out,sizeof out);assert(!strcmp(out,range_logs[i]));
   }

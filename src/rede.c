@@ -3350,10 +3350,16 @@ static int dtsRangeProgress(void *user, long long dt, long long dn,
     if(!r->urgent_started) { r->urgent_started=1;r->urgent_ms=now; }
     int complete=r->valid && r->end>=r->start &&
       r->body.n>=(uint64_t)(r->end-r->start+1);
-    if(!complete && now>=r->urgent_ms && now-r->urgent_ms>=5000u) {
+    // A hole with later completed ranges should recover before the native
+    // decoder empties. Give a nearly finished body the original five seconds;
+    // a slow trickle below 75% gets a three-second critical-gap budget.
+    uint64_t budget=5000;
+    if(urgent>=3 && r->valid && r->end>=r->start &&
+       r->body.n<(uint64_t)(r->end-r->start+1)*3/4)budget=3000;
+    if(!complete && now>=r->urgent_ms && now-r->urgent_ms>=budget) {
       if(r->stalled) *r->stalled=1;
-      printf("[range-budget] start=%lld waitMs=%llu got=%llu\n",(long long)r->requested,
-        (unsigned long long)(now-r->urgent_ms),(unsigned long long)r->body.n);
+      printf("[range-budget] start=%lld waitMs=%llu got=%llu budgetMs=%llu\n",(long long)r->requested,
+        (unsigned long long)(now-r->urgent_ms),(unsigned long long)r->body.n,(unsigned long long)budget);
       fflush(stdout);return 1;
     }
   } else r->urgent_started=0;

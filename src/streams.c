@@ -4134,16 +4134,12 @@ static int temMarca(int i, int automatica) {
 static float alturaLinha(int i, int automatica, float abertura) {
   float h = FOLHA_LINHA_H + (temMarca(i, automatica) ? FOLHA_MARCA_H : 0);
   if (ajustes_fonte_texto_addon()) {
-    int nl=linhasAddonContar(&lista[i]);
-    float vis=(float)(nl>FOLHA_ADDON_FECHADA ? FOLHA_ADDON_FECHADA : nl);
-    // Only the focused/closing card needs rich layout; offscreen rows never
-    // parse text or allocate a card-sized cache entry to establish geometry.
-    if(abertura>0) {
-      const TextoAddon *t=textoAddonDa(i);
-      if(t->nv>vis)vis+=(t->nv-vis)*abertura;
-    }
-    h=20+36+40+vis*FOLHA_ADDON_LD+18+(temMarca(i,automatica)?FOLHA_MARCA_H:0);
-    if(!nl)h+=linhasFaixas(&lista[i])*FOLHA_FAIXA_H;
+    // Focus changes color/outline only. Every visible addon card retains its
+    // complete formatter, including metadata below a wrapped filename.
+    float vis=(float)addonLinhasVisuais(i);
+    h=FOLHA_ADDON_TOPO+FOLHA_ADDON_SELOS+FOLHA_ADDON_TITULO+vis*FOLHA_ADDON_LD+FOLHA_ADDON_BASE+
+      (temMarca(i,automatica)?FOLHA_ADDON_MARCA:0);
+    if(!vis)h+=linhasFaixas(&lista[i])*FOLHA_FAIXA_H;
     return h;
   } else {
     // The connection line opens with the focused row even without a file name.
@@ -4158,7 +4154,7 @@ static void porLinha(int i, float *y, int automatica) {
   ordem[nOrdem] = i;
   linhaY[nOrdem] = *y;
   linhaH[nOrdem] = h;
-  *y += h + (ajustes_fonte_texto_addon() ? 14.0f : FOLHA_LINHA_GAP);
+  *y += h + (ajustes_fonte_texto_addon() ? FOLHA_ADDON_GAP : FOLHA_LINHA_GAP);
   nOrdem++;
 }
 // Tamanho para ordenar: desconhecido (0) vai para o fim do grupo.
@@ -4365,10 +4361,11 @@ static float expansaoLinha(int row, float abertura, int automatica) {
   return alturaLinha(ordem[row], automatica, abertura) - linhaH[row];
 }
 static void montar(int automatica) {
-  static unsigned versao;
+  static unsigned versao, medidas;
   static float base;
+  if(ajustes_fonte_texto_addon())addonMedidasAtualizar();
   folhaDados();
-  if (versao != folhaDadosVersao) {
+  if (versao != folhaDadosVersao || medidas != addonMedidasRevisao) {
     int oldGrupo = grupo, oldAnt = linhaAnt;
     grupo = 0; linhaAnt = -1;
     melhorFolha = folhaAuto;
@@ -4376,6 +4373,7 @@ static void montar(int automatica) {
     grupo = oldGrupo; linhaAnt = oldAnt;
     base = alturaTotal;
     versao = folhaDadosVersao;
+    medidas = addonMedidasRevisao;
   }
   expansaoFoco = grupo == 1 ? expansaoLinha(foco, abreFoco, automatica) : 0;
   expansaoAnt = linhaAnt != (grupo == 1 ? foco : -1) ? expansaoLinha(linhaAnt, abreAnt, automatica) : 0;
@@ -4408,11 +4406,42 @@ static void folhaGeometria(void) {
       FOLHA_W-FOLHA_PAD_E-FOLHA_PAD_D+4.0f-48.0f, 28.0f, 0, 0) : 0.0f;
 }
 static float areaLista(void) { return folhaBase - FOLHA_TOPO; }
+// Measure only the viewport before drawing, then rebuild cheap scalar prefixes.
+// Heights survive LRU eviction, so scrolling back never collapses an old card.
+static void prepararCartoesAddon(int automatica) {
+  if(!ajustes_fonte_texto_addon() || !nOrdem)return;
+  for(int pass=0;pass<2;pass++) {
+    int first=primeiraVisivel(rolagem), anchor=first;
+    float top=anchor<nOrdem?linhaTopo(anchor):0;
+    unsigned antes=addonMedidasRevisao;
+    for(int row=first;row<nOrdem && linhaTopo(row)<rolagem+areaLista()+28;row++)
+      textoAddonDa(ordem[row]);
+    if(antes==addonMedidasRevisao)break;
+    montar(automatica);
+    if(anchor<nOrdem)rolagem+=linhaTopo(anchor)-top;
+  }
+}
 // A linha em foco no meio da area; a primeira de um grupo leva o cabecalho
 // junto, senao subir ate ela deixaria "4K" escondido acima da borda.
 static float alvoRolagem(void) {
   float area = areaLista(), alvo, max;
   if (grupo != 1 || foco >= nOrdem) return rolagem;
+  if(ajustes_fonte_texto_addon()) {
+    // Keep a complete three-card window while moving focus within it. Centering
+    // every selection needlessly cut the top/bottom neighbor even when all
+    // three cards fit. Exceptionally tall formatters retain the normal scroll.
+    int first=primeiraVisivel(rolagem+1), count=nOrdem<3?nOrdem:3;
+    if(first+count>nOrdem)first=nOrdem-count;
+    if(foco<first)first=foco;
+    if(foco>=first+count)first=foco-count+1;
+    int last=first+count-1;
+    if(first>=0 && last<nOrdem && linhaTopo(last)+linhaAltura(last)-linhaTopo(first)<=area) {
+      float start=linhaTopo(first);
+      for(int g=0;g<FOLHA_GRUPOS;g++)if(secN[g] && secTopo(g)+FOLHA_SEC_H==start &&
+        linhaTopo(last)+linhaAltura(last)-secTopo(g)<=area)start=secTopo(g);
+      return fmaxf(0,fminf(start,fmaxf(0,alturaTotal-area+40)));
+    }
+  }
   alvo = linhaTopo(foco) - (area - linhaAltura(foco)) * .5f;
   for (int g = 0; g < FOLHA_GRUPOS; g++)
     if (secN[g] && secTopo(g) + FOLHA_SEC_H == linhaTopo(foco) && alvo > secTopo(g)) alvo = secTopo(g);
@@ -5035,6 +5064,7 @@ void stream_folha_atualizar(float dt, Uint32 agora) {
   abreAnt  = anim_mola(abreAnt, 0, dt, NV_MOLA_TELA);
   melhorFolha = automaticoDaFolhaModo();
   montar(automaticaDaFolha());
+  prepararCartoesAddon(automaticaDaFolha());
   if (focoFixo >= 0) {
     int r = grupo == 1 ? linhaDe(focoFixo) : -1;
     if (r >= 0) {
@@ -5842,6 +5872,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   automatica = automaticaDaFolha();
   melhor = melhorFolha = automaticoDaFolhaModo();
   montar(automatica);
+  prepararCartoesAddon(automatica);
   nf=nOrdem;
   { float cy = FOLHA_TOPO - (rolagem > 1.0f ? 0.0f : 8.0f);   // scrolled: no sliver of a cut row above the first card
 #ifdef NV_SHOT_HOOKS

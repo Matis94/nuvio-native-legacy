@@ -1,9 +1,15 @@
 // Rich addon cards. Parsing and text measurement are lazy, bounded and kept
-// outside scroll animation. The list prefix only needs cheap newline counts.
+// outside scroll animation. Unvisited rows use cheap newline counts; visited
+// rows retain only their measured height, independently of the bounded LRU.
 #define FOLHA_ADDON_LINHAS 12
-#define FOLHA_ADDON_FECHADA 5
 #define FOLHA_ADDON_VISUAIS 96
-#define FOLHA_ADDON_LD 28.0f
+#define FOLHA_ADDON_LD 26.0f
+#define FOLHA_ADDON_TOPO 12.0f
+#define FOLHA_ADDON_SELOS 28.0f
+#define FOLHA_ADDON_TITULO 32.0f
+#define FOLHA_ADDON_BASE 12.0f
+#define FOLHA_ADDON_MARCA 24.0f
+#define FOLHA_ADDON_GAP 10.0f
 #define ADDON_PECAS 24
 #define ADDON_DESENHOS 256
 #define TEXTO_ADDON_CACHE 32
@@ -32,6 +38,11 @@ typedef struct {
 static TextoAddon *textoAddon;
 static unsigned textoAddonPreparados; // regression instrumentation, no user data
 static unsigned textoAddonRelogio;
+static unsigned short *addonVisuais; // 0 unknown, otherwise visual rows + 1
+static int addonVisuaisCap;
+static unsigned addonMedidasRevisao;
+static float addonMedidasW;
+static int addonMedidasCorpo, addonMedidasPeso, addonMedidasFamilia;
 
 static void linhaLimpa(char *d, size_t tam, const char *ini, size_t n) {
   size_t k = 0;
@@ -132,6 +143,25 @@ static float addonTextoW(void) {
   float w=FOLHA_W-FOLHA_PAD_E-FOLHA_PAD_D-2*FOLHA_TXT;
   return fmaxf(80,w);
 }
+static void addonMedidasAtualizar(void) {
+  int corpo,peso,familia=(int)txt_fonte_interface();
+  float w=addonTextoW();txt_estilo_medidas(TXT_PG_FIM,&corpo,&peso);
+  if(n>addonVisuaisCap) {
+    unsigned short *p=realloc(addonVisuais,(size_t)n*sizeof *p);
+    if(p) {
+      memset(p+addonVisuaisCap,0,(size_t)(n-addonVisuaisCap)*sizeof *p);
+      addonVisuais=p;addonVisuaisCap=n;
+    }
+  }
+  if(w!=addonMedidasW || corpo!=addonMedidasCorpo || peso!=addonMedidasPeso || familia!=addonMedidasFamilia) {
+    if(addonVisuais)memset(addonVisuais,0,(size_t)addonVisuaisCap*sizeof *addonVisuais);
+    addonMedidasW=w;addonMedidasCorpo=corpo;addonMedidasPeso=peso;addonMedidasFamilia=familia;
+    addonMedidasRevisao++;
+  }
+}
+static int addonLinhasVisuais(int i) {
+  return i<addonVisuaisCap && addonVisuais[i] ? addonVisuais[i]-1 : linhasAddonContar(&lista[i]);
+}
 static int addonMedir(const char *s, size_t n, TxtEstilo estilo) {
   char buf[2048]; if(n>=sizeof buf)n=sizeof buf-1;
   memcpy(buf,s,n);buf[n]=0;return txt_largura(estilo,buf);
@@ -186,10 +216,21 @@ static void arquivoDesenhar(const char *s,float x,float y,float alpha) {
   }
 }
 static void addonQuebrar(const LinhaAddon *linhas,int nl,AddonDesenho *out,int cap,
-                         int *quantos,int *visuais,float w,TxtEstilo estilo,int maxLinhas) {
-  int row=0,nd=0;
+                         int *quantos,int *visuais,float w,TxtEstilo estilo,int maxLinhas,int compacto) {
+  int row=0,nd=0;float x=0;
   for(int k=0;k<nl && row<maxLinhas;k++) {
-    const LinhaAddon *l=&linhas[k];float x=0;
+    const LinhaAddon *l=&linhas[k];float total=0;int arquivo=0;
+    for(int pc=0;pc<l->n;pc++) {
+      const char *s=pecaAddonTexto(l,pc);
+      total+=(l->ic[pc]?30:0)+addonMedir(s,strlen(s),estilo)+12;
+      for(const char *p=s;*p;p++)if(*p=='.' &&
+        (!strncasecmp(p,".mkv",4) || !strncasecmp(p,".mp4",4) ||
+         !strncasecmp(p,".m2ts",5) || !strncasecmp(p,".avi",4)))arquivo=1;
+    }
+    // Full filenames/prose retain their own wrapped rows. Short metadata
+    // groups flow side by side, preserving every icon, flag and text value.
+    int propria=!compacto || arquivo || total>w*.65f;
+    if(x>0 && (propria || x+total>w)){row++;x=0;}
     for(int pc=0;pc<l->n && row<maxLinhas;pc++) {
       const char *s=pecaAddonTexto(l,pc);size_t inicio=0;
       if(l->ic[pc]) {
@@ -214,17 +255,19 @@ static void addonQuebrar(const LinhaAddon *linhas,int nl,AddonDesenho *out,int c
       }
       x+=12;
     }
-    row++;
+    if(propria){row++;x=0;}
   }
 pronto:
   *quantos=nd;*visuais=nd ? (int)out[nd-1].visual+1 : 0;
 }
 static void textoAddonLimpar(void) {
   free(textoAddon);textoAddon=NULL;textoAddonPreparados=textoAddonRelogio=0;
+  free(addonVisuais);addonVisuais=NULL;addonVisuaisCap=0;addonMedidasRevisao++;
 }
 static const TextoAddon *textoAddonDa(int i) {
   static TextoAddon reserva;
   if(i<0 || i>=n)return &reserva;
+  addonMedidasAtualizar();
   if(!textoAddon)textoAddon=calloc(TEXTO_ADDON_CACHE,sizeof *textoAddon);
   TextoAddon *t=&reserva;
   if(textoAddon) {
@@ -255,9 +298,12 @@ static const TextoAddon *textoAddonDa(int i) {
   t->uso=textoAddonRelogio;
   if(t->largura!=w || t->corpo!=corpo || t->peso!=peso || t->familia!=familia) {
     t->largura=w;t->corpo=corpo;t->peso=peso;t->familia=familia;
-    addonQuebrar(t->linhas,t->nl,t->desenhos,ADDON_DESENHOS,&t->nd,&t->nv,w,TXT_PG_FIM,FOLHA_ADDON_VISUAIS);
+    addonQuebrar(t->linhas,t->nl,t->desenhos,ADDON_DESENHOS,&t->nd,&t->nv,w,TXT_PG_FIM,FOLHA_ADDON_VISUAIS,1);
     int linhas;
-    addonQuebrar(&t->cabecalho,1,t->nome,ADDON_PECAS*2,&t->nn,&linhas,w,TXT_CALLOUT,1);
+    addonQuebrar(&t->cabecalho,1,t->nome,ADDON_PECAS*2,&t->nn,&linhas,w,TXT_CALLOUT,1,0);
+  }
+  if(i<addonVisuaisCap && addonVisuais[i]!=t->nv+1) {
+    addonVisuais[i]=(unsigned short)(t->nv+1);addonMedidasRevisao++;
   }
   return t;
 }
