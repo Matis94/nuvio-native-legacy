@@ -28,6 +28,8 @@ jobs:
       - name: Verify application source
         run: |
           git diff --check
+      - name: Unpack offline formatter emoji
+        run: python3 tools/formatter_emoji_assets.py
       - name: Install host test dependencies
         timeout-minutes: 6
         run: bash .github/build/host_deps.sh
@@ -72,6 +74,12 @@ jobs:
           SANITIZE=1 bash tests/logexport.sh
           CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular_export.sh
           CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular.sh
+      - name: Continue Watching and next-release regressions
+        timeout-minutes: 12
+        run: |
+          SANITIZE=1 bash tests/cwlocal.sh
+          bash tests/fontepref_lancamento.sh
+          bash tests/formatter_filename_tail.sh
       - name: Native buffering regressions
         timeout-minutes: 8
         run: |

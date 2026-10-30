@@ -162,6 +162,23 @@ int main(int argc,char **argv) {
       "Release.group.Oppenheimer.2023.2160p.UHD.BluRay.REMUX.HEVC.DTS-HD.MA.5.1.DUAL.MULTI.Polish.Lektor.%04d.Long.File.Name.Without.Space.mkv\n"
       "Audio: Polski · English\nSubtitles: Polish · English\nLast formatter line",i);
   }
+  const char *symbols[]={"💿","🧲","📂","♻️","🇦🇷","👩‍💻","1️⃣","👨🏽‍💻"};
+  for(unsigned k=0;k<sizeof symbols/sizeof *symbols;k++) {
+    size_t used=0;assert(emojiIcone(symbols[k],&used));assert(used==strlen(symbols[k]));
+  }
+  size_t ignored=0;assert(!emojiIcone("1080p.filename.mkv",&ignored));
+  // Every supported emoji uses the longest match, including ZWJ, skin tones,
+  // keycaps and optional VS16. This catches prefix matches eating only a base.
+  for(unsigned k=0;k<sizeof EMOJI_ICONE/sizeof *EMOJI_ICONE;k++) {
+    size_t used=0;const char *icon=emojiIcone(EMOJI_ICONE[k].emoji,&used);
+    assert(icon && !strcmp(icon,EMOJI_ICONE[k].icone));
+    assert(used==strlen(EMOJI_ICONE[k].emoji));
+  }
+  const char *longname="Show.S01E01.2160p.UHD.BluRay.REMUX.HEVC.Dolby.Vision.TrueHD.Atmos.7.1.Polish.Lektor.DUAL.MULTI.Extended.Directors.Cut.Release.Group.FraMeSToR.Full.Filename.End.mkv";
+  const ArquivoLayout *arq=arquivoLayout(longname);size_t end=0;
+  for(int k=0;k<arq->n;k++){assert(arq->off[k]==end);end+=arq->tam[k];}
+  assert(end==strlen(longname) && arq->n>1);
+  assert(arquivoAltura(longname)==arq->n*FOLHA_ARQ_H);
   setting(dir,1);parserAndCache();geometry(dir);if(!logicOnly)emojiPixels();
   txt_encerrar();stream_definir_lista(NULL,0);
   if(gl)SDL_GL_DeleteContext(gl);if(win)SDL_DestroyWindow(win);IMG_Quit();SDL_Quit();

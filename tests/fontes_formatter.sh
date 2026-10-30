@@ -4,6 +4,7 @@ TMPDIR="${TMPDIR%/}"
 # Rich formatter, UTF-8 layout and bounded work with 2000 sources; no network.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+python3 tools/formatter_emoji_assets.py
 FF_DIR=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-fontes-formatter.XXXXXX)
 trap 'rm -rf "$FF_DIR"' EXIT
 sources=()

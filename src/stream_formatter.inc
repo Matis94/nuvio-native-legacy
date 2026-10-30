@@ -2,10 +2,10 @@
 // outside scroll animation. The list prefix only needs cheap newline counts.
 #define FOLHA_ADDON_LINHAS 12
 #define FOLHA_ADDON_FECHADA 5
-#define FOLHA_ADDON_VISUAIS 16
+#define FOLHA_ADDON_VISUAIS 96
 #define FOLHA_ADDON_LD 28.0f
 #define ADDON_PECAS 24
-#define ADDON_DESENHOS 192
+#define ADDON_DESENHOS 256
 #define TEXTO_ADDON_CACHE 32
 #include "stream_formatter_emoji.inc"
 
@@ -41,17 +41,30 @@ static void linhaLimpa(char *d, size_t tam, const char *ini, size_t n) {
   d[k] = 0;
 }
 static const char *emojiIcone(const char *p, size_t *len) {
-  // ASCII filenames dominate large result lists. None of our emoji start
-  // with ASCII or a UTF-8 continuation byte; do not scan 83 assets per byte.
-  unsigned char primeiro=(unsigned char)*p;
-  if(primeiro!=0xF0 && primeiro!=0xE2)return NULL;
-  for (size_t k = 0; k < sizeof EMOJI_ICONE / sizeof *EMOJI_ICONE; k++) {
-    size_t n = strlen(EMOJI_ICONE[k].emoji);
-    if (strncmp(p, EMOJI_ICONE[k].emoji, n)) continue;
-    if (!strncmp(p+n, "\xEF\xB8\x8F", 3)) n += 3;
-    *len = n; return EMOJI_ICONE[k].icone;
+  unsigned char first=(unsigned char)*p;
+  // Ordinary ASCII filenames never search the emoji index. Keycaps are the
+  // only ASCII starters; require their combining mark/variation selector.
+  if (first < 0x80) {
+    if (!(first=='#' || first=='*' || (first>='0' && first<='9')) ||
+        (strncmp(p+1,"\xEF\xB8\x8F",3) && strncmp(p+1,"\xE2\x83\xA3",3))) return NULL;
+  } else if (first<0xC2) return NULL;
+  char key[128]; size_t n=0, consumed=0;
+  const char *best=NULL;
+  while (p[consumed] && n+1<sizeof key) {
+    if (!strncmp(p+consumed,"\xEF\xB8\x8F",3)) { consumed+=3; continue; }
+    key[n++]=p[consumed++]; key[n]=0;
+    size_t lo=0,hi=sizeof EMOJI_ICONE/sizeof *EMOJI_ICONE;
+    while (lo<hi) {
+      size_t mid=lo+(hi-lo)/2;
+      if (strncmp(EMOJI_ICONE[mid].emoji,key,n)<0) lo=mid+1; else hi=mid;
+    }
+    if (lo==sizeof EMOJI_ICONE/sizeof *EMOJI_ICONE || strncmp(EMOJI_ICONE[lo].emoji,key,n)) break;
+    if (!EMOJI_ICONE[lo].emoji[n]) {
+      best=EMOJI_ICONE[lo].icone; *len=consumed;
+      if (!strncmp(p+consumed,"\xEF\xB8\x8F",3)) *len+=3;
+    }
   }
-  return NULL;
+  return best;
 }
 static const char *emojiReserva(const char *icone) {
   for (size_t k = 0; k < sizeof EMOJI_ICONE / sizeof *EMOJI_ICONE; k++)
@@ -81,15 +94,17 @@ static void pecasAddon(const char *ini, size_t n, LinhaAddon *l) {
   }
 }
 static int linhasAddon(const Stream *s, LinhaAddon *out, int max) {
-  int nl = 0;
+  int nl = 0, arquivoVisto = 0;
+  const char *arq = s->arquivo[0] ? strstr(s->descricao,s->arquivo) : NULL;
   for (const char *p = s->descricao; *p && nl < max;) {
     const char *f = strchr(p,'\n');
+    if (arq && arq >= p && (!f || arq < f)) arquivoVisto = 1;
     pecasAddon(p,f ? (size_t)(f-p) : strlen(p),&out[nl]);
     if (out[nl].n) nl++;
     if (!f) break;
     p=f+1;
   }
-  if(max>0 && s->arquivo[0] && !strstr(s->descricao,s->arquivo)) {
+  if(max>0 && s->arquivo[0] && !arquivoVisto) {
     if(nl==max)nl--;
     pecasAddon(s->arquivo,strlen(s->arquivo),&out[nl]);
     if(out[nl].n)nl++;
@@ -138,6 +153,37 @@ static size_t addonCabe(const char *s, float w, TxtEstilo estilo) {
   if(s[k]) for(size_t j=k;j>k/2;j--)
     if(strchr(" ._-/|",s[j-1]))return j;
   return k;
+}
+typedef struct {
+  char texto[2048];
+  unsigned short off[2048], tam[2048];
+  int n, corpo, peso, familia;
+  float largura;
+} ArquivoLayout;
+static ArquivoLayout arqLayout[2];
+static const ArquivoLayout *arquivoLayout(const char *src) {
+  int corpo,peso,familia=(int)txt_fonte_interface();
+  float w=addonTextoW(); txt_estilo_medidas(TXT_PG_FIM,&corpo,&peso);
+  for(int k=0;k<2;k++) if(arqLayout[k].largura==w && arqLayout[k].corpo==corpo &&
+      arqLayout[k].peso==peso && arqLayout[k].familia==familia && !strcmp(arqLayout[k].texto,src)) return &arqLayout[k];
+  static unsigned turno; ArquivoLayout *a=&arqLayout[turno++%2];
+  memset(a,0,sizeof *a);snprintf(a->texto,sizeof a->texto,"%s",src);
+  a->largura=w;a->corpo=corpo;a->peso=peso;a->familia=familia;
+  size_t off=0;
+  while(a->texto[off] && a->n<2048) {
+    size_t n=addonCabe(a->texto+off,w,TXT_PG_FIM);
+    if(!n){n=1;while(a->texto[off+n] && ((unsigned char)a->texto[off+n]&0xC0)==0x80)n++;}
+    a->off[a->n]=(unsigned short)off;a->tam[a->n++]=(unsigned short)n;off+=n;
+  }
+  return a;
+}
+static float arquivoAltura(const char *s) { return s[0] ? arquivoLayout(s)->n*FOLHA_ARQ_H : 0; }
+static void arquivoDesenhar(const char *s,float x,float y,float alpha) {
+  const ArquivoLayout *a=arquivoLayout(s);
+  for(int k=0;k<a->n;k++) {
+    char parte[2048];memcpy(parte,a->texto+a->off[k],a->tam[k]);parte[a->tam[k]]=0;
+    txt_desenhar_alpha(txt_linha(TXT_PG_FIM,parte,125,125,123,255),x,y+k*FOLHA_ARQ_H,alpha);
+  }
 }
 static void addonQuebrar(const LinhaAddon *linhas,int nl,AddonDesenho *out,int cap,
                          int *quantos,int *visuais,float w,TxtEstilo estilo,int maxLinhas) {

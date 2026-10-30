@@ -10,6 +10,7 @@ int main(void) {
   assert(AJ_DIAGNOSTICS_QR==AJ_DV7_MAPPING+1 && AJ_DIAGNOSTICS_QR==AJ_N-1);
   assert(valor[AJ_DIAGNOSTICS_QR]==1 && valorPadrao[AJ_DIAGNOSTICS_QR]==1);
   assert(!ajustes_diagnostics_qr());
+  assert(!strcmp(ajVisualIcone(AJ_DIAGNOSTICS_QR),"aj_download"));
   assert(!strcmp(CHAVE[AJ_DIAGNOSTICS_QR],"diagnosticsQrLocal"));
   assert(ajustes_escopo(AJ_DIAGNOSTICS_QR)==ESC_TV);
   assert(!ajustePortavel(AJ_DIAGNOSTICS_QR) && !ajusteAparelho(AJ_DIAGNOSTICS_QR));

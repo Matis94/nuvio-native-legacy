@@ -6,6 +6,7 @@ TMPDIR="${TMPDIR%/}"
 # worktree. Mesmas flags, credenciais vazias (o binario local nao faz login).
 set -e
 cd "$(dirname "$0")/.."
+python3 tools/formatter_emoji_assets.py
 cc src/*.c src/dts/*.c -o ${TMPDIR:-/tmp}/nvbuild -O1 \
   -DNV_SUPABASE_URL='""' -DNV_SUPABASE_ANON_KEY='""' -DNV_TV_LOGIN_BASE='""' \
   -DNV_TRAKT_CLIENT_ID='""' -DNV_TRAKT_CLIENT_SECRET='""' \

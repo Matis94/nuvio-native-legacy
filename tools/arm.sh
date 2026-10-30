@@ -34,6 +34,7 @@ TMPDIR="${TMPDIR%/}"
 # "libcurl.so.4 => not found" e nenhuma mensagem visivel na tela.
 set -e
 cd "$(dirname "$0")/.." && source tools/ctr.sh
+python3 tools/formatter_emoji_assets.py
 
 TV_IP="${NUVIO_TV_IP:-192.168.1.32}"
 TV_PASS="${NUVIO_TV_PASS:-alpine}"

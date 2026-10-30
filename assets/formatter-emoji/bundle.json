@@ -1,0 +1,123 @@
+{
+  "version": "Twemoji v16.0.1",
+  "source_sha256": "9c60bcda6d6adc61ba7395226ec98b2672dcfddb3c541653a96eaa0758b664cf",
+  "sha256": "501b275984d09d8655a08f398c777634dbe6815f7863fe023b6b007728c5a0dd",
+  "count": 3846,
+  "parts": [
+    {
+      "file": "part-00.bin",
+      "sha256": "00479f668850a2d3009a6fc1f09cc816f7bda8b83593661d1f2584b2f9bf0ef2",
+      "bytes": 524288
+    },
+    {
+      "file": "part-01.bin",
+      "sha256": "02b8f62b8d75641767a69f327ec8951cff7aa9d28741d4beeeb71f9c1003a92f",
+      "bytes": 524288
+    },
+    {
+      "file": "part-02.bin",
+      "sha256": "2a57de5449f70e7c6d4211742b72fe4235cc1666b851c0bcf049d5514bd2a953",
+      "bytes": 524288
+    },
+    {
+      "file": "part-03.bin",
+      "sha256": "2ab39925800a8ed3a32097bf8cb1e7bb533d1c35cfdb385a92a02d70a2d2224c",
+      "bytes": 524288
+    },
+    {
+      "file": "part-04.bin",
+      "sha256": "12081f407bc31e2a9824e83efbe73d7e8a170d8c9b82a622656cf7a36df629f4",
+      "bytes": 524288
+    },
+    {
+      "file": "part-05.bin",
+      "sha256": "2845af923727ec2144d7038d8678c5d2fbc6c1c537e229d0e546ef9e0b42ccad",
+      "bytes": 524288
+    },
+    {
+      "file": "part-06.bin",
+      "sha256": "6c753173966ec461d849d4b578785ab265e7bb44e3c6d73fa337bd3c13105f80",
+      "bytes": 524288
+    },
+    {
+      "file": "part-07.bin",
+      "sha256": "47bb7036c287d41767321dd06e49ac24c18d5b9f0bb6aacc9770dcf35d51bee3",
+      "bytes": 524288
+    },
+    {
+      "file": "part-08.bin",
+      "sha256": "3be2bc82747be599592987b5bf5f1b7dad430651321eee5583bcba9030d999e7",
+      "bytes": 524288
+    },
+    {
+      "file": "part-09.bin",
+      "sha256": "7d87b9462a2d1aa864bfb38dc90ead88540f1c5ae489404b741ccf6ce34e3a5c",
+      "bytes": 524288
+    },
+    {
+      "file": "part-10.bin",
+      "sha256": "548125ebf053d20207bb8f07da66e5f75de573afd2569e3cb61c272c6b5f3653",
+      "bytes": 524288
+    },
+    {
+      "file": "part-11.bin",
+      "sha256": "e506cb08db336ae23691a6aad0e2c7d3fed9a9084ea46f80ce51ca8d4ccb616f",
+      "bytes": 524288
+    },
+    {
+      "file": "part-12.bin",
+      "sha256": "daf9177f5a1bdcd67baa77f46d624081b7ebe8d4c743fa9422b6b73714a0003a",
+      "bytes": 524288
+    },
+    {
+      "file": "part-13.bin",
+      "sha256": "d34a0a5011416547ac6bff31fa04ab29c180bc2c7741374d50dd22610bd3ff3b",
+      "bytes": 524288
+    },
+    {
+      "file": "part-14.bin",
+      "sha256": "ebe04d6e7d75a620569d19501548342f1dd392dad94c25a7ba8c4ee782a117d1",
+      "bytes": 524288
+    },
+    {
+      "file": "part-15.bin",
+      "sha256": "3f3216c1a8616af9a39815bf01328db6b67d3d9a429f0b1beb6b2336352e497b",
+      "bytes": 524288
+    },
+    {
+      "file": "part-16.bin",
+      "sha256": "47a12a17efdbd7e788ff6b7c8097982b565e9d5747ca78559e94b87560271505",
+      "bytes": 524288
+    },
+    {
+      "file": "part-17.bin",
+      "sha256": "c061aeeee1143d58df155009bf75adb52344150be7ae392a44a4144ff33176f1",
+      "bytes": 524288
+    },
+    {
+      "file": "part-18.bin",
+      "sha256": "1ebd17bd70ac06e4d7c2eec700de6fb5233f6e5e3966091c89a59069480a4e76",
+      "bytes": 524288
+    },
+    {
+      "file": "part-19.bin",
+      "sha256": "ab0649afd8be7e501013046ffc95a99bd4a6593d01c635a0a320c20e7ab3642c",
+      "bytes": 524288
+    },
+    {
+      "file": "part-20.bin",
+      "sha256": "75cf9c0e115edf702a073318ac73f3a2d831f106fd7ebfe6a41f550ce11fb1b7",
+      "bytes": 524288
+    },
+    {
+      "file": "part-21.bin",
+      "sha256": "2d79a2f6d922e60cd6f4c6766a72acbdd55e33f7bbb8aa4a39671e1d7cdb55a0",
+      "bytes": 524288
+    },
+    {
+      "file": "part-22.bin",
+      "sha256": "7765ef2a3c6d8d9a2a1b4bf30368b23be717b4fd17a663afc8a9de1c4ee9af7e",
+      "bytes": 326263
+    }
+  ]
+}

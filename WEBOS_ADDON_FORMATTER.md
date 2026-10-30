@@ -3,12 +3,12 @@
 The From addon source-text option uses the supplied name and description in
 full-width cards, with a separate badge row, colored emoji and country flags.
 Five description lines are visible without focus. The selected card expands
-to at most sixteen wrapped lines, from up to twelve source lines. Long release
+to at most ninety-six wrapped lines, from up to twelve source lines. Long release
 filenames wrap at punctuation or complete UTF-8 boundaries. A filename supplied
 separately by the addon is included when it is absent from the description.
 
-The From Nuvio layout and playback/source-selection rules retain their existing
-behavior. Audio hints remain presentation/filter evidence, not verified tracks.
+From Nuvio also wraps the complete filename on the focused card. Its other
+layout and source-selection behavior remain unchanged. Audio hints remain presentation/filter evidence, not verified tracks.
 Current badges, addon tabs, language filters, ordering and the source-details
 action continue to use the existing implementations.
 
@@ -47,20 +47,24 @@ sources. No TV frame-rate claim is made before device testing.
 
 ## Artwork
 
-82 local emoji/flag images derive from Twemoji v16.0.1, by Twitter, Inc. and
+3846 local emoji/flag images derive from Twemoji v16.0.1, by Twitter, Inc. and
 other contributors, under CC BY 4.0. Attribution, the complete license and a
 source/checksum manifest ship in `deploy/app/art/icones/emoji-*`.
-`tools/formatter_emoji_assets.py` regenerates the small asset set and C lookup
-table; it is a developer tool, never a runtime download path.
+`tools/formatter_emoji_assets.py` verifies and unpacks the offline bundle in
+`assets/formatter-emoji/`. ARM packaging and formatter tests call it automatically.
+`--rebuild [--source-tar PATH]` regenerates the artwork, bundle and sorted C index.
+The matcher follows the longest emoji sequence with binary prefix searches,
+including optional variation selectors, flags, keycaps and ZWJ sequences.
+Nothing is unpacked or downloaded at TV startup.
 
 ## Validation and later TV testing
 
-No application/package compilation or C test execution was performed at the
-owner's request. Static checks cover new C syntax, shell syntax, translation
-tables, PNG integrity/transparency, manifest checksums and fallback availability.
+Host formatter tests pass with address/undefined-behavior sanitizers, including
+all 3846 emoji keys, long filenames, 2000-source geometry/cache behavior and
+color/alpha rendering. Bundle and PNG checksums pass. TV validation remains
+necessary for perceived scrolling speed and focus/expansion behavior.
 
-`tests/fontes_formatter.sh` is prepared for an explicitly authorized future test
-run: 2000-source direct jumps, fixed cache bounds, eviction, append/replacement,
+`tests/fontes_formatter.sh` covers: 2000-source direct jumps, fixed cache bounds, eviction, append/replacement,
 UTF-8 wrapping, emoji/flags, filter changes, and prefix geometry. Existing
 `tests/fontes_quadro.sh` covers bounded per-frame source-row visits.
 
