@@ -3,13 +3,13 @@
 // rows retain only their measured height, independently of the bounded LRU.
 #define FOLHA_ADDON_LINHAS 12
 #define FOLHA_ADDON_VISUAIS 96
-#define FOLHA_ADDON_LD 26.0f
-#define FOLHA_ADDON_TOPO 12.0f
-#define FOLHA_ADDON_SELOS 28.0f
-#define FOLHA_ADDON_TITULO 32.0f
-#define FOLHA_ADDON_BASE 12.0f
-#define FOLHA_ADDON_MARCA 24.0f
-#define FOLHA_ADDON_GAP 10.0f
+#define FOLHA_ADDON_LD 28.0f
+#define FOLHA_ADDON_TOPO 20.0f
+#define FOLHA_ADDON_SELOS 36.0f
+#define FOLHA_ADDON_TITULO 40.0f
+#define FOLHA_ADDON_BASE 18.0f
+#define FOLHA_ADDON_MARCA FOLHA_MARCA_H
+#define FOLHA_ADDON_GAP 14.0f
 #define ADDON_PECAS 24
 #define ADDON_DESENHOS 256
 #define TEXTO_ADDON_CACHE 32
@@ -216,21 +216,10 @@ static void arquivoDesenhar(const char *s,float x,float y,float alpha) {
   }
 }
 static void addonQuebrar(const LinhaAddon *linhas,int nl,AddonDesenho *out,int cap,
-                         int *quantos,int *visuais,float w,TxtEstilo estilo,int maxLinhas,int compacto) {
-  int row=0,nd=0;float x=0;
+                         int *quantos,int *visuais,float w,TxtEstilo estilo,int maxLinhas) {
+  int row=0,nd=0;
   for(int k=0;k<nl && row<maxLinhas;k++) {
-    const LinhaAddon *l=&linhas[k];float total=0;int arquivo=0;
-    for(int pc=0;pc<l->n;pc++) {
-      const char *s=pecaAddonTexto(l,pc);
-      total+=(l->ic[pc]?30:0)+addonMedir(s,strlen(s),estilo)+12;
-      for(const char *p=s;*p;p++)if(*p=='.' &&
-        (!strncasecmp(p,".mkv",4) || !strncasecmp(p,".mp4",4) ||
-         !strncasecmp(p,".m2ts",5) || !strncasecmp(p,".avi",4)))arquivo=1;
-    }
-    // Full filenames/prose retain their own wrapped rows. Short metadata
-    // groups flow side by side, preserving every icon, flag and text value.
-    int propria=!compacto || arquivo || total>w*.65f;
-    if(x>0 && (propria || x+total>w)){row++;x=0;}
+    const LinhaAddon *l=&linhas[k];float x=0;
     for(int pc=0;pc<l->n && row<maxLinhas;pc++) {
       const char *s=pecaAddonTexto(l,pc);size_t inicio=0;
       if(l->ic[pc]) {
@@ -255,7 +244,7 @@ static void addonQuebrar(const LinhaAddon *linhas,int nl,AddonDesenho *out,int c
       }
       x+=12;
     }
-    if(propria){row++;x=0;}
+    row++;
   }
 pronto:
   *quantos=nd;*visuais=nd ? (int)out[nd-1].visual+1 : 0;
@@ -298,9 +287,9 @@ static const TextoAddon *textoAddonDa(int i) {
   t->uso=textoAddonRelogio;
   if(t->largura!=w || t->corpo!=corpo || t->peso!=peso || t->familia!=familia) {
     t->largura=w;t->corpo=corpo;t->peso=peso;t->familia=familia;
-    addonQuebrar(t->linhas,t->nl,t->desenhos,ADDON_DESENHOS,&t->nd,&t->nv,w,TXT_PG_FIM,FOLHA_ADDON_VISUAIS,1);
+    addonQuebrar(t->linhas,t->nl,t->desenhos,ADDON_DESENHOS,&t->nd,&t->nv,w,TXT_PG_FIM,FOLHA_ADDON_VISUAIS);
     int linhas;
-    addonQuebrar(&t->cabecalho,1,t->nome,ADDON_PECAS*2,&t->nn,&linhas,w,TXT_CALLOUT,1,0);
+    addonQuebrar(&t->cabecalho,1,t->nome,ADDON_PECAS*2,&t->nn,&linhas,w,TXT_CALLOUT,1);
   }
   if(i<addonVisuaisCap && addonVisuais[i]!=t->nv+1) {
     addonVisuais[i]=(unsigned short)(t->nv+1);addonMedidasRevisao++;

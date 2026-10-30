@@ -4426,22 +4426,6 @@ static void prepararCartoesAddon(int automatica) {
 static float alvoRolagem(void) {
   float area = areaLista(), alvo, max;
   if (grupo != 1 || foco >= nOrdem) return rolagem;
-  if(ajustes_fonte_texto_addon()) {
-    // Keep a complete three-card window while moving focus within it. Centering
-    // every selection needlessly cut the top/bottom neighbor even when all
-    // three cards fit. Exceptionally tall formatters retain the normal scroll.
-    int first=primeiraVisivel(rolagem+1), count=nOrdem<3?nOrdem:3;
-    if(first+count>nOrdem)first=nOrdem-count;
-    if(foco<first)first=foco;
-    if(foco>=first+count)first=foco-count+1;
-    int last=first+count-1;
-    if(first>=0 && last<nOrdem && linhaTopo(last)+linhaAltura(last)-linhaTopo(first)<=area) {
-      float start=linhaTopo(first);
-      for(int g=0;g<FOLHA_GRUPOS;g++)if(secN[g] && secTopo(g)+FOLHA_SEC_H==start &&
-        linhaTopo(last)+linhaAltura(last)-secTopo(g)<=area)start=secTopo(g);
-      return fmaxf(0,fminf(start,fmaxf(0,alturaTotal-area+40)));
-    }
-  }
   alvo = linhaTopo(foco) - (area - linhaAltura(foco)) * .5f;
   for (int g = 0; g < FOLHA_GRUPOS; g++)
     if (secN[g] && secTopo(g) + FOLHA_SEC_H == linhaTopo(foco) && alvo > secTopo(g)) alvo = secTopo(g);

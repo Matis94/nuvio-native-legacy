@@ -115,7 +115,7 @@ static void cardPixels(void) {
   assert(tex_iniciar(64));gfx_icones_dir("deploy/app/art");glViewport(0,0,1920,1080);
   for(int frame=0;frame<40;frame++) {
     tex_bombear(8);glClearColor(.05f,.05f,.06f,1);glClear(GL_COLOR_BUFFER_BIT);
-    for(int row=0;row<3;row++) {
+    for(int row=0;row<2;row++) {
       GfxRect r={40,80+linhaTopo(row),FOLHA_W-FOLHA_PAD_E-FOLHA_PAD_D,linhaAltura(row)};
       desenharCartaoAddon(ordem[row],row,r,r.x+FOLHA_TXT,r.x+r.w-FOLHA_TXT,
         automaticaDaFolha(),row==foco,1,SDL_GetTicks());
@@ -124,12 +124,12 @@ static void cardPixels(void) {
   }
   unsigned char *pixels=malloc(820*1080*4);assert(pixels);glFinish();
   glReadPixels(0,0,820,1080,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
-  for(int row=0;row<3;row++) {
+  for(int row=0;row<2;row++) {
     const TextoAddon *t=textoAddonDa(ordem[row]);
     float body=80+linhaTopo(row)+FOLHA_ADDON_TOPO+FOLHA_ADDON_SELOS+FOLHA_ADDON_TITULO+
       (temMarca(ordem[row],automaticaDaFolha())?FOLHA_ADDON_MARCA:0);
-    // The last metadata row must actually render on ALL three cards,
-    // including the two cards without focus (the original screenshot bug).
+    // The last metadata row must actually render on both cards,
+    // including the card without focus (the original screenshot bug).
     int y0=(int)(body+(t->nv-1)*FOLHA_ADDON_LD),ink=0;
     for(int y=y0;y<y0+(int)FOLHA_ADDON_LD;y++)for(int x=66;x<730;x++) {
       unsigned char *p=pixels+((1079-y)*820+x)*4;
@@ -143,7 +143,7 @@ static void cardPixels(void) {
     for(int y=0;y<1080;y++)memcpy((char *)s->pixels+y*s->pitch,pixels+(1079-y)*820*4,820*4);
     assert(IMG_SavePNG(s,shot)==0);SDL_FreeSurface(s);
   }
-  free(pixels);tex_encerrar();puts("PASS: final formatter metadata renders on three complete cards, including unfocused neighbors");
+  free(pixels);tex_encerrar();puts("PASS: final formatter metadata renders on selected and unselected cards");
 }
 static void completeCards(const char *dir,int pixels) {
   Stream cards[4]={0};
@@ -163,14 +163,22 @@ static void completeCards(const char *dir,int pixels) {
   stream_definir_lista(cards,3);setting(dir,1);folhaRelogio=1;folhaGeometria();
   grupo=1;foco=0;abreFoco=1;linhaAnt=-1;rolagem=0;
   montar(automaticaDaFolha());prepararCartoesAddon(automaticaDaFolha());
+  for(int i=0;i<3;i++)textoAddonDa(i);
+  montar(automaticaDaFolha());
   assert(textoAddonPreparados==3);
-  assert(linhaTopo(2)+linhaAltura(2)<=areaLista());
   float heights[3],tops[3];
   for(int row=0;row<3;row++) {
     const TextoAddon *t=textoAddonDa(ordem[row]);
     assert(hasText(t,"DTS-HD MA 5.1") && hasText(t,"9.6 GB"));
     assert(hasIcon(t,"emoji_1f1f5-1f1f1") && hasText(t,"NOGRP.mkv"));
-    if(ordem[row]!=0)assert(t->nv<linhasAddonContar(&lista[ordem[row]]));
+    // Restore each addon newline instead of joining codec/audio/size together.
+    int last=-1;
+    for(int j=0;j<t->nd;j++) {
+      const AddonDesenho *d=&t->desenhos[j];
+      if(j && d->linha!=t->desenhos[j-1].linha)assert(d->visual>last);
+      last=d->visual;
+    }
+    assert(t->nv>=linhasAddonContar(&lista[ordem[row]]));
     heights[row]=linhaAltura(row);tops[row]=linhaTopo(row);
     float body=FOLHA_ADDON_TOPO+FOLHA_ADDON_SELOS+FOLHA_ADDON_TITULO+
       (temMarca(ordem[row],automaticaDaFolha())?FOLHA_ADDON_MARCA:0);
@@ -187,15 +195,58 @@ static void completeCards(const char *dir,int pixels) {
   cards[3]=cards[2];snprintf(cards[3].url,sizeof cards[3].url,"https://fixture.invalid/3.mkv");
   stream_definir_lista(cards,4);rolagem=0;grupo=1;foco=0;linhaAnt=-1;
   montar(automaticaDaFolha());prepararCartoesAddon(automaticaDaFolha());
-  for(foco=0;foco<3;foco++)assert(alvoRolagem()==0);
-  foco=3;rolagem=alvoRolagem();prepararCartoesAddon(automaticaDaFolha());
-  assert(linhaTopo(1)>=rolagem && linhaTopo(3)+linhaAltura(3)<=rolagem+areaLista());
+  // The original centered scrolling must expose the whole selected card.
+  for(foco=0;foco<4;foco++) {
+    textoAddonDa(ordem[foco]);montar(automaticaDaFolha());
+    rolagem=alvoRolagem();prepararCartoesAddon(automaticaDaFolha());
+    rolagem=alvoRolagem();
+    assert(linhaTopo(foco)>=rolagem);
+    assert(linhaTopo(foco)+linhaAltura(foco)<=rolagem+areaLista());
+  }
   // A measured height survives replacement of all rich LRU entries.
   stream_definir_lista(fixtures,CARDS);montar(automaticaDaFolha());
   const TextoAddon *t=textoAddonDa(0);int rows=t->nv;
   for(int i=1;i<=TEXTO_ADDON_CACHE;i++)textoAddonDa(i);
   assert(addonLinhasVisuais(0)==rows);
-  puts("PASS: three complete compact cards, audio/flags/size/filename retained, no collapse or parsing on focus");
+  puts("PASS: original row spacing and scrolling, audio/flags/size/filename retained, no collapse or parsing on focus");
+}
+// Separate AIOStreams rows from the reported 4K/DV regression screenshot.
+static void screenshotCards(const char *dir,int pixels) {
+  Stream cards[3]={0};
+  const char *names[]={
+    "The.Godfather.Part.II.1974.2160p.UHD.BDRemux.TrueHD.5.1.DoVi.P8.by.DVT.mkv",
+    "The.Godfather.Part.II.1974.2160p.UHD.BDRemux.TrueHD.5.1.DoVi.P7.mkv",
+    "The.Godfather.Part.II.1974.2160p.UltraHD.BluRay.REMUX.x265.TRUEHD.MULTI.TPB-RR-GuyZo.mkv"};
+  for(int i=0;i<3;i++) {
+    cards[i].altura=2160;cards[i].dolbyVision=1;cards[i].emCache=1;cards[i].fileIdx=-1;
+    snprintf(cards[i].url,sizeof cards[i].url,"https://fixture.invalid/godfather-%d.mkv",i);
+    snprintf(cards[i].provedor,sizeof cards[i].provedor,"AIOStreams|PL");
+    snprintf(cards[i].rotulo,sizeof cards[i].rotulo,"☁ [TB ⚡] ST Store 4K");
+    snprintf(cards[i].arquivo,sizeof cards[i].arquivo,"%s",names[i]);
+    snprintf(cards[i].descricao,sizeof cards[i].descricao,
+      "🎬 %s\n📀 REMUX\n🎨 HEVC HDR DV\n🎧 DD DTS-HD MA TrueHD 5.1 2.0\n🗣 🇵🇱 🇬🇧\n💾 113.35 GB",names[i]);
+    cards[i].badges=badges_detectar(cards[i].descricao);
+  }
+  stream_definir_lista(cards,3);setting(dir,1);rolagem=0;grupo=1;foco=0;linhaAnt=-1;
+  montar(automaticaDaFolha());prepararCartoesAddon(automaticaDaFolha());
+  for(int i=0;i<3;i++) {
+    const TextoAddon *t=textoAddonDa(i);inspectLayout(t);
+    assert(t->nl==6 && hasText(t,"113.35 GB") && hasText(t,"DD DTS-HD MA TrueHD 5.1 2.0"));
+    // Every byte of the wrapped filename must survive, and each metadata line
+    // must start below the previous one, selected or unselected.
+    size_t bytes=0;int previous=-1,line=-1;
+    for(int j=0;j<t->nd;j++) {
+      const AddonDesenho *d=&t->desenhos[j];
+      if(d->linha!=line)assert((int)d->visual>previous);
+      line=d->linha;previous=d->visual;
+      if(d->linha==0 && !d->icone)bytes+=d->tam;
+    }
+    assert(bytes==strlen(pecaAddonTexto(&t->linhas[0],0)));
+    assert(t->nv>=t->nl);
+  }
+  montar(automaticaDaFolha());
+  if(pixels)cardPixels();
+  puts("PASS: Godfather DV screenshot fixture keeps separate audio/size rows and complete filenames");
 }
 static void emojiPixels(void) {
   assert(tex_iniciar(64));gfx_icones_dir("deploy/app/art");
@@ -265,7 +316,7 @@ int main(int argc,char **argv) {
   for(int k=0;k<arq->n;k++){assert(arq->off[k]==end);end+=arq->tam[k];}
   assert(end==strlen(longname) && arq->n>1);
   assert(arquivoAltura(longname)==arq->n*FOLHA_ARQ_H);
-  setting(dir,1);parserAndCache();geometry(dir);completeCards(dir,!logicOnly);if(!logicOnly)emojiPixels();
+  setting(dir,1);parserAndCache();geometry(dir);completeCards(dir,!logicOnly);screenshotCards(dir,!logicOnly);if(!logicOnly)emojiPixels();
   txt_encerrar();stream_definir_lista(NULL,0);
   if(gl)SDL_GL_DeleteContext(gl);if(win)SDL_DestroyWindow(win);IMG_Quit();SDL_Quit();
   char path[512];snprintf(path,sizeof path,"%s/ajustes.txt",dir);unlink(path);rmdir(dir);
