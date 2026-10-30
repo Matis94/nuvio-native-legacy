@@ -3,11 +3,18 @@
 #include "video_acb_lg.c"
 #undef main
 static int loads;
-static char loaded[8192];
+static char loaded[NV_MEDIA_URL_MAX + 4096];
+static int native_opacity, opacity_calls;
 static int fake_buffer_load(LSHandle *h,const char *uri,const char *payload,
                             Filtro cb,void *ctx,unsigned long *token,void *error) {
   (void)h;(void)cb;(void)ctx;(void)token;(void)error;
-  assert(strstr(uri,"/load"));loads++;
+  if (strstr(uri,"/setSubtitleCharacterOpacity")) {
+    const char *value=strstr(payload,"\"charOpacity\":");assert(value);
+    assert(sscanf(value,"\"charOpacity\":%d",&native_opacity)==1);
+    opacity_calls++;return 1;
+  }
+  if (!strstr(uri,"/load")) return 1;
+  loads++;
   snprintf(loaded,sizeof loaded,"%s",payload);return 1;
 }
 static void pending(unsigned id) {
@@ -31,7 +38,23 @@ int main(void) {
   pending(sessao-1);movie_ready=1;bufferLoadBombear();assert(loads==2);
   pending(sessao);movie_ready=0;video_parar();
   movie_ready=1;bufferLoadBombear();assert(loads==2 && !bufferLoad.session);
-  ligado=0;
+  // The delayed native fallback must retain the branch's complete signed URL.
+  pending(sessao);memset(bufferLoad.source,'x',sizeof bufferLoad.source-1);
+  memcpy(bufferLoad.source,"https://fixture.invalid/",24);
+  bufferLoad.source[sizeof bufferLoad.source-1]=0;
+  movie_ready=-1;bufferLoadBombear();
+  assert(loads==3 && strstr(loaded,bufferLoad.source));
+  assert(loaded[strlen(loaded)-1]=='}');
+  // The fine opacity scale must reach the real LG call after the playback merge.
+  snprintf(midia,sizeof midia,"subtitle-fixture");
+  VideoLegendaEstilo e={.tamanho=120,.corBorda=-1};
+  for(int id=0;id<LEG_OPAC_N;id++) {
+    e.opacidade=id;video_legenda_estilo(&e);
+    assert(native_opacity==leg_opacidade_byte(id) && opacity_calls==id+1);
+  }
+  dtsSessao=(DtsPlayback *)(uintptr_t)1;video_legenda_estilo(&e);
+  assert(opacity_calls==LEG_OPAC_N); // Converter overlay owns its subtitle style.
+  dtsSessao=NULL;midia[0]=0;temEstilo=0;ligado=0;
 
   dtsSessao=NULL;posSeg=10;durSeg=100;bufferSeg=20;
   movie_snapshot=(DtsBufferInfo){.ready_bytes=200,.capacity_bytes=256,.total=1000};
