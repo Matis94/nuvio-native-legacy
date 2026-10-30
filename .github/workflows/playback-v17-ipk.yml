@@ -83,6 +83,7 @@ jobs:
       - name: Native buffering regressions
         timeout-minutes: 8
         run: |
+          SANITIZE=1 bash tests/range_diagnostics.sh
           bash tests/video_http_buffer.sh
           bash tests/video_http_buffer_build.sh
           bash tests/video_moviebuffer.sh

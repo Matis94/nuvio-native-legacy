@@ -7,6 +7,7 @@ import ssl
 import sys
 import threading
 import time
+from email.utils import formatdate
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
@@ -16,6 +17,35 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split('?', 1)[0]
+        if path.startswith('/diag-'):
+            if path == '/diag-redirect':
+                self.send_response(302)
+                self.send_header('Location', '/diag-no-retry?hidden-query-secret')
+                self.send_header('Retry-After', '99')
+                self.send_header('Content-Length', '0')
+                self.end_headers()
+                return
+            if path in ('/diag-limit', '/diag-date', '/diag-invalid', '/diag-no-retry', '/diag-parallel'):
+                if path == '/diag-parallel':
+                    time.sleep(.1)
+                self.send_response(429)
+                if path != '/diag-no-retry':
+                    value = formatdate(time.time() + 120, usegmt=True) if path == '/diag-date' else (
+                        'hidden-header-secret' if path == '/diag-invalid' else '7')
+                    self.send_header('Retry-After', value)
+                self.send_header('Server', 'nginx/hidden-version-secret')
+                self.send_header('Content-Length', '18')
+                self.end_headers()
+                self.wfile.write(b'hidden-body-secret')
+                return
+            body = bytes(range(32))
+            self.send_response(200 if path == '/diag-stream' else 206)
+            if path != '/diag-stream':
+                self.send_header('Content-Range', 'bytes 0-31/32')
+            self.send_header('Content-Length', '32')
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if path == '/idle':
             time.sleep(20)
             return

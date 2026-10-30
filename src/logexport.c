@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "logexport.h"
+#include "rangediag.h"
 #ifndef NV_VERSAO
 #define NV_VERSAO "2.0.8"
 #endif
@@ -65,6 +66,18 @@ static int public_stage(const char *line,const char *p,size_t len) {
   return 0;
 }
 
+/* Only the host-only fields emitted by the range diagnostic may retain long
+ * DNS names. URLs, addresses and arbitrary long identifiers stay redacted. */
+static int public_range_host(const char *line, const char *p, size_t len) {
+  static const char *fields[] = {" origHost=", " host=", " nextHost="};
+  if (strncmp(line, "[range-diag] ", 13) || !nv_range_diag_dns(p, len)) return 0;
+  for (size_t i = 0; i < sizeof fields / sizeof *fields; i++) {
+    size_t n = strlen(fields[i]);
+    if ((size_t)(p - line) >= n && !memcmp(p - n, fields[i], n)) return 1;
+  }
+  return 0;
+}
+
 static void append(char *out, size_t cap, size_t *n, const char *s, size_t len) {
   if (!cap) return;
   if (len > cap - 1 - *n) len = cap - 1 - *n;
@@ -107,7 +120,7 @@ void logexport_redact(const char *in, char *out, size_t cap) {
       }
       len = (size_t)(end - p);
       const char *scheme = strstr(p, "://");
-      hide = (scheme && scheme < end) || (len >= 24 && !public_stage(in,p,len)) || (hexonly && len >= 16) || memchr(p, '@', len) != NULL;
+      hide = (scheme && scheme < end) || (len >= 24 && !public_stage(in,p,len) && !public_range_host(in,p,len)) || (hexonly && len >= 16) || memchr(p, '@', len) != NULL;
       /* IP addresses (including private addresses), filesystem paths and JWTs. */
       int dots = 0, colons = 0;
       const char *q;

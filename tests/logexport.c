@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "logexport.h"
+#include "rangediag.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +14,21 @@ static void hides(const char *line, const char *secret) {
 }
 int main(void) {
   char out[4096], source[] = "/tmp/nuvio-logtest-XXXXXX", path[128];
+  char host[NV_RANGE_DIAG_HOST_MAX];
+  nv_range_diag_host("https://person:shortpw@LONG-CDN-DELIVERY.example.net:443/private/shortpw?token=shortpw", host);
+  assert(!strcmp(host, "long-cdn-delivery.example.net"));
+  nv_range_diag_host("https://127.0.0.1:443/secret", host); assert(!strcmp(host, "address"));
+  nv_range_diag_host("https://[2001:db8::1]/secret", host); assert(!strcmp(host, "address"));
+  nv_range_diag_host("https://evil%0ahost.example/secret", host); assert(!strcmp(host, "address"));
+  nv_range_diag_host("https://example.net./secret", host); assert(!strcmp(host, "example.net"));
+  nv_range_diag_host(NULL, host); assert(!strcmp(host, "-"));
+  const char *trace = "[range-diag] v=1 id=2 kind=chunk monoMs=1000 origHost=torrentio.strem.fun host=long-cdn-delivery.example.net nextHost=- http=429 retrySeen=1 retrySec=30 server=nginx";
+  logexport_redact(trace, out, sizeof out); assert(!strcmp(trace, out));
+  hides("[range-diag] host=abcdefghijklmnopqrstuvwxyz", "abcdefghijklmnopqrstuvwxyz");
+  hides("[net] host=long-cdn-delivery.example.net", "long-cdn-delivery.example.net");
+  hides("[range-diag] host=long-cdn-delivery.example.net/shortpw", "shortpw");
+  hides("[range-diag] host=person:shortpw@long-cdn-delivery.example.net", "shortpw");
+  hides("[range-diag] host=long-cdn-delivery.example.net token=shortpw", "shortpw");
   int fd = mkstemp(source); assert(fd >= 0);
   FILE *f = fdopen(fd, "wb"); assert(f);
   const char *safe = "[playback-diag] tick=123 generation=2 pos=123.456 readyBytes=268435456 availableKiB=245760";
