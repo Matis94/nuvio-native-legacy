@@ -31,7 +31,11 @@ jobs:
           git diff --exit-code 65499610db565ca038b0d0ca130585f238d59911 HEAD -- src/dts/adapter src/dts/dts_pipeline.c src/dts/dts_pipeline.h src/cacheboost.c src/moviebuffer.c src/video_seekview.h src/dts/dts_mp4_dual.inc src/player.c src/dvtelaui.c
           git diff --exit-code 65499610db565ca038b0d0ca130585f238d59911 HEAD -- src/app.c src/celbotao.c src/celbotao.h src/celular.c src/celular.h src/registro.c src/registro_ilha.inc
           git fetch --no-tags --depth=1 origin 2eea1f29efb2c09cdc4023d8aca4f6f028b53847
-          git diff --exit-code 2eea1f29efb2c09cdc4023d8aca4f6f028b53847 HEAD -- src rust tools deploy
+          git diff --exit-code 2eea1f29efb2c09cdc4023d8aca4f6f028b53847 HEAD -- src rust tools deploy ':!src/dts/dts_engine.c' ':!src/rede.c' ':!src/rede.h'
+          # Only the reviewed SDR/DTS and DV buffer fixes may differ from v24.
+          test "$(git hash-object src/dts/dts_engine.c)" = ee548112fa59a740ab61f853b2094a1768f7ad0f
+          test "$(git hash-object src/rede.c)" = 1a4b58713ead1190bf3f9a77ac5e1f3b90424cd2
+          test "$(git hash-object src/rede.h)" = 46db17a538a2e42bfc85568b5c773c342c430d56
           git diff --check
       - name: Install host test dependencies
         timeout-minutes: 6
@@ -111,6 +115,7 @@ jobs:
           bash tests/dts_cached_seek.sh
           SANITIZE=1 NV_TEST_CACHE_REUSE=1 bash tests/dts_cached_seek.sh
           bash tests/dts_range_retry.sh
+          SANITIZE=1 bash tests/dts_resolver_reuse.sh
       - name: Install package tool and Rust target
         run: |
           npm install --prefix .build-tools --no-audit --no-fund @webosose/ares-cli@2.4.0

@@ -22,7 +22,7 @@ for mode in once twice short wrong hard exhaust cancel seek live-hang live-bodyh
  "$task_tmp/test" "http://127.0.0.1:$port/retry-$mode/range.bin"
 done
 "$task_tmp/test" "http://127.0.0.1:$port/retry-once/dv.bin"
-for mode in drip dripspec dripall dvsteady;do
+for mode in drip dripspec dripall dvsteady dvnear bootdv;do
  "$task_tmp/test" "http://127.0.0.1:$port/retry-live-$mode/dv.bin"
 done
 # The real demux/DTS/AAC path must produce the same audio/video bytes after
@@ -52,7 +52,7 @@ for mode,want in [('once',2),('twice',3),('short',2),('wrong',2),('hard',1),('ex
  at=0 if mode in ('hard','exhaust','cancel') else 4*1024*1024
  assert counts[(f'/retry-{mode}/range.bin',at)]==want,(mode,counts)
 assert counts[('/retry-once/dv.bin',4*1024*1024-1)]==2
-for mode,want in [('drip',2),('dripspec',1),('dripall',3),('dvsteady',1)]:
+for mode,want in [('drip',2),('dripspec',1),('dripall',3),('dvsteady',1),('dvnear',1),('bootdv',1)]:
  path=f'/retry-live-{mode}/dv.bin'
  assert counts[(path,4*1024*1024-1)]==want,(mode,counts)
  assert all(n==1 for (p,at),n in counts.items() if p==path and at!=4*1024*1024-1)

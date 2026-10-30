@@ -31,6 +31,12 @@ char *rede_baixar_trecho64_final(const char *u,const char *h,int64_t s,int64_t e
   if(cross) *cross=0;
   return rede_baixar_trecho64_cab(u,h,s,e,n,t,status,c);
 }
+char *rede_baixar_trecho64_relato(const char *u,const char *h,int64_t s,int64_t e,long *n,
+ int64_t *t,int *status,volatile int *c,char *f,int *x,volatile int *urgent,unsigned idle,int *stalled,int *retry_after) {
+ (void)urgent;(void)idle;if(stalled)*stalled=0;if(retry_after)*retry_after=-1;
+ return rede_baixar_trecho64_final(u,h,s,e,n,t,status,c,f,x);
+}
+
 /* 2.0.6 also links the Samsung streaming reader; the webOS DV fixture
  * must continue to use authenticated ranges, never the Samsung ring path. */
 char *rede_range_headers(const char *raw,int public_only) {
