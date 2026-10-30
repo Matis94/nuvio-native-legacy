@@ -3230,8 +3230,8 @@ typedef struct {
   long long progress_bytes;
   unsigned idle_ms;
   int *stalled;
-#ifdef NV_HTTP_BUFFER_DIAG
   int retry_seen, retry_seconds;
+#ifdef NV_HTTP_BUFFER_DIAG
   const char *server;
 #endif
 } DtsRange;
@@ -3270,10 +3270,13 @@ static size_t dtsRangeHeader(void *data, size_t size, size_t count, void *user) 
     const char *space = memchr(p, ' ', n);
     r->status = space ? atoi(space + 1) : 0;
     r->valid = 0; r->total = -1; r->range_headers = 0;
+    r->retry_seen = r->retry_seconds = 0;
 #ifdef NV_HTTP_BUFFER_DIAG
-    r->retry_seen = r->retry_seconds = 0; r->server = "none";
+    r->server = "none";
+#endif
   } else if (n > 12 && !strncasecmp(p, "Retry-After:", 12)) {
     r->retry_seen = 1; r->retry_seconds = retrySegundos(p + 12, n - 12);
+#ifdef NV_HTTP_BUFFER_DIAG
   } else if (n > 7 && !strncasecmp(p, "Server:", 7)) {
     const char *v = p + 7;
     size_t left = n - 7;
@@ -3444,13 +3447,14 @@ static void rangeDiagLog(const RangeDiag *d, const char *kind, void *c,
 /* `final` (8192 bytes, optional) receives the address that answered 206 when
  * at least one redirect was followed, "" otherwise; `cross` says whether that
  * address is on another origin (credential headers were NOT sent to it). */
-char *rede_baixar_trecho64_vigiado(const char *url, const char *headers,
+char *rede_baixar_trecho64_relato(const char *url, const char *headers,
                               int64_t start, int64_t end, long *size,
                               int64_t *total, int *status,
                               volatile int *cancelled, char *final, int *cross,
-                              volatile int *urgent,unsigned idle_ms,int *stalled) {
+                              volatile int *urgent,unsigned idle_ms,int *stalled,int *retry_after) {
   char current[8192], range[64], origin[128];
   int hop, public_only = 0, downgraded = 0;
+  if(retry_after) *retry_after=-1;
   if(stalled) *stalled=0;
   if (size) *size = 0;
   if (total) *total = -1;
@@ -3512,6 +3516,7 @@ char *rede_baixar_trecho64_vigiado(const char *url, const char *headers,
         snprintf(redirected, sizeof redirected, "%s", next);
     }
     if (status) *status = (int)http;
+    if (retry_after) *retry_after = r.retry_seen ? r.retry_seconds : -1;
 #ifdef NV_HTTP_BUFFER_DIAG
     rangeDiagLog(&diag, "chunk", c, url, current, redirected, hop, public_only,
                  result, http, &r, end, (int64_t)r.body.n, hop_ms, active);
@@ -3562,6 +3567,13 @@ char *rede_baixar_trecho64_vigiado(const char *url, const char *headers,
     return NULL;
   }
   return NULL;
+}
+char *rede_baixar_trecho64_vigiado(const char *url,const char *headers,
+    int64_t start,int64_t end,long *size,int64_t *total,int *status,
+    volatile int *cancelled,char *final,int *cross,volatile int *urgent,
+    unsigned idle_ms,int *stalled) {
+  return rede_baixar_trecho64_relato(url,headers,start,end,size,total,status,cancelled,
+                                   final,cross,urgent,idle_ms,stalled,NULL);
 }
 char *rede_baixar_trecho64_final(const char *url,const char *headers,
                               int64_t start,int64_t end,long *size,
@@ -3742,6 +3754,11 @@ char *rede_postar_repetindo(const char *url, int segundos, const char *const *ca
 }
 
 #ifdef __EMSCRIPTEN__
+char *rede_baixar_trecho64_relato(const char *u,const char *h,int64_t s,int64_t e,
+ long *n,int64_t *t,int *st,volatile int *c,char *f,int *x,volatile int *urgent,unsigned idle,int *stalled,int *retry_after) {
+ if(retry_after)*retry_after=-1;
+ return rede_baixar_trecho64_vigiado(u,h,s,e,n,t,st,c,f,x,urgent,idle,stalled);
+}
 int rede_fluxo64(const char *u, const char *h, int64_t s, int (*sk)(void *, const char *, size_t), void *o,
                  int64_t *t, int *st, volatile int *c, char *f, int *x, long ms, int64_t *b) {
   (void)u; (void)h; (void)s; (void)sk; (void)o; (void)c; (void)ms;

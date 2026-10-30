@@ -2,8 +2,24 @@
 
 This build records `[range-diag] v=1` events when compiled with the existing
 `NV_HTTP_BUFFER_DIAG` flag. Collection uses ordinary application logging;
-Diagnostics QR only controls exporting the log. No playback, buffer-size,
-retry-delay, connection-count or redirect policy is changed.
+Diagnostics QR only controls exporting the log. The 64/128/256 MiB budgets and
+number of HTTP lanes remain unchanged.
+
+SDR/DTS now reuses the final media address after a successful redirect, as the
+DV range reader already did. If that address fails (except rate limiting), the
+reader resolves the original source again. Cross-origin credential stripping
+and TLS verification remain active. A 429 keeps the cached media address and
+completed payloads, and shares a pause between the range lanes using that route
+until Retry-After expires. Resolver and cached-media traffic have separate
+deadlines: a working CDN address can still be used during an API pause.
+Missing, invalid or zero delays use an increasing fallback
+of 2/4/8/16/30 seconds. Waiting is cancellable by seek, stop or session close.
+Existing retry-attempt limits are retained; persistent failures can still fail
+playback. A healthy in-flight response cannot clear another lane's active pause.
+
+`[range-route] cached=1 sdr=1` confirms reuse is enabled for an SDR reader.
+`[range-cooldown]` records the shared pause in milliseconds. These events never
+contain media URLs. The counters add no media buffers.
 
 To compare providers, play the same file through Torrentio for about a minute,
 then through AIOStreams for about a minute. Note any buffer drop or playback
@@ -28,7 +44,8 @@ Useful fields:
 - `retrySeen=1` means the response had Retry-After. `retrySec` is the existing
   parser's value in seconds (numeric delay or HTTP date), capped at INT_MAX.
   Zero can mean zero delay, a past date or an invalid value; -1 means absent.
-  This is observation only, not a change to the retry scheduler.
+  Only HTTP 429 activates the shared pause; a Retry-After on a successful
+  redirect is not applied to the subsequent media response.
 - `hopMs` and `elapsedMs` use a monotonic clock. DNS, TCP, TLS and first-byte
   timings are cumulative curl timings in milliseconds, not separate durations.
 - `activeAtStart` counts these readers' active HTTP transfers across workers

@@ -70,7 +70,9 @@ int main(void) {
     "[range-http] start=10737418240 end=10738466815 curl=28 http=206 got=524288 valid=1 overflow=0 responseStart=10737418240 responseEnd=10738466815 total=30000000000",
     "[range-result] start=4194304 end=5242879 attempts=2 ok=1 http=206 bytes=1048576 ms=15020",
     "[range-read] pos=4194304 waitMs=2150 http=206 ok=1 readyBytes=64000000 contiguousBytes=64000000",
-    "[range-reset] reason=seek pos=100000000 ready=32 readyBytes=33554432 active=4"};
+    "[range-reset] reason=seek pos=100000000 ready=32 readyBytes=33554432 active=4",
+    "[range-route] cached=1 sdr=1 cross=1",
+    "[range-cooldown] http=429 retrySec=28 waitMs=28000 lanes=shared"};
   for(size_t i=0;i<sizeof range_logs/sizeof range_logs[0];i++) {
     logexport_redact(range_logs[i],out,sizeof out);assert(!strcmp(out,range_logs[i]));
   }

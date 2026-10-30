@@ -54,6 +54,16 @@ int main(int argc, char **argv) {
   pthread_t threads[4];
   for (int i = 0; i < 4; i++) assert(!pthread_create(&threads[i], NULL, parallel, NULL));
   for (int i = 0; i < 4; i++) assert(!pthread_join(threads[i], NULL));
+  // The scheduling metadata is request-owned and resets after redirects.
+  const char *paths[] = {"/diag-limit", "/diag-redirect", "/diag-invalid"};
+  const int delays[] = {7, -1, 0};
+  for (int i = 0; i < 3; i++) {
+    long size = -1; int retry = 123, stalled = 0;
+    snprintf(url, sizeof url, "http://127.0.0.1:%d%s", port, paths[i]);
+    char *body = rede_baixar_trecho64_relato(url, "", 0, 31, &size, &total, &status,
+      NULL, NULL, NULL, NULL, 0, &stalled, &retry);
+    assert(!body && status == 429 && size == 0 && retry == delays[i]);
+  }
   puts("PASS: range diagnostics preserve HTTP results, bytes and parallel requests");
   return 0;
 }

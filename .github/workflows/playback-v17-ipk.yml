@@ -137,6 +137,7 @@ jobs:
           NUVIO_DTS_JOBS: '3'
         run: |
           bash .github/build/host_ffmpeg.sh
+          SANITIZE=1 bash tests/dts_resolver_reuse.sh
           bash tests/moviebuffer.sh
           bash tests/dts_buffer_reporting.sh
           bash tests/dts_cached_seek.sh
