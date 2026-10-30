@@ -133,9 +133,16 @@ static void emojiPixels(void) {
   tex_encerrar();puts("PASS: emoji retains red/white color and transparent corners");
 }
 int main(void) {
+  setvbuf(stdout,NULL,_IONBF,0);
   char dir[NVT_MAX];nvt_set(dir,sizeof dir,"/nuvio-rich-formatter-XXXXXX");assert(mkdtemp(dir));
   assert(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER)==0);IMG_Init(IMG_INIT_PNG);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2);SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2);
+#ifdef __APPLE__
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
+#else
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,0);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,SDL_GL_CONTEXT_PROFILE_ES);
+#endif
   SDL_Window *win=SDL_CreateWindow("rich-formatter",0,0,1920,1080,SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);assert(win);
   SDL_GLContext gl=SDL_GL_CreateContext(win);assert(gl);
   gfx_tamanho_alvo(1920,1080);assert(gfx_iniciar());assert(txt_iniciar("deploy/app",1));

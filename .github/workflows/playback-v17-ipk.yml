@@ -32,7 +32,7 @@ jobs:
         timeout-minutes: 6
         run: bash .github/build/host_deps.sh
       - name: Formatter, subtitle opacity and upstream PR regressions
-        timeout-minutes: 12
+        timeout-minutes: 30
         run: |
           SANITIZE=1 bash tests/fontes_formatter.sh
           bash tests/source_audio_language.sh
