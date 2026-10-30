@@ -17,10 +17,17 @@ sources=()
 for source in src/*.c src/dts/*.c; do
   if [ "$source" != src/main.c ]; then sources+=("$source"); fi
 done
-cc "${sources[@]}" tests/player_prefs.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-player-prefs-tests \
-  -O1 -g -I/opt/homebrew/include -I/opt/homebrew/include/SDL2 \
-  -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL \
-  -Wno-deprecated-declarations -Wno-macro-redefined
+host_flags=(-O1 -g -Isrc -Wno-deprecated-declarations -Wno-macro-redefined)
+if [[ $(uname -s) == Darwin ]]; then
+  host_flags+=(-I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -L/opt/homebrew/lib)
+  host_libs=(-lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL)
+else
+  read -r -a host_sdl_flags <<< "$(pkg-config --cflags sdl2 SDL2_image SDL2_ttf)"
+  read -r -a host_sdl_libs <<< "$(pkg-config --libs sdl2 SDL2_image SDL2_ttf)"
+  host_flags+=(-DNV_LINUX_DESKTOP "${host_sdl_flags[@]}")
+  host_libs=("${host_sdl_libs[@]}" -lz -lGLESv2 -pthread -lm -ldl)
+fi
+cc "${sources[@]}" tests/player_prefs.c -Isrc -o ${TMPDIR:-/tmp}/nuvio-player-prefs-tests "${host_flags[@]}" "${host_libs[@]}"
 
 export NUVIO_DADOS="$DADOS"
 export NUVIO_ARTE_TESTE="$ARTE"

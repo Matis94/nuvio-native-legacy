@@ -43,10 +43,20 @@ int64_t dts_engine_source_total(DtsEngine *);
 DtsEngine *dts_engine_create(void);
 int dts_engine_available(void);
 /* Dolby Vision path, set before open: AC-3/E-AC-3 tracks are selectable and
- * pass through undecoded; HTTP ranges are larger and reuse the final address. */
+ * pass through undecoded; HTTP ranges are larger and reuse the final address.
+ * NV_DV_TRUEHD_TEST also enables TrueHD conversion to AAC/AC3 on this path. */
 void dts_engine_dv(DtsEngine *, int enabled);
+/* Worker-owned, before open. Experimental fixed DV output: 0 = v12 routing,
+ * 1 = AAC stereo, 2 = AC3 5.1 (stereo input does not gain surround content).
+ * Ignored outside the DV packet path and without NV_DV_FIXED_AUDIO_TEST. */
+void dts_engine_dv_audio(DtsEngine *, int mode);
 /* Explicit opt-in before open: P7 conversion and webOS recovery. Default off. */
 void dts_engine_allow_p7(DtsEngine *, int enabled);
+/* Snapshot before open; P7 RPU only, no extra video or HTTP buffers. */
+void dts_engine_p7_mapping(DtsEngine *, int enabled);
+/* Strict experimental dual-track P7 MP4 open; never enabled for MKV or native
+ * P5/P8 playback. Only the test build implements this device-local opt-in. */
+void dts_engine_mp4_test(DtsEngine *, int enabled);
 /* Open and seek return 0 on success, negative on error. */
 int dts_engine_open(DtsEngine *, const char *url, const char *headers,
                     int audio_stream, int core_only, double start_seconds);
@@ -60,6 +70,9 @@ const void *dts_engine_subtitle_parameters(DtsEngine *, int stream_index);
 /* 1 frame, 0 EOF, -1 error. Frame data lives until the next call or seek. */
 int dts_engine_next(DtsEngine *, DtsFrame *);
 int dts_engine_seek(DtsEngine *, double seconds);
+/* Worker only: change a supported audio track on the existing container and
+ * byte cache. On failure reopen before reading; cancellation remains permanent. */
+int dts_engine_audio(DtsEngine *, int stream, int core_only, double seconds);
 /* Only cancel is safe concurrently with open/next/seek. Join before destroy. */
 void dts_engine_cancel(DtsEngine *);
 void dts_engine_destroy(DtsEngine *);
