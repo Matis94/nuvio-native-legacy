@@ -35,6 +35,8 @@ static int     focoBotao[CELB_N];     // o que o ultimo desenho pediu
 static char    titulo[96];
 static GfxRect cartao;
 static char logSnapshot[128];
+static GLuint texQr;
+static char texQrDe[96];
 static void abrirServidor(void) {
   celular_fechar();
   if (logSnapshot[0]) { unlink(logSnapshot); logSnapshot[0] = 0; }
@@ -57,6 +59,7 @@ void celb_atualizar(float dt) {
     animBotao[d] = ajustes_animacoes_reduzidas() ? alvo : anim_mola(animBotao[d], alvo, dt, NV_MOLA_FOCO);
     focoBotao[d] = 0;   // o proximo desenho repoe; botao que sumiu apaga
   }
+  if (aberto && dono == CELB_LOG && !ajustes_diagnostics_qr()) celb_fechar();
   if (!aberto) { animCartao = 0.0f; return; }
   animCartao = ajustes_animacoes_reduzidas() ? 1.0f : anim_mola(animCartao, 1.0f, dt, NV_MOLA_TELA);
 }
@@ -90,6 +93,7 @@ void celb_botao(int d, GfxRect r, int focado, PonteiroFn focar, int a, int b, fl
 }
 
 int celb_abrir(int d, const char *t) {
+  if (d == CELB_LOG && !ajustes_diagnostics_qr()) return 0;
   if (d <= CELB_NENHUM || d >= CELB_N || !celular_disponivel()) return 0;
   snprintf(titulo, sizeof titulo, "%s", t ? t : "");
   dono = d;
@@ -115,6 +119,8 @@ void celb_fechar(void) {
   aberto = 0;
   embutido = 0;
   celular_fechar();
+  if (texQr) glDeleteTextures(1, &texQr);
+  texQr = 0; texQrDe[0] = 0;
   if (logSnapshot[0]) { unlink(logSnapshot); logSnapshot[0] = 0; }
 }
 void celb_fechar_dono(int d) { if (aberto && dono == d) celb_fechar(); }
@@ -170,8 +176,7 @@ int celb_evento(const SDL_Event *e) {
 // QR como TEXTURA (como login.c): a versao 3-4 tem ~1000 modulos, e um
 // retangulo por modulo por quadro custaria mais que o cartao inteiro. NEAREST:
 // modulo borrado e o jeito mais rapido de a camera nao ler.
-static GLuint texQr;
-static char   texQrDe[96];
+
 static void qrTextura(const char *u) {
   Qr q;
   int lado, x, y;

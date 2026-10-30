@@ -1,7 +1,7 @@
 #include "../src/ajustes.c"
 #include <assert.h>
 int main(void) {
-  assert(AJ_DV7_MAPPING==AJ_MP4_BD_TEST+1 && AJ_DV7_MAPPING==AJ_N-1);
+  assert(AJ_DV7_MAPPING==AJ_MP4_BD_TEST+1 && AJ_DV7_MAPPING==AJ_N-2);
   assert(valor[AJ_DV7_MAPPING]==1 && valorPadrao[AJ_DV7_MAPPING]==1);
   assert(!ajustes_dv7_mapping());
   assert(!strcmp(CHAVE[AJ_DV7_MAPPING],"dv7PreserveMappingTestLocal"));

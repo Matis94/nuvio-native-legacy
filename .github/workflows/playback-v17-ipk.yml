@@ -68,6 +68,7 @@ jobs:
       - name: Diagnostic QR export and normal phone input
         timeout-minutes: 3
         run: |
+          bash tests/diagnostics_qr_settings.sh
           SANITIZE=1 bash tests/logexport.sh
           CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular_export.sh
           CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular.sh
