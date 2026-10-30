@@ -12,7 +12,7 @@ for source in src/*.c src/dts/*.c; do
 done
 binary="$(mktemp ${TMPDIR:-/tmp}/nuvio-ajustes-ux-interacao.XXXXXX)"
 trap 'rm -f "$binary"' EXIT
-host_flags=(-O1 -g -Isrc -Wno-deprecated-declarations -Wno-macro-redefined)
+host_flags=(-O0 -g -Isrc -Wno-deprecated-declarations -Wno-macro-redefined)
 if [[ $(uname -s) == Darwin ]]; then
   host_flags+=(-I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -L/opt/homebrew/lib)
   host_libs=(-lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL)

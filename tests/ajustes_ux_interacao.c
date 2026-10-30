@@ -370,7 +370,9 @@ int main(void) {
     // The discovery cards open the usage guide; Back returns to the card.
     uxTopo = AJ2_T_RESOLVER; key(SDLK_RETURN); assert(guiaAberto && gv.col == GC_LISTA && gv.ent >= 0);
     guiaSair(); assert(!guiaAberto && focoIndice && uxTopo == AJ2_T_RESOLVER);
-    uxTopo = AJ2_T_PERFIL; key(SDLK_RETURN); assert(!focoIndice && focoOp == AJ_PERFIL_ATIVO);
+    uxTopo = AJ2_T_PERFIL; key(SDLK_RETURN);
+    assert(pfTela == PF_MENU && focoIndice); // Profile pill opens its current modal.
+    key(SDLK_ESCAPE); assert(pfTela == PF_FECHADA && focoIndice && uxTopo == AJ2_T_PERFIL);
     // Diferentes do padrao: Down goes to the discovery card, OK opens the list
     // (uxIndice 1), Back returns to the pill.
     focoIndice = 1; uxTopo = AJ2_T_DIF; key(SDLK_DOWN); assert(uxTopo == AJ2_T_RESOLVER);
