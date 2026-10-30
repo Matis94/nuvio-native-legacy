@@ -287,7 +287,7 @@ static void celb_desenharCorpo_(void) {
     else gfx_cor(cartao, raio, .098f, .102f, .118f, .99f * a);
     if (!vid) gfx_luz_canto(cartao, raio, w * .25f, -h * .25f, w * .9f, ar, ag, ab, .08f * a); }
 
-  { TxtLinha t = txt_linha_corta(TXT_CALLOUT, i18n(dono == CELB_LOG ? "Export diagnostics" : "Digitar pelo celular"), 245, 248, 255, 255,
+  { TxtLinha t = txt_linha_corta(TXT_CALLOUT, i18n(dono == CELB_LOG ? "Baixar registro" : "Digitar pelo celular"), 245, 248, 255, 255,
                                  w - 2 * CB_PAD - 40.0f);
     float ty = y + CB_PAD + (CB_TITULO_H - t.h) * 0.5f;
     gfx_icone((GfxRect){ x + CB_PAD, y + CB_PAD + (CB_TITULO_H - 28.0f) * 0.5f, 28.0f, 28.0f }, "aj_smartphone",
@@ -296,7 +296,7 @@ static void celb_desenharCorpo_(void) {
   y += CB_PAD + CB_TITULO_H;
 
   if (!temQr) {
-    txt_bloco(TXT_BODY, i18n(dono == CELB_LOG ? "Export unavailable. Check Wi-Fi, then press OK to retry." : msgSemQr(est)), 200, 204, 212, x + CB_PAD, y + 16.0f, w - 2 * CB_PAD, CB_LINHA_H + 6.0f, a, 3);
+    txt_bloco(TXT_BODY, i18n(dono == CELB_LOG ? "Não foi possível carregar. OK para tentar novamente." : msgSemQr(est)), 200, 204, 212, x + CB_PAD, y + 16.0f, w - 2 * CB_PAD, CB_LINHA_H + 6.0f, a, 3);
     return;
   }
   y += 18.0f;
@@ -308,7 +308,7 @@ static void celb_desenharCorpo_(void) {
   { TxtLinha t = txt_linha_corta(TXT_CAPTION, curta, 232, 236, 244, 255, w - 2 * CB_PAD);
     txt_desenhar_alpha(t, x + (w - t.w) * 0.5f, y, a); }
   y += 30.0f + 10.0f;
-  txt_bloco(TXT_CAPTION2, i18n(dono == CELB_LOG ? "Scan to read or download the log. Same Wi-Fi. Expires in 5 minutes. Back closes export." : FRASE_QR), 170, 174, 184, x + CB_PAD, y, w - 2 * CB_PAD, CB_LINHA_H, a * 0.9f, 3);
+  txt_bloco(TXT_CAPTION2, i18n(FRASE_QR), 170, 174, 184, x + CB_PAD, y, w - 2 * CB_PAD, CB_LINHA_H, a * 0.9f, 3);
 }
 
 // --- hospedado: o mesmo QR, dentro da superficie do dono ----------------------
@@ -363,7 +363,7 @@ void celb_desenhar_em(int d, GfxRect r, float alpha) {
   if (arr == CB_E_LADO) {
     float tx = r.x + CB_E_QR + CB_E_VAO, tw = r.w - CB_E_QR - CB_E_VAO;
     float fh = txt_bloco(TXT_CAPTION2, i18n(FRASE_QR), 0, 0, 0, 0, 0, tw, CB_LINHA_H, 0.0f, 5);
-    txt_bloco(TXT_CAPTION2, i18n(dono == CELB_LOG ? "Scan to read or download the log. Same Wi-Fi. Expires in 5 minutes. Back closes export." : FRASE_QR), 170, 174, 184, tx, y + (CB_E_QR - fh) * 0.5f, tw, CB_LINHA_H, a * 0.9f, 5);
+    txt_bloco(TXT_CAPTION2, i18n(FRASE_QR), 170, 174, 184, tx, y + (CB_E_QR - fh) * 0.5f, tw, CB_LINHA_H, a * 0.9f, 5);
   }
   y += CB_E_QR + 14.0f;
   curta = !strncmp(u, "http://", 7) ? u + 7 : u;
@@ -371,5 +371,5 @@ void celb_desenhar_em(int d, GfxRect r, float alpha) {
     txt_desenhar_alpha(t, r.x, y, a); }
   y += 30.0f + 8.0f;
   if (arr == CB_E_PILHA)
-    txt_bloco(TXT_CAPTION2, i18n(dono == CELB_LOG ? "Scan to read or download the log. Same Wi-Fi. Expires in 5 minutes. Back closes export." : FRASE_QR), 170, 174, 184, r.x, y, r.w, CB_LINHA_H, a * 0.9f, 3);
+    txt_bloco(TXT_CAPTION2, i18n(FRASE_QR), 170, 174, 184, r.x, y, r.w, CB_LINHA_H, a * 0.9f, 3);
 }

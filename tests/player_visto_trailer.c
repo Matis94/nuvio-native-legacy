@@ -317,11 +317,16 @@ int main(void) {
   strcpy(semMeta.imdb, "tt90000005"); cat_definir(&semMeta, 1); dur = 2580;
   player_abrir(0, fonte); quadro();
   for (int i = 0; i < 2400; i++) { agoraMono += 1; pos += 1; quadro(); }
+  // Real viewing has already saved a periodic checkpoint. A trailer must
+  // preserve it, and must not create another write or completion on close.
+  int beforeTrakt=nTrakt,beforeVisto=nVisto;
+  float beforeProgress=cat_item(0)->progresso;
+  assert(beforeProgress>0 && beforeProgress<100);
   trailer_abrir(fonte, (GfxRect){0,0,100,100}, 0, 0);
   dur = pos = 180; terminou = 1;
   trailer_atualizar(SDL_GetTicks()); assert(!trailer_aberto());
   quadro(); player_encerrar();
-  assert(nTrakt == 0 && nVisto == 0 && cat_item(0)->progresso == 0);
+  assert(nTrakt == beforeTrakt && nVisto == beforeVisto && cat_item(0)->progresso == beforeProgress);
 
   // Pausa e buffer nao contam.
   strcpy(semMeta.imdb, "tt90000004"); cat_definir(&semMeta, 1); dur = 2580;

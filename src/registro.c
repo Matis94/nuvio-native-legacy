@@ -610,7 +610,7 @@ int registro_evento(const SDL_Event *e) {
   if (e->type == SDL_KEYDOWN) {
     SDL_Keycode k = e->key.keysym.sym;
     if ((e->key.keysym.scancode == 489 || k == SDLK_F10) && !e->key.repeat) {
-      celb_abrir(CELB_LOG, "Export diagnostics"); engolirSoltura(e); return 1;
+      celb_abrir(CELB_LOG, i18n("Baixar registro")); engolirSoltura(e); return 1;
     }
     if (nv_tecla_voltar(e)) { aberto = 0; engolirSoltura(e); return 1; }
     if (semFonte || !nLin) {

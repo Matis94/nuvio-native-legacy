@@ -24,4 +24,13 @@ fi
 if [ "${SANITIZE:-0}" = 1 ]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 cc "${sources[@]}" tests/fontes_formatter.c "${flags[@]}" -o "$FF_DIR/test" \
   "${libs[@]}" -Wno-deprecated-declarations -Wno-macro-redefined
-NUVIO_DADOS="$FF_DIR" "$FF_DIR/test" "$@"
+if [[ ${SANITIZE:-0} == 1 ]]; then
+  # Check formatter ownership/leaks without loading a GPU driver first.
+  ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1:halt_on_error=1}" NUVIO_DADOS="$FF_DIR" "$FF_DIR/test" --logic-only
+  # Mesa/SDL retain context/mipmap allocations after GL shutdown on CI.
+  # Keep address/UB checks for pixels; leak detection remains on above and in
+  # the independent non-rendering regressions.
+  ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 NUVIO_DADOS="$FF_DIR" "$FF_DIR/test" "$@"
+else
+  NUVIO_DADOS="$FF_DIR" "$FF_DIR/test" "$@"
+fi

@@ -132,10 +132,13 @@ static void emojiPixels(void) {
   assert(red>20 && white>20 && background>10);
   tex_encerrar();puts("PASS: emoji retains red/white color and transparent corners");
 }
-int main(void) {
+int main(int argc,char **argv) {
+  int logicOnly=argc>1 && !strcmp(argv[1],"--logic-only");
   setvbuf(stdout,NULL,_IONBF,0);
   char dir[NVT_MAX];nvt_set(dir,sizeof dir,"/nuvio-rich-formatter-XXXXXX");assert(mkdtemp(dir));
-  assert(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER)==0);IMG_Init(IMG_INIT_PNG);
+  assert(SDL_Init(SDL_INIT_TIMER|(logicOnly?0:SDL_INIT_VIDEO))==0);IMG_Init(IMG_INIT_PNG);
+  SDL_Window *win=NULL;SDL_GLContext gl=NULL;
+  if(!logicOnly) {
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2);
 #ifdef __APPLE__
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
@@ -143,9 +146,11 @@ int main(void) {
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,0);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,SDL_GL_CONTEXT_PROFILE_ES);
 #endif
-  SDL_Window *win=SDL_CreateWindow("rich-formatter",0,0,1920,1080,SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);assert(win);
-  SDL_GLContext gl=SDL_GL_CreateContext(win);assert(gl);
-  gfx_tamanho_alvo(1920,1080);assert(gfx_iniciar());assert(txt_iniciar("deploy/app",1));
+  win=SDL_CreateWindow("rich-formatter",0,0,1920,1080,SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);assert(win);
+  gl=SDL_GL_CreateContext(win);assert(gl);
+  gfx_tamanho_alvo(1920,1080);assert(gfx_iniciar());
+  }
+  assert(txt_iniciar("deploy/app",1));
   for(int i=0;i<CARDS;i++) {
     Stream *s=&fixtures[i];s->altura=2160;s->mp4=s->emCache=1;s->fileIdx=-1;
     snprintf(s->url,sizeof s->url,"https://fixture.invalid/%d.mp4",i);
@@ -157,9 +162,9 @@ int main(void) {
       "Release.group.Oppenheimer.2023.2160p.UHD.BluRay.REMUX.HEVC.DTS-HD.MA.5.1.DUAL.MULTI.Polish.Lektor.%04d.Long.File.Name.Without.Space.mkv\n"
       "Audio: Polski · English\nSubtitles: Polish · English\nLast formatter line",i);
   }
-  setting(dir,1);parserAndCache();geometry(dir);emojiPixels();
+  setting(dir,1);parserAndCache();geometry(dir);if(!logicOnly)emojiPixels();
   txt_encerrar();stream_definir_lista(NULL,0);
-  SDL_GL_DeleteContext(gl);SDL_DestroyWindow(win);IMG_Quit();SDL_Quit();
+  if(gl)SDL_GL_DeleteContext(gl);if(win)SDL_DestroyWindow(win);IMG_Quit();SDL_Quit();
   char path[512];snprintf(path,sizeof path,"%s/ajustes.txt",dir);unlink(path);rmdir(dir);
   return 0;
 }

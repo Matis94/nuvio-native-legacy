@@ -34,16 +34,28 @@ jobs:
       - name: Formatter, subtitle opacity and upstream PR regressions
         timeout-minutes: 30
         run: |
-          SANITIZE=1 bash tests/fontes_formatter.sh
-          bash tests/source_audio_language.sh
-          bash tests/faixas_estilo_ctl.sh
-          bash tests/player_prefs.sh
-          bash tests/ajustes_ux_interacao.sh
-          bash tests/episodiosdup.sh
-          bash tests/episode_identity512.sh
-          bash tests/player_scrobble_trailer.sh
-          bash tests/player_visto_trailer.sh
-          bash tests/trakt_cw_vistas.sh
+          # Independent fixtures use isolated temporary data directories.
+          # Use both runner CPUs while preserving each suite's fail-fast exit.
+          (
+            SANITIZE=1 bash tests/fontes_formatter.sh
+            bash tests/source_audio_language.sh
+            bash tests/faixas_estilo_ctl.sh
+            bash tests/ajustes_ux_interacao.sh
+          ) &
+          formatter_suite=$!
+          (
+            bash tests/player_prefs.sh
+            bash tests/episodiosdup.sh
+            bash tests/episode_identity512.sh
+            bash tests/player_scrobble_trailer.sh
+            bash tests/player_visto_trailer.sh
+            bash tests/trakt_cw_vistas.sh
+          ) &
+          episode_suite=$!
+          result=0
+          wait "$formatter_suite" || result=1
+          wait "$episode_suite" || result=1
+          exit "$result"
       - name: P7 mapping settings, metadata and session isolation
         timeout-minutes: 6
         env:
