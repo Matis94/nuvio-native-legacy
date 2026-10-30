@@ -106,7 +106,7 @@ static const GuiaEnt GUIA_ENT[] = {
     "Só MP4 deixa as fontes que tocam Dolby Vision na LG. Em cache mostra o que o debrid já tem pronto. Dublado separa as fontes com áudio dublado.",
     "Folha de Fontes, botões do topo", -1, GT_NADA, GX_N180_FONTES, GV_FONTES },
   { 3, "Texto das fontes", "aj_type", 1, "f-texto",
-    "Do Nuvio mostra o nome do título e os logos de qualidade. Do addon mostra as linhas do próprio addon, até 5, com ícones no lugar dos emojis.",
+    "Do Nuvio mostra o nome do título e os logos de qualidade. Do addon mostra o texto exatamente como o addon manda.",
     "Ajustes › Reprodução › Mais opções › Escolha da fonte › Texto das fontes", AJ_FONTE_TEXTO, GT_NADA, GX_NADA, GV_FONTES },
   { 3, "Ordem das fontes", "aj_list-video", 1, "f-ordem",
     "Por qualidade: as fontes vêm agrupadas por resolução, da maior para a menor, e do maior arquivo para o menor. Do addon: cada addon na ordem em que você o instalou, e as fontes de cada um na ordem em que ele mandou — para quem já ordena no AIOStreams. A escolha automática não muda.",

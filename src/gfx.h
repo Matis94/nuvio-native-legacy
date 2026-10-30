@@ -418,6 +418,9 @@ void gfx_recorte(float x, float y, float w, float h);
 // Carga preguiçosa, uma textura de 128x128; gfx_encerrar devolve a textura.
 void gfx_icones_dir(const char *dirArte);
 void gfx_icone(GfxRect r, const char *nome, float cr, float cg, float cb, float ca);
+// Local formatter emoji: retain PNG color, using the existing async texture LRU.
+// Returns 0 while unavailable so the caller can draw a monochrome fallback.
+int gfx_icone_cor(GfxRect r, const char *nome, float alpha);
 void gfx_sem_recorte(void);
 
 int  gfx_snap_iniciar(int w, int h);
