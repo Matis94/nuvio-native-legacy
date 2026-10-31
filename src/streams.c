@@ -4177,7 +4177,13 @@ static float medirDicaTorrents(void) {
       FOLHA_W-FOLHA_PAD_E-FOLHA_PAD_D-2*FOLHA_TXT,28,0,0);
   return dicaTorrentsAltura;
 }
+#ifdef NV_SHOT_HOOKS
+static unsigned folhaMontagensBase;
+#endif
 static void montarBase(int automatica) {
+#ifdef NV_SHOT_HOOKS
+  folhaMontagensBase++;
+#endif
   logarFiltroAudio();
   float y = 0;
   int g, i, k, m = -1, nt;
@@ -4360,12 +4366,28 @@ static float expansaoLinha(int row, float abertura, int automatica) {
   if (row < 0 || row >= nOrdem || ordem[row] < 0) return 0;
   return alturaLinha(ordem[row], automatica, abertura) - linhaH[row];
 }
+// Measuring a newly visible addon card changes geometry only. Keep the
+// existing source order/filter result and shift scalar row/section prefixes.
+static void remedirAlturasAddon(int automatica) {
+  float delta=0, secDelta[FOLHA_GRUPOS]={0};
+  for(int row=0;row<nOrdem;row++) {
+    float oldY=linhaY[row], oldH=linhaH[row];
+    float h=ordem[row]<0 ? oldH : alturaLinha(ordem[row],automatica,0);
+    linhaY[row]+=delta;linhaH[row]=h;
+    float d=h-oldH;
+    if(d)for(int g=0;g<FOLHA_GRUPOS;g++)
+      if(secN[g] && secY[g]>oldY)secDelta[g]+=d;
+    delta+=d;
+  }
+  for(int g=0;g<FOLHA_GRUPOS;g++)if(secN[g])secY[g]+=secDelta[g];
+  alturaTotal+=delta;
+}
 static void montar(int automatica) {
   static unsigned versao, medidas;
   static float base;
   if(ajustes_fonte_texto_addon())addonMedidasAtualizar();
   folhaDados();
-  if (versao != folhaDadosVersao || medidas != addonMedidasRevisao) {
+  if (versao != folhaDadosVersao) {
     int oldGrupo = grupo, oldAnt = linhaAnt;
     grupo = 0; linhaAnt = -1;
     melhorFolha = folhaAuto;
@@ -4374,6 +4396,11 @@ static void montar(int automatica) {
     base = alturaTotal;
     versao = folhaDadosVersao;
     medidas = addonMedidasRevisao;
+  } else if (medidas != addonMedidasRevisao) {
+    if(ajustes_fonte_texto_addon()) {
+      alturaTotal=base;remedirAlturasAddon(automatica);base=alturaTotal;
+    }
+    medidas=addonMedidasRevisao;
   }
   expansaoFoco = grupo == 1 ? expansaoLinha(foco, abreFoco, automatica) : 0;
   expansaoAnt = linhaAnt != (grupo == 1 ? foco : -1) ? expansaoLinha(linhaAnt, abreAnt, automatica) : 0;
@@ -5858,7 +5885,10 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   montar(automatica);
   prepararCartoesAddon(automatica);
   nf=nOrdem;
-  { float cy = FOLHA_TOPO - (rolagem > 1.0f ? 0.0f : 8.0f);   // scrolled: no sliver of a cut row above the first card
+  // Withdraw the resting inset continuously over the first eight pixels.
+  // Switching it at scroll=1 clipped the first card's top ring for a frame
+  // on return. Farther down, retain the hard list boundary below the tabs.
+  { float cy = FOLHA_TOPO - fmaxf(0.0f, 8.0f - fmaxf(0.0f, rolagem));
 #ifdef NV_SHOT_HOOKS
     folhaRecorteY = cy;
 #endif

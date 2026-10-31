@@ -6,6 +6,7 @@ static int cleanCalls;
 static size_t countedClean(const char *s,char *d,size_t n,int flags) {
   cleanCalls++;return nv_limpar_texto(s,d,n,flags);
 }
+#define NV_SHOT_HOOKS
 #define nv_limpar_texto countedClean
 #include "../src/streams.c"
 #undef nv_limpar_texto
@@ -110,6 +111,39 @@ static void geometry(const char *dir) {
   setting(dir,0);montar(automaticaDaFolha());
   setting(dir,1);montar(automaticaDaFolha());
   puts("PASS: 2000-row prefixes, binary lookup, focus-independent heights and style switching");
+}
+static void measuredScrollGeometry(const char *dir) {
+  Stream *mixed=malloc(sizeof fixtures);assert(mixed);memcpy(mixed,fixtures,sizeof fixtures);
+  for(int i=0;i<CARDS;i++) {
+    mixed[i].altura=i%3==0?2160:i%3==1?1080:720;
+    mixed[i].tamanhoMB=(i*41%307)*1024;
+    mixed[i].foraCache=i%7==0;
+  }
+  stream_definir_lista(mixed,CARDS);free(mixed);setting(dir,1);
+  grupo=0;linhaAnt=-1;montar(automaticaDaFolha());
+  unsigned builds=folhaMontagensBase;Uint64 start=SDL_GetPerformanceCounter();
+  for(int batch=0;batch<60;batch++) {
+    int row=(batch*31)%nOrdem;
+    textoAddonDa(ordem[row]);montar(automaticaDaFolha());
+  }
+  double ms=(SDL_GetPerformanceCounter()-start)*1000./SDL_GetPerformanceFrequency();
+  printf("formatter: 60 newly measured rows in a 2000-source list: %.2f ms, full rebuilds=%u\n",
+    ms,folhaMontagensBase-builds);
+  assert(folhaMontagensBase==builds);
+  // Compare reflowed geometry to a fresh complete sort/filter/layout pass,
+  // including quality section headings and uncached groups.
+  float *ys=malloc(nOrdem*sizeof *ys),*hs=malloc(nOrdem*sizeof *hs);assert(ys && hs);
+  float sections[FOLHA_GRUPOS],total=alturaTotal;
+  for(int i=0;i<nOrdem;i++){ys[i]=linhaY[i];hs[i]=linhaH[i];}
+  memcpy(sections,secY,sizeof sections);montarBase(automaticaDaFolha());
+  assert(fabsf(alturaTotal-total)<.1f);
+  for(int i=0;i<nOrdem;i++){assert(fabsf(linhaY[i]-ys[i])<.1f);assert(fabsf(linhaH[i]-hs[i])<.1f);}
+  for(int g=0;g<FOLHA_GRUPOS;g++)if(secN[g])assert(fabsf(secY[g]-sections[g])<.1f);
+  free(ys);free(hs);
+  // Actual filter/data mutations still take the full path.
+  soMp4=1;montar(automaticaDaFolha());assert(folhaMontagensBase>builds);
+  soMp4=0;montar(automaticaDaFolha());
+  puts("PASS: newly visited source cards reflow without repeating filters or sorting; full geometry preserved");
 }
 static void cardPixels(void) {
   assert(tex_iniciar(64));gfx_icones_dir("deploy/app/art");glViewport(0,0,1920,1080);
@@ -248,6 +282,46 @@ static void screenshotCards(const char *dir,int pixels) {
   if(pixels)cardPixels();
   puts("PASS: Godfather DV screenshot fixture keeps separate audio/size rows and complete filenames");
 }
+static void firstCardScrollPixels(const char *dir) {
+  setting(dir,1);folhaRelogio=0;folhaGeometria();
+  grupo=1;foco=1;focoVisto=1;linhaAnt=-1;abreFoco=1;abreAnt=0;
+  aberta=1;anim=1;focoFixo=-1;
+  montar(automaticaDaFolha());
+  for(int i=0;i<nOrdem;i++)textoAddonDa(ordem[i]);
+  montar(automaticaDaFolha());rolagem=alvoRolagem();velRol=0;
+  assert(rolagem>8 && linhaTopo(0)==0);
+  foco=0;
+  assert(tex_iniciar(64));gfx_icones_dir("deploy/app/art");
+  float previousClip=0,previousScroll=rolagem;
+  int crossed=0,visible=0;
+  unsigned char pixels[600*8*4];
+  for(int frame=0;frame<120;frame++) {
+    txt_novo_quadro();tex_novo_quadro();tex_bombear(8);
+    stream_folha_atualizar(1.f/60,SDL_GetTicks());
+    glClearColor(.05f,.05f,.06f,1);glClear(GL_COLOR_BUFFER_BIT);
+    corpoFolha(0,FOLHA_W,1,SDL_GetTicks(),0);
+    glFinish();
+    float clip=stream_folha_recorte_y();
+    // Returning through the old one-pixel threshold must not jump the clip
+    // eight pixels while the card itself moves only a fraction of a pixel.
+    if(frame)assert(fabsf(clip-previousClip)<=fabsf(rolagem-previousScroll)+.01f);
+    if(previousScroll>1 && rolagem<=1)crossed=1;
+    previousClip=clip;previousScroll=rolagem;
+    glReadPixels(80,1080-(int)FOLHA_TOPO-4,600,8,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+    int ink=0;
+    for(size_t k=0;k<sizeof pixels;k+=4)
+      if(pixels[k]>130 && pixels[k+1]>130 && pixels[k+2]>130)ink++;
+    if(rolagem<1) {
+      assert(ink>200);visible++;
+    }
+    if(rolagem>8)assert(clip==FOLHA_TOPO);
+    // The list must never paint over the addon tabs.
+    assert(clip>=FOLHA_ABAS_Y+folhaOY+FOLHA_ABAS_H);
+  }
+  assert(crossed && visible>30);
+  tex_encerrar();aberta=0;anim=0;
+  puts("PASS: first-card return animation keeps its top border and a continuous clip below addon tabs");
+}
 static void emojiPixels(void) {
   assert(tex_iniciar(64));gfx_icones_dir("deploy/app/art");
   const char *path="deploy/app/art/icones/emoji_1f1f5-1f1f1.png";
@@ -316,7 +390,7 @@ int main(int argc,char **argv) {
   for(int k=0;k<arq->n;k++){assert(arq->off[k]==end);end+=arq->tam[k];}
   assert(end==strlen(longname) && arq->n>1);
   assert(arquivoAltura(longname)==arq->n*FOLHA_ARQ_H);
-  setting(dir,1);parserAndCache();geometry(dir);completeCards(dir,!logicOnly);screenshotCards(dir,!logicOnly);if(!logicOnly)emojiPixels();
+  setting(dir,1);parserAndCache();geometry(dir);measuredScrollGeometry(dir);completeCards(dir,!logicOnly);screenshotCards(dir,!logicOnly);if(!logicOnly){firstCardScrollPixels(dir);emojiPixels();}
   txt_encerrar();stream_definir_lista(NULL,0);
   if(gl)SDL_GL_DeleteContext(gl);if(win)SDL_DestroyWindow(win);IMG_Quit();SDL_Quit();
   char path[512];snprintf(path,sizeof path,"%s/ajustes.txt",dir);unlink(path);rmdir(dir);
