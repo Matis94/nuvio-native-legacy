@@ -20,8 +20,12 @@ static void addonDesenharPecas(const LinhaAddon *ls,const AddonDesenho *ds,int n
       char texto[2048];size_t tam=d->tam;
       if(tam>=sizeof texto)tam=sizeof texto-1;
       memcpy(texto,pecaAddonTexto(l,d->peca)+d->inicio,tam);texto[tam]=0;
-      // The same neutral texture is reused on focus and during expansion.
-      TxtLinha line=txt_linha_corta(estilo,texto,255,255,255,255,fmaxf(1,largura-d->x));
+      // Body fragments are already wrapped by addonQuebrar. Do not shorten
+      // them again when animated panel arithmetic rounds the width down.
+      // The single-row addon heading still uses its existing ellipsis policy.
+      TxtLinha line=estilo==TXT_CALLOUT
+        ? txt_linha_corta(estilo,texto,255,255,255,255,fmaxf(1,largura-d->x))
+        : txt_linha(estilo,texto,255,255,255,255);
       txt_desenhar_tom(line,x+d->x,y+dy,c/255.f,c/255.f,c/255.f,a);
     }
   }

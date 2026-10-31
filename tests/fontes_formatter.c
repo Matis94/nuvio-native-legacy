@@ -322,6 +322,32 @@ static void firstCardScrollPixels(const char *dir) {
   tex_encerrar();aberta=0;anim=0;
   puts("PASS: first-card return animation keeps its top border and a continuous clip below addon tabs");
 }
+static void wrappedFilenamePixels(void) {
+  const char *prefix="Chicago.Fire.S09E11.A.Couple.Hundred.Degrees.";
+  const char *filename="Chicago.Fire.S09E11.A.Couple.Hundred.Degrees.1080p.BluRay.REMUX.AVC.DTS-HD.MA.5.1-NOGRP.mkv";
+  LinhaAddon line;pecasAddon(filename,strlen(filename),&line);
+  AddonDesenho draw[ADDON_DESENHOS];int count=0,rows=0;
+  float width=(float)txt_largura(TXT_PG_FIM,prefix);
+  addonQuebrar(&line,1,draw,ADDON_DESENHOS,&count,&rows,width,TXT_PG_FIM,FOLHA_ADDON_VISUAIS);
+  assert(rows>1 && draw[0].tam==strlen(prefix) && draw[0].w==width);
+  size_t bytes=0;for(int j=0;j<count;j++)if(!draw[j].icone)bytes+=draw[j].tam;
+  assert(bytes==strlen(filename));
+  // Subtracting animated panel coordinates can leave the drawing width one
+  // float step below its cached layout width. Already wrapped text must stay
+  // byte-for-byte and pixel-for-pixel identical rather than acquire ellipses.
+  unsigned char *pixels[2]={malloc(800*400*4),malloc(800*400*4)};
+  assert(pixels[0] && pixels[1]);
+  for(int frame=0;frame<20;frame++)for(int pass=0;pass<2;pass++) {
+    txt_novo_quadro();glClearColor(.05f,.05f,.06f,1);glClear(GL_COLOR_BUFFER_BIT);
+    addonDesenharPecas(&line,draw,count,40,80,pass?nextafterf(width,0):width,
+      rows*FOLHA_ADDON_LD,TXT_PG_FIM,1,1);
+    glFinish();
+    if(frame==19)glReadPixels(0,1080-400,800,400,GL_RGBA,GL_UNSIGNED_BYTE,pixels[pass]);
+  }
+  assert(!memcmp(pixels[0],pixels[1],800*400*4));
+  free(pixels[0]);free(pixels[1]);
+  puts("PASS: wrapped full filenames never acquire ellipses from fractional panel widths");
+}
 static void emojiPixels(void) {
   assert(tex_iniciar(64));gfx_icones_dir("deploy/app/art");
   const char *path="deploy/app/art/icones/emoji_1f1f5-1f1f1.png";
@@ -390,7 +416,7 @@ int main(int argc,char **argv) {
   for(int k=0;k<arq->n;k++){assert(arq->off[k]==end);end+=arq->tam[k];}
   assert(end==strlen(longname) && arq->n>1);
   assert(arquivoAltura(longname)==arq->n*FOLHA_ARQ_H);
-  setting(dir,1);parserAndCache();geometry(dir);measuredScrollGeometry(dir);completeCards(dir,!logicOnly);screenshotCards(dir,!logicOnly);if(!logicOnly){firstCardScrollPixels(dir);emojiPixels();}
+  setting(dir,1);parserAndCache();geometry(dir);measuredScrollGeometry(dir);completeCards(dir,!logicOnly);screenshotCards(dir,!logicOnly);if(!logicOnly){firstCardScrollPixels(dir);wrappedFilenamePixels();emojiPixels();}
   txt_encerrar();stream_definir_lista(NULL,0);
   if(gl)SDL_GL_DeleteContext(gl);if(win)SDL_DestroyWindow(win);IMG_Quit();SDL_Quit();
   char path[512];snprintf(path,sizeof path,"%s/ajustes.txt",dir);unlink(path);rmdir(dir);
