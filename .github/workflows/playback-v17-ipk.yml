@@ -1,4 +1,4 @@
-name: Build webOS integrated playback with diagnostic QR
+name: Build webOS 2.0.8.5 (stable version)
 on:
   push:
     branches: [Nuvio_webOS_test]
@@ -47,6 +47,7 @@ jobs:
           formatter_suite=$!
           (
             bash tests/player_prefs.sh
+            SANITIZE=1 bash tests/app_next_manual.sh
             bash tests/episodiosdup.sh
             bash tests/episode_identity512.sh
             bash tests/player_scrobble_trailer.sh
@@ -232,7 +233,10 @@ jobs:
           data = json.loads(p.read_text())
           assert data["version"] == "2.0.8"
           assert data["id"] == "space.nuvio.native.legacy"
-          data["title"] = "Nuvio webOS test + QR"
+          # webOS requires a three-component technical version. Keep 2.0.8
+          # and expose the custom release revision in the install label.
+          data["title"] = "Nuvio Legacy 2.0.8.5 (stable version)"
+          data["appDescription"] = "Nuvio webOS 2.0.8.5 (stable version)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -245,7 +249,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-webos-test-qr.ipk
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8.5_arm-stable.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -261,7 +265,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: webos-test-qr-full-arm-ipk
+          name: nuvio-webos-2.0.8.5-stable-full-arm-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14
