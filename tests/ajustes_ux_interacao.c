@@ -1,10 +1,17 @@
 // Exercita o contrato do controle com persistência real numa pasta descartável.
+// Settings must request discovery, but this offline UI fixture must not start
+// detached HTTP workers with its fake Trakt token during process teardown.
+#define desc_repetir ajustesTesteRepetir
 #include "../src/ajustes.c"
+#undef desc_repetir
 #include "nvtmp.h"
 #include "../src/addonsui.h"
 #include "../src/pluginsui.h"
 #include <assert.h>
 #include <unistd.h>
+
+static int discoveryRequests;
+void ajustesTesteRepetir(void) { discoveryRequests++; }
 
 static void key(SDL_Keycode k) {
   SDL_Event e = {0}; e.type = SDL_KEYDOWN; e.key.keysym.sym = k;
@@ -77,7 +84,7 @@ int main(void) {
   {
     int ant = valor[AJ_SALVOS_DEST];
     valor[AJ_SALVOS_DEST] = AJ_SALVOS_LOCAL;
-    trakt_definir("token-de-teste", "cliente-de-teste");
+    assert(trakt_definir("token-de-teste", "cliente-de-teste"));
     simklauth_esquecer();
     abrir(AJ_SALVOS_DEST);
     assert(uxPendente == AJ_SALVOS_LOCAL);
@@ -85,9 +92,12 @@ int main(void) {
     key(SDLK_DOWN); assert(uxPendente == AJ_SALVOS_TRAKT);   // Simkl nao entra
     key(SDLK_UP); assert(uxPendente == AJ_SALVOS_LOCAL);
     key(SDLK_RETURN); assert(!uxEditor && valor[AJ_SALVOS_DEST] == AJ_SALVOS_LOCAL);
+    int requestsBefore = discoveryRequests;
     abrir(AJ_SALVOS_DEST); key(SDLK_DOWN); key(SDLK_RETURN);
     assert(!uxEditor && valor[AJ_SALVOS_DEST] == AJ_SALVOS_TRAKT);
-    trakt_definir("", "");
+    assert(discoveryRequests == requestsBefore + 1);
+    // Empty credentials are rejected by trakt_definir; use the logout API.
+    trakt_esquecer(); assert(!trakt_ativo());
     valor[AJ_SALVOS_DEST] = ant;
   }
 
