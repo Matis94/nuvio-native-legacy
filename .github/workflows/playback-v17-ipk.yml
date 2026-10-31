@@ -1,7 +1,7 @@
 name: Build webOS 2.0.8.5 (stable version)
 on:
   push:
-    branches: [Nuvio_webOS_test]
+    branches: [Nuvio_webOS_2.0.8.5]
   workflow_dispatch:
 permissions:
   contents: read
