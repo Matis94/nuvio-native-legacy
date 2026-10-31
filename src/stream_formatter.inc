@@ -113,9 +113,19 @@ static void pecasAddon(const char *ini, size_t n, LinhaAddon *l) {
     p = fim;
   }
 }
+// AIOStreams templates can remove this display-only library prefix from the
+// description. Compare the same filename without changing playback metadata.
+static const char *addonArquivoComparar(const char *nome) {
+  if(!strncmp(nome,"[Cloud]",7)) {
+    nome+=7;
+    while(*nome==' ' || *nome=='\t')nome++;
+  }
+  return nome;
+}
 static int linhasAddon(const Stream *s, LinhaAddon *out, int max) {
   int nl = 0, arquivoVisto = 0;
-  const char *arq = s->arquivo[0] ? strstr(s->descricao,s->arquivo) : NULL;
+  const char *comparar=addonArquivoComparar(s->arquivo);
+  const char *arq = comparar[0] ? strstr(s->descricao,comparar) : NULL;
   for (const char *p = s->descricao; *p && nl < max;) {
     const char *f = strchr(p,'\n');
     if (arq && arq >= p && (!f || arq < f)) arquivoVisto = 1;
@@ -141,7 +151,8 @@ static int linhasAddonContar(const Stream *s) {
       tem=0; if(!*p)break;
     } else if (*p>' ') tem=1;
   }
-  if(nl<FOLHA_ADDON_LINHAS && s->arquivo[0] && !strstr(s->descricao,s->arquivo))nl++;
+  const char *comparar=addonArquivoComparar(s->arquivo);
+  if(nl<FOLHA_ADDON_LINHAS && s->arquivo[0] && (!comparar[0] || !strstr(s->descricao,comparar)))nl++;
   return nl;
 }
 static void tituloAddon(const Stream *s, char *buf, size_t tam) {

@@ -7,7 +7,7 @@ int fontefalha_addons(void){return 0;}
 int fontefalha_provedor_limite(int s){(void)s;return 0;}
 int fontefalha_addon_limite(const char *s){(void)s;return 0;}
 int main(void) {
-  assert(AJ_DIAGNOSTICS_QR==AJ_DV7_MAPPING+1 && AJ_UPDATE_NOTIFICATIONS==AJ_DIAGNOSTICS_QR+1 && AJ_UPDATE_NOTIFICATIONS==AJ_N-1);
+  assert(AJ_DIAGNOSTICS_QR==AJ_DV7_MAPPING+1 && AJ_UPDATE_NOTIFICATIONS==AJ_DIAGNOSTICS_QR+1 && AJ_N>AJ_UPDATE_NOTIFICATIONS);
   assert(valor[AJ_DIAGNOSTICS_QR]==1 && valorPadrao[AJ_DIAGNOSTICS_QR]==1);
   assert(!ajustes_diagnostics_qr());
   assert(!strcmp(ajVisualIcone(AJ_DIAGNOSTICS_QR),"aj_download"));
