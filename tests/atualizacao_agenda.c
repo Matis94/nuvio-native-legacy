@@ -10,6 +10,7 @@
 #include "../src/atualizacao.c"
 #include "nvtmp.h"
 #include <unistd.h>
+#include <assert.h>
 
 static int falhas = 0;
 #define CONFERE(c, ...) do { if (!(c)) { falhas++; printf("FALHA: " __VA_ARGS__); printf("\n"); } } while (0)
@@ -77,6 +78,16 @@ int main(void) {
   mtx = SDL_CreateMutex();
   pronto = 1;
   snprintf(tagNova, sizeof tagNova, "1.6.7"); geracao = 1;
+  char pref[1024];snprintf(pref,sizeof pref,"%s/ajustes.txt",dados_dir());
+  FILE *f=fopen(pref,"w");assert(f);fputs("updateNotificationsLocal 1\n",f);fclose(f);
+  ajustes_dir(dados_dir());assert(!ajustes_update_notifications());
+  atualizacao_mostrar_se_houver();
+  CONFERE(!aberto && geracaoVista!=geracao, "notificacoes desligadas: nao abre nem consome versao");
+  atualizacao_abrir();
+  CONFERE(aberto, "notificacoes desligadas: abertura manual continua disponivel");
+  aberto=0;geracaoVista=0;
+  f=fopen(pref,"w");assert(f);fputs("updateNotificationsLocal 0\n",f);fclose(f);
+  ajustes_dir(dados_dir());assert(ajustes_update_notifications());
   atualizacao_mostrar_se_houver();
   CONFERE(aberto, "1.6.7 nova: cartao abre");
   fechar();                                     // grava AT_ARQ = 1.6.7

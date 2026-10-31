@@ -4179,8 +4179,22 @@ static float medirDicaTorrents(void) {
 }
 #ifdef NV_SHOT_HOOKS
 static unsigned folhaMontagensBase;
+static unsigned folhaAlturasMedidas;
 #endif
-static void montarBase(int automatica) {
+// Sparse height changes: point updates and prefix queries are logarithmic.
+// The arrays keep the sorted/filter layout from the last complete build.
+static float *addonDeslocamentos;
+static int *addonLinhaPorFonte, addonIndiceCap, addonGeometriaAtiva;
+static int addonSecPrimeira[FOLHA_GRUPOS];
+static float addonDeslocamento(int antes) {
+  float d=0;
+  if(addonGeometriaAtiva)for(int k=antes;k>0;k-=k&-k)d+=addonDeslocamentos[k];
+  return d;
+}
+static void addonDeslocar(int row,float delta) {
+  for(int k=row+1;k<=nOrdem;k+=k&-k)addonDeslocamentos[k]+=delta;
+}
+static void montarBaseInterna(int automatica) {
 #ifdef NV_SHOT_HOOKS
   folhaMontagensBase++;
 #endif
@@ -4284,6 +4298,29 @@ static void montarBase(int automatica) {
   }
   alturaTotal = y + medirDicaTorrents();
 }
+static void montarBase(int automatica) {
+  addonGeometriaAtiva=0;
+  montarBaseInterna(automatica);
+  addonMedidosN=addonMedidosTodos=0;
+  if(!ajustes_fonte_texto_addon() || filtro==-1 || !nOrdem)return;
+  if(addonIndiceCap<n) {
+    float *d=realloc(addonDeslocamentos,((size_t)n+1)*sizeof *d);
+    int *r=realloc(addonLinhaPorFonte,(size_t)n*sizeof *r);
+    if(d)addonDeslocamentos=d;
+    if(r)addonLinhaPorFonte=r;
+    if(!d || !r)return; // Preserve the existing linear fallback on allocation failure.
+    addonIndiceCap=n;
+  }
+  memset(addonDeslocamentos,0,((size_t)nOrdem+1)*sizeof *addonDeslocamentos);
+  for(int i=0;i<n;i++)addonLinhaPorFonte[i]=-1;
+  for(int row=0;row<nOrdem;row++)if(ordem[row]>=0)addonLinhaPorFonte[ordem[row]]=row;
+  for(int g=0;g<FOLHA_GRUPOS;g++) {
+    int lo=0,hi=nOrdem;
+    while(lo<hi){int mid=lo+(hi-lo)/2;if(linhaY[mid]<secY[g])lo=mid+1;else hi=mid;}
+    addonSecPrimeira[g]=lo;
+  }
+  addonGeometriaAtiva=1;
+}
 // Fixed-size settings snapshot: checking it never walks the source list.
 static unsigned folhaDadosVersao;
 static void folhaDados(void) {
@@ -4345,11 +4382,11 @@ static float linhaAltura(int row) {
   return linhaH[row] + (grupo == 1 && row == foco ? expansaoFoco : row == linhaAnt ? expansaoAnt : 0);
 }
 static float linhaTopo(int row) {
-  return linhaY[row] + (grupo == 1 && foco < row ? expansaoFoco : 0) +
+  return linhaY[row] + addonDeslocamento(row) + (grupo == 1 && foco < row ? expansaoFoco : 0) +
          (linhaAnt >= 0 && linhaAnt < row && !(grupo == 1 && linhaAnt == foco) ? expansaoAnt : 0);
 }
 static float secTopo(int g) {
-  return secY[g] + (grupo == 1 && foco < nOrdem && linhaY[foco] < secY[g] ? expansaoFoco : 0) +
+  return secY[g] + addonDeslocamento(addonSecPrimeira[g]) + (grupo == 1 && foco < nOrdem && linhaY[foco] < secY[g] ? expansaoFoco : 0) +
     (linhaAnt >= 0 && linhaAnt < nOrdem && linhaY[linhaAnt] < secY[g] &&
       !(grupo == 1 && linhaAnt == foco) ? expansaoAnt : 0);
 }
@@ -4369,6 +4406,19 @@ static float expansaoLinha(int row, float abertura, int automatica) {
 // Measuring a newly visible addon card changes geometry only. Keep the
 // existing source order/filter result and shift scalar row/section prefixes.
 static void remedirAlturasAddon(int automatica) {
+  if(addonGeometriaAtiva) {
+    for(int k=0;k<addonMedidosN;k++) {
+      int i=addonMedidos[k],row=i<n?addonLinhaPorFonte[i]:-1;
+      if(row<0)continue;
+#ifdef NV_SHOT_HOOKS
+      folhaAlturasMedidas++;
+#endif
+      float h=alturaLinha(i,automatica,0),d=h-linhaH[row];
+      linhaH[row]=h;addonDeslocar(row,d);alturaTotal+=d;
+    }
+    addonMedidosN=0;
+    return;
+  }
   float delta=0, secDelta[FOLHA_GRUPOS]={0};
   for(int row=0;row<nOrdem;row++) {
     float oldY=linhaY[row], oldH=linhaH[row];
@@ -4381,13 +4431,14 @@ static void remedirAlturasAddon(int automatica) {
   }
   for(int g=0;g<FOLHA_GRUPOS;g++)if(secN[g])secY[g]+=secDelta[g];
   alturaTotal+=delta;
+  addonMedidosN=0;
 }
 static void montar(int automatica) {
-  static unsigned versao, medidas;
+  static unsigned versao, medidas, estilo;
   static float base;
   if(ajustes_fonte_texto_addon())addonMedidasAtualizar();
   folhaDados();
-  if (versao != folhaDadosVersao) {
+  if (versao != folhaDadosVersao || estilo != addonEstiloRevisao || addonMedidosTodos) {
     int oldGrupo = grupo, oldAnt = linhaAnt;
     grupo = 0; linhaAnt = -1;
     melhorFolha = folhaAuto;
@@ -4396,6 +4447,7 @@ static void montar(int automatica) {
     base = alturaTotal;
     versao = folhaDadosVersao;
     medidas = addonMedidasRevisao;
+    estilo = addonEstiloRevisao;
   } else if (medidas != addonMedidasRevisao) {
     if(ajustes_fonte_texto_addon()) {
       alturaTotal=base;remedirAlturasAddon(automatica);base=alturaTotal;
@@ -5885,10 +5937,10 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   montar(automatica);
   prepararCartoesAddon(automatica);
   nf=nOrdem;
-  // Withdraw the resting inset continuously over the first eight pixels.
-  // Switching it at scroll=1 clipped the first card's top ring for a frame
-  // on return. Farther down, retain the hard list boundary below the tabs.
-  { float cy = FOLHA_TOPO - fmaxf(0.0f, 8.0f - fmaxf(0.0f, rolagem));
+  // Keep content below the list boundary for the whole scroll animation.
+  // The first selected card draws its top ring at that boundary until its
+  // own top has returned, rather than letting the clip hide the ring.
+  { float cy = FOLHA_TOPO - 1.0f;
 #ifdef NV_SHOT_HOOKS
     folhaRecorteY = cy;
 #endif
@@ -5951,9 +6003,13 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     if(sel){
       // Foco so pela superficie clara: o contorno saiu a pedido do dono (02/10).
       // No solido a superficie e um cinza opaco um degrau acima do miolo.
-      if (!gfx_foco_placa(r,FOLHA_RAIO/h,1,anim)) {
-        if (ajustes_vidro()) gfx_cor(r,FOLHA_RAIO/h,1,1,1,.12f*anim);
-        else gfx_cor(r,FOLHA_RAIO/h,.17f,.176f,.204f,anim);
+      GfxRect focusRect=ajustes_fonte_texto_addon()?addonFocoRect(r,row):r;
+      if(focusRect.h>4) {
+        float radius=fminf(FOLHA_RAIO,focusRect.h*.5f)/focusRect.h;
+        if (!gfx_foco_placa(focusRect,radius,1,anim)) {
+          if (ajustes_vidro()) gfx_cor(focusRect,radius,1,1,1,.12f*anim);
+          else gfx_cor(focusRect,radius,.17f,.176f,.204f,anim);
+        }
       }
     }
     if(ajustes_fonte_texto_addon()) {

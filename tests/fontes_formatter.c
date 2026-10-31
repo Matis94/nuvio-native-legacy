@@ -121,7 +121,7 @@ static void measuredScrollGeometry(const char *dir) {
   }
   stream_definir_lista(mixed,CARDS);free(mixed);setting(dir,1);
   grupo=0;linhaAnt=-1;montar(automaticaDaFolha());
-  unsigned builds=folhaMontagensBase;Uint64 start=SDL_GetPerformanceCounter();
+  unsigned builds=folhaMontagensBase,measured=folhaAlturasMedidas;Uint64 start=SDL_GetPerformanceCounter();
   for(int batch=0;batch<60;batch++) {
     int row=(batch*31)%nOrdem;
     textoAddonDa(ordem[row]);montar(automaticaDaFolha());
@@ -130,20 +130,31 @@ static void measuredScrollGeometry(const char *dir) {
   printf("formatter: 60 newly measured rows in a 2000-source list: %.2f ms, full rebuilds=%u\n",
     ms,folhaMontagensBase-builds);
   assert(folhaMontagensBase==builds);
+  assert(folhaAlturasMedidas>measured && folhaAlturasMedidas-measured<=60);
   // Compare reflowed geometry to a fresh complete sort/filter/layout pass,
   // including quality section headings and uncached groups.
   float *ys=malloc(nOrdem*sizeof *ys),*hs=malloc(nOrdem*sizeof *hs);assert(ys && hs);
   float sections[FOLHA_GRUPOS],total=alturaTotal;
-  for(int i=0;i<nOrdem;i++){ys[i]=linhaY[i];hs[i]=linhaH[i];}
-  memcpy(sections,secY,sizeof sections);montarBase(automaticaDaFolha());
+  for(int i=0;i<nOrdem;i++){ys[i]=linhaTopo(i);hs[i]=linhaAltura(i);}
+  for(int g=0;g<FOLHA_GRUPOS;g++)sections[g]=secTopo(g);
+  montarBase(automaticaDaFolha());
   assert(fabsf(alturaTotal-total)<.1f);
-  for(int i=0;i<nOrdem;i++){assert(fabsf(linhaY[i]-ys[i])<.1f);assert(fabsf(linhaH[i]-hs[i])<.1f);}
-  for(int g=0;g<FOLHA_GRUPOS;g++)if(secN[g])assert(fabsf(secY[g]-sections[g])<.1f);
+  for(int i=0;i<nOrdem;i++){assert(fabsf(linhaTopo(i)-ys[i])<.1f);assert(fabsf(linhaAltura(i)-hs[i])<.1f);}
+  for(int g=0;g<FOLHA_GRUPOS;g++)if(secN[g])assert(fabsf(secTopo(g)-sections[g])<.1f);
   free(ys);free(hs);
   // Actual filter/data mutations still take the full path.
   soMp4=1;montar(automaticaDaFolha());assert(folhaMontagensBase>builds);
   soMp4=0;montar(automaticaDaFolha());
-  puts("PASS: newly visited source cards reflow without repeating filters or sorting; full geometry preserved");
+  // A bulk premeasure beyond the bounded dirty queue takes one safe rebuild.
+  builds=folhaMontagensBase;
+  for(int row=0;row<nOrdem && !addonMedidosTodos;row++)
+    if(!addonVisuais[ordem[row]])textoAddonDa(ordem[row]);
+  assert(addonMedidosTodos);montar(automaticaDaFolha());
+  assert(folhaMontagensBase==builds+1 && !addonMedidosN && !addonMedidosTodos);
+  // Font/width changes invalidate all measurements, including sparse offsets.
+  builds=folhaMontagensBase;addonMedidasW=0;montar(automaticaDaFolha());
+  assert(folhaMontagensBase==builds+1 && addonDeslocamento(nOrdem)==0);
+  puts("PASS: only newly measured source heights update logarithmic prefixes; full sorted geometry preserved");
 }
 static void cardPixels(void) {
   assert(tex_iniciar(64));gfx_icones_dir("deploy/app/art");glViewport(0,0,1920,1080);
@@ -302,19 +313,21 @@ static void firstCardScrollPixels(const char *dir) {
     corpoFolha(0,FOLHA_W,1,SDL_GetTicks(),0);
     glFinish();
     float clip=stream_folha_recorte_y();
-    // Returning through the old one-pixel threshold must not jump the clip
-    // eight pixels while the card itself moves only a fraction of a pixel.
-    if(frame)assert(fabsf(clip-previousClip)<=fabsf(rolagem-previousScroll)+.01f);
+    // The clipping plane stays attached to the header, never the moving card.
+    if(frame)assert(fabsf(clip-previousClip)<.01f);
     if(previousScroll>1 && rolagem<=1)crossed=1;
     previousClip=clip;previousScroll=rolagem;
-    glReadPixels(80,1080-(int)FOLHA_TOPO-4,600,8,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+    float top=fmaxf(FOLHA_TOPO,FOLHA_TOPO+linhaTopo(0)-rolagem);
+    glReadPixels(80,1080-(int)ceilf(top)-4,600,8,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
     int ink=0;
     for(size_t k=0;k<sizeof pixels;k+=4)
       if(pixels[k]>130 && pixels[k+1]>130 && pixels[k+2]>130)ink++;
-    if(rolagem<1) {
+    // The first card stays partially visible for this whole transition.
+    // Its selected outline must remain complete while pinned below the tabs,
+    // including scroll=5..8 where the previous fix hid the whole top ring.
+    if(FOLHA_TOPO+linhaTopo(0)-rolagem+linhaAltura(0)>FOLHA_TOPO+44) {
       assert(ink>200);visible++;
     }
-    if(rolagem>8)assert(clip==FOLHA_TOPO);
     // The list must never paint over the addon tabs.
     assert(clip>=FOLHA_ABAS_Y+folhaOY+FOLHA_ABAS_H);
   }

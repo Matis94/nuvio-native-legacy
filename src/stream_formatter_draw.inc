@@ -30,13 +30,21 @@ static void addonDesenharPecas(const LinhaAddon *ls,const AddonDesenho *ds,int n
     }
   }
 }
+static GfxRect addonFocoRect(GfxRect r,int row) {
+  if(row==0 && r.y<FOLHA_TOPO) {
+    r.h-=FOLHA_TOPO-r.y;r.y=FOLHA_TOPO;
+  }
+  return r;
+}
 static void desenharCartaoAddon(int i,int row,GfxRect r,float tx,float tr,
                                 int automatica,int sel,float anim,Uint32 agora) {
   const Stream *s=&lista[i];const TextoAddon *t=textoAddonDa(i);
   float y=r.y+FOLHA_ADDON_TOPO,largura=tr-tx;
   float bodyX=tx,bodyW=largura;
-  (void)row;
-  if(sel)gfx_anel(r,FOLHA_RAIO/r.h,2,.72f,.72f,.76f,.9f*anim);
+  if(sel) {
+    GfxRect ring=addonFocoRect(r,row);
+    if(ring.h>4)gfx_anel(ring,fminf(FOLHA_RAIO,ring.h*.5f)/ring.h,2,.72f,.72f,.76f,.9f*anim);
+  }
   if(temMarca(i,automatica)) {
     const char *marca=i==atual ? "Reproduzindo agora" : i==preferida ? "Sua escolha anterior" :
       fitPesada(i) ? "Acima da conexão" : s->foraCache && !cacheConfirmado(s) ? "Fora do cache" :

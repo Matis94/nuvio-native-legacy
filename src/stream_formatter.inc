@@ -41,6 +41,15 @@ static unsigned textoAddonRelogio;
 static unsigned short *addonVisuais; // 0 unknown, otherwise visual rows + 1
 static int addonVisuaisCap;
 static unsigned addonMedidasRevisao;
+static unsigned addonEstiloRevisao;
+// Only newly measured cards need new heights. Overflow is an exceptional
+// bulk-measurement path and requests one complete geometry rebuild.
+static int addonMedidos[128], addonMedidosN, addonMedidosTodos;
+static void addonMedido(int i) {
+  for(int k=0;k<addonMedidosN;k++)if(addonMedidos[k]==i)return;
+  if(addonMedidosN<(int)(sizeof addonMedidos/sizeof *addonMedidos))addonMedidos[addonMedidosN++]=i;
+  else addonMedidosTodos=1;
+}
 static float addonMedidasW;
 static int addonMedidasCorpo, addonMedidasPeso, addonMedidasFamilia;
 
@@ -157,6 +166,7 @@ static void addonMedidasAtualizar(void) {
     if(addonVisuais)memset(addonVisuais,0,(size_t)addonVisuaisCap*sizeof *addonVisuais);
     addonMedidasW=w;addonMedidasCorpo=corpo;addonMedidasPeso=peso;addonMedidasFamilia=familia;
     addonMedidasRevisao++;
+    addonEstiloRevisao++;
   }
 }
 static int addonLinhasVisuais(int i) {
@@ -252,6 +262,7 @@ pronto:
 static void textoAddonLimpar(void) {
   free(textoAddon);textoAddon=NULL;textoAddonPreparados=textoAddonRelogio=0;
   free(addonVisuais);addonVisuais=NULL;addonVisuaisCap=0;addonMedidasRevisao++;
+  addonMedidosN=addonMedidosTodos=0;
 }
 static const TextoAddon *textoAddonDa(int i) {
   static TextoAddon reserva;
@@ -293,6 +304,7 @@ static const TextoAddon *textoAddonDa(int i) {
   }
   if(i<addonVisuaisCap && addonVisuais[i]!=t->nv+1) {
     addonVisuais[i]=(unsigned short)(t->nv+1);addonMedidasRevisao++;
+    addonMedido(i);
   }
   return t;
 }

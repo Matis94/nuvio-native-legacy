@@ -43,6 +43,8 @@ jobs:
             bash tests/source_audio_language.sh
             bash tests/faixas_estilo_ctl.sh
             bash tests/ajustes_ux_interacao.sh
+            SANITIZE=1 bash tests/update_notice.sh
+            SANITIZE=1 bash tests/atualizacao_agenda.sh
           ) &
           formatter_suite=$!
           (

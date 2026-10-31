@@ -360,3 +360,5 @@
   1, /* BD REMUX MP4 test: Off (V_LIGA), device-local opt-in */
   1, /* preserve P7 mapping experiment: Off (V_LIGA), device-local opt-in */
   1, /* Diagnostics QR: Off (V_LIGA); normal logs remain enabled */
+
+0, // Update notifications: on by default, device-local
