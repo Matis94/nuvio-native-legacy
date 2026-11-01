@@ -14,7 +14,8 @@ static DtsPlaybackStatus refill_status(DtsPlayback *p,int active) {
 }
 int main(int argc,char **argv) {
   assert(argc==2);const char *mode=argv[1];
-  int dv=strcmp(mode,"sdr")!=0;
+  int compact=strstr(mode,"compact")!=NULL;
+  int dv=strstr(mode,"sdr")==NULL;
   scenario=SEEK_PREROLL;hold_fixture=1;
   dts_playback_next_dv(dv);dts_playback_next_seamless(1);
   DtsPlayback *p=start(0,4,NULL,0,0);
@@ -51,7 +52,26 @@ int main(int argc,char **argv) {
     assert(count(&loads)==1);
     dts_playback_close(p);return 0;
   }
-  if(!strcmp(mode,"paused")) {
+  if(compact) {
+    atomic_store(&refill_native_limit,strstr(mode,"starved")?INT64_C(300000000):INT64_C(1900000000));
+    dts_playback_seek(p,50);wait_count(&flushes,1);refill_status(p,1);
+    for(int i=0;i<1500 && !atomic_load(&native_full);i++)nap();
+    assert(atomic_load(&native_full));
+    if(strstr(mode,"paused"))dts_playback_pause(p,1);
+    if(!strstr(mode,"gap"))atomic_store(&buffer_contiguous,20*1048576LL);
+    for(int i=0;i<400;i++)nap();
+    if(strstr(mode,"starved")) {
+      assert(count(&plays)==1);
+      atomic_fetch_add(&hold_wall_offset,INT64_C(21000000000));
+      DtsPlaybackStatus st=wait_status(p,1,0);assert(st.failed);
+      dts_playback_close(p);puts("PASS compact full buffer with insufficient A/V still times out");return 0;
+    }
+    if(strstr(mode,"paused") || strstr(mode,"gap")) {
+      assert(count(&plays)==1);
+      if(strstr(mode,"paused"))dts_playback_pause(p,0);
+      atomic_store(&buffer_contiguous,20*1048576LL);
+    }
+  } else if(!strcmp(mode,"paused")) {
     dts_playback_pause(p,1);wait_settled();
     atomic_store(&buffer_contiguous,20*1048576LL);
     atomic_fetch_add(&hold_wall_offset,INT64_C(60000000000));

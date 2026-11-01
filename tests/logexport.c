@@ -24,6 +24,8 @@ int main(void) {
   nv_range_diag_host(NULL, host); assert(!strcmp(host, "-"));
   const char *trace = "[range-diag] v=1 id=2 kind=chunk monoMs=1000 origHost=torrentio.strem.fun host=long-cdn-delivery.example.net nextHost=- http=429 retrySeen=1 retrySec=30 server=nginx";
   logexport_redact(trace, out, sizeof out); assert(!strcmp(trace, out));
+  const char *route_trace="[range-diag] v=2 origHost=torrentio.strem.fun host=long-cdn-delivery.example.net nextHost=- origRoute=3 route=4 nextRoute=0 totalBytes=83259906840 bytes=4194303 rateKiBs=5432";
+  logexport_redact(route_trace,out,sizeof out);assert(!strcmp(route_trace,out));
   hides("[range-diag] host=abcdefghijklmnopqrstuvwxyz", "abcdefghijklmnopqrstuvwxyz");
   hides("[net] host=long-cdn-delivery.example.net", "long-cdn-delivery.example.net");
   hides("[range-diag] host=long-cdn-delivery.example.net/shortpw", "shortpw");
@@ -38,6 +40,8 @@ int main(void) {
     "[dts-rebuffer] event=start reason=seek target=9282.482 contiguousKiB=4095 readyKiB=135167",
     "[dts-rebuffer] event=end ms=6430 aheadA=2.10 aheadV=2.00 contiguousKiB=20480",
     "[dts-rebuffer] event=timeout ms=20050 contiguousKiB=0 readyKiB=163840",
+    "[dts-rebuffer] event=end ms=310 aheadA=1.88 aheadV=1.90 contiguousKiB=76917 reason=native-full",
+    "[dts-rebuffer] event=timeout ms=20004 contiguousKiB=0 readyKiB=163840 aheadA=0.10 aheadV=0.20 fullMs=19000 bytesReady=0 preroll=0",
     "[mp4-bd-test] P8 compatibility verified: input=0 output=1; HDR10 SPS and P8 RPU confirmed",
     "[mp4-bd-test] seek anchor: target=3835.660 BL-dts-ns=3830000000000 BL-pts-ns=3831000000000 probePackets=155 probeBytes=63349",
     "[mp4-bd-test] single P8 track=0 videos=1 version=1.0 compat=1 bl=1 el=0 rpu=1 size=3840x2160 hdr=9/16/9 hvcc=23",

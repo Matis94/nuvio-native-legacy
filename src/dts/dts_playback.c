@@ -33,6 +33,8 @@
 typedef struct { DtsSubtitle cue; unsigned revision; } DtsQueuedSubtitle;
 #define DTS_DV_STARVED_WINDOWS 4
 #define DTS_REFILL_SECONDS 2.0
+#define DTS_REFILL_FULL_SECONDS 0.25
+#define DTS_REFILL_MIN_SECONDS 0.5
 #define DTS_REFILL_TIMEOUT_SECONDS 20.0
 struct DtsPlayback {
 #ifdef NV_MP4_BD_TEST
@@ -525,7 +527,7 @@ static void *run(void *user) {
   int dv_audio_hold=0;
 #ifdef NV_DTS_WEBOS_RECOVERY
   int network_hold=0;
-  double network_since=0,network_target=0;
+  double network_since=0,network_target=0,network_full_since=-1;
 #else
   const int network_hold=0;
 #endif
@@ -557,7 +559,7 @@ static void *run(void *user) {
     double wall = clockSeconds(CLOCK_MONOTONIC);
 #ifdef NV_DTS_WEBOS_RECOVERY
     if(network_hold && (seek || audio)) {
-      network_hold=0;refillPublish(p,0,0);p->starved=0;
+      network_hold=0;network_full_since=-1;refillPublish(p,0,0);p->starved=0;
       resetStall(&stall,presented);native_unhealthy=0;
     }
     if(!network_hold && !seek && !audio && !pause && !eof && complete && clock_seen &&
@@ -565,7 +567,7 @@ static void *run(void *user) {
        (fed_audio-presented<0.5 || fed_video-presented<0.5)) {
       DtsBufferInfo b;dts_engine_buffer_info(p->engine,&b);
       if(b.capacity_bytes>0 && !refillTail(&b) && b.contiguous_bytes<refillGoal(&b)) {
-        network_hold=1;network_since=wall;network_target=presented;p->starved=0;
+        network_hold=1;network_full_since=-1;network_since=wall;network_target=presented;p->starved=0;
         printf("[dts-rebuffer] event=start reason=underflow target=%.3f contiguousKiB=%lld readyKiB=%lld\n",
           presented,(long long)(b.contiguous_bytes/1024),(long long)(b.ready_bytes/1024));
         fflush(stdout);refillPublish(p,1,0);
@@ -573,21 +575,31 @@ static void *run(void *user) {
     }
     if(network_hold) {
       DtsBufferInfo b;dts_engine_buffer_info(p->engine,&b);
-      if(pause)network_since=wall;
+      if(pause) {network_since=wall;network_full_since=-1;}
       int enough=fed_audio>=network_target+DTS_REFILL_SECONDS &&
                  fed_video>=network_target+DTS_REFILL_SECONDS;
       int bytes_ready=b.contiguous_bytes>=refillGoal(&b) || refillTail(&b);
-      if(!pause && enough && bytes_ready) {
-        printf("[dts-rebuffer] event=end ms=%.0f aheadA=%.2f aheadV=%.2f contiguousKiB=%lld\n",
+      /* Firmware can exhaust its byte capacity below two seconds of high
+       * bitrate video. A paused full decoder cannot consume another packet;
+       * waiting for that packet to be accepted would deadlock this refill.
+       * Require continuous backpressure, preroll of BOTH streams and a
+       * contiguous network reserve before allowing this smaller native lead. */
+      int native_full=!seek_preroll && network_full_since>=0 &&
+        wall-network_full_since>=DTS_REFILL_FULL_SECONDS &&
+        fed_audio>=network_target+DTS_REFILL_MIN_SECONDS &&
+        fed_video>=network_target+DTS_REFILL_MIN_SECONDS;
+      if(!pause && (enough || native_full) && bytes_ready) {
+        printf("[dts-rebuffer] event=end ms=%.0f aheadA=%.2f aheadV=%.2f contiguousKiB=%lld reason=%s\n",
           (wall-network_since)*1000,fed_audio-network_target,fed_video-network_target,
-          (long long)(b.contiguous_bytes/1024));fflush(stdout);
-        network_hold=0;p->starved=0;pause_dirty=1;refillPublish(p,0,0);
+          (long long)(b.contiguous_bytes/1024),enough?"ready":"native-full");fflush(stdout);
+        network_hold=0;network_full_since=-1;p->starved=0;pause_dirty=1;refillPublish(p,0,0);
         resetStall(&stall,presented);native_unhealthy=0;
         rate=(DtsRate){.start=wall};
       } else if(!pause && wall-network_since>=DTS_REFILL_TIMEOUT_SECONDS) {
-        printf("[dts-rebuffer] event=timeout ms=%.0f contiguousKiB=%lld readyKiB=%lld\n",
+        printf("[dts-rebuffer] event=timeout ms=%.0f contiguousKiB=%lld readyKiB=%lld aheadA=%.2f aheadV=%.2f fullMs=%.0f bytesReady=%d preroll=%d\n",
           (wall-network_since)*1000,(long long)(b.contiguous_bytes/1024),
-          (long long)(b.ready_bytes/1024));fflush(stdout);
+          (long long)(b.ready_bytes/1024),fed_audio-network_target,fed_video-network_target,
+          network_full_since>=0?(wall-network_full_since)*1000:0,bytes_ready,seek_preroll);fflush(stdout);
         fail(p,p->dv?DTS_PLAYBACK_STARVED:"DTS buffer recovery timed out");break;
       } else refillPublish(p,1,wall-network_since);
     }
@@ -695,7 +707,7 @@ static void *run(void *user) {
         if(!audio) {
           DtsBufferInfo b;dts_engine_buffer_info(p->engine,&b);
           if(b.capacity_bytes>0 && !refillTail(&b) && b.contiguous_bytes<refillGoal(&b)) {
-            network_hold=1;network_since=fast_since;network_target=target;
+            network_hold=1;network_full_since=-1;network_since=fast_since;network_target=target;
             p->starved=0;refillPublish(p,1,0);
             printf("[dts-rebuffer] event=start reason=seek target=%.3f contiguousKiB=%lld readyKiB=%lld\n",
               target,(long long)(b.contiguous_bytes/1024),(long long)(b.ready_bytes/1024));fflush(stdout);
@@ -951,6 +963,9 @@ static void *run(void *user) {
       if (feed_started >= 0 && feed_ended >= feed_started) rate.feed_wall += feed_ended-feed_started;
       if (r < 0) { fail(p, dts_pipeline_error(p->pipeline)); break; }
       if (r) {
+#ifdef NV_DTS_WEBOS_RECOVERY
+        network_full_since=-1;
+#endif
         stall.full_since = -1;
         position = frame.pts_ns / 1e9;
         /* A paused seek still needs the keyframe preroll and both streams at
@@ -965,6 +980,9 @@ static void *run(void *user) {
         else { rate.video++; if (position > fed_video) fed_video = position; }
         have_frame = 0;
       } else {
+#ifdef NV_DTS_WEBOS_RECOVERY
+        if(network_hold && !pause && network_full_since<0)network_full_since=feed_ended;
+#endif
         rate.full++;
         if (!pause && (recovery_waiting || (complete && clock_seen && !seek_preroll)) && stall.full_since < 0)
           stall.full_since = feed_ended;

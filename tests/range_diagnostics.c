@@ -40,6 +40,7 @@ int main(int argc, char **argv) {
   }
   port = atoi(argv[1]);
   chunk("/diag-limit", 429);
+  chunk("/diag-limit", 429); /* Same URL must retain its opaque route label. */
   chunk("/diag-date", 429);
   chunk("/diag-invalid", 429);
   chunk("/diag-redirect", 429);
