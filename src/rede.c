@@ -3421,26 +3421,6 @@ static void *dtsRangeHeaders(const char *raw, int public_only) {
 #ifdef NV_HTTP_BUFFER_DIAG
 typedef struct { unsigned id; uint64_t begun; int sample; } RangeDiag;
 static unsigned rangeDiagSequence, rangeDiagActive;
-/* Process-local equality labels, never URL hashes in the exported log.
- * Bounded metadata only: no URLs, payload copies or extra HTTP requests. */
-static unsigned rangeDiagRoute(const char *url) {
-  static pthread_mutex_t lock=PTHREAD_MUTEX_INITIALIZER;
-  static struct { uint64_t fingerprint; unsigned id; } routes[128];
-  static unsigned sequence,replace;
-  uint64_t fingerprint=UINT64_C(14695981039346656037);
-  if(!url || !*url)return 0;
-  for(const unsigned char *p=(const unsigned char *)url;*p;p++)
-    fingerprint=(fingerprint^*p)*UINT64_C(1099511628211);
-  pthread_mutex_lock(&lock);
-  for(size_t i=0;i<sizeof routes/sizeof *routes;i++)
-    if(routes[i].id && routes[i].fingerprint==fingerprint) {
-      unsigned id=routes[i].id;pthread_mutex_unlock(&lock);return id;
-    }
-  unsigned slot=replace++%128,id=++sequence;
-  if(!id)id=++sequence;
-  routes[slot].fingerprint=fingerprint;routes[slot].id=id;
-  pthread_mutex_unlock(&lock);return id;
-}
 static RangeDiag rangeDiagBegin(void) {
   static _Thread_local uint64_t next_sample;
   RangeDiag d = {0};
@@ -3470,21 +3450,16 @@ static void rangeDiagLog(const RangeDiag *d, const char *kind, void *c,
     curl_getinfo(c, 3145745 /* CURLINFO_STARTTRANSFER_TIME */, &first);
     curl_getinfo(c, INFO_NUM_CONNECTS, &connections);
   }
-  uint64_t elapsed=now>=hop_ms?now-hop_ms:0;
-  double rate=elapsed && bytes>0?(double)bytes*1000.0/(1024.0*(double)elapsed):0;
-  printf("[range-diag] v=2 id=%u kind=%s monoMs=%llu start=%lld end=%lld hop=%d "
+  printf("[range-diag] v=1 id=%u kind=%s monoMs=%llu start=%lld end=%lld hop=%d "
          "origHost=%s host=%s nextHost=%s stripped=%d http=%ld curl=%d "
          "hopMs=%llu elapsedMs=%llu dnsMs=%.0f tcpMs=%.0f tlsMs=%.0f firstMs=%.0f "
-         "newConn=%ld activeAtStart=%u retrySeen=%d retrySec=%d server=%s bytes=%lld "
-         "origRoute=%u route=%u nextRoute=%u totalBytes=%lld rateKiBs=%.0f\n",
+         "newConn=%ld activeAtStart=%u retrySeen=%d retrySec=%d server=%s bytes=%lld\n",
          d->id, kind, (unsigned long long)now, (long long)r->requested, (long long)end,
          hop, original, host, target, public_only, http, result,
          (unsigned long long)(now - hop_ms), (unsigned long long)(now - d->begun),
          dns * 1000, tcp * 1000, tls * 1000, first * 1000, connections, active,
          r->retry_seen, r->retry_seen ? r->retry_seconds : -1,
-         r->server ? r->server : "none", (long long)bytes,
-         rangeDiagRoute(url),rangeDiagRoute(current),rangeDiagRoute(next),
-         (long long)r->total,rate);
+         r->server ? r->server : "none", (long long)bytes);
 }
 #endif
 /* `final` (8192 bytes, optional) receives the address that answered 206 when

@@ -26,13 +26,6 @@ exported = (root / 'export.log').read_text()
 lines = [line for line in raw.splitlines() if line.startswith('[range-diag] ')]
 events = [dict(field.split('=', 1) for field in line.split()[1:]) for line in lines]
 assert events and all(line in exported for line in lines), 'Diagnostics survive QR redaction'
-assert all(e['v']=='2' and int(e['origRoute'])>0 and int(e['route'])>0 for e in events)
-assert all('totalBytes' in e and float(e['rateKiBs'])>=0 for e in events)
-assert all(e['origRoute']==e['route'] for e in events if e['hop']=='0'), 'Same URL has the same process-local route label'
-assert any(e['hop']=='1' and e['origRoute']!=e['route'] for e in events), 'Redirect destination is distinguishable'
-assert len({e['origRoute'] for e in events})>=5, 'Different private URLs have different opaque labels'
-limited=[e for e in events if e['kind']=='chunk' and e['http']=='429' and e['retrySec']=='7' and e['hop']=='0']
-assert len(limited)>=3 and limited[0]['route']==limited[1]['route'] and limited[0]['route']!=limited[-1]['route'], 'Private query differences are detectable without exporting the query'
 assert all(secret not in raw and secret not in exported for secret in (
     'hidden-query-secret', 'hidden-header-secret', 'hidden-body-secret',
     'hidden-request-secret', 'hidden-version-secret'))

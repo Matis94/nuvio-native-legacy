@@ -1,16 +1,12 @@
-// Exercise the real cold Next transition without external addon/intro HTTP.
+// Exercise the real cold Next transition. Stub only addon network requests.
 #define addons_buscar nextBuscar
 #define addons_buscar_legendas nextLegendas
 #include "../src/app.c"
 #undef addons_buscar
 #undef addons_buscar_legendas
 #include <assert.h>
-#include "../src/intro.h"
 
 static char requested[64];
-static int nextIntro(const char *url,char **body,int *status) {
-  (void)url;*body=NULL;*status=204;return 204;
-}
 void nextBuscar(const char *id,const char *tipo) {
   (void)tipo;snprintf(requested,sizeof requested,"%s",id);
 }
@@ -20,10 +16,6 @@ int main(void) {
   setvbuf(stdout,NULL,_IONBF,0);
   const char *dir=getenv("NUVIO_DADOS");assert(dir && strstr(dir,"nuvio-"));
   dados_iniciar(dir);assert(!strcmp(dados_dir(),dir));
-  // player_definir_episodio also requests intro markers on detached workers.
-  // They are unrelated to source matching and must not initialize live TLS
-  // while this short fixture is already exiting under ASan/LSan.
-  intro_definir_buscador(nextIntro);
   char path[512];snprintf(path,sizeof path,"%s/ajustes.txt",dir);
   FILE *f=fopen(path,"w");assert(f);
   fputs("escolherFonteManual 0\nproximoAutoLocal 0\nfonteGrupoLocal 0\nclassifPlayerLocal 1\n",f);fclose(f);
@@ -61,7 +53,7 @@ int main(void) {
   // Disabled group preference must still prevent following the playing file.
   snprintf(buscaNextAlvo,sizeof buscaNextAlvo,"%s",requested);
   fontepref_configurar(1,3600,0,1);assert(!escolhaDoNext(item.imdb,NULL,0));
-  limparFonteVOD();player_encerrar();intro_desligar();
+  limparFonteVOD();player_encerrar();
   puts("PASS: cold Next preserves playing-source intent through search reset; manual Play and disabled group remain manual");
   return 0;
 }
