@@ -34,6 +34,10 @@ int main(void) {
   const char *safe = "[playback-diag] tick=123 generation=2 pos=123.456 readyBytes=268435456 availableKiB=245760";
   logexport_redact(safe, out, sizeof out); assert(!strcmp(safe, out));
   const char *range_logs[]={
+    "[range-progress] start=4194303 waitMs=3012 got=2031616 gained=2031616 kept=1",
+    "[dts-rebuffer] event=start reason=seek target=9282.482 contiguousKiB=4095 readyKiB=135167",
+    "[dts-rebuffer] event=end ms=6430 aheadA=2.10 aheadV=2.00 contiguousKiB=20480",
+    "[dts-rebuffer] event=timeout ms=20050 contiguousKiB=0 readyKiB=163840",
     "[mp4-bd-test] P8 compatibility verified: input=0 output=1; HDR10 SPS and P8 RPU confirmed",
     "[mp4-bd-test] seek anchor: target=3835.660 BL-dts-ns=3830000000000 BL-pts-ns=3831000000000 probePackets=155 probeBytes=63349",
     "[mp4-bd-test] single P8 track=0 videos=1 version=1.0 compat=1 bl=1 el=0 rpu=1 size=3840x2160 hdr=9/16/9 hvcc=23",
