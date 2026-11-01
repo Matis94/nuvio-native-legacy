@@ -2,6 +2,7 @@
 #include "dts/dts_playback.h"
 #include "dts/dts_engine.h"
 #include "dts/dts_pipeline.h"
+#include "mediaurl.h"
 #include <assert.h>
 #include <stdatomic.h>
 #include <pthread.h>
@@ -31,6 +32,7 @@ static atomic_int hold_slow_reads,hold_no_clock;
 static atomic_llong hold_wall_offset;
 static atomic_int handoff_cancelled;
 static int last_p7,mp4_fixture,mp4_seek_case;
+static const char *expected_url="fixture://movie";
 static atomic_int mp4_no_clock;
 #ifdef DTS_REFILL_FIXTURE
 static atomic_int refill_eof;
@@ -82,7 +84,7 @@ static void fixedInfo(DtsEngine *e) {
 }
 DtsEngine *dts_engine_create(void) { return calloc(1,sizeof(DtsEngine)); }
 int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,int core,double target) {
- (void)headers;assert(!strcmp(url,"fixture://movie"));
+ (void)headers;assert(!strcmp(url,expected_url));
  pthread_mutex_lock(&fixture);opens++;last_stream=stream;last_open_target=target;if(core)core_opens++;pthread_mutex_unlock(&fixture);
  if(scenario==OPEN_FAIL || atomic_load(&timestamp_fail_open)) return -1;
  if(atomic_load(&timestamp_block_open)) {
@@ -341,6 +343,25 @@ static DtsPlayback *start(int paused,int stream,const DtsTrack *selected,int ord
 }
 int main(int argc,char **argv) {
  assert(argc==2);assert(!dts_playback_enabled());DtsPlayback *p;DtsPlaybackStatus s;
+ if(!strcmp(argv[1],"url-limit") || !strcmp(argv[1],"url-limit-dv")) {
+  char url[NV_MEDIA_URL_MAX+2];
+  const size_t lengths[]={1024,4095,4096,NV_MEDIA_URL_MAX-1};
+  int dv=!strcmp(argv[1],"url-limit-dv");
+  for(size_t i=0;i<sizeof lengths/sizeof *lengths;i++) {
+   size_t n=lengths[i];memset(url,'a',n);memcpy(url,"https://fixture.invalid/",24);url[n-1]='z';url[n]=0;
+   expected_url=url;int before=count(&opens);
+   dts_playback_next_dv(dv);
+   p=dts_playback_start(url,"",4,0,1,"window",0,NULL,0,0);assert(p);
+   s=wait_status(p,0,0);assert(!s.failed && count(&opens)==before+1);
+   assert((s.info.dovi_profile!=0)==dv);dts_playback_close(p);
+  }
+  int before=count(&creates);memset(url,'b',sizeof url);url[NV_MEDIA_URL_MAX]=0;
+  assert(!dts_playback_start(url,"",4,0,0,"window",0,NULL,0,0));
+  url[NV_MEDIA_URL_MAX]='b';url[NV_MEDIA_URL_MAX+1]=0;
+  assert(!dts_playback_start(url,"",4,0,0,"window",0,NULL,0,0));
+  assert(count(&creates)==before);
+  puts("PASS: full converter URL reaches engine at 1024/4095/4096/8191 bytes; oversize rejected before native creation");return 0;
+ }
 #ifdef NV_DV7_MAPPING_TEST
  if(!strcmp(argv[1],"p7-mapping")) {
   dts_playback_next_p7_mapping(1);

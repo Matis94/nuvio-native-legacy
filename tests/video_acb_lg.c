@@ -321,6 +321,9 @@ int main(void) {
   /* A compatible audio metadata revision keeps the confirmed DV picture and
    * its existing plane. A real Load still rebinds, even with a recycled ID. */
   pump_count=pump_read=0;dtsModoDv=1;
+  /* Remember the entire source URL, including its distinguishing tail. */
+  memset(urlAtual,'a',NV_MEDIA_URL_MAX-1);memcpy(urlAtual,"https://fixture.invalid/",24);
+  urlAtual[NV_MEDIA_URL_MAX-2]='z';urlAtual[NV_MEDIA_URL_MAX-1]=0;
   snprintf(vidHdr,sizeof vidHdr,"DolbyVision");
   pump_status.revision=3;
   pump_status.info.n_tracks=1;pump_status.info.audio_stream=9;
@@ -330,6 +333,10 @@ int main(void) {
   assert(pronto && tocando && viuVideo && !bindPendente);
   assert(exported_windows==old_windows && !strcmp(vidHdr,"DolbyVision"));
   assert(nAudio==1 && audioAtual==0 && faixaAudio[0].stream_index==9);
+  assert(strlen(dvMemUrl)==NV_MEDIA_URL_MAX-1 && !strcmp(dvMemUrl,urlAtual));
+  assert(dvMemOrd==0);
+  urlAtual[NV_MEDIA_URL_MAX-2]='y';assert(strcmp(dvMemUrl,urlAtual));
+  urlAtual[NV_MEDIA_URL_MAX-2]='z';
   pump_status.revision=4;pump_status.load_revision=3;
   bombearDts();assert(pronto && !tocando && !viuVideo && exported_windows>old_windows);
   dtsModoDv=0;
