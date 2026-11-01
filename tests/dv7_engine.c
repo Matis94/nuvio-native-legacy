@@ -100,6 +100,8 @@ static int drain(DtsEngine *e) {
   return video;
 }
 int main(int argc,char **argv) {
+  const char *workers=getenv("NV_TEST_HTTP_WORKERS");
+  if(workers)dts_engine_set_http_workers(atoi(workers));
   assert(argc==4);mapping_expected_load();
   DtsEngine *e=mapping_engine_create(); assert(e);
   dts_engine_allow_p7(e,1); dts_engine_dv(e,1); check(e,dts_engine_open(e,argv[1],"",-1,0,0));

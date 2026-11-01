@@ -362,3 +362,5 @@
   1, /* Diagnostics QR: Off (V_LIGA); normal logs remain enabled */
 
 0, // Update notifications: on by default, device-local
+  0, /* native player: one sequential connection */
+  3, /* DTS/TrueHD/DV7: four HTTP range workers */

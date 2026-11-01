@@ -733,6 +733,8 @@ typedef enum {
   AJ_DV7_MAPPING, // isolated P7 RPU mapping experiment; append-only, default OFF
   AJ_DIAGNOSTICS_QR, // local opt-in; ordinary logging is independent
   AJ_UPDATE_NOTIFICATIONS, // device-local; automatic notices on by default
+  AJ_BUFFER_NATIVE_CONNECTIONS, // append-only; native player defaults to 1
+  AJ_BUFFER_CONVERSION_CONNECTIONS, // append-only; conversion defaults to 4
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -766,6 +768,8 @@ static const char *V_NT_EP[]    = { "Como na linha do título", "IMDb", "TMDB", 
 static const char *V_PALCO_FUNDO[] = { "Cortina", "Como está", "Só arte", "Preto", "Aura", "Tríptico", "Monumento" };
 static const char *V_TITULO_FIL[] = { "Clássico", "Ilha", "Editorial", "Acento" };
 static const char *V_DEGRADES[] = { "Automático", "Forte", "Desligado" };
+static const char *V_BUFFER_CONNECTIONS[] = { "Standard (1)", "Parallel - 2", "Parallel - 3", "Parallel - 4" };
+static const char *V_BUFFER_CONVERSION_CONNECTIONS[] = { "Standard (1) - Not recommended", "Parallel - 2", "Parallel - 3", "Parallel - 4 - Recommended" };
 static const char *V_DV_AUDIO_FIXO[] = { "Original audio", "AAC stereo", "Dolby Digital 5.1" };
 static const char *V_VIDRO_QUALIDADE[] = { "Automática", "Desempenho", "Alta" };
 static const char *V_FUNDO_DIN[] = { "Cinza", "Cor", "Imersivo", "Cinza escuro" };
@@ -1884,6 +1888,8 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Dolby Vision P7 mapping (experimental)", V_LIGA, 2),
   ESC("Diagnostics QR", V_LIGA, 2),
   ESC("Update notifications", V_LIGA, 2),
+  ESC("Standard native-player buffering", V_BUFFER_CONNECTIONS, 4),
+  ESC("DTS/TrueHD and DV7 buffering", V_BUFFER_CONVERSION_CONNECTIONS, 4),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2225,6 +2231,8 @@ static const char *CHAVE[] = {
   "dv7PreserveMappingTestLocal",
   "diagnosticsQrLocal",
   "updateNotificationsLocal",
+  "nativeBufferConnectionsLocal",
+  "conversionBufferConnectionsLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2810,6 +2818,20 @@ void ajustes_voltar_de_lista(int plugins) { uxVoltarOp = plugins ? AJ_PLUGINS : 
 static int uxDifs[AJ_N], uxNDifs, uxDifFoco;
 static int uxEditor, uxOp, uxPendente, uxOriginal, uxRodape;
 static int uxBufferDados, uxBufferDadosFoco;
+static struct { int ativo, pendente, original, foco; } uxBufferPai;
+static int uxBufferConexoesDisponivel(void) {
+#ifdef NV_WEBOS
+  return 1;
+#else
+  return 0;
+#endif
+}
+static int uxBufferConexao(int op) {
+  return op==AJ_BUFFER_NATIVE_CONNECTIONS || op==AJ_BUFFER_CONVERSION_CONNECTIONS;
+}
+static const char *uxBufferNome(int op) {
+  return op==AJ_BUFFER_NATIVE_CONNECTIONS?"Native player":"DTS/TrueHD and DV7";
+}
 static int uxBufferDadosDisponivel(void) {
 #ifdef NV_HTTP_BUFFER_DIAG
   return 1;
@@ -3330,6 +3352,9 @@ int ajustes_buffer_preset(void) {
 int ajustes_buffer_dados(void) { return lig(AJ_BUFFER_DADOS); }
 int ajustes_ram_overlay(void) { return lig(AJ_RAM_OVERLAY); }
 int ajustes_ram_verde(void) { return lig(AJ_RAM_VERDE); }
+static int bufferConnections(int op,int fallback) { return valor[op]>=0 && valor[op]<4?valor[op]+1:fallback; }
+int ajustes_buffer_native_connections(void) { return bufferConnections(AJ_BUFFER_NATIVE_CONNECTIONS,1); }
+int ajustes_buffer_conversion_connections(void) { return bufferConnections(AJ_BUFFER_CONVERSION_CONNECTIONS,4); }
 int ajustes_dv7_mapping(void) {
 #if defined(NV_DV7_MAPPING_TEST) && defined(NV_WEBOS) && defined(NV_DV7_CONVERSION)
   return valor[AJ_DV7_MAPPING]==0;
@@ -6152,7 +6177,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_AUDIO_OFFSET:   /* audio presentation calibration belongs to this TV */
     case AJ_DTS_AC3:        /* o conversor de DTS e desta TV */
     case AJ_DV_MKV:         /* o demux e o decoder sao desta TV */
-    case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING:
+    case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
     case AJ_HIST_CONTA: case AJ_SOCIAL: /* por perfil desta TV (perfilLocal); o web nao tem */
     case AJ_TAM_MAX: case AJ_TAM_MIN: /* o web nao tem a faixa de tamanho */
     case AJ_ESPACO_FILEIRAS: case AJ_ESPACO_TITULOS: /* o web nao tem espacamento */
@@ -6247,7 +6272,7 @@ static int soNaTv(int op) {
     case AJ_LIVETV_DIAG: case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY:
     case AJ_P2P_LIGADO: case AJ_JF_LIGADO: case AJ_POSTER_PROV: case AJ_EPG_PAIS:
     case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: case AJ_RELOGIO_12H:
-    case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_DIAGNOSTICS_QR: case AJ_UPDATE_NOTIFICATIONS:
+    case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_DIAGNOSTICS_QR: case AJ_UPDATE_NOTIFICATIONS: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_BUFFER:
     case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
     case AJ_TUNNELING: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO:
@@ -6796,7 +6821,7 @@ static void focarOpcao(int op);
 // trailer" 86, P2P no .wgt 6), escondendo o aviso que importa.
 static int foraDestaPlataforma(int op) {
   // Child of AJ_BUFFER's editor, intentionally not a standalone Settings row.
-  if(op==AJ_BUFFER_DADOS || op==AJ_RAM_OVERLAY || op==AJ_RAM_VERDE)return 1;
+  if(op==AJ_BUFFER_DADOS || op==AJ_RAM_OVERLAY || op==AJ_RAM_VERDE || uxBufferConexao(op))return 1;
   // Os limites dos provedores sao editados dentro da folha de ordem.
   if (op >= AJ_FALHA_RD_LIMITE && op <= AJ_FALHA_AD_LIMITE) return 1;
   // Only the shared parent appears in the category; these editors are its children.
@@ -8175,6 +8200,8 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_PLAYER_EXTERNO: return "Escolha onde o vídeo toca: neste app, em um player instalado (VLC, MX Player...) ou perguntando a cada vez. O player externo não sincroniza o progresso.";
     case AJ_PLAYER_ANIME: return "Player só para anime (kitsu, MAL, AniList, ou animação japonesa). Igual ao Player usa a escolha acima. O player externo não sincroniza o progresso.";
     case AJ_BUFFER: return "Quanto vídeo o app guarda à frente. Automático é o de sempre; 64, 128 ou 256 MB ajudam arquivos 4K pesados e caem sozinhos se faltar memória na TV. No webOS vale para a conversão de DTS e Dolby Vision. Vale a partir do próximo vídeo.";
+    case AJ_BUFFER_NATIVE_CONNECTIONS: return "Standard (default) downloads ordinary video through one sequential connection. Parallel 2, 3 or 4 uses that many HTTP range workers inside the same RAM buffer limit. Automatic uses a 64 MB buffer for parallel mode, subject to the RAM safety floor. Applies to the next video. Live/HLS/DASH keep their existing player path.";
+    case AJ_BUFFER_CONVERSION_CONNECTIONS: return "HTTP range downloads for DTS/TrueHD conversion and DV7 processing. Parallel 4 is the existing default. Standard limits this path to one download at a time; Parallel 2 or 3 allows fewer simultaneous downloads. RAM buffer limits stay the same. Applies to the next video.";
     case AJ_FONTE_IDIOMA_AUDIO: return "Na escolha automática, fontes com o seu Idioma do áudio ou áudio duplo passam na frente na mesma resolução. Não é filtro: sem elas, a melhor das outras toca.";
     case AJ_CACHE_SEEK: return "Com retomada rápida, guarda só o último título por até 3 horas. Trocar de perfil ou pouco espaço apagam o trecho.";
     case AJ_ANIM: return "Use Reduzidas para movimentos mais discretos ao navegar pela interface.";
@@ -9732,6 +9759,13 @@ static int definirValorDireto(int op, int novo) {
   { int ok; ajOrigem = ajOrigemDireto; ok = gravar(); ajOrigem = 0;
     if (!ok) { valor[op] = antes; valor[AJ_LEG2_POSICAO] = posicaoAntes; memoriaEscolhida = memoriaAntes; bibliotecaFonteEscolhida = bibliotecaAntes; return 0; } }
   if ((op == AJ_DV_MKV || op == AJ_DV7) && antes != 0 && novo == 0) video_dv_guard_reiniciar();
+#ifdef NV_HTTP_BUFFER_DIAG
+  if (op == AJ_BUFFER_NATIVE_CONNECTIONS || op == AJ_BUFFER_CONVERSION_CONNECTIONS) {
+    printf("[http-setting] path=%s old=%d selected=%d applies=next-video saved=1\n",
+      op == AJ_BUFFER_NATIVE_CONNECTIONS ? "native" : "conversion", antes + 1, novo + 1);
+    fflush(stdout);
+  }
+#endif
   if (op == AJ_LIVETV_SUGERIR) guia_sugestoes_mudaram();
   if (op == AJ_FIL_LIMITE) {
     fil_ajustar_limite(novo);

@@ -13,6 +13,10 @@ static int fake_sleep(const struct timespec *, struct timespec *);
 /* The official native HTTP payload reads device buffering preferences. */
 static int test_buffer_preset;
 int ajustes_buffer_preset(void) { return test_buffer_preset; }
+int ajustes_buffer_native_connections(void) { return 1; }
+int ajustes_buffer_conversion_connections(void) { return 4; }
+void dts_engine_set_source_workers(int n) { (void)n; }
+void dts_engine_set_http_workers(int n) { (void)n; }
 long memlog_livre_mb(void) { return 4096; }
 /* No HTTP or decoder is started by native dispatcher fixtures. */
 static DtsBufferInfo movie_snapshot;

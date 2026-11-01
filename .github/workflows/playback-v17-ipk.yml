@@ -147,6 +147,9 @@ jobs:
           bash .github/build/host_ffmpeg.sh
           SANITIZE=1 bash tests/dts_resolver_reuse.sh
           bash tests/moviebuffer.sh
+          bash tests/moviebuffer.sh parallel
+          SANITIZE=1 bash tests/http_connections.sh
+          NV_TEST_HTTP_WORKERS=1 bash tests/dts_engine.sh
           bash tests/dts_buffer_reporting.sh
           bash tests/dts_cached_seek.sh
           SANITIZE=1 NV_TEST_CACHE_REUSE=1 bash tests/dts_cached_seek.sh
@@ -163,6 +166,7 @@ jobs:
         run: |
           bash tests/dv7.sh
           bash tests/dv7_engine.sh
+          NV_TEST_HTTP_WORKERS=1 NV_TEST_TRUEHD=1 bash tests/dv7_engine.sh
           NV_TEST_TRUEHD=1 bash tests/dv7_engine.sh
           NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 NV_TEST_CACHE_REUSE=1 bash tests/dv7_engine.sh
           NV_TEST_P7_MAPPING=1 NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 NV_TEST_CACHE_REUSE=1 bash tests/dv7_engine.sh

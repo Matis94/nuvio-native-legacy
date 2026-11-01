@@ -21,6 +21,10 @@ typedef struct { int alive, peak; long long bytes, peak_bytes; } DtsEngineRings;
 void dts_engine_rings(DtsEngineRings *out, int reset_peak);
 /* Output for the next open: 1 = AC3 5.1 640 kbps, 0 = stereo AAC (default). */
 void dts_engine_set_ac3(int on);
+/* Validated 1..4, snapshotted per engine/source. Defaults: conversion 4,
+ * ordinary native HTTP cache 1 (the unchanged sequential streaming reader). */
+void dts_engine_set_http_workers(int workers);
+void dts_engine_set_source_workers(int workers);
 /* Samsung remux only: ring of the single-connection reader, in MiB (8..32,
  * default 32), for rings allocated after the call. webOS never calls it. */
 void dts_engine_set_ring_mib(int mib);
@@ -34,6 +38,7 @@ void dts_engine_set_ahead_mib(int mib);
 typedef struct {
   int64_t ready_bytes, capacity_bytes, position, total;
   int64_t contiguous_bytes; /* Ready bytes up to the first missing range. */
+  int http_workers; /* Pinned session download limit, not live TCP connections. */
 } DtsBufferInfo;
 void dts_engine_buffer_info(DtsEngine *, DtsBufferInfo *);
 DtsEngine *dts_engine_source_create(const char *url, const char *headers, int mib);

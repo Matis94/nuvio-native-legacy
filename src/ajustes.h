@@ -212,6 +212,9 @@ int ajustes_link_reusar(void);
 int ajustes_log_rede(void);   // pagina de registro na rede local (logrede.h)
 int ajustes_diagnostics_qr(void); // on-demand QR log export; off by default
 int ajustes_update_notifications(void); // automatic update card/notices; on by default
+/* Independent device-local HTTP download limits for the next source. */
+int ajustes_buffer_native_connections(void);
+int ajustes_buffer_conversion_connections(void);
 unsigned ajustes_link_prazo_s(void);
 int ajustes_fonte_escopo(void);
 int ajustes_fonte_regex_modo(void);

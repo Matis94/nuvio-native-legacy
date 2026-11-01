@@ -18,6 +18,10 @@ void dts_engine_set_ac3(int on) { g_surround_ac3 = on ? 1 : 0; }
  * 32 by default; the .tpk asks for 16 on Tizen 6/6.5/7 (less RAM). */
 static volatile int g_fx_cap_mib = 32;
 void dts_engine_set_ring_mib(int mib) { g_fx_cap_mib = mib >= 8 && mib <= 32 ? mib : 32; }
+static int g_conversion_workers=4, g_source_workers=1;
+static int valid_workers(int n,int fallback) { return n>=1 && n<=4?n:fallback; }
+void dts_engine_set_http_workers(int n) { __atomic_store_n(&g_conversion_workers,valid_workers(n,4),__ATOMIC_RELAXED); }
+void dts_engine_set_source_workers(int n) { __atomic_store_n(&g_source_workers,valid_workers(n,1),__ATOMIC_RELAXED); }
 static volatile int g_ahead_mib;
 void dts_engine_set_ahead_mib(int mib) { g_ahead_mib = mib > 0 && mib <= 256 ? mib : 0; }
 /* Rings alive (read_fluxo allocates, fx_close frees): the .tpk memory line. */
@@ -112,6 +116,9 @@ typedef struct {
 } NvMp4Pair;
 #endif
 struct DtsEngine {
+#ifdef NV_HTTP_BUFFER_DIAG
+  unsigned diag_id;
+#endif
   DtsMediaInfo info;
   char error[160], *url, *headers, *cache;
   char *source_public_headers;
@@ -122,7 +129,9 @@ struct DtsEngine {
   pthread_cond_t range_wake;
   DtsRangeJob ranges[RANGE_SLOTS_MAX];
   DtsRangeWorker workers[RANGE_WORKERS];
-  int range_threads, range_stop;
+  int range_threads, range_stop, http_workers;
+  int source_range;
+  int64_t source_position, source_available;
   volatile int range_live;
   int64_t range_next;
   uint64_t rate_until_ns[2]; /* resolver chain / cached media address */
@@ -174,7 +183,7 @@ struct DtsEngine {
   int pad_count, pad_samples;
   int timeline, has_core;
   DtsEngineMetrics metrics;
-#ifdef NV_DTS_DEBUG
+#if defined(NV_DTS_DEBUG) || defined(NV_HTTP_BUFFER_DIAG)
   DtsEngineMetrics logged_metrics;
   uint64_t logged_at_ns;
 #endif
@@ -184,6 +193,31 @@ static uint64_t clock_ns(clockid_t clock) {
   if(clock_gettime(clock,&t)) return 0;
   return (uint64_t)t.tv_sec*UINT64_C(1000000000)+(uint64_t)t.tv_nsec;
 }
+#ifdef NV_HTTP_BUFFER_DIAG
+static unsigned http_diag_next;
+/* Only lifecycle events: no polling thread, URLs or per-packet allocations. */
+static void http_session_diag(DtsEngine *e, const char *event, uint64_t elapsed_ns) {
+  int queued=0, active=0, ready=0, workers;
+  uint64_t bytes=0, cooldown=0, now=clock_ns(CLOCK_MONOTONIC);
+  pthread_mutex_lock(&e->range_lock);
+  workers=e->range_threads;
+  for(int i=0;i<RANGE_SLOTS_MAX;i++) {
+    DtsRangeJob *j=&e->ranges[i];
+    queued+=j->state==1; active+=j->state==2; ready+=j->state==3;
+    if(j->state==3 && j->count>0)bytes+=(uint64_t)j->count;
+  }
+  for(int i=0;i<2;i++)if(e->rate_until_ns[i]>now && e->rate_until_ns[i]-now>cooldown)
+    cooldown=e->rate_until_ns[i]-now;
+  pthread_mutex_unlock(&e->range_lock);
+  printf("[http-engine] id=%u event=%s selected=%d workers=%d active=%d queued=%d ready=%d readyKiB=%llu cooldownMs=%llu elapsedMs=%llu\n",
+    e->diag_id,event,e->http_workers,workers,active,queued,ready,
+    (unsigned long long)(bytes/1024),(unsigned long long)(cooldown/1000000),
+    (unsigned long long)(elapsed_ns/1000000));
+  fflush(stdout);
+}
+#else
+#define http_session_diag(e,event,elapsed_ns) ((void)0)
+#endif
 void dts_engine_metrics(DtsEngine *e,DtsEngineMetrics *out) {
   if(out) { if(e) *out=e->metrics; else memset(out,0,sizeof(*out)); }
 }
@@ -282,7 +316,7 @@ static void range_fetch(DtsEngine *e,DtsRangeJob *job,int fast,int *stalled) {
     guard=fast?&job->urgent:NULL;
 #endif
     if(!range_target(e,job,0,target,&direct,&cross))return;
-    job->data=rede_baixar_trecho64_relato(target,direct&&cross?"":e->headers,job->start,job->end,
+    job->data=rede_baixar_trecho64_relato(target,direct&&cross?(e->source_range && cross!=2?e->source_public_headers:""):e->headers,job->start,job->end,
       &job->count,&job->total,&job->status,&job->cancel,fin,&cross,
       guard,2500,stalled,&retry_after);
     range_rate_result(e,job->status,retry_after,direct);
@@ -399,14 +433,16 @@ static void clear_ranges(DtsEngine *e,const char *reason) {
 static int start_ranges(DtsEngine *e) {
   pthread_mutex_lock(&e->range_lock);
   if(e->range_threads) { pthread_mutex_unlock(&e->range_lock); return 1; }
-  for(int i=0;i<RANGE_WORKERS;i++) {
+  for(int i=0;i<e->http_workers;i++) {
     DtsRangeWorker *worker=&e->workers[i]; worker->engine=e;
     if(pthread_create(&worker->thread,NULL,range_worker,worker)) break;
     e->range_threads++;
   }
   e->range_next=e->pos;
   int ok=e->range_threads>0;
-  pthread_mutex_unlock(&e->range_lock); return ok;
+  pthread_mutex_unlock(&e->range_lock);
+  http_session_diag(e,"range-start",0);
+  return ok;
 }
 #ifdef NV_NATIVE_SEEK_TEST
 /* Worker-owned repositions may need an earlier keyframe that has just left
@@ -761,7 +797,7 @@ static void range_wait_priority(DtsEngine *e,DtsRangeJob *job) {
   (void)e;(void)job;
 #endif
 }
-static int read_range(void *opaque,uint8_t *dst,int n) {
+static int read_range_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
   DtsEngine *e=opaque;
   if (cancelled(e) || __atomic_load_n(&e->interrupt,__ATOMIC_RELAXED)) return AVERROR_EXIT;
   if (e->total>=0 && e->pos>=e->total) return AVERROR_EOF;
@@ -807,6 +843,10 @@ static int read_range(void *opaque,uint8_t *dst,int n) {
     struct timespec deadline;
     if(optional) { clock_gettime(CLOCK_REALTIME,&deadline); deadline.tv_sec++; }
     while(job->state!=3 && !cancelled(e) && !__atomic_load_n(&e->interrupt,__ATOMIC_RELAXED)) {
+      if(pending_fd>=0) {
+        struct pollfd pending={pending_fd,POLLIN,0};
+        if(poll(&pending,1,0)>0) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EXIT; }
+      }
       range_wait_priority(e,job);
       if(optional) {
         if(pthread_cond_timedwait(&e->range_wake,&e->range_lock,&deadline)==ETIMEDOUT && job->state!=3) {
@@ -816,6 +856,10 @@ static int read_range(void *opaque,uint8_t *dst,int n) {
           clear_ranges(e,"p2p-tail");
           return cancelled(e)?AVERROR_EXIT:AVERROR(EIO);
         }
+      } else if(pending_fd>=0) {
+        struct timespec tick;clock_gettime(CLOCK_REALTIME,&tick);tick.tv_nsec+=100000000;
+        if(tick.tv_nsec>=1000000000){tick.tv_sec++;tick.tv_nsec-=1000000000;}
+        pthread_cond_timedwait(&e->range_wake,&e->range_lock,&tick);
       } else pthread_cond_wait(&e->range_wake,&e->range_lock);
     }
     if(cancelled(e) || __atomic_load_n(&e->interrupt,__ATOMIC_RELAXED)) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EXIT; }
@@ -827,12 +871,12 @@ static int read_range(void *opaque,uint8_t *dst,int n) {
 #ifdef NV_NATIVE_SEEK_TEST
       if(e->dv && !e->remux && __atomic_load_n(&e->range_live,__ATOMIC_RELAXED)) {
         free(job->data);job->data=NULL;job->state=0;
-        pthread_mutex_unlock(&e->range_lock);return read_range(e,dst,n);
+        pthread_mutex_unlock(&e->range_lock);return read_range_pending(e,dst,n,pending_fd);
       }
 #endif
       pthread_mutex_unlock(&e->range_lock);
       clear_ranges(e,"seek-short");
-      return read_range(e,dst,n);
+      return read_range_pending(e,dst,n,pending_fd);
     }
     uint64_t ready_at=clock_ns(CLOCK_MONOTONIC);
     if(ready_at>=wait_started) e->metrics.range_blocked_ns+=ready_at-wait_started;
@@ -876,10 +920,10 @@ static int read_range(void *opaque,uint8_t *dst,int n) {
     pthread_mutex_unlock(&e->range_lock);
     if (!e->cache || count<=0 || count>RANGE_BYTES_DV || status!=206) {
       free(e->cache); e->cache=NULL;
-      if (status==416 && total>=0 && e->pos>=total) { e->total=total; return AVERROR_EOF; }
+      if (status==416 && total>=0 && e->pos>=total) { return AVERROR_EOF; }
       return AVERROR(EIO);
     }
-    e->total=total; e->cache_start=start; e->cache_size=count;
+    e->cache_start=start; e->cache_size=count;
   }
   int64_t available=e->cache_size-(e->pos-e->cache_start);
   if (n>available) n=(int)available;
@@ -887,6 +931,7 @@ static int read_range(void *opaque,uint8_t *dst,int n) {
   memcpy(dst,e->cache+(size_t)(e->pos-e->cache_start),n); e->pos+=n;
   return n;
 }
+static int read_range(void *opaque,uint8_t *dst,int n) { return read_range_pending(opaque,dst,n,-1); }
 static int64_t seek_range(void *opaque,int64_t offset,int whence) {
   DtsEngine *e=opaque;
   if (cancelled(e)) return AVERROR_EXIT;
@@ -923,6 +968,10 @@ static int packet_read_error(DtsEngine *e,int code) {
   return fail(e,"Container read",code);
 }
 static void close_media(DtsEngine *e) {
+#ifdef NV_HTTP_BUFFER_DIAG
+  uint64_t httpCloseBeg=clock_ns(CLOCK_MONOTONIC);
+  http_session_diag(e,"media-close-start",0);
+#endif
   fx_close(e);
   pthread_mutex_lock(&e->range_lock);
   e->range_stop=1;
@@ -954,10 +1003,19 @@ static void close_media(DtsEngine *e) {
   free(e->cache); e->cache=NULL; free(e->url); e->url=NULL;
   free(e->headers); e->headers=NULL;
   free(e->source_public_headers); e->source_public_headers=NULL;
+#ifdef NV_HTTP_BUFFER_DIAG
+  http_session_diag(e,"media-close-done",clock_ns(CLOCK_MONOTONIC)-httpCloseBeg);
+#endif
 }
 DtsEngine *dts_engine_create(void) {
   DtsEngine *e=calloc(1,sizeof(*e));
-  if(e) { e->total=-1; e->range_bytes=RANGE_BYTES; e->range_slots=RANGE_SLOTS; pthread_mutex_init(&e->range_lock,NULL); pthread_cond_init(&e->range_wake,NULL); }
+  if(e) { e->http_workers=__atomic_load_n(&g_conversion_workers,__ATOMIC_RELAXED);
+    if(e->http_workers>RANGE_WORKERS)e->http_workers=RANGE_WORKERS;
+    e->total=-1; e->range_bytes=RANGE_BYTES; e->range_slots=RANGE_SLOTS; pthread_mutex_init(&e->range_lock,NULL); pthread_cond_init(&e->range_wake,NULL); }
+#ifdef NV_HTTP_BUFFER_DIAG
+  if(e) { e->diag_id=__atomic_add_fetch(&http_diag_next,1,__ATOMIC_RELAXED);
+    http_session_diag(e,"create",0); }
+#endif
   return e;
 }
 void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *b) {
@@ -966,23 +1024,26 @@ void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *b) {
   if(!e)return;
   pthread_mutex_lock(&e->range_lock);
   if(e->source_stream) {
+    b->http_workers=e->http_workers;
     b->position=e->pos;b->total=e->total;b->capacity_bytes=e->fx_buf?e->fx_cap:0;
     if(e->fx_req<0 && e->pos>=e->fx_lo && e->pos<=e->fx_hi)b->ready_bytes=e->fx_hi-e->pos;
     b->contiguous_bytes=b->ready_bytes;
   } else if(!e->remux && e->range_threads && !cancelled(e)) {
+    b->http_workers=e->http_workers;
     // Called only by the conversion worker: it owns pos/cache. Completed
     // speculative ranges belong to the network workers and need range_lock.
-    b->position=e->pos; b->total=e->total;
+    b->position=e->source_range?e->source_position:e->pos; b->total=e->total;
     b->capacity_bytes=(int64_t)(e->range_slots+1)*e->range_bytes;
-    if(e->cache && e->pos>=e->cache_start && e->pos-e->cache_start<e->cache_size)
+    if(e->source_range)b->ready_bytes=e->source_available;
+    else if(e->cache && e->pos>=e->cache_start && e->pos-e->cache_start<e->cache_size)
       b->ready_bytes=e->cache_size-(e->pos-e->cache_start);
     b->contiguous_bytes=b->ready_bytes;
     for(int i=0;i<e->range_slots;i++) {
       DtsRangeJob *j=&e->ranges[i];
-      if(j->state==3 && j->data && j->count>0 && j->start>=e->pos)
+      if(j->state==3 && j->data && j->count>0 && j->start>=b->position)
         b->ready_bytes+=j->count;
     }
-    int64_t next=e->pos+b->contiguous_bytes;
+    int64_t next=b->position+b->contiguous_bytes;
     for(int k=0;k<e->range_slots;k++) {
       DtsRangeJob *found=NULL;
       for(int i=0;i<e->range_slots;i++) {
@@ -1002,7 +1063,16 @@ DtsEngine *dts_engine_source_create(const char *url,const char *headers,int mib)
   if (!e) return NULL;
   e->url=strdup(url); e->headers=strdup(headers?headers:"");
   e->source_public_headers=rede_range_headers(headers,1);
-  e->source_stream=1;
+  e->http_workers=__atomic_load_n(&g_source_workers,__ATOMIC_RELAXED);
+  if(e->http_workers>RANGE_WORKERS)e->http_workers=RANGE_WORKERS;
+  e->source_stream=e->http_workers==1;e->source_range=!e->source_stream;
+  http_session_diag(e,"native-configure",0);
+  if(e->source_range) {
+    e->range_bytes=RANGE_BYTES_DV;
+    e->range_slots=(int)((int64_t)buffer_mib(mib)*1024*1024/e->range_bytes)-1;
+    if(e->range_slots>=RANGE_SLOTS_MAX)e->range_slots=RANGE_SLOTS_MAX-1;
+  }
+  printf("[http-buffer] path=native connections=%d mode=%s bufferMiB=%d\n",e->http_workers,e->source_stream?"sequential":"ranges",buffer_mib(mib));fflush(stdout);
   e->fx_cap=(int64_t)buffer_mib(mib)*1024*1024; e->fx_req=-1;
   if(!e->url || !e->headers || !e->source_public_headers) { dts_engine_destroy(e); return NULL; }
   return e;
@@ -1017,11 +1087,24 @@ int dts_engine_source_read(DtsEngine *e,int64_t offset,unsigned char *data,int n
     char *probe=rede_baixar_trecho64_final(e->url,e->headers,0,255,
       &got,&total,&status,&e->cancelled,fin,&cross);
     if(!probe || total<=0) { free(probe); return -1; }
+    int probe_n=e->source_range && offset==0 && got>0 ? (n<got?n:(int)got):0;
+    if(probe_n)memcpy(data,probe,(size_t)probe_n);
     free(probe);
     pthread_mutex_lock(&e->range_lock);
     e->total=total;
     if(fin[0]) { snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross; }
     pthread_mutex_unlock(&e->range_lock);
+    if(probe_n)return probe_n;
+  }
+  if(e->source_range) {
+    if(seek_range(e,offset,SEEK_SET)<0)return -1;
+    pthread_mutex_lock(&e->range_lock);e->source_position=offset;e->source_available=0;pthread_mutex_unlock(&e->range_lock);
+    int got=read_range_pending(e,data,n,pending_fd);
+    pthread_mutex_lock(&e->range_lock);
+    e->source_position=e->pos;
+    e->source_available=e->cache && e->pos>=e->cache_start && e->pos-e->cache_start<e->cache_size?e->cache_size-(e->pos-e->cache_start):0;
+    pthread_mutex_unlock(&e->range_lock);
+    return got;
   }
   if(seek_fluxo(e,offset,SEEK_SET)<0) return -1;
   return read_fluxo_pending(e,data,n,pending_fd);
@@ -1068,6 +1151,7 @@ const void *dts_engine_subtitle_parameters(DtsEngine *e,int i) {
 const char *dts_engine_error(DtsEngine *e) { return e?e->error:"No DTS engine"; }
 void dts_engine_cancel(DtsEngine *e) {
   if(!e) return;
+  http_session_diag(e,"cancel",0);
   __atomic_store_n(&e->cancelled,1,__ATOMIC_RELAXED);
   pthread_mutex_lock(&e->range_lock);
   __atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
@@ -1163,7 +1247,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
   __atomic_store_n(&e->range_live,0,__ATOMIC_RELAXED);
   close_media(e); memset(&e->info,0,sizeof(e->info)); e->error[0]=0;
   memset(&e->metrics,0,sizeof(e->metrics));
-#ifdef NV_DTS_DEBUG
+#if defined(NV_DTS_DEBUG) || defined(NV_HTTP_BUFFER_DIAG)
   memset(&e->logged_metrics,0,sizeof(e->logged_metrics)); e->logged_at_ns=0;
 #endif
   e->pos=0; e->total=-1; e->cache_size=0; e->has_core=0;
@@ -1605,7 +1689,7 @@ int dts_engine_next(DtsEngine *e,DtsFrame *f) {
     f->data=e->dv7_buffer; f->size=(int)size;
     break;
   }
-#ifdef NV_DTS_DEBUG
+#if defined(NV_DTS_DEBUG) || defined(NV_HTTP_BUFFER_DIAG)
   if(e) {
     uint64_t now=clock_ns(CLOCK_MONOTONIC);
     if(!e->logged_at_ns) e->logged_at_ns=now;
@@ -1629,6 +1713,7 @@ int dts_engine_next(DtsEngine *e,DtsFrame *f) {
              (unsigned long long)((m->range_blocked_ns-last->range_blocked_ns)/1000000),
              (unsigned long long)(m->range_max_wait_ns/1000000),
              (unsigned long long)(m->range_short_reads-last->range_short_reads));
+      http_session_diag(e,"sample",0);
       e->logged_metrics=*m; e->logged_at_ns=now;
     }
   }

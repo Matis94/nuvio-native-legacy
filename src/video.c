@@ -2849,8 +2849,12 @@ static int tocarInterno(const char *url, int comDV) {
   const char *loadUrl=url;
   // Recheck available RAM immediately before creating the read-ahead ring.
   // Keep the official floor active; the proxy replaces custom native buffering.
+  dts_engine_set_source_workers(ajustes_buffer_native_connections());
+  int nativePreset=ajustes_buffer_preset();
+  // An explicitly selected parallel path needs a bounded app-managed buffer.
+  if(!nativePreset && ajustes_buffer_native_connections()>1)nativePreset=1;
   int ownBuffer = !modoLoad && moviebuffer_url(url,cabsHttp,
-      cacheboost_buffer_mb(ajustes_buffer_preset(),memlog_livre_mb()),
+      cacheboost_buffer_mb(nativePreset,memlog_livre_mb()),
       bufferedUrl,sizeof bufferedUrl);
   if(ownBuffer) {
     bufferLoad.session=minhaSessao;
@@ -2953,6 +2957,14 @@ void video_parar(void) {
 
 static void pararSessao(void) {
   char b[128];
+#ifdef NV_HTTP_BUFFER_DIAG
+  long httpStopBeg = agoraMs();
+  unsigned httpOldGeneration = __atomic_load_n(&sessao, __ATOMIC_ACQUIRE);
+  printf("[http-session] generation=%u event=stop-start converter=%d playing=%d pending=%d nativeSelected=%d conversionSelected=%d\n",
+    httpOldGeneration, dtsSessao != NULL, tocando, bindPendente,
+    ajustes_buffer_native_connections(), ajustes_buffer_conversion_connections());
+  fflush(stdout);
+#endif
   seekView=(NvSeekView){0};
   /* Invalidate native callbacks before closing the DTS worker. A closing
    * pipeline must not queue an error for the replacement source. */
@@ -2996,6 +3008,11 @@ static void pararSessao(void) {
   reconErroPend = reconErroRede = 0;
   ackMidia = 0; ack_publicar();
   erroTexto[0] = 0;
+#ifdef NV_HTTP_BUFFER_DIAG
+  printf("[http-session] generation=%u event=stop-done nextGeneration=%u elapsedMs=%ld converter=0\n",
+    httpOldGeneration, __atomic_load_n(&sessao, __ATOMIC_ACQUIRE), agoraMs()-httpStopBeg);
+  fflush(stdout);
+#endif
 }
 
 
@@ -3250,6 +3267,7 @@ static int iniciarDts(int stream) {
   }
   dtsMarcarAbertas(dtsAbertasSemFechar() + 1);
   dts_engine_set_ac3(ajustes_dts_ac3());
+  dts_engine_set_http_workers(ajustes_buffer_conversion_connections());
   dts_engine_set_ahead_mib(cacheboost_backend_buffer_mb());   // #338: Settings > Buffer size
   dts_playback_next_dv(dtsModoDv);
 #ifdef NV_DV7_MAPPING_TEST
@@ -3272,6 +3290,12 @@ static int iniciarDts(int stream) {
   dts_playback_next_seamless(1);
 #else
   dts_playback_next_seamless(0);
+#endif
+#ifdef NV_HTTP_BUFFER_DIAG
+  printf("[http-session] generation=%u event=conversion-start selected=%d dv=%d audio=%d target=%.3f paused=%d\n",
+    __atomic_load_n(&sessao, __ATOMIC_ACQUIRE), ajustes_buffer_conversion_connections(),
+    dtsModoDv, stream, alvo, paused);
+  fflush(stdout);
 #endif
   dtsSessao = dts_playback_start(urlAtual, cabsHttp, stream, alvo,
                                paused, expWin, 0, (a || trocada) ? &selected : NULL, ordinal, count);
@@ -3770,6 +3794,10 @@ void video_buffer_test_text(char *out, size_t n) {
     if (b.ready_bytes > b.capacity_bytes) b.ready_bytes = b.capacity_bytes;
     cacheboost_buffer_texto(out, n, b.ready_bytes, b.capacity_bytes, ajustes_buffer_preset());
   } else cacheboost_buffer_texto(out, n, 0, 0, ajustes_buffer_preset());
+  if(out && n && b.http_workers>=1 && b.http_workers<=4) {
+    size_t used=strlen(out);
+    snprintf(out+used,n-used," · HTTP: %d (%s)",b.http_workers,dtsSessao?"DTS/DV":"Native");
+  }
 }
 #endif
 // webOS: so o buffer em SEGUNDOS e real (bufferRange do uMS); bytes, conexoes

@@ -69,6 +69,8 @@ static void aac_adts(FILE *out,const DtsFrame *f) {
   assert(fwrite(h,1,7,out)==7);
 }
 int main(int argc,char **argv) {
+  const char *workers=getenv("NV_TEST_HTTP_WORKERS");
+  if(workers)dts_engine_set_http_workers(atoi(workers));
   assert(argc==3);
   DtsEngine *e=dts_engine_create(); assert(e && dts_engine_available());
   dts_engine_allow_p7(e,1);
