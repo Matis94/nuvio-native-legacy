@@ -63,7 +63,7 @@ static void desenharCartaoAddon(int i,int row,GfxRect r,float tx,float tr,
     else tamanhoW=0;
   }
   float bw=fmaxf(40,largura-(tamanhoW>0 ? tamanhoW+12 : 0));
-  if(selosPacoteDa((Stream *)s)>0)
+  if(selosVistaDa((Stream *)s,0)==SELOS_VISTA_PACOTE)
     desenharSelosPacote(s,tx,y,bw,FOLHA_SELO_H,anim*(sel?1:.85f),sel?1:.85f,0);
   else {
     uint64_t mask=logosDa(s,0) | (s->badges & (badges_bit("r-4k")|badges_bit("r-1080")|badges_bit("r-720")|badges_bit("r-sd")));

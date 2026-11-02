@@ -690,6 +690,7 @@ void stream_definir_lista(const Stream *l, int qtd) {
 
 static int selosPacoteDa(Stream *s);
 static void selosAgendar(int ini, int qtd);
+static void selosVistaLimpar(void);
 static void textoAddonLimpar(void);
 void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
   int i, k = 0;
@@ -712,6 +713,7 @@ void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
   pthread_mutex_lock(&verTrava);
   free(lista); lista = nova; n = nova ? k : 0; atual = -1;
   textoAddonLimpar();
+  selosVistaLimpar();
   fitN = 0; // raw identities have been replaced; preserve an open snapshot
   free(chave); free(exib); chave = NULL; exib = NULL;
   if (n > 0) {
@@ -3990,25 +3992,43 @@ static void selosCalcular(Stream *s) {
 // na chegada de cada addon, a pagina do titulo parava ~2 s por resposta (TCL,
 // 05/10/2026: "[quadro] upd=1667.5" com 20 fontes, 2052 com 46). O fio leva uma
 // COPIA do trecho da lista e devolve so os tres campos, sob verTrava e so se a
-// lista ainda e a mesma (listaGeracao; acrescentar nao muda indice). Ate
-// chegar, selosPacoteDa devolve 0 e a fileira usa a deteccao embutida.
+// lista ainda e a mesma (listaGeracao; acrescentar nao muda indice). Until
+// ready, the presentation cache retains the immediate legacy badge style.
 typedef struct { unsigned ger; int ini, k; Stream v[]; } SelosLote;
 static unsigned selosPedVer, selosPedGer;
 static void *selosFio(void *u) {
   SelosLote *L = u;
   int i;
-  for (i = 0; i < L->k; i++) selosCalcular(&L->v[i]);
-  pthread_mutex_lock(&verTrava);
-  if (L->ger == listaGeracao)
-    for (i = 0; i < L->k && L->ini + i < n; i++) {
+  for (i = 0; i < L->k; i++) {
+    selosCalcular(&L->v[i]);
+    // Publish each completed row: visible cards must not wait for a whole
+    // large addon response. An older pack worker cannot overwrite new results.
+    pthread_mutex_lock(&verTrava);
+    if (L->ger == listaGeracao && L->ini + i < n &&
+        L->v[i].selosPacoteVer == selospacote_versao()) {
       Stream *d = &lista[L->ini + i];
       memcpy(d->selosPacote, L->v[i].selosPacote, sizeof d->selosPacote);
       d->nSelosPacote = L->v[i].nSelosPacote;
       d->selosPacoteVer = L->v[i].selosPacoteVer;
     }
-  pthread_mutex_unlock(&verTrava);
+    int atual = L->ger == listaGeracao;
+    pthread_mutex_unlock(&verTrava);
+    if (!atual) break;
+  }
   free(L);
   return NULL;
+}
+// If no background job can start, retain usable legacy badges instead of
+// leaving every card pending forever. This is a completed empty pack result.
+static void selosSemTrabalho(int ini, int qtd, unsigned ger, unsigned ver) {
+  pthread_mutex_lock(&verTrava);
+  if (ger == listaGeracao && ver == selospacote_versao())
+    for (int i = ini; i < ini + qtd && i < n; i++)
+      if (lista[i].selosPacoteVer != ver) {
+        lista[i].nSelosPacote = 0;
+        lista[i].selosPacoteVer = ver;
+      }
+  pthread_mutex_unlock(&verTrava);
 }
 static void selosAgendar(int ini, int qtd) {
   SelosLote *L;
@@ -4020,44 +4040,59 @@ static void selosAgendar(int ini, int qtd) {
   if (selospacote_ativo() < 0 && !selospacote_embutidos_ok()) return;
   selosPedVer = selospacote_versao();
   L = malloc(sizeof *L + sizeof(Stream) * (size_t)qtd);
-  if (!L) return;
+  if (!L) { selosSemTrabalho(ini, qtd, listaGeracao, selosPedVer); return; }
   L->ger = listaGeracao; L->ini = ini; L->k = qtd;
   memcpy(L->v, lista + ini, sizeof(Stream) * (size_t)qtd);
   pthread_attr_init(&at);
   pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
-  if (pthread_create(&fio, &at, selosFio, L)) free(L);
+  if (pthread_create(&fio, &at, selosFio, L)) {
+    selosSemTrabalho(ini, qtd, L->ger, selosPedVer);
+    free(L);
+  }
   pthread_attr_destroy(&at);
 }
-static int selosPacoteDa(Stream *s) {
+// ready distinguishes pending calculation from a completed empty match. Only
+// the latter may use legacy badges without a later visual replacement.
+static int selosPacoteEstado(Stream *s, int *ready) {
   unsigned ver;
   int nSelos = 0, daLista;
   // O modo colorido vale para a lista inteira: ligar/desligar nos Ajustes
   // sobe a versao do pacote e a lista e recalculada (no fio) na proxima olhada.
   selospacote_colorido(ajustes_selos_coloridos());
+  if (ready) *ready = 1;
   if (selospacote_ativo() < 0 && !selospacote_embutidos_ok()) return 0;
+  if (ready) *ready = 0;
   ver = selospacote_versao();
   // verTrava: episode changed frees lista on the UI thread while this sheet
   // still draws. The pointer check and the walk have to see the same block.
   pthread_mutex_lock(&verTrava);
   daLista = s >= lista && s < lista + n;
-  if (daLista && s->selosPacoteVer == ver) nSelos = s->nSelosPacote;
+  if (daLista && s->selosPacoteVer == ver) {
+    nSelos = s->nSelosPacote;
+    if (ready) *ready = 1;
+  }
   else if (daLista && (selosPedVer != ver || selosPedGer != listaGeracao)) {
     pthread_mutex_unlock(&verTrava);
     selosAgendar(0, n);
     return 0;
   } else if (!daLista) {
-    int j;
+    int j, found = 0;
     for (j = 0; j < n; j++)
-      if (lista[j].selosPacoteVer == ver && !strcmp(lista[j].url, s->url) && !strcmp(lista[j].rotulo, s->rotulo)) {
+      if (!strcmp(lista[j].url, s->url) && !strcmp(lista[j].rotulo, s->rotulo)) {
+        found = 1;
+        if (lista[j].selosPacoteVer != ver) continue;
         memcpy(s->selosPacote, lista[j].selosPacote, sizeof s->selosPacote);
         s->nSelosPacote = lista[j].nSelosPacote; s->selosPacoteVer = ver;
         nSelos = s->nSelosPacote;
+        if (ready) *ready = 1;
         break;
       }
+    if (!found && ready) *ready = 1;
   }
   pthread_mutex_unlock(&verTrava);
   return nSelos;
 }
+static int selosPacoteDa(Stream *s) { return selosPacoteEstado(s, NULL); }
 
 // Quantos selos do pacote a FILEIRA desenha: com os pacotes embutidos a
 // resolucao e o grupo da folha e nao entra nela (como em logosDa), e uma fonte
@@ -4545,6 +4580,7 @@ static void desenharAudioBars(float x, float y, float alt, float alfa, Uint32 ag
 }
 
 void stream_folha_abrir(void) {
+  selosVistaLimpar();
   logAudioValido=0;
   // A busca nova pode estar na fila enquanto a lista ainda e do episodio
   // anterior. A folha fica vazia ate chegarem fontes do alvo pedido (#513).
@@ -5036,6 +5072,7 @@ void stream_folha_evento(const SDL_Event *e) {
   }
 }
 void stream_folha_atualizar(float dt, Uint32 agora) {
+  if (!aberta && anim <= .001f) selosVistaLimpar();
   int nf;
   medirCabecalho();
   if (aberta || anim > 0.001f) folhaGeometria();
@@ -5313,6 +5350,56 @@ static float selosDesenhar(const unsigned short *ids, int n, float x, float y, f
       x += w + gap; }
   }
   return x > x0 ? x - x0 - gap : 0.0f;
+}
+// Warm only the bounded badge set of a visible card. Show the final row when
+// its images are ready, so late texture widths cannot shuffle existing icons.
+// A failed image is terminal and keeps the existing text-label fallback.
+static int selosImagensProntas(const Stream *s, int semResolucao) {
+  int ready = 1;
+  for (int k = 0; k < (int)s->nSelosPacote; k++) {
+    const SeloFiltro *f = selospacote_filtro(s->selosPacote[k]);
+    if (!f || (semResolucao && f->resolucao && f->arte != SELO_ARTE_PACOTE)) continue;
+    if (f->imagem[0] && !tex_obter_larg(f->imagem, 128) && !tex_falhou(f->imagem)) ready = 0;
+  }
+  return ready;
+}
+// One byte per source, only while the sheet is open. A card chooses its badge
+// style on first draw and keeps it until the page/list/pack changes: immediate
+// legacy badges never turn into a different pack while the user is reading.
+enum { SELOS_VISTA_LEGADO = 1, SELOS_VISTA_PACOTE = 2, SELOS_VISTA_AQUECIDO = 4 };
+static unsigned char *selosVista;
+static int selosVistaCap, selosVistaSemMemoria;
+static unsigned selosVistaVer;
+static void selosVistaLimpar(void) {
+  free(selosVista); selosVista = NULL; selosVistaCap = 0;
+  selosVistaVer = 0; selosVistaSemMemoria = 0;
+}
+static int selosVistaDa(Stream *s, int semResolucao) {
+  selospacote_colorido(ajustes_selos_coloridos());
+  unsigned ver = selospacote_versao();
+  if (ver != selosVistaVer) { selosVistaLimpar(); selosVistaVer = ver; }
+  // Drawing callers use the live source list; other consumers retain the
+  // original selosPacoteDa API and do not allocate this presentation cache.
+  if (s < lista || s >= lista + n) return SELOS_VISTA_LEGADO;
+  int index = (int)(s - lista);
+  if (index >= selosVistaCap && !selosVistaSemMemoria) {
+    int cap = n > selosVistaCap * 2 ? n : selosVistaCap * 2;
+    unsigned char *next = realloc(selosVista, (size_t)cap);
+    if (!next) selosVistaSemMemoria = 1;
+    else {
+      memset(next + selosVistaCap, 0, (size_t)(cap - selosVistaCap));
+      selosVista = next; selosVistaCap = cap;
+    }
+  }
+  if (index >= selosVistaCap) return SELOS_VISTA_LEGADO;
+  unsigned char *view = &selosVista[index];
+  if (*view & SELOS_VISTA_AQUECIDO) return *view & 3;
+  int ready = 0, count = selosPacoteEstado(s, &ready);
+  int images = count > 0 && selosImagensProntas(s, semResolucao);
+  if (!*view) *view = images ? SELOS_VISTA_PACOTE : SELOS_VISTA_LEGADO;
+  // Warm final icons for the next opening without replacing this card's style.
+  if (ready && (!count || images)) *view |= SELOS_VISTA_AQUECIDO;
+  return *view & 3;
 }
 static float desenharSelosPacote(const Stream *s, float x, float y, float maxW, float h, float a,
                                  float tom, int semResolucao) {
@@ -6170,7 +6257,8 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       // SELOS COLORIDOS (Ajustes, #198): o dono manteve a opcao (03/10). Ligada,
       // cada selo na peca da cor do seu grupo; desligada (o padrao do Glass
       // UI), todos na mesma tinta branca.
-      if(selosPacoteVisiveis((Stream *)s)) {
+      int selosView = selosVistaDa((Stream *)s, 1);
+      if(selosView == SELOS_VISTA_PACOTE && selosPacoteVisiveis((Stream *)s)) {
         lw=desenharSelosPacote(s,tx0,cy,txtW0-mpW,FOLHA_SELO_H,
                                ajustes_selos_coloridos()?anim*(sel?1.0f:.85f):anim,t,1);
         // O Crave (servico canadense) nao esta em nenhum dos dois pacotes
