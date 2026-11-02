@@ -28,6 +28,8 @@ jobs:
       - name: Verify application source
         run: |
           git diff --check
+      - name: Source refresh identity regressions
+        run: SANITIZE=1 python3 tests/source_refresh_identity.py
       - name: Unpack offline formatter emoji
         run: python3 tools/formatter_emoji_assets.py
       - name: Install host test dependencies
