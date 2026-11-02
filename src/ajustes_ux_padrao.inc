@@ -364,3 +364,4 @@
 0, // Update notifications: on by default, device-local
   0, /* native player: one sequential connection */
   3, /* DTS/TrueHD/DV7: four HTTP range workers */
+  1, /* Remember last profile: Off (V_LIGA), device-wide opt-in */

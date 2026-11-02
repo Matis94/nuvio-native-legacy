@@ -20,6 +20,21 @@ int main(void) {
   assert(SDL_Init(SDL_INIT_TIMER)==0);setenv("NUVIO_DADOS",dir,1);
   dados_iniciar(dir);snprintf(dirAjustes,sizeof dirAjustes,"%s",dir);ajustes_iniciar();
   assert(gravar());assert(!ajustes_buffer_dados());
+  assert(!ajustes_lembrar_perfil() && valorPadrao[AJ_REMEMBER_PROFILE]==1);
+  assert(AJ_REMEMBER_PROFILE==AJ_BUFFER_CONVERSION_CONNECTIONS+1);
+  assert(AJ_N==AJ_REMEMBER_PROFILE+1);
+  assert(!strcmp(CHAVE[AJ_REMEMBER_PROFILE],"rememberLastProfileLocal"));
+  assert(ajustes_escopo(AJ_REMEMBER_PROFILE)==ESC_TV && !dePerfil(AJ_REMEMBER_PROFILE));
+  assert(!ajustePortavel(AJ_REMEMBER_PROFILE) && !ajusteAparelho(AJ_REMEMBER_PROFILE));
+  int seen=0;
+  for(unsigned i=0;i<sizeof TELA/sizeof *TELA;i++)
+    if(TELA[i].tipo==IT_OPC && TELA[i].op==AJ_REMEMBER_PROFILE) seen++;
+  assert(seen==1 && ajCenaSecao(AJ_REMEMBER_PROFILE)==AJC_CON_PERFIS);
+  assert(definirValorDireto(AJ_REMEMBER_PROFILE,0));
+  valor[AJ_REMEMBER_PROFILE]=1;ajustes_dir(dir);assert(ajustes_lembrar_perfil());
+  assert(definirValorDireto(AJ_REMEMBER_PROFILE,1));
+  valor[AJ_REMEMBER_PROFILE]=0;ajustes_dir(dir);assert(!ajustes_lembrar_perfil());
+
   assert(ajustes_buffer_native_connections()==1 && ajustes_buffer_conversion_connections()==4);
   assert(!uxDiferente(AJ_BUFFER));
   assert(ajustes_escopo(AJ_BUFFER_NATIVE_CONNECTIONS)==ESC_TV && ajustes_escopo(AJ_BUFFER_CONVERSION_CONNECTIONS)==ESC_TV);

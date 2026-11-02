@@ -211,6 +211,7 @@ int ajustes_fonte_grupo_sessoes(void);
 int ajustes_link_reusar(void);
 int ajustes_log_rede(void);   // pagina de registro na rede local (logrede.h)
 int ajustes_diagnostics_qr(void); // on-demand QR log export; off by default
+int ajustes_lembrar_perfil(void); // remember last unlocked profile on this TV; default OFF
 int ajustes_update_notifications(void); // automatic update card/notices; on by default
 /* Independent device-local HTTP download limits for the next source. */
 int ajustes_buffer_native_connections(void);

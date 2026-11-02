@@ -28,6 +28,10 @@ jobs:
       - name: Verify application source
         run: |
           git diff --check
+      - name: Last profile startup regressions
+        run: |
+          SANITIZE=1 bash tests/perfilsel.sh
+          python3 tests/ajustes_secoes.py src/ajustes.c
       - name: Remembered audio regressions
         run: |
           bash tests/audioescolha.sh
