@@ -28,6 +28,11 @@ jobs:
       - name: Verify application source
         run: |
           git diff --check
+      - name: Remembered audio regressions
+        run: |
+          bash tests/audioescolha.sh
+          bash tests/audiomemoria.sh
+          SANITIZE=1 python3 tests/audio_source_group.py
       - name: Source refresh identity regressions
         run: SANITIZE=1 python3 tests/source_refresh_identity.py
       - name: Unpack offline formatter emoji
