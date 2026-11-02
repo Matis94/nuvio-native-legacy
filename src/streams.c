@@ -691,6 +691,7 @@ void stream_definir_lista(const Stream *l, int qtd) {
 static int selosPacoteDa(Stream *s);
 static void selosAgendar(int ini, int qtd);
 static void selosVistaLimpar(void);
+static void selosAquecerPasso(void);
 static void textoAddonLimpar(void);
 void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
   int i, k = 0;
@@ -3992,8 +3993,8 @@ static void selosCalcular(Stream *s) {
 // na chegada de cada addon, a pagina do titulo parava ~2 s por resposta (TCL,
 // 05/10/2026: "[quadro] upd=1667.5" com 20 fontes, 2052 com 46). O fio leva uma
 // COPIA do trecho da lista e devolve so os tres campos, sob verTrava e so se a
-// lista ainda e a mesma (listaGeracao; acrescentar nao muda indice). Until
-// ready, the presentation cache retains the immediate legacy badge style.
+// lista ainda e a mesma (listaGeracao; acrescentar nao muda indice). Pending
+// rows reserve their space and only display the selected pack when ready.
 typedef struct { unsigned ger; int ini, k; Stream v[]; } SelosLote;
 static unsigned selosPedVer, selosPedGer;
 static void *selosFio(void *u) {
@@ -4018,8 +4019,8 @@ static void *selosFio(void *u) {
   free(L);
   return NULL;
 }
-// If no background job can start, retain usable legacy badges instead of
-// leaving every card pending forever. This is a completed empty pack result.
+// If no background job can start, complete an empty result rather than leave
+// every card pending forever. Never substitute a different per-card style.
 static void selosSemTrabalho(int ini, int qtd, unsigned ger, unsigned ver) {
   pthread_mutex_lock(&verTrava);
   if (ger == listaGeracao && ver == selospacote_versao())
@@ -4051,8 +4052,8 @@ static void selosAgendar(int ini, int qtd) {
   }
   pthread_attr_destroy(&at);
 }
-// ready distinguishes pending calculation from a completed empty match. Only
-// the latter may use legacy badges without a later visual replacement.
+// ready distinguishes a pending calculation from a completed empty match.
+// Neither state substitutes unrelated badge artwork for the selected pack.
 static int selosPacoteEstado(Stream *s, int *ready) {
   unsigned ver;
   int nSelos = 0, daLista;
@@ -5073,6 +5074,7 @@ void stream_folha_evento(const SDL_Event *e) {
 }
 void stream_folha_atualizar(float dt, Uint32 agora) {
   if (!aberta && anim <= .001f) selosVistaLimpar();
+  selosAquecerPasso();
   int nf;
   medirCabecalho();
   if (aberta || anim > 0.001f) folhaGeometria();
@@ -5363,10 +5365,10 @@ static int selosImagensProntas(const Stream *s, int semResolucao) {
   }
   return ready;
 }
-// One byte per source, only while the sheet is open. A card chooses its badge
-// style on first draw and keeps it until the page/list/pack changes: immediate
-// legacy badges never turn into a different pack while the user is reading.
-enum { SELOS_VISTA_LEGADO = 1, SELOS_VISTA_PACOTE = 2, SELOS_VISTA_AQUECIDO = 4 };
+// Cache completed readiness only. A pending pack must never become a legacy
+// style decision: that permanently mixed two visual styles on the same page.
+enum { SELOS_VISTA_PENDENTE = 0, SELOS_VISTA_LEGADO = 1,
+       SELOS_VISTA_PACOTE = 2, SELOS_VISTA_VAZIO = 3, SELOS_VISTA_AQUECIDO = 4 };
 static unsigned char *selosVista;
 static int selosVistaCap, selosVistaSemMemoria;
 static unsigned selosVistaVer;
@@ -5378,9 +5380,12 @@ static int selosVistaDa(Stream *s, int semResolucao) {
   selospacote_colorido(ajustes_selos_coloridos());
   unsigned ver = selospacote_versao();
   if (ver != selosVistaVer) { selosVistaLimpar(); selosVistaVer = ver; }
+  // Legacy artwork is allowed only when no selected/bundled pack is available,
+  // consistently for the page, never because one particular card is slower.
+  if (selospacote_ativo() < 0 && !selospacote_embutidos_ok()) return SELOS_VISTA_LEGADO;
   // Drawing callers use the live source list; other consumers retain the
   // original selosPacoteDa API and do not allocate this presentation cache.
-  if (s < lista || s >= lista + n) return SELOS_VISTA_LEGADO;
+  if (s < lista || s >= lista + n) return SELOS_VISTA_PENDENTE;
   int index = (int)(s - lista);
   if (index >= selosVistaCap && !selosVistaSemMemoria) {
     int cap = n > selosVistaCap * 2 ? n : selosVistaCap * 2;
@@ -5391,15 +5396,31 @@ static int selosVistaDa(Stream *s, int semResolucao) {
       selosVista = next; selosVistaCap = cap;
     }
   }
-  if (index >= selosVistaCap) return SELOS_VISTA_LEGADO;
-  unsigned char *view = &selosVista[index];
+  unsigned char uncached = 0;
+  unsigned char *view = index < selosVistaCap ? &selosVista[index] : &uncached;
   if (*view & SELOS_VISTA_AQUECIDO) return *view & 3;
   int ready = 0, count = selosPacoteEstado(s, &ready);
-  int images = count > 0 && selosImagensProntas(s, semResolucao);
-  if (!*view) *view = images ? SELOS_VISTA_PACOTE : SELOS_VISTA_LEGADO;
-  // Warm final icons for the next opening without replacing this card's style.
-  if (ready && (!count || images)) *view |= SELOS_VISTA_AQUECIDO;
+  if (!ready) return SELOS_VISTA_PENDENTE;
+  if (count > 0 && !selosImagensProntas(s, semResolucao)) return SELOS_VISTA_PENDENTE;
+  *view = (count > 0 ? SELOS_VISTA_PACOTE : SELOS_VISTA_VAZIO) | SELOS_VISTA_AQUECIDO;
   return *view & 3;
+}
+// Prepare a small prefix while the source sheet is still closed. Regex results
+// are read, never calculated here. Texture requests remain asynchronous and
+// inside the existing cache budget; no scan of all 1000+ sources on each frame.
+static void selosAquecerPasso(void) {
+  static unsigned ger, ver;
+  static int next;
+  if (aberta || anim > .001f || n <= 0) return;
+  selospacote_colorido(ajustes_selos_coloridos());
+  unsigned current = selospacote_versao();
+  if (ger != listaGeracao || ver != current) { ger = listaGeracao; ver = current; next = 0; }
+  int limit = n < 8 ? n : 8;
+  for (int budget = 0; budget < 2 && next < limit; budget++) {
+    int ready = 0, count = selosPacoteEstado(&lista[next], &ready);
+    if (!ready || (count > 0 && !selosImagensProntas(&lista[next], 0))) return;
+    next++;
+  }
 }
 static float desenharSelosPacote(const Stream *s, float x, float y, float maxW, float h, float a,
                                  float tom, int semResolucao) {
@@ -6266,10 +6287,10 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
         if(selospacote_ativo()<0 && (logos&badges_bit("p-crave"))) {
           float cw=badges_desenhar_tom(badges_bit("p-crave"),tx0+(lw>0?lw+16:0),cy,txtW0-mpW-lw-16,FOLHA_SELO_H,t,t,t,anim);
           if(cw>0) lw+=(lw>0?16:0)+cw; }
-      } else if(logos) lw=ajustes_selos_coloridos()
+      } else if(selosView == SELOS_VISTA_LEGADO && logos) lw=ajustes_selos_coloridos()
         ? badges_desenhar_selos(logos,tx0,cy,txtW0-mpW,FOLHA_SELO_H,anim*(sel?1.0f:.85f))
         : badges_desenhar_tom(logos,tx0,cy,txtW0-mpW,FOLHA_SELO_H,t,t,t,anim);
-      else if(!ehMp4){ char d[sizeof s->descricao];
+      else if(selosView == SELOS_VISTA_LEGADO && !ehMp4){ char d[sizeof s->descricao];
         snprintf(d,sizeof d,"%s",s->descricao);
         for(char *p=d;*p;p++)if((unsigned char)*p<32)*p=' ';
         int c=sel?180:130;

@@ -35,7 +35,8 @@ typedef struct {
  unsigned long long badges; int dolbyVision;
 } Stream;
 static Stream rows[1001], *lista=rows;
-static int n=2, pack=0, available=1, schedules;
+static int n=2, pack=0, available=1, schedules, aberta=1;
+static float anim=1;
 static unsigned version=7, listaGeracao=1, selosPedVer, selosPedGer;
 static pthread_mutex_t verTrava=PTHREAD_MUTEX_INITIALIZER;
 int selospacote_ativo(void){return pack;}
@@ -86,14 +87,23 @@ static SelosLote *job(int count){SelosLote *l=calloc(1,sizeof *l+count*sizeof(St
 int main(void){
  int ready=9;strcpy(rows[0].url,"a");strcpy(rows[0].rotulo,"one");rows[0].badges=1;
  assert(selosPacoteEstado(rows,&ready)==0&&!ready&&schedules==1);
- drawRow(rows);assert(!drawnPack&&drawnLegacy==1&&schedules==1);
+ drawRow(rows);assert(!drawnPack&&!drawnLegacy&&schedules==1);
  rows[0].selosPacoteVer=version;rows[0].nSelosPacote=1;rows[0].selosPacote[0]=1;
- drawRow(rows);assert(!drawnPack&&drawnLegacy==2&&requested[1]);
- loaded[1]=1;drawRow(rows);assert(!drawnPack&&drawnLegacy==3);
- selosVistaLimpar();drawRow(rows);assert(drawnPack==1&&drawnLegacy==3);
- selosVistaLimpar();rows[0].nSelosPacote=0;drawRow(rows);assert(drawnLegacy==4);
- selosVistaLimpar();pack=-1;available=0;rows[0].selosPacoteVer=0;drawRow(rows);assert(drawnLegacy==5);
+ drawRow(rows);assert(!drawnPack&&!drawnLegacy&&requested[1]);
+ loaded[1]=1;drawRow(rows);assert(drawnPack==1&&!drawnLegacy);
+ // Reproduce the screenshot: first row ready, second row delayed. The second
+ // must show the same pack as soon as ready, without closing/reopening.
+ drawRow(&rows[1]);assert(drawnPack==1&&!drawnLegacy);
+ rows[1].selosPacoteVer=version;rows[1].nSelosPacote=1;rows[1].selosPacote[0]=1;
+ drawRow(&rows[1]);assert(drawnPack==2&&!drawnLegacy);
+ assert(selosVistaDa(rows,0)==SELOS_VISTA_PACOTE&&selosVistaDa(&rows[1],0)==SELOS_VISTA_PACOTE);
+ selosVistaLimpar();rows[0].nSelosPacote=0;drawRow(rows);assert(drawnPack==2&&!drawnLegacy);
+ selosVistaLimpar();pack=-1;available=0;rows[0].selosPacoteVer=0;drawRow(rows);assert(drawnLegacy==1);
  pack=0;available=1;
+ selosVistaLimpar();rows[0].selosPacoteVer=version;rows[0].nSelosPacote=1;rows[0].selosPacote[0]=1;
+ assert(selosVistaDa(rows,0)==SELOS_VISTA_PACOTE);
+ version++;assert(selosVistaDa(rows,0)==SELOS_VISTA_PENDENTE);
+ rows[0].selosPacoteVer=version;assert(selosVistaDa(rows,0)==SELOS_VISTA_PACOTE);
  rows[0].selosPacoteVer=version;rows[0].nSelosPacote=2;rows[0].selosPacote[0]=1;rows[0].selosPacote[1]=2;
  assert(!selosImagensProntas(rows,0)&&requested[2]);
  failed[2]=1;assert(selosImagensProntas(rows,0));
@@ -108,6 +118,13 @@ int main(void){
  rows[0].selosPacoteVer=0;selosSemTrabalho(0,1,listaGeracao,version);assert(rows[0].selosPacoteVer==version&&rows[0].nSelosPacote==0);
  rows[0].nSelosPacote=2;selosSemTrabalho(0,1,listaGeracao-1,version);assert(rows[0].nSelosPacote==2);
  selosVistaLimpar();scenario=0;n=1000;
+ for(int i=0;i<n;i++){rows[i].selosPacoteVer=version;rows[i].nSelosPacote=1;rows[i].selosPacote[0]=1;}
+ // Prefetch is closed-sheet only, capped at 8 rows and 2 completed rows/frame.
+ int beforeWarm=requested[1];aberta=1;selosAquecerPasso();assert(requested[1]==beforeWarm);
+ aberta=0;anim=0;selosAquecerPasso();assert(requested[1]-beforeWarm==2);
+ for(int i=0;i<20;i++){selosAquecerPasso();}assert(requested[1]-beforeWarm==8);
+ beforeWarm=requested[1];for(int i=0;i<20;i++){selosAquecerPasso();}assert(requested[1]==beforeWarm);
+ selosVistaVer=version;selosVistaSemMemoria=1;assert(selosVistaDa(rows,0)==SELOS_VISTA_PACOTE&&!selosVistaCap);selosVistaSemMemoria=0;
  for(int i=0;i<n;i++){rows[i].selosPacoteVer=version;rows[i].nSelosPacote=1;rows[i].selosPacote[0]=1;assert(selosVistaDa(&rows[i],0)==SELOS_VISTA_PACOTE);}
  int requestsBefore=requested[1], schedulesBefore=schedules;
  struct timespec begin,end;clock_gettime(CLOCK_MONOTONIC,&begin);
@@ -117,17 +134,17 @@ int main(void){
  assert(result==SELOS_VISTA_PACOTE&&requested[1]==requestsBefore&&schedules==schedulesBefore);
  printf("badge view cache: 1000 cards, 2M hits, %.1f ns/hit, no repeated texture requests or matching\n",((end.tv_sec-begin.tv_sec)*1e9+end.tv_nsec-begin.tv_nsec)/2000000.0);
  assert(selosVistaCap<=2000);selosVistaLimpar();assert(!selosVista&&!selosVistaCap);
- puts("PASS: immediate stable badges, next-open final pack, 1000-row incremental publication, stale jobs, failures and bounded view cache");
+ puts("PASS: uniform pack for ready/delayed rows, cold textures, bounded prefetch, 1000-row publication, failures and view cache");
 }
 '''
 fixture = fixture.replace("@STATE@", function("static int selosPacoteEstado("))
 fixture = fixture.replace("@WORKER@", function("static void *selosFio("))
 fixture = fixture.replace("@NO_WORK@", function("static void selosSemTrabalho("))
 fixture = fixture.replace("@IMAGES@", function("static int selosImagensProntas("))
-view_start=source.index("enum { SELOS_VISTA_LEGADO")
+view_start=source.index("enum { SELOS_VISTA_PENDENTE")
 view_end=source.index("static float desenharSelosPacote(",view_start)
 fixture=fixture.replace("@VIEW@",source[view_start:view_end])
-start = draw.index("  if(selosVistaDa(")
+start = draw.index("  int badgeView=selosVistaDa(")
 end = draw.index("  y=titleY;", start)
 fixture = fixture.replace("@DRAW@", draw[start:end])
 with tempfile.TemporaryDirectory(prefix="nuvio-badge-ready-") as directory:
