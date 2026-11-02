@@ -357,3 +357,5 @@
   0, /* Show intro skip button: On */
   0, /* Show recap skip button: On */
   0, /* Show outro / credits skip button: On */
+  1, /* chapters in the player: Off (V_LIGA 1) */
+  0, /* Anime-Skip Client ID: action, value lives in animeskip.txt */
