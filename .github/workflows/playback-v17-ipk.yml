@@ -1,12 +1,12 @@
-name: Build webOS 2.0.8.5 (stable version)
+name: Build webOS 2.0.8.6 (stable version)
 on:
   push:
-    branches: [Nuvio_webOS_2.0.8.5]
+    branches: [Nuvio_webOS_2.0.8.6]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: webos-test-ipk
+  group: webos-2086-ipk
   cancel-in-progress: true
 jobs:
   build:
@@ -258,8 +258,8 @@ jobs:
           assert data["id"] == "space.nuvio.native.legacy"
           # webOS requires a three-component technical version. Keep 2.0.8
           # and expose the custom release revision in the install label.
-          data["title"] = "Nuvio Legacy 2.0.8.5 (stable version)"
-          data["appDescription"] = "Nuvio webOS 2.0.8.5 (stable version)"
+          data["title"] = "Nuvio Legacy 2.0.8.6 (stable version)"
+          data["appDescription"] = "Nuvio webOS 2.0.8.6 (stable version)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -272,7 +272,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8.5_arm-stable.ipk
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8.6_arm-stable.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -288,7 +288,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: nuvio-webos-2.0.8.5-stable-full-arm-ipk
+          name: nuvio-webos-2.0.8.6-stable-full-arm-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14

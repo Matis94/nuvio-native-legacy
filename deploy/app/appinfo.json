@@ -4,7 +4,7 @@
   "vendor": "iqui27",
   "type": "native",
   "main": "nuvio-proto",
-  "title": "Nuvio Legacy",
+  "title": "Nuvio Legacy 2.0.8.6 (stable version)",
   "icon": "icon-20.png",
   "largeIcon": "icon-large-20.png",
   "splashBackground": "splash.png",
@@ -15,5 +15,6 @@
   "requiredPermissions": [
     "all"
   ],
-  "nativeLifeCycleInterfaceVersion": 2
+  "nativeLifeCycleInterfaceVersion": 2,
+  "appDescription": "Nuvio webOS 2.0.8.6 (stable version)"
 }
