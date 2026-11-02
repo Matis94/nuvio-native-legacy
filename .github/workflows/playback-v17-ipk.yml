@@ -37,6 +37,8 @@ jobs:
           bash tests/audioescolha.sh
           bash tests/audiomemoria.sh
           SANITIZE=1 python3 tests/audio_source_group.py
+      - name: Source badge position regressions
+        run: SANITIZE=1 python3 tests/source_badge_position.py
       - name: Stable source badge regressions
         run: SANITIZE=1 python3 tests/source_badge_readiness.py
       - name: Source refresh identity regressions

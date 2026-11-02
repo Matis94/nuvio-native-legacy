@@ -36,6 +36,16 @@ static GfxRect addonFocoRect(GfxRect r,int row) {
   }
   return r;
 }
+// Reorder the same three blocks. Moving badges changes no card height and
+// needs no new text measurement or source-list rebuild while scrolling.
+static void addonPosicoes(const TextoAddon *t, const Stream *s, float base, int bottom,
+                           float *title, float *body, float *badges) {
+  float bodyHeight = t->nv * FOLHA_ADDON_LD;
+  if (!t->nl) bodyHeight += linhasFaixas(s) * FOLHA_FAIXA_H;
+  *title = base + (bottom ? 0 : FOLHA_ADDON_SELOS);
+  *body = *title + FOLHA_ADDON_TITULO;
+  *badges = bottom ? *body + bodyHeight + (FOLHA_ADDON_SELOS - FOLHA_SELO_H) * .5f : base;
+}
 static void desenharCartaoAddon(int i,int row,GfxRect r,float tx,float tr,
                                 int automatica,int sel,float anim,Uint32 agora) {
   const Stream *s=&lista[i];const TextoAddon *t=textoAddonDa(i);
@@ -53,6 +63,9 @@ static void desenharCartaoAddon(int i,int row,GfxRect r,float tx,float tr,
     if(i==atual)desenharAudioBars(tr-60,y+3,14,anim,agora);
     y+=FOLHA_ADDON_MARCA;
   }
+  float titleY, bodyY, badgesY;
+  addonPosicoes(t,s,y,ajustes_selos_embaixo(),&titleY,&bodyY,&badgesY);
+  y=badgesY;
   // Badges live in their own full-width row and do not compete with filename,
   // language flags or the addon identity for horizontal space.
   float tamanhoW=0;
@@ -72,9 +85,9 @@ static void desenharCartaoAddon(int i,int row,GfxRect r,float tx,float tr,
     if(!s->dolbyVision && badges_fonte_hdr_marca(s->badges)<0 && used+64<bw)
       marca_formato(FMT_SDR,tx+used+(used?12:0),y,FOLHA_SELO_H,.7f,.7f,.7f,anim);
   }
-  y+=FOLHA_ADDON_SELOS;
+  y=titleY;
   addonDesenharPecas(&t->cabecalho,t->nome,t->nn,bodyX,y,bodyW,36,TXT_CALLOUT,sel,anim);
-  y+=FOLHA_ADDON_TITULO;
+  y=bodyY;
   addonDesenharPecas(t->linhas,t->desenhos,t->nd,bodyX,y,bodyW,
                      t->nv*FOLHA_ADDON_LD,TXT_PG_FIM,sel,anim);
   if(!t->nl)desenharFaixas(s,bodyX,y,bodyW,sel,anim);

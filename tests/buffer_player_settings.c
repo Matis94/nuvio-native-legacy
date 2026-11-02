@@ -22,7 +22,8 @@ int main(void) {
   assert(gravar());assert(!ajustes_buffer_dados());
   assert(!ajustes_lembrar_perfil() && valorPadrao[AJ_REMEMBER_PROFILE]==1);
   assert(AJ_REMEMBER_PROFILE==AJ_BUFFER_CONVERSION_CONNECTIONS+1);
-  assert(AJ_N==AJ_REMEMBER_PROFILE+1);
+  assert(AJ_SOURCE_BADGE_POSITION==AJ_REMEMBER_PROFILE+1);
+  assert(AJ_N==AJ_SOURCE_BADGE_POSITION+1);
   assert(!strcmp(CHAVE[AJ_REMEMBER_PROFILE],"rememberLastProfileLocal"));
   assert(ajustes_escopo(AJ_REMEMBER_PROFILE)==ESC_TV && !dePerfil(AJ_REMEMBER_PROFILE));
   assert(!ajustePortavel(AJ_REMEMBER_PROFILE) && !ajusteAparelho(AJ_REMEMBER_PROFILE));
@@ -30,6 +31,22 @@ int main(void) {
   for(unsigned i=0;i<sizeof TELA/sizeof *TELA;i++)
     if(TELA[i].tipo==IT_OPC && TELA[i].op==AJ_REMEMBER_PROFILE) seen++;
   assert(seen==1 && ajCenaSecao(AJ_REMEMBER_PROFILE)==AJC_CON_PERFIS);
+  assert(!ajustes_selos_embaixo() && valorPadrao[AJ_SOURCE_BADGE_POSITION]==0);
+  assert(!strcmp(CHAVE[AJ_SOURCE_BADGE_POSITION],"sourceBadgePositionLocal"));
+  assert(ajustes_escopo(AJ_SOURCE_BADGE_POSITION)==ESC_PERFIL_LOCAL);
+  assert(!ajustePortavel(AJ_SOURCE_BADGE_POSITION) && !ajusteAparelho(AJ_SOURCE_BADGE_POSITION));
+  int badgeSeen=0;
+  for(unsigned i=0;i<sizeof TELA/sizeof *TELA;i++)
+    if(TELA[i].tipo==IT_OPC && TELA[i].op==AJ_SOURCE_BADGE_POSITION) badgeSeen++;
+  assert(badgeSeen==1);
+  int sourceView=valor[AJ_FONTE_TEXTO];
+  assert(definirValorDireto(AJ_FONTE_TEXTO,1));
+  assert(definirValorDireto(AJ_SOURCE_BADGE_POSITION,1));
+  valor[AJ_SOURCE_BADGE_POSITION]=0;ajustes_dir(dir);assert(ajustes_selos_embaixo());
+  assert(definirValorDireto(AJ_SOURCE_BADGE_POSITION,0));
+  valor[AJ_SOURCE_BADGE_POSITION]=1;ajustes_dir(dir);assert(!ajustes_selos_embaixo());
+  assert(definirValorDireto(AJ_FONTE_TEXTO,sourceView));
+
   assert(definirValorDireto(AJ_REMEMBER_PROFILE,0));
   valor[AJ_REMEMBER_PROFILE]=1;ajustes_dir(dir);assert(ajustes_lembrar_perfil());
   assert(definirValorDireto(AJ_REMEMBER_PROFILE,1));

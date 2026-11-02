@@ -128,7 +128,7 @@ view_start=source.index("enum { SELOS_VISTA_LEGADO")
 view_end=source.index("static float desenharSelosPacote(",view_start)
 fixture=fixture.replace("@VIEW@",source[view_start:view_end])
 start = draw.index("  if(selosVistaDa(")
-end = draw.index("  y+=FOLHA_ADDON_SELOS;", start)
+end = draw.index("  y=titleY;", start)
 fixture = fixture.replace("@DRAW@", draw[start:end])
 with tempfile.TemporaryDirectory(prefix="nuvio-badge-ready-") as directory:
     temp = Path(directory)
