@@ -122,7 +122,9 @@ static Stream *lista;
 static int n = 0;
 // Workers publish source mutations; UI caches consume this revision.
 static _Atomic unsigned folhaRevisao;
+static _Atomic unsigned audioFiltroRevisao;
 static void folhaDados(void);
+static void audioFiltroDescartar(void);
 static float linhaTopo(int row);
 static int cacheConfirmado(const Stream *s) {
   return s->emCache && !s->cacheNegado && (!s->foraCache || s->cacheNativo) && !s->urlP2P && !s->naoVideo;
@@ -741,6 +743,7 @@ void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
   // resposta chega. O carimbo vem de quem pediu, em app.c, e e ele que permite
   // a qualquer consumidor perguntar "esta lista e do episodio que eu quero?".
   snprintf(alvoLista, sizeof alvoLista, "%s", alvoPedido);
+  if (!n) audioFiltroDescartar();
 }
 
 void stream_invalidar(const char *porque) {
@@ -763,6 +766,28 @@ static _Atomic int foraCacheFoco = -1;
 static void atualizarProvedores(void);
 static int aberta, foco, grupo;
 static float rolagem, velRol;
+
+// Existing addon keys are sorted. A normal response contributes one sorted
+// run, so merge it backwards instead of shifting the old list for every row.
+// Equal keys keep the old rows first, exactly like the former stable insert.
+static void ordemAcrescentar(int antes, int qtd) {
+  if (qtd <= 65536) {
+    int old = antes - 1, next = qtd - 1, out = antes + qtd - 1;
+    while (next >= 0) {
+      int i = antes + next;
+      if (old >= 0 && chave[exib[old]] > chave[i]) exib[out--] = exib[old--];
+      else { exib[out--] = i; next--; }
+    }
+    return;
+  }
+  // The legacy 16-bit row key wraps for exceptionally large responses.
+  // Retain the original behavior rather than assuming that run is sorted.
+  for (int k = 0; k < qtd; k++) {
+    int i = antes + k, pos = i;
+    while (pos > 0 && chave[exib[pos - 1]] > chave[i]) { exib[pos] = exib[pos - 1]; pos--; }
+    exib[pos] = i;
+  }
+}
 
 void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
   int i, k = 0, focoIdx = -1, linhaAntes = -1, total;
@@ -803,13 +828,7 @@ void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
   memcpy(lista + n, nova, sizeof(Stream) * (size_t)k);
   for (i = 0; i < k; i++)
     chave[n + i] = ((unsigned)(ordemAddon < 0 ? 0 : ordemAddon) << 16) | (unsigned)(i & 0xFFFF);
-  // Insercao ordenada das novas em `exib`: as de antes ja estao em ordem, e
-  // uma nova entra depois de toda chave menor OU IGUAL (estavel).
-  for (i = 0; i < k; i++) {
-    int idx = n + i, pos = n + i;
-    while (pos > 0 && chave[exib[pos - 1]] > chave[idx]) { exib[pos] = exib[pos - 1]; pos--; }
-    exib[pos] = idx;
-  }
+  ordemAcrescentar(n, k);
   n = total;
   atomic_fetch_add(&folhaRevisao, 1);
   if (!temRecebidaEm) { recebidaEm = SDL_GetTicks(); temRecebidaEm = 1; }
@@ -2323,7 +2342,8 @@ int stream_vod_renovada_aplicar(int indice, unsigned geracao, const Stream *font
   if (!fonte || !fonte->url[0] || !nv_perfil_sessao_travar(sessao)) return 0;
   pthread_mutex_lock(&verTrava);
   int ok = geracao == listaGeracao && indice >= 0 && indice < n;
-  if (ok) { lista[indice] = *fonte; atomic_fetch_add(&folhaRevisao, 1); }
+  if (ok) { lista[indice] = *fonte; atomic_fetch_add(&folhaRevisao, 1);
+    atomic_fetch_add(&audioFiltroRevisao, 1); }
   pthread_mutex_unlock(&verTrava);
   nv_perfil_sessao_destravar();
   return ok;
@@ -3989,7 +4009,8 @@ static int audioDeclaradoEm(const Stream *s, const char *pref) {
     while (ate > p && isspace((unsigned char)ate[-1])) ate--;
     size_t len = (size_t)(ate - p);
     memcpy(raw, p, len); raw[len] = 0;
-    const char *cod = faixaIdiomaDoNome(raw);
+    const char *cod = len <= 3 && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo) ? codigo : NULL;
+    if (!cod) cod = faixaIdiomaDoNome(raw);
     if (!cod && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo)) cod = codigo;
     if (cod && ling_casa(cod, pref)) return 1;
     p = f ? f + 1 : fim;
@@ -4010,13 +4031,55 @@ static const char *idiomaDa(const Stream *s) {
   if (temNoTexto(s, "legendado") || temNoTexto(s, "leg")) return "Legendado";
   return NULL;
 }
-static int temAudioPreferido(const Stream *s) {
-  const char *pref = idiomaFiltroAudio();
+static int temAudioPreferidoSemCache(const Stream *s, const char *pref) {
   // An explicit "All" (or an unresolved "Original") is not a guessed
   // language. Otherwise require declared audio metadata, never subtitles,
   // filenames or generic "dub/dual" labels whose language is unknown.
   return !pref[0] || audioDeclaradoEm(s, pref);
 }
+// Raw indices survive addon appends. Audio comes from the parser; a renewed
+// source invalidates this cache through audioFiltroRevisao. One byte per source:
+// 0=unknown, 1=no match, 2=match. Never cache external/temporary Stream values.
+static struct {
+  unsigned char *match;
+  int cap, total;
+  unsigned generation, revision;
+  char language[96];
+} audioFiltroCache;
+static void audioFiltroDescartar(void) {
+  free(audioFiltroCache.match);
+  memset(&audioFiltroCache, 0, sizeof audioFiltroCache);
+}
+static int temAudioPreferido(const Stream *s) {
+  const char *pref = idiomaFiltroAudio();
+  if (!aberta || !lista || !n || strlen(pref) >= sizeof audioFiltroCache.language)
+    return temAudioPreferidoSemCache(s, pref);
+  // Integer range checks also support a temporary Stream from outside lista.
+  uintptr_t offset = (uintptr_t)s - (uintptr_t)lista;
+  if ((uintptr_t)s < (uintptr_t)lista || offset / sizeof *s >= (size_t)n || offset % sizeof *s)
+    return temAudioPreferidoSemCache(s, pref);
+  if (audioFiltroCache.cap < n) {
+    unsigned char *next = realloc(audioFiltroCache.match, (size_t)n);
+    if (!next) return temAudioPreferidoSemCache(s, pref);
+    audioFiltroCache.match = next; audioFiltroCache.cap = n;
+  }
+  unsigned revision = atomic_load(&audioFiltroRevisao);
+  if (audioFiltroCache.generation != listaGeracao || audioFiltroCache.revision != revision ||
+      strcmp(audioFiltroCache.language, pref) ||
+      audioFiltroCache.total > n) {
+    audioFiltroCache.total = 0; audioFiltroCache.generation = listaGeracao;
+    audioFiltroCache.revision = revision;
+    snprintf(audioFiltroCache.language, sizeof audioFiltroCache.language, "%s", pref);
+  }
+  if (audioFiltroCache.total < n) {
+    memset(audioFiltroCache.match + audioFiltroCache.total, 0, (size_t)(n - audioFiltroCache.total));
+    audioFiltroCache.total = n;
+  }
+  unsigned char *match = &audioFiltroCache.match[offset / sizeof *s];
+  if (!*match) *match = (unsigned char)(1 + temAudioPreferidoSemCache(s, pref));
+  return *match == 2;
+}
+
 static const char *ajudaFiltroAudio(void) {
   static char ajuda[512];
   const char *pref = idiomaFiltroAudio();
@@ -4080,27 +4143,31 @@ static void selosCalcular(Stream *s) {
   }
   s->selosPacoteVer = ver;
 }
-// FORA DA THREAD PRINCIPAL. Sao centenas de regex por fonte: feito aqui dentro,
-// na chegada de cada addon, a pagina do titulo parava ~2 s por resposta (TCL,
-// 05/10/2026: "[quadro] upd=1667.5" com 20 fontes, 2052 com 46). O fio leva uma
-// COPIA do trecho da lista e devolve so os tres campos, sob verTrava e so se a
-// lista ainda e a mesma (listaGeracao; acrescentar nao muda indice). Ate
-// chegar, selosPacoteDa devolve 0 e a fileira usa a deteccao embutida.
-typedef struct { unsigned ger; int ini, k; Stream v[]; } SelosLote;
+// Copy one source under the list lock on the worker, then run regex outside
+// it. Heap/stack use and UI arrival work no longer grow with the whole batch.
+// Raw indices survive appends; list replacement or pack changes cancel work.
+typedef struct { unsigned ger, ver; int ini, k; Stream v[1]; } SelosLote;
 static unsigned selosPedVer, selosPedGer;
 static void *selosFio(void *u) {
   SelosLote *L = u;
-  int i;
-  for (i = 0; i < L->k; i++) selosCalcular(&L->v[i]);
-  pthread_mutex_lock(&verTrava);
-  if (L->ger == listaGeracao)
-    for (i = 0; i < L->k && L->ini + i < n; i++) {
+  for (int i = 0; i < L->k; i++) {
+    pthread_mutex_lock(&verTrava);
+    int atual = L->ger == listaGeracao && L->ver == selospacote_versao() && L->ini + i < n;
+    if (atual) L->v[0] = lista[L->ini + i];
+    pthread_mutex_unlock(&verTrava);
+    if (!atual) break;
+    selosCalcular(&L->v[0]);
+    pthread_mutex_lock(&verTrava);
+    atual = L->ger == listaGeracao && L->ver == selospacote_versao() && L->ini + i < n;
+    if (atual && L->v[0].selosPacoteVer == L->ver) {
       Stream *d = &lista[L->ini + i];
-      memcpy(d->selosPacote, L->v[i].selosPacote, sizeof d->selosPacote);
-      d->nSelosPacote = L->v[i].nSelosPacote;
-      d->selosPacoteVer = L->v[i].selosPacoteVer;
+      memcpy(d->selosPacote, L->v[0].selosPacote, sizeof d->selosPacote);
+      d->nSelosPacote = L->v[0].nSelosPacote;
+      d->selosPacoteVer = L->v[0].selosPacoteVer;
     }
-  pthread_mutex_unlock(&verTrava);
+    pthread_mutex_unlock(&verTrava);
+    if (!atual) break;
+  }
   free(L);
   return NULL;
 }
@@ -4109,14 +4176,13 @@ static void selosAgendar(int ini, int qtd) {
   pthread_t fio;
   pthread_attr_t at;
   selosPedVer = selospacote_versao(); selosPedGer = listaGeracao;
-  if (qtd <= 0 || ini < 0 || ini + qtd > n) return;
+  if (qtd <= 0 || ini < 0 || ini > n || qtd > n - ini) return;
   selospacote_colorido(ajustes_selos_coloridos());
   if (selospacote_ativo() < 0 && !selospacote_embutidos_ok()) return;
   selosPedVer = selospacote_versao();
-  L = malloc(sizeof *L + sizeof(Stream) * (size_t)qtd);
+  L = malloc(sizeof *L);
   if (!L) return;
-  L->ger = listaGeracao; L->ini = ini; L->k = qtd;
-  memcpy(L->v, lista + ini, sizeof(Stream) * (size_t)qtd);
+  L->ger = listaGeracao; L->ver = selosPedVer; L->ini = ini; L->k = qtd;
   pthread_attr_init(&at);
   pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
   if (pthread_create(&fio, &at, selosFio, L)) free(L);
@@ -4251,6 +4317,22 @@ static void porLinha(int i, float *y, int automatica) {
 // Tamanho para ordenar: desconhecido (0) vai para o fim do grupo.
 static long tamanhoOrdem(int i) { return lista[i].tamanhoMB > 0 ? lista[i].tamanhoMB : -1; }
 
+// Stable descending merge sort, reusing the StreamFit scratch array. Ties
+// retain addon order, unknown sizes remain last, and source indices never move.
+static void ordenarTamanho(int *ids, int *tmp, int count) {
+  if (count < 2) return;
+  int mid = count / 2;
+  ordenarTamanho(ids, tmp, mid);
+  ordenarTamanho(ids + mid, tmp + mid, count - mid);
+  if (tamanhoOrdem(ids[mid - 1]) >= tamanhoOrdem(ids[mid])) return;
+  int left = 0, right = mid, out = 0;
+  while (left < mid && right < count)
+    tmp[out++] = tamanhoOrdem(ids[left]) >= tamanhoOrdem(ids[right]) ? ids[left++] : ids[right++];
+  while (left < mid) tmp[out++] = ids[left++];
+  while (right < count) tmp[out++] = ids[right++];
+  memcpy(ids, tmp, (size_t)count * sizeof *ids);
+}
+
 // POR QUALIDADE (dono, 02/10): a fonte "Melhor para esta TV" e a PRIMEIRA linha,
 // sozinha e sem cabecalho — o selo dela ja diz o que ela e —, e cada grupo
 // vem do MAIOR arquivo para o menor. Tamanho e o que mais separa duas fontes
@@ -4343,12 +4425,7 @@ static void montarBase(int automatica) {
       i = ORD(k);
       if (i != m && !lista[i].foraCache && passaFiltro(i) && grupoRes(&lista[i]) == g) grupoTmp[nt++] = i;
     }
-    // Insercao estavel: em tamanho igual vale a ordem do addon.
-    for (k = 1; k < nt; k++) {
-      int v = grupoTmp[k], j = k - 1;
-      while (j >= 0 && tamanhoOrdem(grupoTmp[j]) < tamanhoOrdem(v)) { grupoTmp[j + 1] = grupoTmp[j]; j--; }
-      grupoTmp[j + 1] = v;
-    }
+    ordenarTamanho(grupoTmp, grupoFitTmp, nt);
     // Preserve the approved quality groups and descending-size base order.
     // Only measured-heavy sources move back within their own group.
     streamfit_particionar(grupoTmp, nt, fitClasses, fitN, grupoFitTmp);
@@ -4378,7 +4455,8 @@ static void folhaDados(void) {
     char audio[96], qualidade[32];
     FonteFalhaConfig falhas;
     int decoder[8];
-  } anterior;
+  } anterior, anteriorAuto;
+  static int autoValid;
   if (busy) return;
   struct FolhaChave key = {0};
   key.revisao = atomic_load(&folhaRevisao);
@@ -4416,7 +4494,17 @@ static void folhaDados(void) {
   }
   folhaBloqueada = stream_filtro_bloqueou();
   folhaVisiveis = filtrosVisiveisCalcular();
-  folhaAuto = automaticoDaFolhaModoCalcular();
+  // Tabs/chips only decide what the sheet displays. The automatic candidate
+  // still comes from the complete list, so keep it across those UI changes.
+  // All source, exclusion, decoder, rule and preference revisions remain in
+  // this key; playback selection itself continues to use the live rules.
+  struct FolhaChave autoKey = key;
+  autoKey.abas = 0;
+  for (int i = 2; i <= 5; i++) autoKey.valores[i] = 0;
+  if (!autoValid || memcmp(&autoKey, &anteriorAuto, sizeof autoKey)) {
+    folhaAuto = automaticoDaFolhaModoCalcular();
+    anteriorAuto = autoKey; autoValid = 1;
+  }
   key.valores[2] = filtro; // Provider arrivals can move the selected tab.
   anterior = key; valid = 1; folhaDadosVersao++;
   busy = 0;
@@ -6127,6 +6215,10 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
         // um degrau mais clara. As outras no cinza da especificacao.
         int c = k==0 ? (sel?215:180) : (sel?170:130);
         float px=tx, maxw=k==0?txtW:tr-tx, ly=cy+k*FOLHA_ADDON_LD;
+        // Keep partially visible text/icons, including large UI font scales.
+        float clipMargin = fmaxf(64.0f, 64.0f * gfx_escala_ui());
+        if (ly + clipMargin < FOLHA_TOPO - 8.0f) continue;
+        if (ly > folhaBase) break;
         for(int pc=0;pc<ls[k].n && maxw-(px-tx)>30;pc++){
           if(ls[k].ic[pc]){
             // O icone na altura do texto, na mesma tinta; so vale se couber.
