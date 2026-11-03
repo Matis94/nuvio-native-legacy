@@ -164,7 +164,7 @@ static void cardPixels(void) {
     for(int row=0;row<2;row++) {
       GfxRect r={40,80+linhaTopo(row),FOLHA_W-FOLHA_PAD_E-FOLHA_PAD_D,linhaAltura(row)};
       desenharCartaoAddon(ordem[row],row,r,r.x+FOLHA_TXT,r.x+r.w-FOLHA_TXT,
-        automaticaDaFolha(),row==foco,1,SDL_GetTicks());
+        automaticaDaFolha(),row==foco,1,SDL_GetTicks(),-INFINITY,INFINITY);
     }
     SDL_Delay(5);
   }
@@ -356,13 +356,43 @@ static void wrappedFilenamePixels(void) {
   for(int frame=0;frame<20;frame++)for(int pass=0;pass<2;pass++) {
     txt_novo_quadro();glClearColor(.05f,.05f,.06f,1);glClear(GL_COLOR_BUFFER_BIT);
     addonDesenharPecas(&line,draw,count,40,80,pass?nextafterf(width,0):width,
-      rows*FOLHA_ADDON_LD,TXT_PG_FIM,1,1);
+      rows*FOLHA_ADDON_LD,TXT_PG_FIM,1,1,-INFINITY,INFINITY);
     glFinish();
     if(frame==19)glReadPixels(0,1080-400,800,400,GL_RGBA,GL_UNSIGNED_BYTE,pixels[pass]);
   }
   assert(!memcmp(pixels[0],pixels[1],800*400*4));
   free(pixels[0]);free(pixels[1]);
   puts("PASS: wrapped full filenames never acquire ellipses from fractional panel widths");
+}
+static void clippedFormatterPixels(void) {
+  assert(tex_iniciar(64));gfx_icones_dir("deploy/app/art");
+  LinhaAddon lines[FOLHA_ADDON_LINHAS];
+  const char *text="🎬 The.Lord.of.the.Rings.Extended.Directors.Cut.2160p.UHD.BluRay.REMUX.Dolby.Vision.TrueHD.Atmos.7.1.Polish.Lektor.Full.Filename.End.mkv 🎧 DTS-HD MA 5.1 🇵🇱 DUAL MULTI 💾 155.48 GB";
+  for(int k=0;k<FOLHA_ADDON_LINHAS;k++)pecasAddon(text,strlen(text),&lines[k]);
+  AddonDesenho pieces[ADDON_DESENHOS];int count=0,rows=0;
+  addonQuebrar(lines,FOLHA_ADDON_LINHAS,pieces,ADDON_DESENHOS,&count,&rows,600,TXT_PG_FIM,FOLHA_ADDON_VISUAIS);
+  assert(rows>20);
+  unsigned char *pixels[2]={malloc(800*1080*4),malloc(800*1080*4)};assert(pixels[0] && pixels[1]);
+  // Finish asynchronous icons before comparing two otherwise identical frames.
+  for(int frame=0;frame<40;frame++) {
+    tex_bombear(8);
+    addonDesenharPecas(lines,pieces,count,60,0,600,rows*FOLHA_ADDON_LD,TXT_PG_FIM,1,1,-INFINITY,INFINITY);
+    SDL_Delay(5);
+  }
+  const float offsets[]={-700.25f,-100.75f,249.25f,971.75f};
+  for(int sel=0;sel<2;sel++)for(unsigned k=0;k<sizeof offsets/sizeof *offsets;k++) {
+    for(int pass=0;pass<2;pass++) {
+      txt_novo_quadro();glClearColor(.05f,.05f,.06f,1);glClear(GL_COLOR_BUFFER_BIT);
+      gfx_recorte(40,249.25f,700,723.5f);
+      addonDesenharPecas(lines,pieces,count,60,offsets[k],600,rows*FOLHA_ADDON_LD,TXT_PG_FIM,sel,1,
+        pass?249.25f:-INFINITY,pass?972.75f:INFINITY);
+      gfx_sem_recorte();glFinish();
+      glReadPixels(0,0,800,1080,GL_RGBA,GL_UNSIGNED_BYTE,pixels[pass]);
+    }
+    assert(!memcmp(pixels[0],pixels[1],800*1080*4));
+  }
+  free(pixels[0]);free(pixels[1]);tex_encerrar();
+  puts("PASS: clipped formatter text/emoji is pixel-identical to the original scissored draw at fractional scroll positions");
 }
 static void emojiPixels(void) {
   assert(tex_iniciar(64));gfx_icones_dir("deploy/app/art");
@@ -436,7 +466,7 @@ int main(int argc,char **argv) {
     setting(dir,1);assert(ajustes_selos_embaixo()==badgesBottom);
     parserAndCache();geometry(dir);measuredScrollGeometry(dir);
     completeCards(dir,!logicOnly);screenshotCards(dir,!logicOnly);
-    if(!logicOnly){firstCardScrollPixels(dir);wrappedFilenamePixels();emojiPixels();}
+    if(!logicOnly){firstCardScrollPixels(dir);wrappedFilenamePixels();clippedFormatterPixels();emojiPixels();}
     printf("PASS: complete 2000-source formatter suite with badge position %s\n",badgesBottom?"Bottom":"Top");
   }
   txt_encerrar();stream_definir_lista(NULL,0);

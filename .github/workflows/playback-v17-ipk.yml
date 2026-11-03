@@ -41,6 +41,8 @@ jobs:
         run: SANITIZE=1 python3 tests/source_badge_position.py
       - name: Stable source badge regressions
         run: SANITIZE=1 python3 tests/source_badge_readiness.py
+      - name: Source scrolling and stable ordering regressions
+        run: SANITIZE=1 python3 tests/source_scroll.py
       - name: Source refresh identity regressions
         run: SANITIZE=1 python3 tests/source_refresh_identity.py
       - name: Unpack offline formatter emoji
