@@ -394,6 +394,28 @@ static void clippedFormatterPixels(void) {
   free(pixels[0]);free(pixels[1]);tex_encerrar();
   puts("PASS: clipped formatter text/emoji is pixel-identical to the original scissored draw at fractional scroll positions");
 }
+#ifdef NV_SOURCE_PERF_DIAG
+static void sourceTimingIntegration(const char *dir) {
+  setting(dir,1);stream_definir_lista(fixtures,CARDS);sourceperf_reset();
+  folhaRelogio=0;aberta=1;anim=1;grupo=1;foco=0;focoVisto=0;
+  filtro=soMp4=soCache=soDub=0;linhaAnt=-1;abreFoco=1;abreAnt=0;focoFixo=-1;
+  assert(tex_iniciar(64));gfx_icones_dir("deploy/app/art");
+  txt_novo_quadro();stream_folha_atualizar(1.f/60,SDL_GetTicks());
+  glClearColor(.05f,.05f,.06f,1);glClear(GL_COLOR_BUFFER_BIT);
+  corpoFolha(0,FOLHA_W,1,SDL_GetTicks(),0);
+  stream_lista_acrescentar(fixtures,1,0);montar(automaticaDaFolha());
+  for(int stage=0;stage<NV_SRC_COUNT;stage++)assert(nvSourcePerf.stage[stage].calls>0);
+  folhaDados();folhaDados(); // Settle any StreamFit revision published by montar().
+  uint64_t filters=nvSourcePerf.stage[NV_SRC_FILTER].calls;
+  uint64_t checks=nvSourcePerf.stage[NV_SRC_STATE].calls;
+  folhaDados();folhaDados();
+  assert(nvSourcePerf.stage[NV_SRC_STATE].calls==checks+2);
+  assert(nvSourcePerf.stage[NV_SRC_FILTER].calls==filters);
+  assert(n==CARDS+1 && nOrdem==CARDS+1);
+  tex_encerrar();aberta=0;anim=0;
+  puts("PASS: real 2000-source UI records all 12 timing stages and preserves the cached filter path");
+}
+#endif
 static void emojiPixels(void) {
   assert(tex_iniciar(64));gfx_icones_dir("deploy/app/art");
   const char *path="deploy/app/art/icones/emoji_1f1f5-1f1f1.png";
@@ -467,6 +489,9 @@ int main(int argc,char **argv) {
     parserAndCache();geometry(dir);measuredScrollGeometry(dir);
     completeCards(dir,!logicOnly);screenshotCards(dir,!logicOnly);
     if(!logicOnly){firstCardScrollPixels(dir);wrappedFilenamePixels();clippedFormatterPixels();emojiPixels();}
+#ifdef NV_SOURCE_PERF_DIAG
+    if(!logicOnly)sourceTimingIntegration(dir);
+#endif
     printf("PASS: complete 2000-source formatter suite with badge position %s\n",badgesBottom?"Bottom":"Top");
   }
   txt_encerrar();stream_definir_lista(NULL,0);

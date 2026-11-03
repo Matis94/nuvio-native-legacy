@@ -34,6 +34,7 @@
 #include <strings.h>
 #include <stdlib.h>
 #include <math.h>
+#include "sourceperf.h"
 #include "addons.h"
 #include "marco.h"
 #include "debrid.h"
@@ -726,6 +727,7 @@ void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
   recebidaEm = SDL_GetTicks() - idade;
   temRecebidaEm = 1;
   listaGeracao++;
+  sourceperf_reset();
   atomic_fetch_add(&folhaRevisao, 1);
   cancelarConferenciasSemTrava();
   pthread_mutex_unlock(&verTrava);
@@ -789,21 +791,23 @@ static void ordemAcrescentar(int antes, int qtd) {
   }
 }
 
-void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
+static void listaAcrescentarInterna(const Stream *l, int qtd, int ordemAddon) {
   int i, k = 0, focoIdx = -1, linhaAntes = -1, total;
   Stream *nova, *tmp;
   unsigned *c2;
   int *e2;
   if (!l || qtd <= 0) return;
+  uint64_t perfPrepare = sourceperf_begin();
   nova = malloc(sizeof(Stream) * (size_t)qtd);
-  if (!nova) return;
+  if (!nova) { sourceperf_end(NV_SRC_PREPARE, perfPrepare); return; }
   for (i = 0; i < qtd; i++)
     if (fonteOferecida(&l[i])) nova[k++] = l[i];
   if (qtd - k) printf("[fonte] %d fontes indisponiveis descartadas\n", qtd - k);
   for (i = 0; i < qtd; i++)
     if (!fonteOferecida(&l[i])) contarDescartada(&l[i]);   // #505: idem
-  if (!k) { free(nova); return; }
+  if (!k) { free(nova); sourceperf_end(NV_SRC_PREPARE, perfPrepare); return; }
   for (i = 0; i < k; i++) { nova[i].selosPacoteVer = 0; filtroCompletar(&nova[i]); filtroEscopo(&nova[i]); }
+  sourceperf_end(NV_SRC_PREPARE, perfPrepare);
   // O CARTAO EM FOCO E O QUE FICA PARADO. Guardado pelo indice da lista (que
   // nao muda), e nao pela linha (que muda quando entra coisa acima).
   if (aberta && grupo == 1 && n > 0) {
@@ -811,6 +815,7 @@ void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
     focoIdx = filtrado(foco);
     if (focoIdx < 0) linhaAntes = -1;
   }
+  uint64_t perfMerge = sourceperf_begin();
   pthread_mutex_lock(&verTrava);
   total = n + k;
   tmp = realloc(lista, sizeof(Stream) * (size_t)total);
@@ -823,6 +828,7 @@ void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
     pthread_mutex_unlock(&verTrava);
     free(nova);
     printf("[fonte] memoria insuficiente para %d fontes\n", k);
+    sourceperf_end(NV_SRC_MERGE, perfMerge);
     return;
   }
   memcpy(lista + n, nova, sizeof(Stream) * (size_t)k);
@@ -833,7 +839,10 @@ void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
   atomic_fetch_add(&folhaRevisao, 1);
   if (!temRecebidaEm) { recebidaEm = SDL_GetTicks(); temRecebidaEm = 1; }
   pthread_mutex_unlock(&verTrava);
+  sourceperf_end(NV_SRC_MERGE, perfMerge);
+  uint64_t perfBadges = sourceperf_begin();
   selosAgendar(total - k, k);
+  sourceperf_end(NV_SRC_BADGES, perfBadges);
   free(nova);
   printf("[fonte] +%d de %s (lista com %d)\n", k, l[0].provedor, n);
   fflush(stdout);
@@ -841,6 +850,12 @@ void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
   // A linha em foco muda de lugar quando entra fonte acima dela (os grupos tem
   // altura variavel): guardada aqui e reposta no proximo montar().
   if (focoIdx >= 0) { focoFixo = focoIdx; focoFixoY = linhaAntes < nOrdem ? linhaTopo(linhaAntes) : 0; }
+}
+
+void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
+  uint64_t perf = sourceperf_begin();
+  listaAcrescentarInterna(l, qtd, ordemAddon);
+  sourceperf_end(NV_SRC_APPEND, perf);
 }
 
 int stream_ordem_addon(int i) {
@@ -3336,7 +3351,10 @@ static int automaticoPrimeira(void) {
 }
 // A que a folha marca como automatica: a do modo em vigor.
 static int automaticoDaFolhaModoCalcular(void) {
-  return !canalFolha && ajustes_fonte_primeira() ? automaticoPrimeira() : automaticoCom(!canalFolha);
+  uint64_t perf = sourceperf_begin();
+  int result = !canalFolha && ajustes_fonte_primeira() ? automaticoPrimeira() : automaticoCom(!canalFolha);
+  sourceperf_end(NV_SRC_AUTO, perf);
+  return result;
 }
 
 
@@ -3500,6 +3518,7 @@ static const char *fraseVazioAba(int i) {
 typedef struct { char nome[96]; char chave[FONTEFALHA_CHAVE]; int ordem, estado; } ProvAba;
 
 static void atualizarProvedores(void) {
+  uint64_t perf = sourceperf_begin();
   char escolhido[96], chave[FONTEFALHA_CHAVE];
   ProvAba abas[13];
   AddonAba parcial[ADDONS_MAX + 160];
@@ -3557,6 +3576,7 @@ static void atualizarProvedores(void) {
     filtro = j < nProvedores ? j : 0;
   }
   if (filtro >= nProvedores) filtro = 0;
+  sourceperf_end(NV_SRC_PROVIDERS, perf);
 }
 static int nFiltrados(void) {
   folhaDados();
@@ -4361,7 +4381,7 @@ static void montarBaseInterna(int automatica) {
   }
   alturaTotal = y + medirDicaTorrents();
 }
-static void montarBase(int automatica) {
+static void montarBasePreparar(int automatica) {
   addonGeometriaAtiva=0;
   montarBaseInterna(automatica);
   addonMedidosN=addonMedidosTodos=0;
@@ -4384,6 +4404,11 @@ static void montarBase(int automatica) {
   }
   addonGeometriaAtiva=1;
 }
+static void montarBase(int automatica) {
+  uint64_t perf = sourceperf_begin();
+  montarBasePreparar(automatica);
+  sourceperf_end(NV_SRC_LAYOUT, perf);
+}
 // Fixed-size settings snapshot: checking it never walks the source list.
 static unsigned folhaDadosVersao;
 static void folhaDados(void) {
@@ -4396,6 +4421,7 @@ static void folhaDados(void) {
     int decoder[8];
   } anterior;
   if (busy) return;
+  uint64_t perf = sourceperf_begin();
   struct FolhaChave key = {0};
   key.revisao = atomic_load(&folhaRevisao);
   key.regras = fonteregra_versao();
@@ -4417,9 +4443,10 @@ static void folhaDados(void) {
   snprintf(key.audio, sizeof key.audio, "%s", idiomaFiltroAudio());
   snprintf(key.qualidade, sizeof key.qualidade, "%s", ajustes_qualidade());
   fontefalha_config(&key.falhas);
-  if (valid && !memcmp(&key, &anterior, sizeof key)) return;
+  if (valid && !memcmp(&key, &anterior, sizeof key)) { sourceperf_end(NV_SRC_STATE, perf); return; }
   busy = 1;
   atualizarProvedores();
+  uint64_t perfFilter = sourceperf_begin();
   memset(folhaContagens, 0, sizeof folhaContagens);
   folhaOcultos = 0;
   for (int i = 0; i < n; i++) {
@@ -4432,10 +4459,12 @@ static void folhaDados(void) {
   }
   folhaBloqueada = stream_filtro_bloqueou();
   folhaVisiveis = filtrosVisiveisCalcular();
+  sourceperf_end(NV_SRC_FILTER, perfFilter);
   folhaAuto = automaticoDaFolhaModoCalcular();
   key.valores[2] = filtro; // Provider arrivals can move the selected tab.
   anterior = key; valid = 1; folhaDadosVersao++;
   busy = 0;
+  sourceperf_end(NV_SRC_STATE, perf);
 }
 
 // Closed-row prefix positions stay fixed. Only the focused and closing rows
@@ -4550,7 +4579,7 @@ static void folhaGeometria(void) {
 static float areaLista(void) { return folhaBase - FOLHA_TOPO; }
 // Measure only the viewport before drawing, then rebuild cheap scalar prefixes.
 // Heights survive LRU eviction, so scrolling back never collapses an old card.
-static void prepararCartoesAddon(int automatica) {
+static void prepararCartoesAddonInterno(int automatica) {
   if(!ajustes_fonte_texto_addon() || !nOrdem)return;
   for(int pass=0;pass<2;pass++) {
     int first=primeiraVisivel(rolagem), anchor=first;
@@ -4562,6 +4591,11 @@ static void prepararCartoesAddon(int automatica) {
     montar(automatica);
     if(anchor<nOrdem)rolagem+=linhaTopo(anchor)-top;
   }
+}
+static void prepararCartoesAddon(int automatica) {
+  uint64_t perf = sourceperf_begin();
+  prepararCartoesAddonInterno(automatica);
+  sourceperf_end(NV_SRC_MEASURE, perf);
 }
 // A linha em foco no meio da area; a primeira de um grupo leva o cabecalho
 // junto, senao subir ate ela deixaria "4K" escondido acima da borda.
@@ -4608,6 +4642,7 @@ static void desenharAudioBars(float x, float y, float alt, float alfa, Uint32 ag
 }
 
 void stream_folha_abrir(void) {
+  sourceperf_reset();
   selosVistaLimpar();
   logAudioValido=0;
   // A busca nova pode estar na fila enquanto a lista ainda e do episodio
@@ -5099,7 +5134,7 @@ void stream_folha_evento(const SDL_Event *e) {
     else okNaLinha();
   }
 }
-void stream_folha_atualizar(float dt, Uint32 agora) {
+static void streamFolhaAtualizar(float dt, Uint32 agora) {
   if (!aberta && anim <= .001f) selosVistaLimpar();
   selosAquecerPasso();
   int nf;
@@ -5210,6 +5245,15 @@ void stream_folha_atualizar(float dt, Uint32 agora) {
   else
 #endif
   rolagem=anim_mola2(&velRol,rolagem,alvoRolagem(),dt,NV_MOLA2_SCROLL);
+}
+void stream_folha_atualizar(float dt, Uint32 agora) {
+  // One report boundary per UI update, after every draw of the previous frame.
+  // Island/snapshot renders may draw the body more than once in one frame.
+  if (aberta || anim > .001f)
+    sourceperf_report(agora, listaGeracao, n, nOrdem, filtro, grupo == 1 ? foco : -1);
+  uint64_t perf = sourceperf_begin();
+  streamFolhaAtualizar(dt, agora);
+  sourceperf_end(NV_SRC_UPDATE, perf);
 }
 int stream_folha_escolheu(int *out) {
   if(escolha<0) return 0;
@@ -5900,6 +5944,7 @@ static float trocaEase(Uint32 agora) {
 #include "stream_formatter_draw.inc"
 
 static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
+  uint64_t perf = sourceperf_begin();
   float ar, ag, ab;
   int ai, nf, automatica, melhor;
   float lx=x+FOLHA_PAD_E, rw=w-FOLHA_PAD_E-FOLHA_PAD_D;
@@ -6410,6 +6455,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     desenhaPartes(x,w,ptr && ptAberto,agora);
     if (ilha) gfx_recorte(ilhaR.x,ilhaR.y,ilhaR.w,ilhaR.h);
   }
+  sourceperf_end(NV_SRC_DRAW, perf);
 }
 
 // A MEDIDA DE REDE DA FONTE QUE ESTA ABRINDO (o player expande o cartao de

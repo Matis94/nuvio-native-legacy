@@ -12,6 +12,7 @@ for source in src/*.c src/dts/*.c; do
   [[ "$source" != src/main.c && "$source" != src/streams.c ]] && sources+=("$source")
 done
 flags=(-std=gnu11 -O1 -g -Isrc)
+if [[ ${NV_SOURCE_PERF_DIAG:-0} == 1 ]]; then flags+=(-DNV_SOURCE_PERF_DIAG); fi
 if [[ "$(uname -s)" == Darwin ]]; then
   flags+=(-I/opt/homebrew/include -I/opt/homebrew/include/SDL2 -L/opt/homebrew/lib)
   libs=(-lSDL2 -lSDL2_image -lSDL2_ttf -lz -framework OpenGL)
