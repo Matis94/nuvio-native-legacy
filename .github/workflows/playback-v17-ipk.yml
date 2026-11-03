@@ -66,8 +66,10 @@ jobs:
         run: |
           SANITIZE=1 python3 tests/source_selection.py
           bash tests/fontenota.sh
-      - name: Source audio filter cache regressions
-        run: SANITIZE=1 python3 tests/source_audio_cache.py
+      - name: Source audio filtering and backdrop regressions
+        run: |
+          SANITIZE=1 python3 tests/source_audio_cache.py
+          SANITIZE=1 python3 tests/source_backdrop.py
       - name: Source refresh identity regressions
         run: SANITIZE=1 python3 tests/source_refresh_identity.py
       - name: Unpack offline formatter emoji

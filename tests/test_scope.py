@@ -14,10 +14,10 @@ spec.loader.exec_module(scope)
 assert scope.choose(["src/streams.c", "src/sourceperf.h", "tests/sourceperf.c",
                      ".github/workflows/playback-v17-ipk.yml"]) == "sources"
 assert scope.choose(["src/fontenota.c", "tests/source_selection.py"]) == "sources"
+assert scope.choose(["src/source_backdrop.inc", "tests/source_backdrop_gl.inc", "tests/source_audio_cache.py"]) == "sources"
 for path in ["src/video.c", "src/app.c", "src/streams.h", "src/rede.c", "src/dts/dts_engine.c",
              "src/ajustes.c", "src/tex_cache.c", "src/fontepref.c", "tools/Dockerfile", "unknown"]:
     assert scope.choose(["src/streams.c", path]) == "full", path
-assert scope.choose(["tests/source_audio_cache.py", "src/streams.c"]) == "sources"
 assert scope.choose([]) == "full"
 assert scope.choose(["src/streams.c"], True) == "full"
 assert scope.choose(["src/app.c"], verified_probes=["src/app.c"]) == "sources"
@@ -65,6 +65,14 @@ with tempfile.TemporaryDirectory(prefix="nuvio-test-scope-git-") as directory:
         runtime_change = commit()
         assert not scope.diagnostic_change_safe(before_probe, runtime_change, "src/app.c")
         assert not scope.diagnostic_change_safe("1" * 40, runtime_change, "src/app.c")
+        app.write_text("void draw(void) {\n  spainel_fundo(podeParar, cat_revisao(), desenharAtrasDoPainel, &agora); }\n")
+        before_backdrop = commit()
+        app.write_text('#include "source_backdrop.inc"\n' + app.read_text().replace("spainel_fundo(", "fontes_fundo("))
+        with_backdrop = commit()
+        assert scope.diagnostic_change_safe(before_backdrop, with_backdrop, "src/app.c")
+        app.write_text(app.read_text().replace("cat_revisao()", "0"))
+        altered_backdrop = commit()
+        assert not scope.diagnostic_change_safe(before_backdrop, altered_backdrop, "src/app.c")
     finally:
         os.chdir(previous)
 with tempfile.TemporaryDirectory(prefix="nuvio-test-scope-") as directory:

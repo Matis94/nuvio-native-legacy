@@ -7,14 +7,15 @@ import subprocess
 
 SOURCE_FILES = {
     "src/streams.c", "src/sourceperf.h", "src/fontenota.c", "src/stream_formatter.inc",
-    "src/stream_formatter_draw.inc", "src/stream_formatter_emoji.inc",
+    "src/stream_formatter_draw.inc", "src/stream_formatter_emoji.inc", "src/source_backdrop.inc",
     ".github/workflows/playback-v17-ipk.yml", ".github/build/test_scope.py",
     "tests/test_scope.py", "tests/sourceperf.c", "tests/sourceperf_peer.c", "tests/sourceperf.sh",
     "tests/source_scroll.py", "tests/source_selection.py", "tests/source_badge_position.py",
     "tests/source_badge_readiness.py", "tests/source_refresh_identity.py",
     "tests/source_refresh_identity.c", "tests/fontes_formatter.c",
     "tests/fontes_formatter.sh", "tests/source_audio_language.c",
-    "tests/source_audio_language.sh", "tests/source_audio_cache.py", "tests/formatter_filename_tail.c",
+    "tests/source_audio_language.sh", "tests/source_audio_cache.py", "tests/source_backdrop.py",
+    "tests/source_backdrop_gl.inc", "tests/formatter_filename_tail.c",
     "tests/formatter_filename_tail.sh",
 }
 
@@ -33,6 +34,12 @@ def without_scene_probes(text):
     return re.sub(r' SOURCEPERF_SCENE_END\(NV_SRC_[A-Z_]+\);', '', text)
 
 
+def without_source_backdrop(text):
+    text = re.sub(r'^#include "source_backdrop.inc"\n', '', text, flags=re.M)
+    return text.replace("fontes_fundo(podeParar, cat_revisao(), desenharAtrasDoPainel, &agora)",
+                        "spainel_fundo(podeParar, cat_revisao(), desenharAtrasDoPainel, &agora)")
+
+
 def diagnostic_change_safe(base, head, path):
     if path not in DIAGNOSTIC_FILES:
         return False
@@ -42,6 +49,10 @@ def diagnostic_change_safe(base, head, path):
                  for ref in (base or head + "^", head)]
     except (OSError, subprocess.CalledProcessError):
         return False
+    # app.c may also route this exact background callback through the tested
+    # source-sheet wrapper. Every other app/main runtime edit keeps full CI.
+    if path == "src/app.c":
+        texts = list(map(without_source_backdrop, texts))
     return without_scene_probes(texts[0]) == without_scene_probes(texts[1])
 
 
