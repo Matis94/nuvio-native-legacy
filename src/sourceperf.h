@@ -7,7 +7,10 @@
 enum {
   NV_SRC_APPEND, NV_SRC_PREPARE, NV_SRC_MERGE, NV_SRC_BADGES,
   NV_SRC_PROVIDERS, NV_SRC_STATE, NV_SRC_FILTER, NV_SRC_AUTO,
-  NV_SRC_LAYOUT, NV_SRC_MEASURE, NV_SRC_UPDATE, NV_SRC_DRAW, NV_SRC_COUNT
+  NV_SRC_LAYOUT, NV_SRC_MEASURE, NV_SRC_UPDATE, NV_SRC_DRAW,
+  NV_SRC_SHELL, NV_SRC_BACKGROUND, NV_SRC_ISLAND, NV_SRC_APP_UPDATE,
+  NV_SRC_THEME, NV_SRC_CLEAR, NV_SRC_APP_DRAW, NV_SRC_FINISH, NV_SRC_PRESENT,
+  NV_SRC_COUNT
 };
 
 #ifdef NV_SOURCE_PERF_DIAG
@@ -21,16 +24,28 @@ enum {
 #define NV_SOURCE_PERF_PRINT(...) printf(__VA_ARGS__)
 #endif
 typedef struct { uint64_t total, max, calls; } NvSourcePerfStage;
-static struct {
+typedef struct {
   NvSourcePerfStage stage[NV_SRC_COUNT];
   uint64_t pending[NV_SRC_COUNT], frequency, start, lastFrame, frameMax;
   uint64_t frames, lastSlow;
   int banner, hasSlow;
-} nvSourcePerf;
+} NvSourcePerfState;
+// One render-thread state shared by the list and its surrounding scene.
+// The list module owns it; host fixtures may define the same owner explicitly.
+#ifdef NV_SOURCE_PERF_DEFINE
+NvSourcePerfState nvSourcePerf;
+#else
+extern NvSourcePerfState nvSourcePerf;
+#endif
 static const char *const nvSourcePerfNames[NV_SRC_COUNT] = {
   "append", "prepare", "merge", "badges", "providers", "state", "filter",
-  "auto", "layout", "measure", "update", "draw"
+  "auto", "layout", "measure", "update", "draw", "shell", "background",
+  "island", "app_update", "theme", "clear", "app_draw", "finish", "present"
 };
+#define SOURCEPERF_SCENE_BEGIN(stage) \
+  uint64_t perfSource##stage = stream_folha_aberta() ? sourceperf_begin() : 0
+#define SOURCEPERF_SCENE_END(stage) \
+  do { if (perfSource##stage) sourceperf_end(stage, perfSource##stage); } while (0)
 static inline uint64_t sourceperf_begin(void) { return NV_SOURCE_PERF_COUNTER(); }
 static inline void sourceperf_end(int stage, uint64_t start) {
   uint64_t now = NV_SOURCE_PERF_COUNTER();
@@ -62,7 +77,7 @@ static inline void sourceperf_report(unsigned tick, unsigned generation, int tot
     sourceperf_reset(); nvSourcePerf.hasSlow = 0;
   }
   if (!nvSourcePerf.banner) {
-    NV_SOURCE_PERF_PRINT("[source-perf] build=source-ui-v1 units=calls/avg_ms/max_ms stages=inclusive slow_limit=1/s report=3s\n");
+    NV_SOURCE_PERF_PRINT("[source-perf] build=source-ui-v2 units=calls/avg_ms/max_ms stages=inclusive slow_limit=1/s report=3s\n");
     nvSourcePerf.banner = 1;
   }
   if (!nvSourcePerf.lastFrame) nvSourcePerf.start = now;
@@ -108,6 +123,8 @@ static inline void sourceperf_report(unsigned tick, unsigned generation, int tot
   nvSourcePerf.start = now; nvSourcePerf.frames = 1; nvSourcePerf.frameMax = 0;
 }
 #else
+#define SOURCEPERF_SCENE_BEGIN(stage) do {} while (0)
+#define SOURCEPERF_SCENE_END(stage) do {} while (0)
 static inline uint64_t sourceperf_begin(void) { return 0; }
 static inline void sourceperf_end(int stage, uint64_t start) { (void)stage; (void)start; }
 static inline void sourceperf_reset(void) {}

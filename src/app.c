@@ -19,6 +19,7 @@
 #include "teclado.h"
 #include "ponteiro.h"
 #include "app.h"
+#include "sourceperf.h"
 #include "teclavoltar.h"
 #include "deeplink.h"
 #include "telefoneui.h"
@@ -7130,7 +7131,8 @@ static void desenharTelas(Uint32 agora) {
     { int podeParar = tela == TELA_HOME && !detail_aberto() && !vertudo_aberta() &&
                       (!ctx_aberto() || ctx_do_painel()) && !menu_aberto() &&
                       !player_mini_ativo();
-      spainel_fundo(podeParar, cat_revisao(), desenharAtrasDoPainel, &agora); }
+      SOURCEPERF_SCENE_BEGIN(NV_SRC_BACKGROUND);
+      spainel_fundo(podeParar, cat_revisao(), desenharAtrasDoPainel, &agora); SOURCEPERF_SCENE_END(NV_SRC_BACKGROUND); }
     // Depois do menu: as duas camadas de "Salvos" escurecem a tela inteira e
     // tem de ficar por cima de tudo que a home desenhou, inclusive da rail.
     CAMADA_SE(spainel_aberto());
@@ -7165,7 +7167,9 @@ static void desenharTelas(Uint32 agora) {
 #ifdef NV_TOUCH_UI
     if (telefoneui_ativo()) { CAMADA_SE(central_aberta()); }
 #endif
+    SOURCEPERF_SCENE_BEGIN(NV_SRC_ISLAND);
     central_desenhar(agora); plrilha_desenhar(agora);
+    SOURCEPERF_SCENE_END(NV_SRC_ISLAND);
     if (episodios_aberto() && sinopse_aberta()) sinopse_desenhar();
   }
   gfx_osd_mult = 1.0f;
@@ -7493,7 +7497,9 @@ void app_desenhar(Uint32 agora) {
 #ifdef NV_TOUCH_UI
     if (layout_modo_mobile()) CAMADA_SE(central_aberta() || ilha_modal_aberto());
 #endif
+    SOURCEPERF_SCENE_BEGIN(NV_SRC_ISLAND);
     ilha_desenhar(agora);
+    SOURCEPERF_SCENE_END(NV_SRC_ISLAND);
   }
   // O cartao do lembrete fica acima do player e da tela: e um aviso com hora.
   CAMADA_SE(glem_cartao_aberto());
@@ -7534,7 +7540,9 @@ void app_desenhar(Uint32 agora) {
 #ifdef NV_TOUCH_UI
     if (layout_modo_mobile()) CAMADA_SE(central_aberta() || ilha_modal_aberto());
 #endif
+    SOURCEPERF_SCENE_BEGIN(NV_SRC_ISLAND);
     ilha_desenhar(agora);
+    SOURCEPERF_SCENE_END(NV_SRC_ISLAND);
   }
   // AS DICAS DO CONTROLE por ultimo, por cima de tudo: a dica abre o
   // componente DE VERDADE pelo caminho normal (spainel, Spotlight, Central

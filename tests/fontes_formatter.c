@@ -404,7 +404,7 @@ static void sourceTimingIntegration(const char *dir) {
   glClearColor(.05f,.05f,.06f,1);glClear(GL_COLOR_BUFFER_BIT);
   corpoFolha(0,FOLHA_W,1,SDL_GetTicks(),0);
   stream_lista_acrescentar(fixtures,1,0);montar(automaticaDaFolha());
-  for(int stage=0;stage<NV_SRC_COUNT;stage++)assert(nvSourcePerf.stage[stage].calls>0);
+  for(int stage=0;stage<=NV_SRC_DRAW;stage++)assert(nvSourcePerf.stage[stage].calls>0);
   folhaDados();folhaDados(); // Settle any StreamFit revision published by montar().
   uint64_t filters=nvSourcePerf.stage[NV_SRC_FILTER].calls;
   uint64_t checks=nvSourcePerf.stage[NV_SRC_STATE].calls;

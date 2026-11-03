@@ -34,6 +34,7 @@
 #include <strings.h>
 #include <stdlib.h>
 #include <math.h>
+#define NV_SOURCE_PERF_DEFINE
 #include "sourceperf.h"
 #include "addons.h"
 #include "marco.h"
@@ -5893,9 +5894,11 @@ static void desenhaPartes(float x, float w, int ptr, Uint32 agora) {
 }
 // Camada ampliada (escala.h): o corpo desenha na tela virtual.
 void stream_folha_desenhar(Uint32 agora) {
+  SOURCEPERF_SCENE_BEGIN(NV_SRC_SHELL);
   ESCALA_INI();
   stream_folha_desenharCorpo_(agora);
   ESCALA_FIM();
+  SOURCEPERF_SCENE_END(NV_SRC_SHELL);
 }
 static Uint32 folhaAgora;
 // O corpo dentro da ilha (plrilha.h): `a` ja traz a entrada e a saida da
