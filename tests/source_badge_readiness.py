@@ -46,7 +46,7 @@ void selospacote_colorido(int c){(void)c;}
 static int ajustes_selos_coloridos(void){return 0;}
 static void selosAgendar(int start,int count){assert(start==0&&count==n);schedules++;selosPedVer=version;selosPedGer=listaGeracao;}
 @STATE@
-typedef struct { unsigned ger; int ini,k; Stream v[]; } SelosLote;
+@JOB_TYPE@
 static int calculations, scenario;
 static void selosCalcular(Stream *s){
  if(calculations==1 && scenario==0)assert(lista[0].selosPacoteVer==version);
@@ -86,7 +86,7 @@ static void marca_formato(int f,float x,float y,float h,float r,float g,float b,
 static void drawRow(Stream *s){float tx=0,y=0,bw=800,anim=1;int sel=1;
 @DRAW@
 }
-static SelosLote *job(int count){SelosLote *l=calloc(1,sizeof *l+count*sizeof(Stream));assert(l);l->ger=listaGeracao;l->k=count;return l;}
+static SelosLote *job(int count){SelosLote *l=calloc(1,sizeof *l);assert(l);l->ger=listaGeracao;l->ver=version;l->k=count;return l;}
 int main(void){
  int ready=9;strcpy(rows[0].url,"a");strcpy(rows[0].rotulo,"one");rows[0].badges=1;
  assert(selosPacoteEstado(rows,&ready)==0&&!ready&&schedules==1);
@@ -118,6 +118,14 @@ int main(void){
  // A stale pack result must not erase a newer result already in the list.
  n=2;scenario=1;calculations=0;rows[0].selosPacoteVer=version+1;rows[0].nSelosPacote=3;selosFio(job(1));assert(rows[0].nSelosPacote==3);
  scenario=2;calculations=0;selosFio(job(1000));assert(calculations==1);
+ // Stale jobs stop before copying or matching the replacement list/pack.
+ scenario=0;calculations=0;SelosLote *stale=job(1000);listaGeracao++;
+ selosFio(stale);assert(!calculations);
+ stale=job(1000);version++;selosFio(stale);assert(!calculations);
+ // Read each row from the live list, rather than uninitialized scratch.
+ n=2;rows[0].selosPacoteVer=rows[1].selosPacoteVer=0;
+ strcpy(rows[0].rotulo,"copied on worker");
+ selosFio(job(n));assert(calculations==2&&rows[1].selosPacoteVer==version);
  rows[0].selosPacoteVer=0;selosSemTrabalho(0,1,listaGeracao,version);assert(rows[0].selosPacoteVer==version&&rows[0].nSelosPacote==0);
  rows[0].nSelosPacote=2;selosSemTrabalho(0,1,listaGeracao-1,version);assert(rows[0].nSelosPacote==2);
  selosVistaLimpar();scenario=0;n=1000;
@@ -148,6 +156,8 @@ int main(void){
 }
 '''
 fixture = fixture.replace("@STATE@", function("static int selosPacoteEstado("))
+job_type = next(line for line in source.splitlines() if line.endswith('} SelosLote;'))
+fixture = fixture.replace("@JOB_TYPE@", job_type)
 fixture = fixture.replace("@WORKER@", function("static void *selosFio("))
 fixture = fixture.replace("@NO_WORK@", function("static void selosSemTrabalho("))
 fixture = fixture.replace("@IMAGES@", function("static int selosImagensProntas("))
@@ -166,4 +176,95 @@ with tempfile.TemporaryDirectory(prefix="nuvio-badge-ready-") as directory:
     binary = str(temp / "test")
     subprocess.run([os.environ.get("CC", "cc"), *flags, "-I" + str(root / "src"),
                     str(temp / "test.c"), "-o", binary], check=True)
+    subprocess.run([binary], check=True)
+
+    # Exercise the production scheduler too: it must not read/copy a batch on
+    # the UI thread. Model reallocations between row snapshot and publication.
+    scheduler = r'''
+#include <assert.h>
+#include <limits.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+typedef struct {
+ char url[8192],rotulo[192],descricao[2048],arquivo[1024];
+ unsigned short selosPacote[16];unsigned char nSelosPacote;
+ unsigned selosPacoteVer;
+} Stream;
+static Stream *lista;
+static int n=2000,calculations,mode,failAllocation,failThread,creates;
+static unsigned listaGeracao=1,version=7;
+static size_t allocation;
+static pthread_mutex_t verTrava=PTHREAD_MUTEX_INITIALIZER;
+static unsigned selospacote_versao(void){return version;}
+static int selospacote_ativo(void){return 0;}
+static int selospacote_embutidos_ok(void){return 1;}
+static void selospacote_colorido(int color){(void)color;}
+static int ajustes_selos_coloridos(void){return 0;}
+static void *(*queued)(void *);
+static void *argument;
+static void *recordAllocation(size_t bytes){allocation=bytes;return failAllocation?NULL:malloc(bytes);}
+static int queueThread(pthread_t *thread,const pthread_attr_t *attr,void *(*fn)(void *),void *arg){
+ (void)thread;(void)attr;creates++;if(failThread)return 1;assert(!argument);queued=fn;argument=arg;return 0;
+}
+static void selosCalcular(Stream *s){
+ int row=atoi(s->rotulo);assert(row>=0&&row<n);
+ assert(s->arquivo[0]=='f'&&s->descricao[0]=='d'&&s->url[0]=='u');
+ s->selosPacote[0]=(unsigned short)row;s->nSelosPacote=1;s->selosPacoteVer=version;calculations++;
+ if(mode==1&&calculations==2){
+  Stream *replacement=calloc((size_t)n+3,sizeof *replacement);assert(replacement);
+  memcpy(replacement,lista,(size_t)n*sizeof *replacement);free(lista);lista=replacement;n+=3;
+ }
+ if(mode==2)listaGeracao++;
+ if(mode==3){version++;lista[row].selosPacoteVer=version;lista[row].nSelosPacote=3;}
+}
+@JOB_TYPE@
+static unsigned selosPedVer,selosPedGer;
+@WORKER@
+@NO_WORK@
+#define malloc recordAllocation
+#define pthread_create queueThread
+@SCHEDULER@
+#undef malloc
+#undef pthread_create
+static void run(void){assert(argument);void *arg=argument;argument=NULL;queued(arg);}
+int main(void){
+ // NULL list deliberately detects any renderer-thread bulk copy.
+ selosAgendar(0,n);assert(argument&&allocation==sizeof(SelosLote));
+ assert(allocation<2*sizeof(Stream));
+ lista=calloc((size_t)n,sizeof *lista);assert(lista);
+ for(int i=0;i<n;i++){
+  snprintf(lista[i].rotulo,sizeof lista[i].rotulo,"%d",i);
+  strcpy(lista[i].arquivo,"file.mkv");strcpy(lista[i].descricao,"description");strcpy(lista[i].url,"url");
+ }
+ mode=1;run();assert(calculations==2000&&n==2003);
+ for(int i=0;i<2000;i++)assert(lista[i].selosPacoteVer==version&&lista[i].selosPacote[0]==i);
+ assert(!lista[2000].selosPacoteVer); // appended rows belong to their own job
+ mode=0;calculations=0;selosAgendar(17,128);assert(allocation==sizeof(SelosLote));run();assert(calculations==128);
+ calculations=0;selosAgendar(0,2000);listaGeracao++;run();assert(!calculations);
+ selosAgendar(0,2000);version++;run();assert(!calculations);
+ mode=2;selosAgendar(0,2000);run();assert(calculations==1);
+ mode=3;calculations=0;selosAgendar(0,2000);run();assert(calculations==1&&lista[0].nSelosPacote==3);
+ failThread=1;selosAgendar(17,128);assert(!argument);
+ for(int i=17;i<145;i++)assert(lista[i].selosPacoteVer==version&&!lista[i].nSelosPacote);
+ failThread=0;failAllocation=1;version++;selosAgendar(17,128);assert(!argument);
+ for(int i=17;i<145;i++)assert(lista[i].selosPacoteVer==version&&!lista[i].nSelosPacote);
+ int before=creates;
+ selosAgendar(-1,2);selosAgendar(0,0);selosAgendar(INT_MAX,2);selosAgendar(1,INT_MAX);
+ assert(creates==before);free(lista);
+ puts("PASS: constant one-row badge job, no UI batch copy, 2000-row publication across realloc, bounded ranges, generation/pack cancellation and allocation/thread failure");
+}
+'''
+    scheduler = scheduler.replace('@JOB_TYPE@', job_type)
+    scheduler = scheduler.replace('@WORKER@', function('static void *selosFio('))
+    scheduler = scheduler.replace('@NO_WORK@', function('static void selosSemTrabalho('))
+    # Skip the forward declaration near list publication.
+    offset = source.index('static void selosAgendar(int ini, int qtd) {')
+    saved = source
+    source = source[offset:]
+    scheduler = scheduler.replace('@SCHEDULER@', function('static void selosAgendar('))
+    source = saved
+    (temp / 'test.c').write_text(scheduler)
+    subprocess.run([os.environ.get('CC', 'cc'), *flags, str(temp / 'test.c'), '-o', binary], check=True)
     subprocess.run([binary], check=True)

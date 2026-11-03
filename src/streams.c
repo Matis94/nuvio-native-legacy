@@ -4072,28 +4072,34 @@ static void selosCalcular(Stream *s) {
 }
 // FORA DA THREAD PRINCIPAL. Sao centenas de regex por fonte: feito aqui dentro,
 // na chegada de cada addon, a pagina do titulo parava ~2 s por resposta (TCL,
-// 05/10/2026: "[quadro] upd=1667.5" com 20 fontes, 2052 com 46). O fio leva uma
-// COPIA do trecho da lista e devolve so os tres campos, sob verTrava e so se a
-// lista ainda e a mesma (listaGeracao; acrescentar nao muda indice). Pending
-// rows reserve their space and only display the selected pack when ready.
-typedef struct { unsigned ger; int ini, k; Stream v[]; } SelosLote;
+// 05/10/2026: "[quadro] upd=1667.5" com 20 fontes, 2052 com 46).
+// Copy one row at a time on the worker, under verTrava: copying every Stream
+// on the UI thread paused arrivals and duplicated large URL/header payloads.
+// Appends keep raw indices; replacement/pack changes cancel the old job.
+// One heap scratch row keeps memory and worker stack use independent of k.
+// Pending rows reserve space and only display the selected pack when ready.
+typedef struct { unsigned ger, ver; int ini, k; Stream v[1]; } SelosLote;
 static unsigned selosPedVer, selosPedGer;
 static void *selosFio(void *u) {
   SelosLote *L = u;
   int i;
   for (i = 0; i < L->k; i++) {
-    selosCalcular(&L->v[i]);
+    pthread_mutex_lock(&verTrava);
+    int atual = L->ger == listaGeracao && L->ver == selospacote_versao() && L->ini + i < n;
+    if (atual) L->v[0] = lista[L->ini + i];
+    pthread_mutex_unlock(&verTrava);
+    if (!atual) break;
+    selosCalcular(&L->v[0]);
     // Publish each completed row: visible cards must not wait for a whole
     // large addon response. An older pack worker cannot overwrite new results.
     pthread_mutex_lock(&verTrava);
-    if (L->ger == listaGeracao && L->ini + i < n &&
-        L->v[i].selosPacoteVer == selospacote_versao()) {
+    atual = L->ger == listaGeracao && L->ver == selospacote_versao() && L->ini + i < n;
+    if (atual && L->v[0].selosPacoteVer == L->ver) {
       Stream *d = &lista[L->ini + i];
-      memcpy(d->selosPacote, L->v[i].selosPacote, sizeof d->selosPacote);
-      d->nSelosPacote = L->v[i].nSelosPacote;
-      d->selosPacoteVer = L->v[i].selosPacoteVer;
+      memcpy(d->selosPacote, L->v[0].selosPacote, sizeof d->selosPacote);
+      d->nSelosPacote = L->v[0].nSelosPacote;
+      d->selosPacoteVer = L->v[0].selosPacoteVer;
     }
-    int atual = L->ger == listaGeracao;
     pthread_mutex_unlock(&verTrava);
     if (!atual) break;
   }
@@ -4117,14 +4123,13 @@ static void selosAgendar(int ini, int qtd) {
   pthread_t fio;
   pthread_attr_t at;
   selosPedVer = selospacote_versao(); selosPedGer = listaGeracao;
-  if (qtd <= 0 || ini < 0 || ini + qtd > n) return;
+  if (qtd <= 0 || ini < 0 || ini > n || qtd > n - ini) return;
   selospacote_colorido(ajustes_selos_coloridos());
   if (selospacote_ativo() < 0 && !selospacote_embutidos_ok()) return;
   selosPedVer = selospacote_versao();
-  L = malloc(sizeof *L + sizeof(Stream) * (size_t)qtd);
+  L = malloc(sizeof *L);
   if (!L) { selosSemTrabalho(ini, qtd, listaGeracao, selosPedVer); return; }
-  L->ger = listaGeracao; L->ini = ini; L->k = qtd;
-  memcpy(L->v, lista + ini, sizeof(Stream) * (size_t)qtd);
+  L->ger = listaGeracao; L->ver = selosPedVer; L->ini = ini; L->k = qtd;
   pthread_attr_init(&at);
   pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
   if (pthread_create(&fio, &at, selosFio, L)) {
