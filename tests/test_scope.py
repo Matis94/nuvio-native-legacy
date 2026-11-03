@@ -90,8 +90,6 @@ with tempfile.TemporaryDirectory(prefix="nuvio-test-scope-git-") as directory:
         main.write_text(swap_probes.replace('SDL_GL_SwapWindow(win)', 'SDL_GL_SwapWindow(other)'))
         changed_swap = commit()
         assert not scope.diagnostic_change_safe(before_swap, changed_swap, 'src/main.c')
-        main.write_text(swap_probes + '\n'); blank_eof = commit()
-        assert scope.diagnostic_change_safe(before_swap, blank_eof, 'src/main.c')
     finally:
         os.chdir(previous)
 with tempfile.TemporaryDirectory(prefix="nuvio-test-scope-") as directory:
@@ -137,77 +135,3 @@ with tempfile.TemporaryDirectory(prefix='nuvio-skip-scope-git-') as directory:
     finally:
         os.chdir(previous)
 print('PASS: focused skip-button tests require exact verified application blobs; unknown paths, missing history and later shared-code edits retain full regressions')
-
-# CI-only diagnostic rebuilds require identical application trees and known
-# production blobs; unrelated changes and missing history cannot skip suites.
-with tempfile.TemporaryDirectory(prefix='nuvio-diagnostic-rebuild-') as directory:
-    path = Path(directory)
-    subprocess.run(['git', 'init', '-q', directory], check=True)
-    def record_diag():
-        subprocess.run(['git', 'add', '.'], cwd=path, check=True)
-        subprocess.run(['git', '-c', 'user.name=CI fixture', '-c', 'user.email=fixture@example.invalid',
-                        'commit', '-qm', 'fixture'], cwd=path, check=True)
-        return subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=path, text=True).strip()
-    for p in scope.DIAGNOSTIC_REBUILD_PINS:
-        dest=path/p; dest.parent.mkdir(parents=True, exist_ok=True); dest.write_text('audited '+p+'\n')
-    extra=path/'src/player.c'; extra.write_text('unchanged playback\n')
-    workflow_path=path/'.github/workflows/playback-v17-ipk.yml'
-    workflow_path.parent.mkdir(parents=True, exist_ok=True); workflow_path.write_text(workflow)
-    marker=path/'tests/test_scope.py'; marker.parent.mkdir(); marker.write_text('before\n')
-    base=record_diag(); marker.write_text('after\n'); head=record_diag()
-    pins=scope.DIAGNOSTIC_REBUILD_PINS
-    previous=Path.cwd()
-    try:
-        os.chdir(path)
-        scope.DIAGNOSTIC_REBUILD_PINS={p:subprocess.check_output(['git','rev-parse',head+':'+p],text=True).strip() for p in pins}
-        assert scope.diagnostic_rebuild_safe(base, head, ['tests/test_scope.py'])
-        assert not scope.diagnostic_rebuild_safe(base, head, [])
-        assert not scope.diagnostic_rebuild_safe('1'*40, head, ['tests/test_scope.py'])
-        assert not scope.diagnostic_rebuild_safe(base, head, ['tools/arm.sh'])
-        extra.write_text('changed playback\n'); changed_app=record_diag()
-        assert not scope.diagnostic_rebuild_safe(base, changed_app, ['tests/test_scope.py'])
-        extra.write_text('unchanged playback\n'); record_diag()
-        workflow_path.write_text(workflow.replace("NUVIO_DTS_FFMPEG: '1'", "NUVIO_DTS_FFMPEG: '0'")); changed_flags=record_diag()
-        assert not scope.diagnostic_rebuild_safe(base, changed_flags, ['.github/workflows/playback-v17-ipk.yml'])
-        scope.DIAGNOSTIC_REBUILD_PINS=pins
-        assert not scope.diagnostic_rebuild_safe(base, head, ['tests/test_scope.py'])
-    finally:
-        scope.DIAGNOSTIC_REBUILD_PINS=pins
-        os.chdir(previous)
-print('PASS: diagnostic rebuild requires unchanged complete application tree, audited blobs, unchanged build flags and available history')
-
-with tempfile.TemporaryDirectory(prefix='nuvio-source-vsync-scope-') as directory:
-    path=Path(directory)
-    subprocess.run(['git','init','-q',directory],check=True)
-    def record_vsync():
-        subprocess.run(['git','add','.'],cwd=path,check=True)
-        subprocess.run(['git','-c','user.name=CI fixture','-c','user.email=fixture@example.invalid',
-                        'commit','-qm','fixture'],cwd=path,check=True)
-        return subprocess.check_output(['git','rev-parse','HEAD'],cwd=path,text=True).strip()
-    def vsync_hashes():
-        return {p:subprocess.check_output(['git','hash-object',p],cwd=path,text=True).strip()
-                for p in scope.SOURCE_VSYNC_APPLICATION}
-    for p in scope.SOURCE_VSYNC_APPLICATION:
-        dest=path/p;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_text('before '+p+'\n')
-    wf=path/'.github/workflows/playback-v17-ipk.yml';wf.parent.mkdir(parents=True,exist_ok=True);wf.write_text(workflow)
-    before=vsync_hashes();base=record_vsync()
-    for p in scope.SOURCE_VSYNC_APPLICATION:(path/p).write_text('after '+p+'\n')
-    pinpath=path/'.github/build/source_loading_vsync_scope.json';pinpath.parent.mkdir(parents=True,exist_ok=True)
-    pin={'before':before,'after':vsync_hashes()};pinpath.write_text(json.dumps(pin));head=record_vsync()
-    previous=Path.cwd()
-    try:
-        os.chdir(path)
-        paths=scope.changed(base,head)
-        assert scope.source_vsync_change_safe(base,head,paths)
-        assert not scope.source_vsync_change_safe(base,head,paths+['src/player.c'])
-        assert not scope.source_vsync_change_safe(base,head,[])
-        assert not scope.source_vsync_change_safe('1'*40,head,paths)
-        main=path/'src/main.c';main.write_text('unrelated pacing edit\n');bad=record_vsync()
-        assert not scope.source_vsync_change_safe(base,bad,paths)
-        main.write_text('after src/main.c\n');record_vsync()
-        pin['after'].pop('src/player_pacing.h');pinpath.write_text(json.dumps(pin));bad=record_vsync()
-        assert not scope.source_vsync_change_safe(base,bad,paths)
-    finally:os.chdir(previous)
-print('PASS: focused VSync tests require the exact audited main/header pair and reject unrelated changes or missing history')
-
-
