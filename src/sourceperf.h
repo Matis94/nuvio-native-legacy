@@ -24,10 +24,15 @@ enum {
 #define NV_SOURCE_PERF_PRINT(...) printf(__VA_ARGS__)
 #endif
 typedef struct { uint64_t total, max, calls; } NvSourcePerfStage;
+// Bounded 0.1 ms histogram. The final bucket contains gaps >= 100 ms;
+// percentiles in it are reported as 100 ms (a lower bound), never discarded.
+#define NV_SOURCE_PACING_BINS 1001
 typedef struct {
   NvSourcePerfStage stage[NV_SRC_COUNT];
   uint64_t pending[NV_SRC_COUNT], frequency, start, lastFrame, frameMax;
   uint64_t frames, lastSlow;
+  uint32_t pacing[NV_SOURCE_PACING_BINS];
+  uint64_t pacingSamples, over20, over25, over33;
   int banner, hasSlow;
 } NvSourcePerfState;
 // One render-thread state shared by the list and its surrounding scene.
@@ -68,6 +73,26 @@ static inline void sourceperf_reset(void) {
 static inline double sourceperf_ms(uint64_t ticks) {
   return nvSourcePerf.frequency ? (double)ticks * 1000.0 / (double)nvSourcePerf.frequency : 0;
 }
+static inline void sourceperf_pacing_add(uint64_t gap) {
+  double ms = sourceperf_ms(gap);
+  unsigned bin = ms >= 100.0 ? NV_SOURCE_PACING_BINS - 1 : (unsigned)(ms * 10.0);
+  nvSourcePerf.pacing[bin]++;
+  nvSourcePerf.pacingSamples++;
+  nvSourcePerf.over20 += ms > 20.0;
+  nvSourcePerf.over25 += ms > 25.0;
+  nvSourcePerf.over33 += ms > 33.0;
+}
+static inline double sourceperf_percentile(unsigned percent) {
+  uint64_t n = nvSourcePerf.pacingSamples;
+  if (!n) return 0;
+  uint64_t rank = n / 100 * percent + (n % 100 * percent + 99) / 100;
+  uint64_t seen = 0;
+  for (unsigned i = 0; i < NV_SOURCE_PACING_BINS; i++) {
+    seen += nvSourcePerf.pacing[i];
+    if (seen >= rank) return (double)i / 10.0;
+  }
+  return 100.0;
+}
 static inline void sourceperf_report(unsigned tick, unsigned generation, int total,
                                       int shown, int tab, int focus) {
   uint64_t now = NV_SOURCE_PERF_COUNTER();
@@ -77,11 +102,13 @@ static inline void sourceperf_report(unsigned tick, unsigned generation, int tot
     sourceperf_reset(); nvSourcePerf.hasSlow = 0;
   }
   if (!nvSourcePerf.banner) {
-    NV_SOURCE_PERF_PRINT("[source-perf] build=source-ui-v2 units=calls/avg_ms/max_ms stages=inclusive slow_limit=1/s report=3s\n");
+    NV_SOURCE_PERF_PRINT("[source-perf] build=source-ui-v2 units=calls/avg_ms/max_ms stages=inclusive slow_limit=1/s report=3s pacing=update_interval hist_step_ms=0.1 hist_cap_ms=100 capped_percentiles=lower_bound\n");
     nvSourcePerf.banner = 1;
   }
   if (!nvSourcePerf.lastFrame) nvSourcePerf.start = now;
   uint64_t gap = nvSourcePerf.lastFrame && now >= nvSourcePerf.lastFrame ? now - nvSourcePerf.lastFrame : 0;
+  // Exclude the synthetic first zero gap, but include real zero intervals.
+  if (nvSourcePerf.frames) sourceperf_pacing_add(gap);
   nvSourcePerf.lastFrame = now;
   if (gap > nvSourcePerf.frameMax) nvSourcePerf.frameMax = gap;
   nvSourcePerf.frames++;
@@ -119,6 +146,18 @@ static inline void sourceperf_report(unsigned tick, unsigned generation, int tot
     used += (size_t)wrote;
   }
   NV_SOURCE_PERF_PRINT("%s\n", line);
+  // Separate bounded line: no raw frame history, per-frame printing or allocation.
+  // These are UI update intervals, not physical TV presentation timestamps.
+  NV_SOURCE_PERF_PRINT(
+    "[source-pacing] t=%u generation=%u total=%d shown=%d tab=%d focus=%d samples=%llu p50_ms=%.1f p95_ms=%.1f p99_ms=%.1f max_ms=%.2f gt20=%llu gt25=%llu gt33=%llu ge100=%u\n",
+    tick, generation, total, shown, tab, focus,
+    (unsigned long long)nvSourcePerf.pacingSamples,
+    sourceperf_percentile(50), sourceperf_percentile(95), sourceperf_percentile(99),
+    sourceperf_ms(nvSourcePerf.frameMax), (unsigned long long)nvSourcePerf.over20,
+    (unsigned long long)nvSourcePerf.over25, (unsigned long long)nvSourcePerf.over33,
+    nvSourcePerf.pacing[NV_SOURCE_PACING_BINS - 1]);
+  memset(nvSourcePerf.pacing, 0, sizeof nvSourcePerf.pacing);
+  nvSourcePerf.pacingSamples = nvSourcePerf.over20 = nvSourcePerf.over25 = nvSourcePerf.over33 = 0;
   memset(nvSourcePerf.stage, 0, sizeof nvSourcePerf.stage);
   nvSourcePerf.start = now; nvSourcePerf.frames = 1; nvSourcePerf.frameMax = 0;
 }
@@ -133,3 +172,4 @@ static inline void sourceperf_report(unsigned tick, unsigned generation, int tot
 }
 #endif
 #endif
+
