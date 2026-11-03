@@ -63,6 +63,15 @@ jobs:
           SANITIZE=1 python3 tests/source_badge_readiness.py
           SANITIZE=1 python3 tests/source_badge_render.py
           bash tests/selospacote.sh
+      - name: Badge regex and source-rule dependency regressions
+        run: |
+          SANITIZE=1 bash tests/regexjs_badge.sh
+          bash tests/regexjs_v8.sh
+          bash tests/regexjs_flags.sh
+          bash tests/regexjs_dotall.sh
+          bash tests/regexjs_pilha.sh
+          bash tests/fonteregra.sh
+          bash tests/fonteregra_oficial.sh
       - name: Source scrolling and stable ordering regressions
         run: SANITIZE=1 python3 tests/source_scroll.py
       - name: Source scoring and candidate cache regressions

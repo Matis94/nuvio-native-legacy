@@ -78,6 +78,28 @@ static void styleCompatibility(void) {
   assert(selospacote_remover(0));
   puts("PASS: imported filled/outline/transparent chips, GIF URL, RGB percentages, ARGB and disk reload");
 }
+static void largeBadgePack(void) {
+  perfil = 21;
+  char *pattern=malloc(REGEXJS_BADGE_MAX+1);assert(pattern);
+  size_t used=(size_t)sprintf(pattern,"^(?:");
+  for(int i=0;i<8000;i++)used+=(size_t)sprintf(pattern+used,"%sRelease%05d",i?"|":"",i);
+  used+=(size_t)sprintf(pattern+used,")$");assert(used<REGEXJS_BADGE_MAX);
+  RegexJs *re=regexjs_compilar_badge(pattern,NULL,0);assert(re);
+  size_t perRule=regexjs_memoria(re);regexjs_liberar(re);
+  int expected=(int)(16u*1024*1024/perRule);assert(expected>0&&expected<12);
+  size_t capacity=12*(used+128)+32;
+  char *json=malloc(capacity);assert(json);size_t pos=(size_t)sprintf(json,"{\"filters\":[");
+  for(int i=0;i<12;i++)pos+=(size_t)snprintf(json+pos,capacity-pos,
+      "%s{\"name\":\"Large %d\",\"pattern\":\"%s\"}",i?",":"",i,pattern);
+  snprintf(json+pos,capacity-pos,"]}");free(pattern);
+  assert(selospacote_adicionar(json,"https://fixture.invalid/large.json")==SELOS_OK);free(json);
+  assert(selospacote_n_filtros(0)==expected);
+  selospacote_recarregar();assert(selospacote_n_filtros(0)==expected);
+  unsigned short ids[SELOS_MAX_CASADOS];const char *fields[]={"Release07999"};
+  assert(selospacote_casar(fields,1,ids,SELOS_MAX_CASADOS)==expected);
+  assert(selospacote_remover(0));
+  puts("PASS: long imported rules survive disk reload with a 16 MiB compiled-pack ceiling");
+}
 // Optional local inspection of real user-supplied packs. CI is offline and
 // uses the deterministic fixtures above; no network is needed by this test.
 static void externalPack(const char *path) {
@@ -249,6 +271,7 @@ int main(int argc,char **argv) {
     assert(r && !regexjs_testar(r, "a\nb\nc", 5)); regexjs_liberar(r);
   }
   styleCompatibility();
+  largeBadgePack();
   printf("selospacote: ok\n");
   return 0;
 }

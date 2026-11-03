@@ -7,13 +7,13 @@ import subprocess
 
 SOURCE_FILES = {
     "src/streams.c", "src/selospacote.c", "src/selospacote.h", "src/sourceperf.h",
-    "src/fontenota.c", "src/stream_formatter.inc",
+    "src/regexjs.c", "src/regexjs.h", "src/fontenota.c", "src/stream_formatter.inc",
     "src/stream_formatter_draw.inc", "src/stream_formatter_emoji.inc", "src/source_backdrop.inc",
     ".github/workflows/playback-v17-ipk.yml", ".github/build/test_scope.py",
     "tests/test_scope.py", "tests/sourceperf.c", "tests/sourceperf_peer.c", "tests/sourceperf.sh",
     "tests/source_scroll.py", "tests/source_selection.py", "tests/source_badge_position.py",
     "tests/source_badge_readiness.py", "tests/source_badge_render.py", "tests/source_badge_gl.inc",
-    "tests/selospacote.c", "tests/selospacote.sh", "tests/source_refresh_identity.py",
+    "tests/selospacote.c", "tests/selospacote.sh", "tests/regexjs_badge.c", "tests/regexjs_badge.sh", "tests/regexjs_flags.js", "tests/source_refresh_identity.py",
     "tests/source_refresh_identity.c", "tests/fontes_formatter.c",
     "tests/fontes_formatter.sh", "tests/source_audio_language.c",
     "tests/source_audio_language.sh", "tests/source_audio_cache.py", "tests/source_backdrop.py",

@@ -426,6 +426,8 @@ static void pacoteDesmonta(Pacote *p) {
 
 static void compilaPacote(Pacote *p) {
   int i, j;
+  size_t regexBytes = 0;
+  const size_t regexBudget = 16u * 1024 * 1024;
   p->c = calloc((size_t)p->raw->nf + 1, sizeof *p->c);
   p->nc = 0;
   if (!p->c) return;
@@ -433,8 +435,12 @@ static void compilaPacote(Pacote *p) {
     const FiltroRaw *f = &p->raw->f[i];
     FiltroC *c = &p->c[p->nc];
     char erro[96];
-    if (!f->ativo || strlen(f->padrao) > 2000) continue;
-    c->re = regexjs_compilar_web(f->padrao, erro, sizeof erro);
+    if (!f->ativo) continue;
+    c->re = regexjs_compilar_badge(f->padrao, erro, sizeof erro);
+    if (c->re && regexjs_memoria(c->re) > regexBudget - regexBytes) {
+      regexjs_liberar(c->re); c->re = NULL;
+      snprintf(erro, sizeof erro, "compiled badge pack exceeds 16 MiB");
+    }
     if (!c->re) {
       // UMA VEZ por padrao e por execucao: a lista e recompilada a cada troca
       // de perfil/pacote, e repetir a linha enchia o registro.
@@ -455,6 +461,7 @@ static void compilaPacote(Pacote *p) {
     c->chave = strdup(f->imagem[0] ? f->imagem : f->nome);
     if (!c->chave) { regexjs_liberar(c->re); continue; }
     for (j = 0; c->chave[j]; j++) c->chave[j] = (char)tolower((unsigned char)c->chave[j]);
+    regexBytes += regexjs_memoria(c->re);
     p->nc++;
   }
   fflush(stdout);
