@@ -14,6 +14,7 @@ static size_t countedClean(const char *s,char *d,size_t n,int flags) {
 #include <assert.h>
 #include <unistd.h>
 #include "source_backdrop_gl.inc"
+#include "source_badge_gl.inc"
 #define CARDS 2000
 static Stream fixtures[CARDS];
 static int badgesBottom;
@@ -465,7 +466,7 @@ int main(int argc,char **argv) {
   gfx_tamanho_alvo(1920,1080);assert(gfx_iniciar());
   }
   assert(txt_iniciar("deploy/app",1));
-  if(!logicOnly)sourceBackdropPixels();
+  if(!logicOnly){sourceBackdropPixels();importedBadgePixels(dir);}
   for(int i=0;i<CARDS;i++) {
     Stream *s=&fixtures[i];s->altura=2160;s->mp4=s->emCache=1;s->fileIdx=-1;
     snprintf(s->url,sizeof s->url,"https://fixture.invalid/%d.mp4",i);

@@ -15,6 +15,8 @@ assert scope.choose(["src/streams.c", "src/sourceperf.h", "tests/sourceperf.c",
                      ".github/workflows/playback-v17-ipk.yml"]) == "sources"
 assert scope.choose(["src/fontenota.c", "tests/source_selection.py"]) == "sources"
 assert scope.choose(["src/source_backdrop.inc", "tests/source_backdrop_gl.inc", "tests/source_audio_cache.py"]) == "sources"
+assert scope.choose(["src/selospacote.c", "src/selospacote.h", "tests/source_badge_render.py",
+                     "tests/source_badge_gl.inc", "tests/selospacote.c"]) == "sources"
 for path in ["src/video.c", "src/app.c", "src/streams.h", "src/rede.c", "src/dts/dts_engine.c",
              "src/ajustes.c", "src/tex_cache.c", "src/fontepref.c", "tools/Dockerfile", "unknown"]:
     assert scope.choose(["src/streams.c", path]) == "full", path

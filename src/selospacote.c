@@ -183,6 +183,7 @@ static char *normStr(const J *o, const char *chave) {
   if (f->t == J_NUM) { snprintf(buf, sizeof buf, "%g", f->num); return norm(buf); }
   return norm("");
 }
+static int parseCor(const char *s, int *tem, float rgba[4]);
 // normalizeColor: "#RRGGBB", "transparent", "rgba(...)" ou "" (invalida).
 static char *normCor(const J *o, const char *chave) {
   char *t = normStr(o, chave), *r;
@@ -192,7 +193,7 @@ static char *normCor(const J *o, const char *chave) {
   if ((!strncasecmp(t, "rgba(", 5) || !strncasecmp(t, "rgb(", 4)) && t[strlen(t) - 1] == ')') {
     const char *q = strchr(t, '(') + 1; int ok = 1;
     for (; *q && *q != ')'; q++) if (!strchr("0123456789 ,%.", *q)) ok = 0;
-    if (ok) return t;
+    { int tem; float rgba[4]; if (ok && parseCor(t, &tem, rgba)) return t; }
     t[0] = 0; return t;
   }
   h = t[0] == '#' ? t + 1 : t;
@@ -243,7 +244,7 @@ static int normImport(const J *src, const char *urlPadrao, PacoteRaw *out) {
   // toBadgeArray: um valor so vira lista de um
   for (e = fs && fs->t == J_ARR ? fs->filho : fs; e; e = (fs && fs->t == J_ARR) ? e->prox : NULL) nf++;
   for (e = gs && gs->t == J_ARR ? gs->filho : gs; e; e = (gs && gs->t == J_ARR) ? e->prox : NULL) ng++;
-  if (nf > 2000) nf = 2000;
+  if (nf > SELOS_MAX_FILTROS) nf = SELOS_MAX_FILTROS;
   out->f = calloc((size_t)nf + 1, sizeof *out->f);
   out->g = calloc((size_t)ng + 1, sizeof *out->g);
   if (!out->f || !out->g) { pacoteLiberar(out); return 0; }
@@ -376,18 +377,28 @@ static int parseCor(const char *s, int *tem, float rgba[4]) {
     rgba[0] = (float)((v >> 16) & 255) / 255.0f; rgba[1] = (float)((v >> 8) & 255) / 255.0f;
     rgba[2] = (float)(v & 255) / 255.0f; rgba[3] = 1.0f; *tem = 1; return 1;
   }
-  if (!strncasecmp(s, "rgb", 3)) {
-    double v[4] = { 0, 0, 0, 1 }; const char *q = strchr(s, '('); int k = 0;
-    if (!q) return 0;
-    q++;
-    while (*q && *q != ')' && k < 4) {
-      char *e; v[k++] = strtod(q, &e);
-      if (e == q) break;
-      q = e; while (*q == ',' || *q == ' ' || *q == '%') q++;
+  if (!strncasecmp(s, "rgb(", 4) || !strncasecmp(s, "rgba(", 5)) {
+    double v[4] = { 0, 0, 0, 1 };
+    int count = tolower((unsigned char)s[3]) == 'a' ? 4 : 3;
+    const char *q = strchr(s, '(') + 1;
+    for (int k = 0; k < count; k++) {
+      char *end;
+      while (isspace((unsigned char)*q)) q++;
+      v[k] = strtod(q, &end);
+      if (end == q) return 0;
+      q = end;
+      if (*q == '%') { v[k] /= 100.0; q++; }
+      else if (k < 3) v[k] /= 255.0;
+      if (v[k] < 0) v[k] = 0;
+      if (v[k] > 1) v[k] = 1;
+      while (isspace((unsigned char)*q)) q++;
+      if (*q != (k + 1 == count ? ')' : ',')) return 0;
+      q++;
     }
-    if (k < 3) return 0;
-    rgba[0] = (float)(v[0] / 255.0); rgba[1] = (float)(v[1] / 255.0); rgba[2] = (float)(v[2] / 255.0);
-    rgba[3] = (float)v[3]; *tem = 1; return 1;
+    while (isspace((unsigned char)*q)) q++;
+    if (*q) return 0;
+    for (int k = 0; k < 4; k++) rgba[k] = (float)v[k];
+    *tem = 1; return 1;
   }
   return 0;
 }
@@ -437,6 +448,7 @@ static void compilaPacote(Pacote *p) {
     }
     c->raw = f;
     c->pub.nome = f->nome; c->pub.imagem = f->imagem;
+    c->pub.preenchido = !strcasecmp(f->estilo, "filled");
     parseCor(f->tag, &c->pub.temTag, c->pub.tag);
     parseCor(f->texto, &c->pub.temTexto, c->pub.texto);
     parseCor(f->borda, &c->pub.temBorda, c->pub.borda);

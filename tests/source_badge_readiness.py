@@ -66,9 +66,12 @@ static SeloFiltro filters[]={
 static int loaded[4], failed[4], requested[4];
 const SeloFiltro *selospacote_filtro(unsigned short id){return id<4?&filters[id]:NULL;}
 static int imageId(const char *p){return p[0]=='a'?1:p[0]=='b'?2:3;}
-static unsigned tex_obter_larg(const char *p,float width){assert(width==128);int id=imageId(p);requested[id]++;return loaded[id];}
+static unsigned tex_obter_larg_qualquer(const char *p,float width){assert(width==128);int id=imageId(p);requested[id]++;return loaded[id];}
 static int tex_falhou(const char *p){return failed[imageId(p)];}
 @IMAGES@
+static int nOrdem,ordem[1001];static float rolagem;
+static float areaLista(void){return 200;}
+static int primeiraVisivel(float y){int r=(int)y/100;return r<nOrdem?r:nOrdem-1;}
 @VIEW@
 static int drawnPack, drawnLegacy;
 static float desenharSelosPacote(const Stream *s,float x,float y,float w,float h,float a,float t,int skip){(void)s;(void)x;(void)y;(void)w;(void)h;(void)a;(void)t;(void)skip;drawnPack++;return 20;}
@@ -124,6 +127,13 @@ int main(void){
  aberta=0;anim=0;selosAquecerPasso();assert(requested[1]-beforeWarm==2);
  for(int i=0;i<20;i++){selosAquecerPasso();}assert(requested[1]-beforeWarm==8);
  beforeWarm=requested[1];for(int i=0;i<20;i++){selosAquecerPasso();}assert(requested[1]==beforeWarm);
+ // Current viewport 4..6, exactly two offscreen neighbours 3 and 7.
+ nOrdem=n;rolagem=400;for(int i=0;i<n;i++)ordem[i]=n-1-i;
+ rows[ordem[3]].selosPacote[0]=2;rows[ordem[7]].selosPacote[0]=2;
+ int req1=requested[1],req2=requested[2];aberta=1;
+ selosAquecerVizinhos();assert(requested[2]==req2+2&&requested[1]==req1);
+ aberta=0;selosAquecerVizinhos();assert(requested[2]==req2+2);
+ nOrdem=0;aberta=1;selosAquecerVizinhos();assert(requested[2]==req2+2);
  selosVistaVer=version;selosVistaSemMemoria=1;assert(selosVistaDa(rows,0)==SELOS_VISTA_PACOTE&&!selosVistaCap);selosVistaSemMemoria=0;
  for(int i=0;i<n;i++){rows[i].selosPacoteVer=version;rows[i].nSelosPacote=1;rows[i].selosPacote[0]=1;assert(selosVistaDa(&rows[i],0)==SELOS_VISTA_PACOTE);}
  int requestsBefore=requested[1], schedulesBefore=schedules;

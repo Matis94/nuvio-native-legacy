@@ -695,6 +695,7 @@ static int selosPacoteDa(Stream *s);
 static void selosAgendar(int ini, int qtd);
 static void selosVistaLimpar(void);
 static void selosAquecerPasso(void);
+static void selosAquecerVizinhos(void);
 static void textoAddonLimpar(void);
 void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
   int i, k = 0;
@@ -5378,6 +5379,18 @@ static void desenharOnde(GfxRect r, float tx, float tr, const OndeVer *o, int se
 
 // Texto em maiusculas espacadas da linha de marca e dos cabecalhos de grupo.
 // i18n antes da caixa alta: a tabela de idioma guarda a frase normal.
+// Imported chips follow Android/Smart TV: only filled has a background,
+// border is independent, and image pixels are never tinted. Builtins keep
+// their established presentation. The tiny metadata cache owns no textures.
+static float selosAspectos[SELOS_MAX_FILTROS];
+static unsigned selosAspectosVer;
+static void selosFundoImportado(const SeloFiltro *f, GfxRect p, float a) {
+  float raio = 6.0f / p.h;
+  if (f->preenchido && f->temTag && f->tag[3] > .001f)
+    gfx_cor(p, raio, f->tag[0], f->tag[1], f->tag[2], f->tag[3] * a);
+  if (f->temBorda && f->borda[3] > .001f)
+    gfx_anel(p, raio, 1.5f, f->borda[0], f->borda[1], f->borda[2], f->borda[3] * a);
+}
 // A FILEIRA DO PACOTE DE SELOS (selospacote.h): cada filtro que casou, na ordem
 // do pacote. A imagem sai COMO O PACOTE A FEZ (textura normal, sem tinta e sem
 // a marca clara — o pacote e colorido), na altura `h` e com a proporcao dela;
@@ -5389,16 +5402,24 @@ static float selosDesenhar(const unsigned short *ids, int n, float x, float y, f
   const float gap = 8.0f, padX = 9.0f, imgMaxW = 220.0f;
   float x0 = x;
   int k, colorido = ajustes_selos_coloridos();
+  unsigned ver = selospacote_versao();
+  if (selosAspectosVer != ver) {
+    memset(selosAspectos, 0, sizeof selosAspectos); selosAspectosVer = ver;
+  }
   for (k = 0; k < n; k++) {
     const SeloFiltro *f = selospacote_filtro(ids[k]);
     float w, r, g, b, al;
-    int pronta = 0;
+    float reserva = 0;
     if (!f) continue;
     // A resolucao e o grupo da folha (e o titulo da fonte): fora da fileira.
     if (semResolucao && f->resolucao) continue;
     if (f->imagem[0]) {
-      GLuint t = tex_obter_larg(f->imagem, 128);
+      GLuint t = tex_obter_larg_qualquer(f->imagem, 128);
       float asp = t ? tex_aspecto(f->imagem) : 0.0f;
+      if (f->arte == SELO_ARTE_PACOTE && ids[k] < SELOS_MAX_FILTROS) {
+        if (asp > .01f) selosAspectos[ids[k]] = asp;
+        else asp = selosAspectos[ids[k]];
+      }
       if (t && asp > 0.01f && f->arte != SELO_ARTE_PACOTE) {
         // PACOTES EMBUTIDOS (selospacote.h). Padrao: a arte e branca e a forma
         // mora no alfa, entao tinge no cinza da linha como os logos de sempre.
@@ -5434,22 +5455,25 @@ static float selosDesenhar(const unsigned short *ids, int n, float x, float y, f
         }
         continue;
       }
-      if (t && asp > 0.01f) {
+      if (asp > 0.01f) {
+        const float pad = 3.0f;
         float ih = h;
         w = ih * asp;
-        if (w > imgMaxW) { w = imgMaxW; ih = w / asp; }
-        if (x + w > x0 + maxW) break;
-        if (!medir) {
-          gfx_tex_aspect_atual = 0.0f;
-          gfx_rect((GfxRect){x, y + (h - ih) * .5f, w, ih}, t, GFX_TEXTO, 0, 0, 0, 0.0f, 1, 1, 1, a);
+        if (w > imgMaxW - pad * 2) { w = imgMaxW - pad * 2; ih = w / asp; }
+        reserva = w + pad * 2;
+        if (x + reserva > x0 + maxW) break;
+        if (t) {
+          if (!medir) {
+            selosFundoImportado(f, (GfxRect){x, y - 3, reserva, h + 6}, a);
+            gfx_tex_aspect_atual = 0.0f;
+            gfx_rect((GfxRect){x + pad, y + (h - ih) * .5f, w, ih}, t, GFX_TEXTO, 0, 0, 0, 0.0f, 1, 1, 1, a);
+          }
+          x += reserva + gap;
+          continue;
         }
-        x += w + gap;
-        continue;
-      }
-      // Ainda baixando: guarda o lugar (a fileira nao pula quando chega) e nao
-      // desenha. Se falhou, mostra o nome.
-      pronta = tex_falhou(f->imagem);
-      if (!pronta) {
+        // Evicted image: keep its measured slot and a readable label while
+        // the existing asynchronous cache restores it; never blank the row.
+      } else if (!tex_falhou(f->imagem)) {
         w = h * 2.0f;
         if (x + w > x0 + maxW) break;
         x += w + gap;
@@ -5460,20 +5484,26 @@ static float selosDesenhar(const unsigned short *ids, int n, float x, float y, f
     { int tr = f->temTexto ? (int)(f->texto[0] * 255.0f + .5f) : 235,
           tg = f->temTexto ? (int)(f->texto[1] * 255.0f + .5f) : 235,
           tb = f->temTexto ? (int)(f->texto[2] * 255.0f + .5f) : 238;
-      TxtLinha l = txt_linha_corta(TXT_MINI, f->nome, tr, tg, tb, 255, 200.0f);
+      float pad = reserva > 0 ? 3.0f : padX;
+      TxtLinha l = txt_linha_corta(TXT_MINI, f->nome, tr, tg, tb, 255,
+                                    reserva > 0 ? fmaxf(1, reserva - pad * 2) : 200.0f);
       float ph = h + 6.0f, raio = 6.0f / ph;
       GfxRect p;
-      w = (float)l.w + padX * 2.0f;
+      w = reserva > 0 ? reserva : (float)l.w + pad * 2.0f;
       if (x + w > x0 + maxW) break;
       if (!medir) {
         p = (GfxRect){x, y - 3.0f, w, ph};
-        if (f->temTag) { r = f->tag[0]; g = f->tag[1]; b = f->tag[2]; al = f->tag[3]; }
-        else { r = .10f; g = .11f; b = .13f; al = .88f; }
-        if (al > 0.01f) gfx_cor(p, raio, r, g, b, al * a);
-        if (f->temBorda && f->borda[3] > 0.01f)
-          gfx_anel(p, raio, 1.5f, f->borda[0], f->borda[1], f->borda[2], f->borda[3] * a);
-        else if (!f->temTag) gfx_anel(p, raio, 1.5f, .35f, .36f, .40f, .60f * a);
-        txt_desenhar_alpha(l, x + padX, y + (h - (float)l.h) * .5f, a);
+        if (f->arte == SELO_ARTE_PACOTE) selosFundoImportado(f, p, a);
+        else {
+          if (f->temTag) { r = f->tag[0]; g = f->tag[1]; b = f->tag[2]; al = f->tag[3]; }
+          else { r = .10f; g = .11f; b = .13f; al = .88f; }
+          if (al > 0.01f) gfx_cor(p, raio, r, g, b, al * a);
+          if (f->temBorda && f->borda[3] > 0.01f)
+            gfx_anel(p, raio, 1.5f, f->borda[0], f->borda[1], f->borda[2], f->borda[3] * a);
+          else if (!f->temTag) gfx_anel(p, raio, 1.5f, .35f, .36f, .40f, .60f * a);
+        }
+        txt_desenhar_alpha(l, x + (w - l.w) * .5f, y + (h - (float)l.h) * .5f,
+                           a * (f->temTexto ? f->texto[3] : 1));
       }
       x += w + gap; }
   }
@@ -5487,7 +5517,7 @@ static int selosImagensProntas(const Stream *s, int semResolucao) {
   for (int k = 0; k < (int)s->nSelosPacote; k++) {
     const SeloFiltro *f = selospacote_filtro(s->selosPacote[k]);
     if (!f || (semResolucao && f->resolucao && f->arte != SELO_ARTE_PACOTE)) continue;
-    if (f->imagem[0] && !tex_obter_larg(f->imagem, 128) && !tex_falhou(f->imagem)) ready = 0;
+    if (f->imagem[0] && !tex_obter_larg_qualquer(f->imagem, 128) && !tex_falhou(f->imagem)) ready = 0;
   }
   return ready;
 }
@@ -5548,6 +5578,21 @@ static void selosAquecerPasso(void) {
     next++;
   }
 }
+// Only the two immediate offscreen neighbours; no full-list matching,
+// preload or extra texture ownership. This also rewarms evicted custom art
+// before a card scrolls into view.
+static void selosAquecerVizinhos(void) {
+  if (!aberta || nOrdem <= 0) return;
+  int rows[2] = { primeiraVisivel(rolagem) - 1,
+                 primeiraVisivel(rolagem + areaLista()) + 1 };
+  for (int k = 0; k < 2; k++) {
+    int row = rows[k], ready = 0;
+    if (row < 0 || row >= nOrdem) continue;
+    Stream *s = &lista[ordem[row]];
+    int count = selosPacoteEstado(s, &ready);
+    if (ready && count > 0) (void)selosImagensProntas(s, 0);
+  }
+}
 static float desenharSelosPacote(const Stream *s, float x, float y, float maxW, float h, float a,
                                  float tom, int semResolucao) {
   return selosDesenhar(s->selosPacote, (int)s->nSelosPacote, x, y, maxW, h, a, tom, semResolucao, 0);
@@ -5557,7 +5602,7 @@ int stream_selos_ha(const Stream *s) { return s && selosPacoteDa((Stream *)s) > 
 float stream_selos_fileira(const Stream *s, float x, float y, float maxW, float h, float tom, float a) {
   if (!s || !selosPacoteDa((Stream *)s)) return 0.0f;
   return desenharSelosPacote(s, x, y, maxW, h,
-                             ajustes_selos_coloridos() ? a * 0.9f : a, tom, 0);
+                             ajustes_selos_coloridos() && selospacote_ativo() < 0 ? a * 0.9f : a, tom, 0);
 }
 
 // SELOS DO QUE ESTA TOCANDO (OSD do player): o pacote ativo casado com um
@@ -5579,7 +5624,7 @@ float stream_selos_medidos(const char *texto, float x, float y, float maxW, floa
     n = ult[0] ? selospacote_casar(campos, 1, ids, SELOS_MAX_CASADOS) : 0;
   }
   if (!n) return 0.0f;
-  return selosDesenhar(ids, n, x, y, maxW, h, ajustes_selos_coloridos() ? a * 0.9f : a, tom, 0, medir);
+  return selosDesenhar(ids, n, x, y, maxW, h, ajustes_selos_coloridos() && selospacote_ativo() < 0 ? a * 0.9f : a, tom, 0, medir);
 }
 
 static float caixaAlta(const char *s, int r, int g, int b, float x, float y, float a) {
@@ -6173,6 +6218,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   melhor = melhorFolha = automaticoDaFolhaModo();
   montar(automatica);
   prepararCartoesAddon(automatica);
+  selosAquecerVizinhos();
   nf=nOrdem;
   // Keep content below the list boundary for the whole scroll animation.
   // The first selected card draws its top ring at that boundary until its
@@ -6410,7 +6456,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       int selosView = selosVistaDa((Stream *)s, 1);
       if(selosView == SELOS_VISTA_PACOTE && selosPacoteVisiveis((Stream *)s)) {
         lw=desenharSelosPacote(s,tx0,cy,txtW0-mpW,FOLHA_SELO_H,
-                               ajustes_selos_coloridos()?anim*(sel?1.0f:.85f):anim,t,1);
+                               ajustes_selos_coloridos() && selospacote_ativo()<0?anim*(sel?1.0f:.85f):anim,t,1);
         // O Crave (servico canadense) nao esta em nenhum dos dois pacotes
         // embutidos: sai pela arte antiga para nao ser perdido.
         if(selospacote_ativo()<0 && (logos&badges_bit("p-crave"))) {
