@@ -132,12 +132,19 @@ static void pixels(const char *dir) {
   assert(ok && "unfocused text and icons must preserve the previous RGB and alpha");
   tex_encerrar();
 }
+#include "source_backdrop_gl.inc"
+
 int main(int argc,char **argv) {
   int verify=argc==1 || strcmp(argv[1],"--measure");
   char dir[NVT_MAX]; nvt_set(dir, sizeof dir, "/nuvio-formatter479-XXXXXX"); assert(mkdtemp(dir));
   SDL_SetHint("SDL_MAC_BACKGROUND_APP","1");
   assert(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER)==0); IMG_Init(IMG_INIT_PNG);
+#ifdef NV_LINUX_DESKTOP
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,SDL_GL_CONTEXT_PROFILE_ES);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2); SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,0);
+#else
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2); SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
+#endif
   SDL_Window *win=SDL_CreateWindow("formatter479",0,0,1920,1080,SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN); assert(win);
   SDL_GLContext gl=SDL_GL_CreateContext(win); assert(gl); SDL_GL_SetSwapInterval(0);
   gfx_tamanho_alvo(1920,1080); assert(gfx_iniciar()); assert(txt_iniciar("deploy/app",1));
@@ -171,6 +178,7 @@ int main(int argc,char **argv) {
   cleans=cleanCalls; montar(automaticaDaFolha()); assert(cleanCalls==cleans);
   puts("formatter cache: append, replacement and setting changes OK");
   pixels(dir);
+  sourceBackdropPixels();
   txt_encerrar(); stream_definir_lista(NULL,0);
   SDL_GL_DeleteContext(gl); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit();
   char path[512]; snprintf(path,sizeof path,"%s/ajustes.txt",dir); unlink(path); rmdir(dir);
