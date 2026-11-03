@@ -5315,6 +5315,7 @@ void stream_folha_atualizar(float dt, Uint32 agora) {
   uint64_t perf = sourceperf_begin();
   streamFolhaAtualizar(dt, agora);
   sourceperf_end(NV_SRC_UPDATE, perf);
+  SOURCEPERF_MOTION(aberta, rolagem, velRol, dt, listaGeracao, filtro, nOrdem);
 }
 int stream_folha_escolheu(int *out) {
   if(escolha<0) return 0;
@@ -6583,3 +6584,4 @@ int stream_fit_abrindo(const Stream *s, char *l1, size_t n1, char *l2, size_t n2
   fitLinhasDe(&r, l1, n1, l2, n2);
   return 1;
 }
+

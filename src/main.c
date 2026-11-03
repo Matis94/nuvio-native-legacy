@@ -2318,7 +2318,9 @@ int main(int argc, char **argv) {
     }
     if (!nvPrimeiroQuadroFeito) arranque_etapa("primeiro SwapWindow");
     SOURCEPERF_SCENE_BEGIN(NV_SRC_PRESENT);
+    SOURCEPERF_SWAP_BEGIN();
     SDL_GL_SwapWindow(win);
+    SOURCEPERF_SWAP_END(playerUi, player_aberto(), player_carregando());
 #ifndef __EMSCRIPTEN__
     { unsigned wait = player_frame_wait(playerUi, SDL_GetTicks() - frameStarted);
       if (wait) SDL_Delay(wait); }
@@ -2727,3 +2729,4 @@ int main(int argc, char **argv) {
 #endif
   return 0;
 }
+

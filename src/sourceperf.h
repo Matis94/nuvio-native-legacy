@@ -28,11 +28,32 @@ typedef struct { uint64_t total, max, calls; } NvSourcePerfStage;
 // percentiles in it are reported as 100 ms (a lower bound), never discarded.
 #define NV_SOURCE_PACING_BINS 1001
 typedef struct {
+  uint32_t gaps[NV_SOURCE_PACING_BINS];
+  uint64_t frames, samples, gt20, gt25, gt33, maxGap, callTotal, callMax;
+  uint64_t playerFrames, loadingFrames, playerUiFrames, modeChanges;
+} NvSourceSwapWindow;
+typedef struct {
+  uint64_t pairs, moving, holds, fastHolds, reversals, rebases;
+  double distance, stepMax, stepChangeMax, speedTotal, speedMax, dtMin, dtMax;
+  double first, last;
+} NvSourceMotionWindow;
+typedef struct {
+  double pos, velocity, dt;
+  unsigned generation;
+  int tab, shown, valid, rebase;
+} NvSourceMotionPoint;
+typedef struct {
   NvSourcePerfStage stage[NV_SRC_COUNT];
   uint64_t pending[NV_SRC_COUNT], frequency, start, lastFrame, frameMax;
   uint64_t frames, lastSlow;
   uint32_t pacing[NV_SOURCE_PACING_BINS];
   uint64_t pacingSamples, over20, over25, over33;
+  NvSourceSwapWindow swap;
+  NvSourceMotionWindow motion;
+  NvSourceMotionPoint point, previousPoint;
+  uint64_t lastSwap;
+  double lastStep;
+  int lastStepValid, lastPlayer, lastLoading, lastPlayerUi;
   int banner, hasSlow;
 } NvSourcePerfState;
 // One render-thread state shared by the list and its surrounding scene.
@@ -51,6 +72,13 @@ static const char *const nvSourcePerfNames[NV_SRC_COUNT] = {
   uint64_t perfSource##stage = stream_folha_aberta() ? sourceperf_begin() : 0
 #define SOURCEPERF_SCENE_END(stage) \
   do { if (perfSource##stage) sourceperf_end(stage, perfSource##stage); } while (0)
+#define SOURCEPERF_MOTION(open, pos, velocity, dt, generation, tab, shown) \
+  sourceperf_motion(open, pos, velocity, dt, generation, tab, shown)
+#define SOURCEPERF_SWAP_BEGIN() \
+  uint64_t perfSourceSwap = stream_folha_aberta() ? sourceperf_begin() : 0; \
+  do { if (!perfSourceSwap) sourceperf_swap_idle(); } while (0)
+#define SOURCEPERF_SWAP_END(playerUi, player, loading) \
+  do { if (perfSourceSwap) sourceperf_swap_end(perfSourceSwap, playerUi, player, loading); } while (0)
 static inline uint64_t sourceperf_begin(void) { return NV_SOURCE_PERF_COUNTER(); }
 static inline void sourceperf_end(int stage, uint64_t start) {
   uint64_t now = NV_SOURCE_PERF_COUNTER();
@@ -82,16 +110,84 @@ static inline void sourceperf_pacing_add(uint64_t gap) {
   nvSourcePerf.over25 += ms > 25.0;
   nvSourcePerf.over33 += ms > 33.0;
 }
-static inline double sourceperf_percentile(unsigned percent) {
-  uint64_t n = nvSourcePerf.pacingSamples;
+static inline double sourceperf_hist_percentile(const uint32_t *hist, uint64_t n, unsigned percent) {
   if (!n) return 0;
   uint64_t rank = n / 100 * percent + (n % 100 * percent + 99) / 100;
   uint64_t seen = 0;
   for (unsigned i = 0; i < NV_SOURCE_PACING_BINS; i++) {
-    seen += nvSourcePerf.pacing[i];
+    seen += hist[i];
     if (seen >= rank) return (double)i / 10.0;
   }
   return 100.0;
+}
+static inline double sourceperf_percentile(unsigned percent) {
+  return sourceperf_hist_percentile(nvSourcePerf.pacing, nvSourcePerf.pacingSamples, percent);
+}
+static inline double sourceperf_abs(double x) { return x < 0 ? -x : x; }
+static inline void sourceperf_swap_idle(void) {
+  nvSourcePerf.lastSwap = 0;
+  nvSourcePerf.point.valid = nvSourcePerf.previousPoint.valid = 0;
+  nvSourcePerf.lastStepValid = 0;
+}
+static inline void sourceperf_motion(int open, double pos, double velocity, double dt,
+                                     unsigned generation, int tab, int shown) {
+  if (!open) { sourceperf_swap_idle(); return; }
+  NvSourceMotionPoint *p = &nvSourcePerf.point;
+  p->pos = pos; p->velocity = velocity; p->dt = dt;
+  p->generation = generation; p->tab = tab; p->shown = shown; p->valid = 1;
+  // Do not mistake filter/layout replacement or focus anchoring for scroll jitter.
+  p->rebase = nvSourcePerf.pending[NV_SRC_APPEND] || nvSourcePerf.pending[NV_SRC_FILTER] ||
+              nvSourcePerf.pending[NV_SRC_LAYOUT];
+}
+static inline void sourceperf_swap_end(uint64_t start, int playerUi, int player, int loading) {
+  uint64_t now = NV_SOURCE_PERF_COUNTER();
+  if (!nvSourcePerf.frequency) nvSourcePerf.frequency = NV_SOURCE_PERF_FREQUENCY();
+  if (!nvSourcePerf.frequency || now < start) { sourceperf_swap_idle(); return; }
+  NvSourceSwapWindow *s = &nvSourcePerf.swap;
+  NvSourceMotionPoint *p = &nvSourcePerf.point, *prev = &nvSourcePerf.previousPoint;
+  NvSourceMotionWindow *m = &nvSourcePerf.motion;
+  int modeChanged = nvSourcePerf.lastSwap &&
+    (player != nvSourcePerf.lastPlayer || loading != nvSourcePerf.lastLoading || playerUi != nvSourcePerf.lastPlayerUi);
+  if (modeChanged) { s->modeChanges++; nvSourcePerf.lastSwap = 0; prev->valid = 0; }
+  nvSourcePerf.lastPlayer = player; nvSourcePerf.lastLoading = loading; nvSourcePerf.lastPlayerUi = playerUi;
+  s->frames++; s->playerFrames += !!player; s->loadingFrames += !!loading; s->playerUiFrames += !!playerUi;
+  uint64_t call = now - start;
+  s->callTotal += call; if (call > s->callMax) s->callMax = call;
+  uint64_t gap = nvSourcePerf.lastSwap && now >= nvSourcePerf.lastSwap ? now - nvSourcePerf.lastSwap : 0;
+  int pair = nvSourcePerf.lastSwap && now > nvSourcePerf.lastSwap;
+  if (nvSourcePerf.lastSwap && now >= nvSourcePerf.lastSwap) {
+    double ms = sourceperf_ms(gap);
+    unsigned bin = ms >= 100 ? NV_SOURCE_PACING_BINS - 1 : (unsigned)(ms * 10);
+    s->gaps[bin]++; s->samples++;
+    s->gt20 += ms > 20; s->gt25 += ms > 25; s->gt33 += ms > 33;
+    if (gap > s->maxGap) s->maxGap = gap;
+  }
+  if (p->valid) {
+    if (pair && prev->valid && !p->rebase && p->generation == prev->generation &&
+        p->tab == prev->tab && p->shown == prev->shown) {
+      double step = p->pos - prev->pos, amount = sourceperf_abs(step);
+      double speed = amount * (double)nvSourcePerf.frequency / (double)gap;
+      if (!m->pairs) { m->first = prev->pos; m->dtMin = p->dt; m->dtMax = p->dt; }
+      m->pairs++; m->last = p->pos;
+      if (p->dt < m->dtMin) m->dtMin = p->dt;
+      if (p->dt > m->dtMax) m->dtMax = p->dt;
+      if (amount > .02) {
+        m->moving++; m->distance += amount; m->speedTotal += speed;
+        if (amount > m->stepMax) m->stepMax = amount;
+        if (speed > m->speedMax) m->speedMax = speed;
+      } else if (sourceperf_abs(p->velocity) > 5) {
+        m->holds++; m->fastHolds += sourceperf_abs(p->velocity) >= 60;
+      }
+      if (nvSourcePerf.lastStepValid) {
+        double change = sourceperf_abs(step - nvSourcePerf.lastStep);
+        if (change > m->stepChangeMax) m->stepChangeMax = change;
+        if (amount > .02 && sourceperf_abs(nvSourcePerf.lastStep) > .02 && step * nvSourcePerf.lastStep < 0) m->reversals++;
+      }
+      nvSourcePerf.lastStep = step; nvSourcePerf.lastStepValid = 1;
+    } else { m->rebases++; nvSourcePerf.lastStepValid = 0; }
+    *prev = *p; p->valid = 0;
+  } else { prev->valid = 0; nvSourcePerf.lastStepValid = 0; }
+  nvSourcePerf.lastSwap = now;
 }
 static inline void sourceperf_report(unsigned tick, unsigned generation, int total,
                                       int shown, int tab, int focus) {
@@ -156,6 +252,27 @@ static inline void sourceperf_report(unsigned tick, unsigned generation, int tot
     sourceperf_ms(nvSourcePerf.frameMax), (unsigned long long)nvSourcePerf.over20,
     (unsigned long long)nvSourcePerf.over25, (unsigned long long)nvSourcePerf.over33,
     nvSourcePerf.pacing[NV_SOURCE_PACING_BINS - 1]);
+  // Swap return intervals are submission timing, not physical panel timestamps.
+  const NvSourceSwapWindow *s = &nvSourcePerf.swap;
+  const NvSourceMotionWindow *m = &nvSourcePerf.motion;
+  NV_SOURCE_PERF_PRINT(
+    "[source-swap] t=%u generation=%u frames=%llu player=%llu loading=%llu player_ui=%llu mode_changes=%llu samples=%llu p50_ms=%.1f p95_ms=%.1f p99_ms=%.1f max_ms=%.2f gt20=%llu gt25=%llu gt33=%llu ge100=%u call_avg_ms=%.3f call_max_ms=%.3f\n",
+    tick, generation, (unsigned long long)s->frames, (unsigned long long)s->playerFrames,
+    (unsigned long long)s->loadingFrames, (unsigned long long)s->playerUiFrames, (unsigned long long)s->modeChanges,
+    (unsigned long long)s->samples, sourceperf_hist_percentile(s->gaps, s->samples, 50),
+    sourceperf_hist_percentile(s->gaps, s->samples, 95), sourceperf_hist_percentile(s->gaps, s->samples, 99),
+    sourceperf_ms(s->maxGap), (unsigned long long)s->gt20, (unsigned long long)s->gt25,
+    (unsigned long long)s->gt33, s->gaps[NV_SOURCE_PACING_BINS - 1],
+    s->frames ? sourceperf_ms(s->callTotal) / (double)s->frames : 0, sourceperf_ms(s->callMax));
+  NV_SOURCE_PERF_PRINT(
+    "[source-motion] t=%u generation=%u tab=%d shown=%d pairs=%llu moving=%llu holds=%llu fast_holds=%llu reversals=%llu rebases=%llu from_px=%.2f to_px=%.2f step_avg_px=%.3f step_max_px=%.3f step_change_max_px=%.3f speed_avg_px_s=%.2f speed_max_px_s=%.2f anim_dt_min_ms=%.3f anim_dt_max_ms=%.3f\n",
+    tick, generation, tab, shown, (unsigned long long)m->pairs, (unsigned long long)m->moving,
+    (unsigned long long)m->holds, (unsigned long long)m->fastHolds, (unsigned long long)m->reversals,
+    (unsigned long long)m->rebases, m->first, m->last, m->moving ? m->distance / (double)m->moving : 0,
+    m->stepMax, m->stepChangeMax, m->moving ? m->speedTotal / (double)m->moving : 0,
+    m->speedMax, m->dtMin * 1000, m->dtMax * 1000);
+  memset(&nvSourcePerf.swap, 0, sizeof nvSourcePerf.swap);
+  memset(&nvSourcePerf.motion, 0, sizeof nvSourcePerf.motion);
   memset(nvSourcePerf.pacing, 0, sizeof nvSourcePerf.pacing);
   nvSourcePerf.pacingSamples = nvSourcePerf.over20 = nvSourcePerf.over25 = nvSourcePerf.over33 = 0;
   memset(nvSourcePerf.stage, 0, sizeof nvSourcePerf.stage);
@@ -164,6 +281,9 @@ static inline void sourceperf_report(unsigned tick, unsigned generation, int tot
 #else
 #define SOURCEPERF_SCENE_BEGIN(stage) do {} while (0)
 #define SOURCEPERF_SCENE_END(stage) do {} while (0)
+#define SOURCEPERF_MOTION(open, pos, velocity, dt, generation, tab, shown) do {} while (0)
+#define SOURCEPERF_SWAP_BEGIN() do {} while (0)
+#define SOURCEPERF_SWAP_END(playerUi, player, loading) do {} while (0)
 static inline uint64_t sourceperf_begin(void) { return 0; }
 static inline void sourceperf_end(int stage, uint64_t start) { (void)stage; (void)start; }
 static inline void sourceperf_reset(void) {}
@@ -172,4 +292,5 @@ static inline void sourceperf_report(unsigned tick, unsigned generation, int tot
 }
 #endif
 #endif
+
 

@@ -28,6 +28,12 @@ assert scope.choose(["src/app.c"], verified_probes=["src/app.c"]) == "sources"
 assert scope.choose(["src/video.c"], verified_probes=["src/video.c"]) == "full"
 assert scope.without_scene_probes('call();\n') == scope.without_scene_probes(
     '#include "sourceperf.h"\nSOURCEPERF_SCENE_BEGIN(NV_SRC_APP_DRAW);\ncall();\nSOURCEPERF_SCENE_END(NV_SRC_APP_DRAW);\n')
+swap = 'SDL_GL_SwapWindow(win);\nwait();\n'
+swap_probes = ('SOURCEPERF_SWAP_BEGIN();\nSDL_GL_SwapWindow(win);\n'
+               'SOURCEPERF_SWAP_END(playerUi, player_aberto(), player_carregando());\nwait();\n')
+assert scope.without_scene_probes(swap_probes) == swap
+assert scope.without_scene_probes(swap_probes.replace('playerUi,', 'changed(),')) != swap
+assert scope.without_scene_probes(swap_probes.replace('wait();', 'otherWait();')) != swap
 workflow = (ROOT / ".github/workflows/playback-v17-ipk.yml").read_text()
 assert scope.build_signature(workflow) == scope.build_signature(workflow.replace(" -DNV_SOURCE_PERF_DIAG", ""))
 assert scope.build_signature(workflow) != scope.build_signature(workflow.replace("-DNV_DV7_MAPPING_TEST", ""))
@@ -77,6 +83,13 @@ with tempfile.TemporaryDirectory(prefix="nuvio-test-scope-git-") as directory:
         app.write_text(app.read_text().replace("cat_revisao()", "0"))
         altered_backdrop = commit()
         assert not scope.diagnostic_change_safe(before_backdrop, altered_backdrop, "src/app.c")
+        main = path / 'src/main.c'
+        main.write_text(swap); before_swap = commit()
+        main.write_text(swap_probes); with_swap = commit()
+        assert scope.diagnostic_change_safe(before_swap, with_swap, 'src/main.c')
+        main.write_text(swap_probes.replace('SDL_GL_SwapWindow(win)', 'SDL_GL_SwapWindow(other)'))
+        changed_swap = commit()
+        assert not scope.diagnostic_change_safe(before_swap, changed_swap, 'src/main.c')
     finally:
         os.chdir(previous)
 with tempfile.TemporaryDirectory(prefix="nuvio-test-scope-") as directory:
@@ -122,4 +135,5 @@ with tempfile.TemporaryDirectory(prefix='nuvio-skip-scope-git-') as directory:
     finally:
         os.chdir(previous)
 print('PASS: focused skip-button tests require exact verified application blobs; unknown paths, missing history and later shared-code edits retain full regressions')
+
 

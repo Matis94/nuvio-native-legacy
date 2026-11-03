@@ -43,10 +43,19 @@ static void fresh(void) {
   memset(&nvSourcePerf, 0, sizeof nvSourcePerf);
   memset(output, 0, sizeof output); used = 0; now = 1;
 }
+static void submitted(double pos, double velocity, unsigned gap, unsigned call,
+                      int playerUi, int player, int loading, unsigned generation, int tab, int shown) {
+  assert(gap >= call);
+  now += gap - call;
+  SOURCEPERF_MOTION(1, pos, velocity, .016, generation, tab, shown);
+  SOURCEPERF_SWAP_BEGIN();
+  now += call;
+  SOURCEPERF_SWAP_END(playerUi, player, loading);
+}
 #endif
 int main(int argc, char **argv) {
 #ifdef NV_SOURCE_PERF_DIAG
-  assert(sizeof nvSourcePerf < 6144);
+  assert(sizeof nvSourcePerf < 12288);
   if (argc > 1 && !strcmp(argv[1], "--bench")) {
     realClock = 1; frequency = UINT64_C(1000000000);
     uint64_t begin = counter();
@@ -55,12 +64,20 @@ int main(int argc, char **argv) {
     }
     uint64_t elapsed = counter() - begin;
     assert(nvSourcePerf.stage[NV_SRC_STATE].calls == 2000000 && !used);
-    printf("sourceperf host: %.1f ns/stage pair, <6 KiB state, no allocations or output in timed spans\n", (double)elapsed / 2000000.0);
+    printf("sourceperf host: %.1f ns/stage pair, <12 KiB state, no allocations or output in timed spans\n", (double)elapsed / 2000000.0);
     begin = counter();
     for (int i = 0; i < 2000000; i++) sourceperf_pacing_add(16670000);
     elapsed = counter() - begin;
     assert(nvSourcePerf.pacingSamples == 2000000 && !used);
     printf("source pacing host: %.1f ns/sample, fixed histogram, no per-frame output\n", (double)elapsed / 2000000.0);
+    begin = counter();
+    for (int i = 0; i < 200000; i++) {
+      sourceperf_motion(1, i * 2.0, 125, .016, 1, 0, 1953);
+      sourceperf_swap_end(counter(), 1, 1, 1);
+    }
+    elapsed = counter() - begin;
+    assert(nvSourcePerf.swap.frames == 200000 && nvSourcePerf.motion.pairs > 0 && !used);
+    printf("source motion+swap host: %.1f ns/frame, total diagnostic state=%zu bytes\n", (double)elapsed / 200000.0, sizeof nvSourcePerf);
     return 0;
   }
   fresh();
@@ -85,7 +102,7 @@ int main(int argc, char **argv) {
   sourceperf_end(NV_SRC_FILTER, filter); sourceperf_report(75, 7, 1950, 65, 0, 1);
   assert(occurrences("source-perf-slow") == 1 && strstr(output, "filter_ms=60.00"));
   for (int i = 0; i < 180; i++) { now += 16700; sourceperf_report(100+i*17, 7, 1950, 65, 0, 1); }
-  assert(occurrences("frames=") == 1 && occurrences("[source-pacing]") == 1 && strstr(output, "filter=1/60.000/60.000"));
+  assert(occurrences("[source-perf] t=") == 1 && occurrences("[source-pacing]") == 1 && strstr(output, "filter=1/60.000/60.000"));
   assert(strstr(output, "append=1/15.000/15.000") && strstr(output, "prepare=1/5.000/5.000"));
   assert(strstr(output, "background=0/0.000/0.000") && strstr(output, "present=0/0.000/0.000"));
   assert(!nvSourcePerf.stage[NV_SRC_APPEND].calls && !nvSourcePerf.pending[NV_SRC_FILTER]);
@@ -99,7 +116,7 @@ int main(int argc, char **argv) {
   assert(occurrences("source-perf-slow") == 1 && occurrences("build=source-ui-v2") == 1);
   fresh(); sourceperf_report(0, 3, 2000, 2000, 0, 0);
   for (int i = 0; i < 600; i++) { now += 50000; sourceperf_report(i*50, 3, 2000, 2000, 0, 0); }
-  assert(occurrences("source-perf-slow") == 30 && occurrences("frames=") == 10 && occurrences("[source-pacing]") == 10);
+  assert(occurrences("source-perf-slow") == 30 && occurrences("[source-perf] t=") == 10 && occurrences("[source-pacing]") == 10);
   // Invalid stages, backward counters and unavailable frequency are harmless.
   unsigned long long calls = nvSourcePerf.stage[NV_SRC_STATE].calls;
   sourceperf_end(-1, now); sourceperf_end(NV_SRC_COUNT, now);
@@ -142,9 +159,71 @@ int main(int argc, char **argv) {
   fresh(); sourceperf_report(0, 9, 1953, 1953, 0, 0);
   now += 3000000; sourceperf_report(3000, 9, 1953, 1953, 0, 1);
   assert(strstr(output, "samples=1 p50_ms=100.0 p95_ms=100.0 p99_ms=100.0 max_ms=3000.00 gt20=1 gt25=1 gt33=1 ge100=1"));
+  // Constant scroll speed, one sample per submitted frame, isolated Swap call.
+  fresh(); frequency = 1000000; visible = 1;
+  submitted(0, 125, 16000, 1000, 0, 0, 0, 9, 0, 1953);
+  for (int i = 1; i <= 100; i++) submitted(i * 2, 125, 16000, 1000, 0, 0, 0, 9, 0, 1953);
+  assert(nvSourcePerf.swap.frames == 101 && nvSourcePerf.swap.samples == 100);
+  assert(nvSourcePerf.swap.callMax == 1000 && nvSourcePerf.swap.maxGap == 16000);
+  assert(nvSourcePerf.motion.pairs == 100 && nvSourcePerf.motion.moving == 100);
+  assert(nvSourcePerf.motion.distance == 200 && nvSourcePerf.motion.speedMax == 125);
+  assert(nvSourcePerf.motion.stepChangeMax == 0 && nvSourcePerf.motion.rebases == 1);
+  assert(!nvSourcePerf.motion.holds && !nvSourcePerf.motion.reversals);
+  // A held moving list, catch-up and reversed direction are distinguishable.
+  submitted(200, 125, 16000, 1000, 0, 0, 0, 9, 0, 1953);
+  submitted(204, 125, 16000, 1000, 0, 0, 0, 9, 0, 1953);
+  submitted(202, -125, 16000, 1000, 0, 0, 0, 9, 0, 1953);
+  assert(nvSourcePerf.motion.holds == 1 && nvSourcePerf.motion.fastHolds == 1);
+  assert(nvSourcePerf.motion.stepMax == 4 && nvSourcePerf.motion.stepChangeMax == 6);
+  assert(nvSourcePerf.motion.reversals == 1);
+  // Tab/list replacement, layout rebuilds and mode changes rebase motion.
+  uint64_t pairs = nvSourcePerf.motion.pairs;
+  submitted(5000, 125, 16000, 1000, 0, 0, 0, 9, 1, 1953);
+  submitted(9000, 125, 16000, 1000, 0, 0, 0, 10, 1, 1953);
+  submitted(12000, 125, 16000, 1000, 0, 0, 0, 10, 1, 1900);
+  nvSourcePerf.pending[NV_SRC_LAYOUT] = 1;
+  submitted(15000, 125, 16000, 1000, 0, 0, 0, 10, 1, 1900);
+  nvSourcePerf.pending[NV_SRC_LAYOUT] = 0;
+  submitted(20000, 125, 16000, 1000, 1, 1, 1, 10, 1, 1900);
+  assert(nvSourcePerf.motion.pairs == pairs && nvSourcePerf.motion.stepMax == 4);
+  assert(nvSourcePerf.swap.modeChanges == 1 && nvSourcePerf.swap.playerUiFrames == 1 && nvSourcePerf.swap.loadingFrames == 1);
+  // No fresh update: duplicate/nested submissions cannot repeat an old delta.
+  now += 16000; sourceperf_swap_end(now-1000, 1, 1, 1);
+  assert(nvSourcePerf.motion.pairs == pairs);
+  submitted(20002, 125, 16000, 1000, 1, 1, 1, 10, 1, 1900);
+  assert(nvSourcePerf.motion.pairs == pairs);
+  // Hidden sheets / reopen and backwards clocks cannot bridge unrelated frames.
+  sourceperf_swap_idle();
+  submitted(30000, 125, 16000, 1000, 1, 1, 1, 10, 1, 1900);
+  assert(nvSourcePerf.motion.pairs == pairs);
+  now = 2; sourceperf_swap_end(3, 1, 1, 1);
+  assert(!nvSourcePerf.lastSwap && !nvSourcePerf.previousPoint.valid);
+  // Real wait after Swap is excluded from call duration, included in next gap.
+  fresh(); frequency = 1000000;
+  submitted(0, 100, 16000, 1000, 1, 1, 1, 11, 0, 1953);
+  now += 12000;
+  submitted(2, 100, 4000, 1000, 1, 1, 1, 11, 0, 1953);
+  assert(nvSourcePerf.swap.callMax == 1000 && nvSourcePerf.swap.maxGap == 16000);
+  assert(sourceperf_hist_percentile(nvSourcePerf.swap.gaps, nvSourcePerf.swap.samples, 99) == 16);
+  // Reports reset windows, retaining just the preceding sample for continuity.
+  sourceperf_report(0, 11, 1953, 1953, 0, 0);
+  now += 3000000; sourceperf_report(3000, 11, 1953, 1953, 0, 0);
+  assert(occurrences("[source-motion]") == 1 && occurrences("[source-swap]") == 1);
+  assert(strstr(output, "pairs=1 moving=1 holds=0 fast_holds=0"));
+  assert(strstr(output, "call_avg_ms=1.000 call_max_ms=1.000"));
+  assert(!nvSourcePerf.motion.pairs && !nvSourcePerf.swap.samples && nvSourcePerf.previousPoint.valid);
+  sourceperf_reset(); assert(!nvSourcePerf.lastSwap && !nvSourcePerf.previousPoint.valid);
+  fresh(); frequency = 1000000;
+  submitted(0, 125, 16000, 1000, 0, 0, 0, 1, 0, 1953);
+  unsigned gaps[] = {20000, 20001, 25000, 25001, 33000, 33001, 3000000};
+  for (unsigned i = 0; i < sizeof gaps / sizeof gaps[0]; i++)
+    submitted(i+1, 125, gaps[i], 1000, 0, 0, 0, 1, 0, 1953);
+  assert(nvSourcePerf.swap.samples == 7 && nvSourcePerf.swap.gt20 == 6 && nvSourcePerf.swap.gt25 == 4 && nvSourcePerf.swap.gt33 == 2);
+  assert(nvSourcePerf.swap.gaps[1000] == 1 && nvSourcePerf.swap.maxGap == 3000000);
   fresh(); frequency = 0; sourceperf_report(0, 0, 0, 0, -1, -1); assert(!used);
   puts("PASS: inclusive timing, 3-second summaries, one slow report/second, reset, rollback, zero-frequency and bounded state");
   puts("PASS: pacing percentiles, strict thresholds, counter units, overflow, resets and consecutive report boundaries");
+  puts("PASS: submitted scroll motion, holds/catch-up/reversal, rebasing, Swap duration/gaps, mode labels and bounded summaries");
 #else
   (void)argc; (void)argv;
   for (int i = 0; i < 100000; i++) {
@@ -155,8 +234,14 @@ int main(int argc, char **argv) {
   { SOURCEPERF_SCENE_BEGIN(NV_SRC_BACKGROUND); SOURCEPERF_SCENE_END(NV_SRC_BACKGROUND); }
   assert(!reads && !visibilityReads);
   assert(sourceperf_peer() == 0 && !visibilityReads);
+  int effects = 0;
+  SOURCEPERF_MOTION(++effects, ++effects, ++effects, ++effects, ++effects, ++effects, ++effects);
+  SOURCEPERF_SWAP_BEGIN();
+  SOURCEPERF_SWAP_END(++effects, ++effects, ++effects);
+  assert(!effects && !reads && !visibilityReads);
   puts("PASS: ordinary builds make no source timing clock reads or log writes");
 #endif
   return 0;
 }
+
 

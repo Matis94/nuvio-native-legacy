@@ -72,6 +72,11 @@ def choose(paths, force_full=False, verified_probes=()):
 
 def without_scene_probes(text):
     text = re.sub(r'^#include "sourceperf.h"\n', '', text, flags=re.M)
+    # Only these audited, observational Swap hooks may use source-only CI.
+    # Altered arguments, Swap order, wait policy or other main.c edits stay full.
+    for probe in ('SOURCEPERF_SWAP_BEGIN();',
+                  'SOURCEPERF_SWAP_END(playerUi, player_aberto(), player_carregando());'):
+        text = re.sub(r'^[ \t]*' + re.escape(probe) + r'\n', '', text, flags=re.M)
     text = re.sub(r'^[ \t]*SOURCEPERF_SCENE_(?:BEGIN|END)\(NV_SRC_[A-Z_]+\);\n', '', text, flags=re.M)
     return re.sub(r' SOURCEPERF_SCENE_END\(NV_SRC_[A-Z_]+\);', '', text)
 
@@ -145,3 +150,4 @@ if __name__ == "__main__":
     print(f"[ci-tests] scope={scope}; changed_paths={len(paths)}; unknown or shared changes use full regressions")
     with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
         output.write(f"scope={scope}\nfull={'true' if scope == 'full' else 'false'}\n")
+
