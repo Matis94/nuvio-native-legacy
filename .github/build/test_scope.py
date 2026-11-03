@@ -38,6 +38,33 @@ DIAGNOSTIC_REBUILD_FILES = {
     '.github/workflows/playback-v17-ipk.yml',
 }
 
+SOURCE_VSYNC_APPLICATION = {'src/main.c', 'src/player_pacing.h'}
+SOURCE_VSYNC_FILES = DIAGNOSTIC_REBUILD_FILES | SOURCE_VSYNC_APPLICATION | {
+    '.github/build/source_loading_vsync_scope.json', 'tests/source_loading_vsync.sh',
+}
+
+def source_vsync_change_safe(base, head, paths):
+    if not paths or not set(paths) <= SOURCE_VSYNC_FILES:
+        return False
+    base = base or head + '^'
+    if not build_configuration_safe(base, head):
+        return False
+    try:
+        def show(ref, path):
+            return subprocess.check_output(['git', 'show', ref+':'+path],
+                                           text=True, stderr=subprocess.DEVNULL)
+        def blob(ref, path):
+            return subprocess.check_output(['git', 'rev-parse', ref+':'+path],
+                                           text=True, stderr=subprocess.DEVNULL).strip()
+        pin = json.loads(show(head, '.github/build/source_loading_vsync_scope.json'))
+        if set(pin['before']) != SOURCE_VSYNC_APPLICATION or set(pin['after']) != SOURCE_VSYNC_APPLICATION:
+            return False
+        return all(blob(head, path) == pin['after'][path] and
+                   blob(base, path) in (pin['before'][path], pin['after'][path])
+                   for path in SOURCE_VSYNC_APPLICATION)
+    except (OSError, subprocess.CalledProcessError, ValueError, KeyError, TypeError):
+        return False
+
 def diagnostic_rebuild_safe(base, head, paths):
     if not paths or not set(paths) <= DIAGNOSTIC_REBUILD_FILES:
         return False
@@ -173,7 +200,7 @@ if __name__ == "__main__":
         force = True
     probes = [path for path in paths if diagnostic_change_safe(base, head, path)]
     scope = choose(paths, force, probes)
-    if not force and diagnostic_rebuild_safe(base, head, paths):
+    if not force and (diagnostic_rebuild_safe(base, head, paths) or source_vsync_change_safe(base, head, paths)):
         scope = 'source-diagnostics'
     elif not force and skip_buttons_change_safe(base, head, paths):
         scope = 'skip-buttons'

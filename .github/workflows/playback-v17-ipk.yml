@@ -46,6 +46,11 @@ jobs:
       - name: Source UI timing regressions
         if: steps.tests.outputs.scope != 'skip-buttons'
         run: SANITIZE=1 bash tests/sourceperf.sh
+      - name: Source loading VSync policy regressions
+        if: steps.tests.outputs.scope == 'source-diagnostics' || steps.tests.outputs.full == 'true'
+        run: |
+          SANITIZE=1 bash tests/source_loading_vsync.sh
+          bash tests/player_pacing.sh
       - name: Last profile startup regressions
         if: steps.tests.outputs.full == 'true'
         run: |

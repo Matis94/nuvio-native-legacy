@@ -176,4 +176,38 @@ with tempfile.TemporaryDirectory(prefix='nuvio-diagnostic-rebuild-') as director
         os.chdir(previous)
 print('PASS: diagnostic rebuild requires unchanged complete application tree, audited blobs, unchanged build flags and available history')
 
+with tempfile.TemporaryDirectory(prefix='nuvio-source-vsync-scope-') as directory:
+    path=Path(directory)
+    subprocess.run(['git','init','-q',directory],check=True)
+    def record_vsync():
+        subprocess.run(['git','add','.'],cwd=path,check=True)
+        subprocess.run(['git','-c','user.name=CI fixture','-c','user.email=fixture@example.invalid',
+                        'commit','-qm','fixture'],cwd=path,check=True)
+        return subprocess.check_output(['git','rev-parse','HEAD'],cwd=path,text=True).strip()
+    def vsync_hashes():
+        return {p:subprocess.check_output(['git','hash-object',p],cwd=path,text=True).strip()
+                for p in scope.SOURCE_VSYNC_APPLICATION}
+    for p in scope.SOURCE_VSYNC_APPLICATION:
+        dest=path/p;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_text('before '+p+'\n')
+    wf=path/'.github/workflows/playback-v17-ipk.yml';wf.parent.mkdir(parents=True,exist_ok=True);wf.write_text(workflow)
+    before=vsync_hashes();base=record_vsync()
+    for p in scope.SOURCE_VSYNC_APPLICATION:(path/p).write_text('after '+p+'\n')
+    pinpath=path/'.github/build/source_loading_vsync_scope.json';pinpath.parent.mkdir(parents=True,exist_ok=True)
+    pin={'before':before,'after':vsync_hashes()};pinpath.write_text(json.dumps(pin));head=record_vsync()
+    previous=Path.cwd()
+    try:
+        os.chdir(path)
+        paths=scope.changed(base,head)
+        assert scope.source_vsync_change_safe(base,head,paths)
+        assert not scope.source_vsync_change_safe(base,head,paths+['src/player.c'])
+        assert not scope.source_vsync_change_safe(base,head,[])
+        assert not scope.source_vsync_change_safe('1'*40,head,paths)
+        main=path/'src/main.c';main.write_text('unrelated pacing edit\n');bad=record_vsync()
+        assert not scope.source_vsync_change_safe(base,bad,paths)
+        main.write_text('after src/main.c\n');record_vsync()
+        pin['after'].pop('src/player_pacing.h');pinpath.write_text(json.dumps(pin));bad=record_vsync()
+        assert not scope.source_vsync_change_safe(base,bad,paths)
+    finally:os.chdir(previous)
+print('PASS: focused VSync tests require the exact audited main/header pair and reject unrelated changes or missing history')
+
 
