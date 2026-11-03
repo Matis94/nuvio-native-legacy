@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Select source UI regressions for source-only changes; otherwise keep full CI."""
 import os
+import json
 from pathlib import Path
 import re
 import subprocess
@@ -23,6 +24,45 @@ SOURCE_FILES = {
 
 
 DIAGNOSTIC_FILES = {"src/app.c", "src/main.c"}
+
+# A one-time, verified feature port may use focused Settings/marker tests.
+# Any later shared-code edit that changes one of these blobs falls back to full.
+SKIP_BUTTON_APPLICATION = {
+    'src/ajustes.c', 'src/ajustes.h', 'src/ajustes_ux_padrao.inc',
+    'src/ajustes_ux_tela.inc', 'src/ajustes_device.inc', 'src/ajustes_ux_secoes.inc',
+    'src/ajustes_ux_visual.inc', 'src/ajustes_ux_dados.inc', 'src/player.c',
+    'src/intro.c', 'src/intro.h',
+}
+SKIP_BUTTON_TESTS = {
+    'tests/intro.c', 'tests/skip_buttons.py', 'tests/skip_button_settings.c',
+    'tests/skip_button_settings.sh', 'tests/buffer_player_settings.c',
+    'tests/test_scope.py', '.github/build/test_scope.py',
+    '.github/build/skip_buttons_scope.json', '.github/workflows/playback-v17-ipk.yml',
+}
+
+def skip_buttons_change_safe(base, head, paths):
+    if not paths or not set(paths) <= SKIP_BUTTON_APPLICATION | SKIP_BUTTON_TESTS:
+        return False
+    try:
+        def show(ref, path):
+            return subprocess.check_output(['git', 'show', ref+':'+path], text=True,
+                                           stderr=subprocess.DEVNULL)
+        pin = json.loads(show(head, '.github/build/skip_buttons_scope.json'))
+        if set(pin['before']) != SKIP_BUTTON_APPLICATION or set(pin['after']) != SKIP_BUTTON_APPLICATION:
+            return False
+        for path in SKIP_BUTTON_APPLICATION:
+            current = subprocess.check_output(['git', 'rev-parse', head+':'+path], text=True,
+                                              stderr=subprocess.DEVNULL).strip()
+            if current != pin['after'][path]:
+                return False
+            if path in paths:
+                previous = subprocess.check_output(['git', 'rev-parse', (base or head+'^')+':'+path],
+                                                   text=True, stderr=subprocess.DEVNULL).strip()
+                if previous not in (pin['before'][path], pin['after'][path]):
+                    return False
+        return True
+    except (OSError, subprocess.CalledProcessError, ValueError, KeyError, TypeError):
+        return False
 
 
 def choose(paths, force_full=False, verified_probes=()):
@@ -100,6 +140,8 @@ if __name__ == "__main__":
         force = True
     probes = [path for path in paths if diagnostic_change_safe(base, head, path)]
     scope = choose(paths, force, probes)
+    if not force and skip_buttons_change_safe(base, head, paths):
+        scope = 'skip-buttons'
     print(f"[ci-tests] scope={scope}; changed_paths={len(paths)}; unknown or shared changes use full regressions")
     with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
         output.write(f"scope={scope}\nfull={'true' if scope == 'full' else 'false'}\n")

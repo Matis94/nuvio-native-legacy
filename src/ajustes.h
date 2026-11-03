@@ -160,6 +160,10 @@ int ajustes_proximo_auto(void);
 int ajustes_proximo_contagem(void);
 // Pula os creditos sozinho, so com inicio e fim reais do marcador (desligado de fabrica).
 int ajustes_pular_creditos(void);
+// Manual skip-button visibility, independent of automatic skipping; default ON.
+int ajustes_show_skip_intro(void);
+int ajustes_show_skip_recap(void);
+int ajustes_show_skip_credits(void);
 // Medidor de desempenho na ilha do relogio (desempenho.h): Desempenho desta TV,
 // local. 0 = desligado, 1 = Minimo, 2 = Menor, 3 = Grande (DS_* de desempenho.h).
 int ajustes_medidor_desempenho(void);

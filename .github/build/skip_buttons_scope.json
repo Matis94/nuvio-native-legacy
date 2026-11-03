@@ -1,0 +1,28 @@
+{
+  "before": {
+    "src/ajustes.c": "2c7f828907f51db80bcc165b8958a33a90b25f25",
+    "src/ajustes.h": "ce3a75f464fe7336b06db30ac36d634e8386bcb5",
+    "src/ajustes_ux_padrao.inc": "a16a163bc439b98ec190002a73b16fd95f915e03",
+    "src/ajustes_ux_tela.inc": "099bce558897af3c25fadab7a64322c7df1b08e9",
+    "src/ajustes_device.inc": "5bbfd1987014574646005451e6f9923c2aa4baa4",
+    "src/ajustes_ux_secoes.inc": "99bbc06df7eeb1f6577b8aa0c21e7c35868b93c0",
+    "src/ajustes_ux_visual.inc": "249a8936d2dc1b7cf4262dee644ac1f5a5a09a23",
+    "src/ajustes_ux_dados.inc": "f5ce61c8adebd99901f6938260a6348fc20ce402",
+    "src/player.c": "e54f0dd8a2b979257fef6f30376ce4084095475a",
+    "src/intro.c": "2bed71cd32e66e81d7fb686fb117b617d560cba2",
+    "src/intro.h": "a896a0f9b85c841119801ba3aca56e0b032b4e47"
+  },
+  "after": {
+    "src/ajustes.c": "434efd1fd150b1202a375dc2841888c806e76d5a",
+    "src/ajustes.h": "5afc5697a30eea5c68bca919280adf9790c006b6",
+    "src/ajustes_ux_padrao.inc": "f30fd4a479c791c1863413cb93cd47563d843b49",
+    "src/ajustes_ux_tela.inc": "5ceb08291f9366d7f38331e9191dda2d5e41ec7f",
+    "src/ajustes_device.inc": "fa36501d45c949d4ea8c707d0076674303cc837c",
+    "src/ajustes_ux_secoes.inc": "1758202cd038530dc248a923c50da05846631c40",
+    "src/ajustes_ux_visual.inc": "21b7ff73542246db7c7408c8eeba4b16c58a521c",
+    "src/ajustes_ux_dados.inc": "2f909e7c4d6a15eff057b5d7f124210b7b4087be",
+    "src/player.c": "6bf122e594622eda41a22191c97ebbb1849d816e",
+    "src/intro.c": "afe3b678131e2f46ad3d15bbef4c38ec11225516",
+    "src/intro.h": "7fb0a27aec9c9ee2adf068d17c4ee1d2fc4f8744"
+  }
+}

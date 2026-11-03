@@ -7,6 +7,7 @@
 // filename; neither JSON property names nor a remote path reach filesystem APIs.
 static int ajusteAparelho(int op) {
   switch (op) {
+    case AJ_SHOW_SKIP_INTRO: case AJ_SHOW_SKIP_RECAP: case AJ_SHOW_SKIP_CREDITS: return 0;
     case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_DIAGNOSTICS_QR: case AJ_UPDATE_NOTIFICATIONS: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS: case AJ_REMEMBER_PROFILE: case AJ_SOURCE_BADGE_POSITION: return 0;
     case AJ_VIDRO: case AJ_VIDRO_CONTORNO: case AJ_FUNDO:
     case AJ_VIDRO_OPAC: case AJ_VIDRO_FOSCO: case AJ_RAIL_BLUR:
@@ -334,3 +335,4 @@ static int ajustesDeviceAplicar(const char *json) {
   if (changed) gravar();
   return changed;
 }
+

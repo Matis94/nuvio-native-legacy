@@ -86,3 +86,40 @@ with tempfile.TemporaryDirectory(prefix="nuvio-test-scope-") as directory:
     subprocess.run(["python3", str(ROOT / ".github/build/test_scope.py")], env=env, check=True, cwd=directory)
     assert output.read_text() == "scope=full\nfull=true\n"
 print("PASS: source-only CI selection, shared dependency fallback, explicit full run and unavailable-history fallback")
+
+with tempfile.TemporaryDirectory(prefix='nuvio-skip-scope-git-') as directory:
+    path=Path(directory)
+    subprocess.run(['git','init','-q',directory],check=True)
+    def record():
+        subprocess.run(['git','add','.'],cwd=path,check=True)
+        subprocess.run(['git','-c','user.name=CI fixture','-c','user.email=fixture@example.invalid',
+                        'commit','-qm','fixture'],cwd=path,check=True)
+        return subprocess.check_output(['git','rev-parse','HEAD'],cwd=path,text=True).strip()
+    def hashes():
+        return {p:subprocess.check_output(['git','hash-object',p],cwd=path,text=True).strip()
+                for p in scope.SKIP_BUTTON_APPLICATION}
+    for p in scope.SKIP_BUTTON_APPLICATION:
+        target=path/p;target.parent.mkdir(parents=True,exist_ok=True);target.write_text('before '+p+'\n')
+    before_hashes=hashes();base=record()
+    for p in scope.SKIP_BUTTON_APPLICATION:
+        (path/p).write_text('after '+p+'\n')
+    import json
+    target=path/'.github/build/skip_buttons_scope.json';target.parent.mkdir(parents=True,exist_ok=True)
+    target.write_text(json.dumps({'before':before_hashes,'after':hashes()}));head=record()
+    previous=Path.cwd()
+    try:
+        os.chdir(path)
+        paths=scope.changed(base,head)
+        assert scope.skip_buttons_change_safe(base,head,paths)
+        assert not scope.skip_buttons_change_safe(base,head,paths+['src/rede.c'])
+        assert not scope.skip_buttons_change_safe(base,head,[])
+        assert not scope.skip_buttons_change_safe('1'*40,head,paths)
+        (path/'src/player.c').write_text('unrelated playback change\n');bad=record()
+        assert not scope.skip_buttons_change_safe(base,bad,scope.changed(base,bad))
+        (path/'src/player.c').write_text('after src/player.c\n');record()
+        pin=json.loads(target.read_text());pin['after'].pop('src/intro.c');target.write_text(json.dumps(pin));bad=record()
+        assert not scope.skip_buttons_change_safe(base,bad,paths)
+    finally:
+        os.chdir(previous)
+print('PASS: focused skip-button tests require exact verified application blobs; unknown paths, missing history and later shared-code edits retain full regressions')
+

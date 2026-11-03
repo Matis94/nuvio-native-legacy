@@ -23,7 +23,10 @@ int main(void) {
   assert(!ajustes_lembrar_perfil() && valorPadrao[AJ_REMEMBER_PROFILE]==1);
   assert(AJ_REMEMBER_PROFILE==AJ_BUFFER_CONVERSION_CONNECTIONS+1);
   assert(AJ_SOURCE_BADGE_POSITION==AJ_REMEMBER_PROFILE+1);
-  assert(AJ_N==AJ_SOURCE_BADGE_POSITION+1);
+  assert(AJ_SHOW_SKIP_INTRO==AJ_SOURCE_BADGE_POSITION+1);
+  assert(AJ_SHOW_SKIP_RECAP==AJ_SHOW_SKIP_INTRO+1);
+  assert(AJ_SHOW_SKIP_CREDITS==AJ_SHOW_SKIP_RECAP+1);
+  assert(AJ_N==AJ_SHOW_SKIP_CREDITS+1);
   assert(!strcmp(CHAVE[AJ_REMEMBER_PROFILE],"rememberLastProfileLocal"));
   assert(ajustes_escopo(AJ_REMEMBER_PROFILE)==ESC_TV && !dePerfil(AJ_REMEMBER_PROFILE));
   assert(!ajustePortavel(AJ_REMEMBER_PROFILE) && !ajusteAparelho(AJ_REMEMBER_PROFILE));
