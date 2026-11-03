@@ -4518,6 +4518,7 @@
   T("Pular créditos", "Lewati kredit"),
   T("Pular créditos automaticamente", "Automatically skip credits"),
   T("Pular créditos some sozinho. O canal reconecta.", "Lewati kredit hilang sendiri. Kanal tersambung kembali."),
+  T("Pular encerramento", "Lewati akhir"),
   T("Pular letra", "Lompat huruf"),
   T("Pular o encerramento automaticamente", "Lewati akhir otomatis"),
   T("Pular o resumo automaticamente", "Lewati rekap otomatis"),
