@@ -3,6 +3,11 @@ on:
   push:
     branches: [Nuvio_webOS_2.0.8.6]
   workflow_dispatch:
+    inputs:
+      full_regression:
+        description: Run the complete regression suite
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -20,19 +25,33 @@ jobs:
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'
       NUVIO_REQUIRE_ALL: '1'
-      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST
+      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST -DNV_SOURCE_PERF_DIAG
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+          fetch-depth: 4
       - name: Verify application source
         run: |
           git diff --check
+      - name: Select affected regression suites
+        id: tests
+        env:
+          NUVIO_TEST_BASE: ${{ github.event.before }}
+          NUVIO_TEST_HEAD: ${{ github.sha }}
+          NUVIO_FULL_TESTS: ${{ inputs.full_regression }}
+        run: |
+          python3 tests/test_scope.py
+          python3 .github/build/test_scope.py
+      - name: Source UI timing regressions
+        run: SANITIZE=1 bash tests/sourceperf.sh
       - name: Last profile startup regressions
+        if: steps.tests.outputs.full == 'true'
         run: |
           SANITIZE=1 bash tests/perfilsel.sh
           python3 tests/ajustes_secoes.py src/ajustes.c
       - name: Remembered audio regressions
+        if: steps.tests.outputs.full == 'true'
         run: |
           bash tests/audioescolha.sh
           bash tests/audiomemoria.sh
@@ -50,7 +69,27 @@ jobs:
       - name: Install host test dependencies
         timeout-minutes: 6
         run: bash .github/build/host_deps.sh
+      - name: Source UI and formatter dependency regressions
+        if: steps.tests.outputs.scope == 'sources'
+        timeout-minutes: 15
+        run: |
+          (
+            SANITIZE=1 NV_SOURCE_PERF_DIAG=1 bash tests/fontes_formatter.sh
+          ) &
+          formatter_suite=$!
+          (
+            SANITIZE=1 NV_SOURCE_PERF_DIAG=1 bash tests/source_audio_language.sh
+            bash tests/formatter_filename_tail.sh
+            bash tests/fonteauto.sh
+            SANITIZE=1 python3 tests/audio_source_group.py
+          ) &
+          source_suite=$!
+          result=0
+          wait "$formatter_suite" || result=1
+          wait "$source_suite" || result=1
+          exit "$result"
       - name: Formatter, subtitle opacity and upstream PR regressions
+        if: steps.tests.outputs.full == 'true'
         timeout-minutes: 30
         run: |
           # Independent fixtures use isolated temporary data directories.
@@ -79,6 +118,7 @@ jobs:
           wait "$episode_suite" || result=1
           exit "$result"
       - name: P7 mapping settings, metadata and session isolation
+        if: steps.tests.outputs.full == 'true'
         timeout-minutes: 6
         env:
           RUSTUP_TOOLCHAIN: 1.88.0
@@ -88,6 +128,7 @@ jobs:
           bash tests/dv7.sh
           NV_TEST_P7_MAPPING=1 SANITIZE=1 bash tests/dts_playback.sh
       - name: Diagnostic QR export and normal phone input
+        if: steps.tests.outputs.full == 'true'
         timeout-minutes: 3
         run: |
           bash tests/diagnostics_qr_settings.sh
@@ -95,17 +136,20 @@ jobs:
           CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular_export.sh
           CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular.sh
       - name: Continue Watching and next-release regressions
+        if: steps.tests.outputs.full == 'true'
         timeout-minutes: 12
         run: |
           SANITIZE=1 bash tests/cwlocal.sh
           bash tests/fontepref_lancamento.sh
           bash tests/formatter_filename_tail.sh
       - name: Conversion refill and progressing HTTP gaps
+        if: steps.tests.outputs.full == 'true'
         timeout-minutes: 3
         run: |
           SANITIZE=1 bash tests/dts_rebuffer.sh
           SANITIZE=1 bash tests/range_progress.sh
       - name: Native buffering regressions
+        if: steps.tests.outputs.full == 'true'
         timeout-minutes: 8
         run: |
           SANITIZE=1 bash tests/range_diagnostics.sh
@@ -130,15 +174,18 @@ jobs:
           /tmp/buffer-policy-test
           cc -std=gnu11 -Wall -Wextra -Werror -Isrc -c src/dts/dts_engine.c -o /tmp/dts-noffmpeg.o
       - name: Consecutive MP4 seek reuse and bounded fallback
+        if: steps.tests.outputs.full == 'true'
         timeout-minutes: 3
         run: NV_TEST_MP4=1 SANITIZE=1 bash tests/dts_playback.sh
       - name: TrueHD DV routing and audio controls
+        if: steps.tests.outputs.full == 'true'
         timeout-minutes: 6
         run: |
           NV_TEST_TRUEHD=1 bash tests/dvaudio_lg.sh
           NV_TEST_TRUEHD=1 bash tests/video_acb_lg.sh
           NV_TEST_TRUEHD=1 SANITIZE=1 bash tests/dts_playback.sh
       - name: Fixed DV audio routing and local settings
+        if: steps.tests.outputs.full == 'true'
         timeout-minutes: 8
         run: |
           bash tests/ajustes_secoes.sh
@@ -155,6 +202,7 @@ jobs:
           NV_TEST_MP4=1 bash tests/buffer_player_settings.sh
           NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 NV_TEST_P7_MAPPING=1 bash tests/dvaudio_lg.sh
       - name: Build host FFmpeg and test real HTTP buffering
+        if: steps.tests.outputs.full == 'true'
         timeout-minutes: 12
         env:
           NUVIO_DTS_HOST: '1'
@@ -178,6 +226,7 @@ jobs:
           rustup toolchain install 1.88.0 --profile minimal
           rustup target add --toolchain 1.88.0 armv7-unknown-linux-gnueabi
       - name: DV7 conversion regressions
+        if: steps.tests.outputs.full == 'true'
         env:
           RUSTUP_TOOLCHAIN: 1.88.0
           NUVIO_DTS_ROOT: /tmp/nuvio-dts-host
@@ -189,6 +238,7 @@ jobs:
           NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 NV_TEST_CACHE_REUSE=1 bash tests/dv7_engine.sh
           NV_TEST_P7_MAPPING=1 NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 NV_TEST_CACHE_REUSE=1 bash tests/dv7_engine.sh
       - name: MP4 P7/P8 recovery and MKV isolation
+        if: steps.tests.outputs.full == 'true'
         timeout-minutes: 12
         env:
           RUSTUP_TOOLCHAIN: 1.88.0
