@@ -13,11 +13,16 @@ spec.loader.exec_module(scope)
 
 assert scope.choose(["src/streams.c", "src/sourceperf.h", "tests/sourceperf.c",
                      ".github/workflows/playback-v17-ipk.yml"]) == "sources"
+assert scope.choose(["src/fontenota.c", "tests/source_selection.py"]) == "sources"
 for path in ["src/video.c", "src/app.c", "src/streams.h", "src/rede.c", "src/dts/dts_engine.c",
              "src/ajustes.c", "src/tex_cache.c", "src/fontepref.c", "tools/Dockerfile", "unknown"]:
     assert scope.choose(["src/streams.c", path]) == "full", path
 assert scope.choose([]) == "full"
 assert scope.choose(["src/streams.c"], True) == "full"
+assert scope.choose(["src/app.c"], verified_probes=["src/app.c"]) == "sources"
+assert scope.choose(["src/video.c"], verified_probes=["src/video.c"]) == "full"
+assert scope.without_scene_probes('call();\n') == scope.without_scene_probes(
+    '#include "sourceperf.h"\nSOURCEPERF_SCENE_BEGIN(NV_SRC_APP_DRAW);\ncall();\nSOURCEPERF_SCENE_END(NV_SRC_APP_DRAW);\n')
 workflow = (ROOT / ".github/workflows/playback-v17-ipk.yml").read_text()
 assert scope.build_signature(workflow) == scope.build_signature(workflow.replace(" -DNV_SOURCE_PERF_DIAG", ""))
 assert scope.build_signature(workflow) != scope.build_signature(workflow.replace("-DNV_DV7_MAPPING_TEST", ""))
@@ -47,6 +52,18 @@ with tempfile.TemporaryDirectory(prefix="nuvio-test-scope-git-") as directory:
         source.rename(path / "src/rede.c")
         renamed = commit()
         assert scope.choose(scope.changed(base, renamed)) == "full"
+        app = path / "src/app.c"
+        app.write_text("void draw(void) {\n  drawBackground(); }\n")
+        before_probe = commit()
+        app.write_text('#include "sourceperf.h"\nvoid draw(void) {\n'
+                       '  SOURCEPERF_SCENE_BEGIN(NV_SRC_BACKGROUND);\n'
+                       '  drawBackground(); SOURCEPERF_SCENE_END(NV_SRC_BACKGROUND); }\n')
+        with_probe = commit()
+        assert scope.diagnostic_change_safe(before_probe, with_probe, "src/app.c")
+        app.write_text(app.read_text().replace("drawBackground()", "differentDraw()"))
+        runtime_change = commit()
+        assert not scope.diagnostic_change_safe(before_probe, runtime_change, "src/app.c")
+        assert not scope.diagnostic_change_safe("1" * 40, runtime_change, "src/app.c")
     finally:
         os.chdir(previous)
 with tempfile.TemporaryDirectory(prefix="nuvio-test-scope-") as directory:

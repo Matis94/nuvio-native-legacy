@@ -411,6 +411,14 @@ static void sourceTimingIntegration(const char *dir) {
   folhaDados();folhaDados();
   assert(nvSourcePerf.stage[NV_SRC_STATE].calls==checks+2);
   assert(nvSourcePerf.stage[NV_SRC_FILTER].calls==filters);
+  uint64_t picks=nvSourcePerf.stage[NV_SRC_AUTO].calls;
+  int candidate=folhaAuto;
+  soDub=1;folhaDados();soDub=0;folhaDados();
+  soCache=1;folhaDados();soCache=0;folhaDados();
+  soMp4=1;folhaDados();soMp4=0;folhaDados();
+  assert(nvSourcePerf.stage[NV_SRC_AUTO].calls==picks && folhaAuto==candidate);
+  atomic_fetch_add(&folhaRevisao,1);folhaDados();
+  assert(nvSourcePerf.stage[NV_SRC_AUTO].calls==picks+1);
   assert(n==CARDS+1 && nOrdem==CARDS+1);
   tex_encerrar();aberta=0;anim=0;
   puts("PASS: real 2000-source UI records all 12 timing stages and preserves the cached filter path");

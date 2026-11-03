@@ -6,11 +6,11 @@ import re
 import subprocess
 
 SOURCE_FILES = {
-    "src/streams.c", "src/sourceperf.h", "src/stream_formatter.inc",
+    "src/streams.c", "src/sourceperf.h", "src/fontenota.c", "src/stream_formatter.inc",
     "src/stream_formatter_draw.inc", "src/stream_formatter_emoji.inc",
     ".github/workflows/playback-v17-ipk.yml", ".github/build/test_scope.py",
-    "tests/test_scope.py", "tests/sourceperf.c", "tests/sourceperf.sh",
-    "tests/source_scroll.py", "tests/source_badge_position.py",
+    "tests/test_scope.py", "tests/sourceperf.c", "tests/sourceperf_peer.c", "tests/sourceperf.sh",
+    "tests/source_scroll.py", "tests/source_selection.py", "tests/source_badge_position.py",
     "tests/source_badge_readiness.py", "tests/source_refresh_identity.py",
     "tests/source_refresh_identity.c", "tests/fontes_formatter.c",
     "tests/fontes_formatter.sh", "tests/source_audio_language.c",
@@ -19,8 +19,30 @@ SOURCE_FILES = {
 }
 
 
-def choose(paths, force_full=False):
-    return "sources" if paths and not force_full and all(p in SOURCE_FILES for p in paths) else "full"
+DIAGNOSTIC_FILES = {"src/app.c", "src/main.c"}
+
+
+def choose(paths, force_full=False, verified_probes=()):
+    allowed = SOURCE_FILES | (set(verified_probes) & DIAGNOSTIC_FILES)
+    return "sources" if paths and not force_full and all(p in allowed for p in paths) else "full"
+
+
+def without_scene_probes(text):
+    text = re.sub(r'^#include "sourceperf.h"\n', '', text, flags=re.M)
+    text = re.sub(r'^[ \t]*SOURCEPERF_SCENE_(?:BEGIN|END)\(NV_SRC_[A-Z_]+\);\n', '', text, flags=re.M)
+    return re.sub(r' SOURCEPERF_SCENE_END\(NV_SRC_[A-Z_]+\);', '', text)
+
+
+def diagnostic_change_safe(base, head, path):
+    if path not in DIAGNOSTIC_FILES:
+        return False
+    try:
+        texts = [subprocess.check_output(["git", "show", ref + ":" + path],
+                                        text=True, stderr=subprocess.DEVNULL)
+                 for ref in (base or head + "^", head)]
+    except (OSError, subprocess.CalledProcessError):
+        return False
+    return without_scene_probes(texts[0]) == without_scene_probes(texts[1])
 
 
 def build_signature(text):
@@ -63,7 +85,8 @@ if __name__ == "__main__":
     force = os.environ.get("NUVIO_FULL_TESTS", "").lower() == "true"
     if ".github/workflows/playback-v17-ipk.yml" in paths and not build_configuration_safe(base, head):
         force = True
-    scope = choose(paths, force)
+    probes = [path for path in paths if diagnostic_change_safe(base, head, path)]
+    scope = choose(paths, force, probes)
     print(f"[ci-tests] scope={scope}; changed_paths={len(paths)}; unknown or shared changes use full regressions")
     with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
         output.write(f"scope={scope}\nfull={'true' if scope == 'full' else 'false'}\n")
