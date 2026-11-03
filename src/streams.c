@@ -125,6 +125,7 @@ static int n = 0;
 // Workers publish source mutations; UI caches consume this revision.
 static _Atomic unsigned folhaRevisao;
 static void folhaDados(void);
+static void audioFiltroDescartar(void);
 static float linhaTopo(int row);
 static int cacheConfirmado(const Stream *s) {
   return s->emCache && !s->cacheNegado && (!s->foraCache || s->cacheNativo) && !s->urlP2P && !s->naoVideo;
@@ -747,6 +748,7 @@ void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
   // resposta chega. O carimbo vem de quem pediu, em app.c, e e ele que permite
   // a qualquer consumidor perguntar "esta lista e do episodio que eu quero?".
   snprintf(alvoLista, sizeof alvoLista, "%s", alvoPedido);
+  if (!n) audioFiltroDescartar();
 }
 
 void stream_invalidar(const char *porque) {
@@ -3886,7 +3888,10 @@ static int audioListaEm(const char *p,size_t limite,const char *pref) {
     while (ate > p && isspace((unsigned char)ate[-1])) ate--;
     size_t len = (size_t)(ate - p);
     memcpy(raw, p, len); raw[len] = 0;
-    const char *cod = faixaIdiomaDoNome(raw);
+    // Parser hints normally already contain short ISO codes. Do not search
+    // every translated language name before accepting those same tags.
+    const char *cod = len <= 3 && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo) ? codigo : NULL;
+    if (!cod) cod = faixaIdiomaDoNome(raw);
     if (!cod && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo)) cod = codigo;
     if (cod && ling_casa(cod, pref)) return 1;
     p = f ? f + 1 : fim;
@@ -3910,12 +3915,50 @@ static const char *idiomaDa(const Stream *s) {
   if (temNoTexto(s, "legendado") || temNoTexto(s, "leg")) return "Legendado";
   return NULL;
 }
-static int temAudioPreferido(const Stream *s) {
-  const char *pref = idiomaFiltroAudio();
+static int temAudioPreferidoSemCache(const Stream *s, const char *pref) {
   // Explicit audio wins. Add-on release labels are a fallback only; their
   // hints do not claim that a playback track has been inspected.
   return !pref[0] || (s->audioIdiomas[0] ? audioDeclaradoEm(s,pref) :
     audioListaEm(s->audioRotulos,sizeof s->audioRotulos,pref));
+}
+// Raw indices survive addon appends. These two immutable audio fields come
+// from the parser; badge/URL workers never change them. One byte per source:
+// 0=unknown, 1=no match, 2=match. Never cache external/temporary Stream values.
+static struct {
+  unsigned char *match;
+  int cap, total;
+  unsigned generation;
+  char language[96];
+} audioFiltroCache;
+static void audioFiltroDescartar(void) {
+  free(audioFiltroCache.match);
+  memset(&audioFiltroCache, 0, sizeof audioFiltroCache);
+}
+static int temAudioPreferido(const Stream *s) {
+  const char *pref = idiomaFiltroAudio();
+  if (!aberta || !lista || !n || strlen(pref) >= sizeof audioFiltroCache.language)
+    return temAudioPreferidoSemCache(s, pref);
+  // Integer range checks also support a temporary Stream from outside lista.
+  uintptr_t offset = (uintptr_t)s - (uintptr_t)lista;
+  if ((uintptr_t)s < (uintptr_t)lista || offset / sizeof *s >= (size_t)n || offset % sizeof *s)
+    return temAudioPreferidoSemCache(s, pref);
+  if (audioFiltroCache.cap < n) {
+    unsigned char *next = realloc(audioFiltroCache.match, (size_t)n);
+    if (!next) return temAudioPreferidoSemCache(s, pref);
+    audioFiltroCache.match = next; audioFiltroCache.cap = n;
+  }
+  if (audioFiltroCache.generation != listaGeracao || strcmp(audioFiltroCache.language, pref) ||
+      audioFiltroCache.total > n) {
+    audioFiltroCache.total = 0; audioFiltroCache.generation = listaGeracao;
+    snprintf(audioFiltroCache.language, sizeof audioFiltroCache.language, "%s", pref);
+  }
+  if (audioFiltroCache.total < n) {
+    memset(audioFiltroCache.match + audioFiltroCache.total, 0, (size_t)(n - audioFiltroCache.total));
+    audioFiltroCache.total = n;
+  }
+  unsigned char *match = &audioFiltroCache.match[offset / sizeof *s];
+  if (!*match) *match = (unsigned char)(1 + temAudioPreferidoSemCache(s, pref));
+  return *match == 2;
 }
 typedef struct {
   int declarados,rotulos,desconhecidos,casaDeclarado,casaRotulo,soLegenda;

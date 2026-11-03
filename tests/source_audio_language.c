@@ -128,6 +128,18 @@ int main(void) {
   assert(passaChips(0));
   d=resumoFiltroAudio();assert(d.visiveis==1 && !d.mp4 && !d.cache);
   filtro=0;soMp4=soCache=0;lista=NULL;n=0;
+  // Real list publication, append and teardown exercise the open-sheet cache.
+  Stream cacheRows[2]={{0}};
+  strcpy(cacheRows[0].url,"https://example.test/first");
+  strcpy(cacheRows[1].url,"https://example.test/second");
+  strcpy(cacheRows[0].audioIdiomas,"pl");strcpy(cacheRows[1].audioRotulos,"en");
+  stream_definir_lista(cacheRows,1);aberta=1;ling_local_audio("pl");
+  assert(temAudioPreferido(&lista[0]) && audioFiltroCache.match[0]==2);
+  stream_lista_acrescentar(cacheRows+1,1,0);
+  assert(temAudioPreferido(&lista[0]) && !temAudioPreferido(&lista[1]));
+  ling_local_audio("en");assert(!temAudioPreferido(&lista[0]) && temAudioPreferido(&lista[1]));
+  stream_definir_lista(cacheRows+1,1);assert(temAudioPreferido(&lista[0]));
+  stream_definir_lista(NULL,0);assert(!audioFiltroCache.match && !audioFiltroCache.cap);aberta=0;
   puts("PASS: selected-language chip, add-on label fallback, declared precedence and subtitle/URL/provider isolation");
   return 0;
 }

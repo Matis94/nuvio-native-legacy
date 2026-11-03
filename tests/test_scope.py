@@ -17,6 +17,7 @@ assert scope.choose(["src/fontenota.c", "tests/source_selection.py"]) == "source
 for path in ["src/video.c", "src/app.c", "src/streams.h", "src/rede.c", "src/dts/dts_engine.c",
              "src/ajustes.c", "src/tex_cache.c", "src/fontepref.c", "tools/Dockerfile", "unknown"]:
     assert scope.choose(["src/streams.c", path]) == "full", path
+assert scope.choose(["tests/source_audio_cache.py", "src/streams.c"]) == "sources"
 assert scope.choose([]) == "full"
 assert scope.choose(["src/streams.c"], True) == "full"
 assert scope.choose(["src/app.c"], verified_probes=["src/app.c"]) == "sources"

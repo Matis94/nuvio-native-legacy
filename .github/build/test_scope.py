@@ -14,7 +14,7 @@ SOURCE_FILES = {
     "tests/source_badge_readiness.py", "tests/source_refresh_identity.py",
     "tests/source_refresh_identity.c", "tests/fontes_formatter.c",
     "tests/fontes_formatter.sh", "tests/source_audio_language.c",
-    "tests/source_audio_language.sh", "tests/formatter_filename_tail.c",
+    "tests/source_audio_language.sh", "tests/source_audio_cache.py", "tests/formatter_filename_tail.c",
     "tests/formatter_filename_tail.sh",
 }
 
