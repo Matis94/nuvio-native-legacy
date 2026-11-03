@@ -58,16 +58,16 @@ jobs:
           bash tests/audiomemoria.sh
           SANITIZE=1 python3 tests/audio_source_group.py
       - name: Source badge position regressions
-        if: steps.tests.outputs.scope != 'skip-buttons'
+        if: steps.tests.outputs.scope != 'skip-buttons' && steps.tests.outputs.scope != 'source-diagnostics'
         run: SANITIZE=1 python3 tests/source_badge_position.py
       - name: Stable source badge regressions
-        if: steps.tests.outputs.scope != 'skip-buttons'
+        if: steps.tests.outputs.scope != 'skip-buttons' && steps.tests.outputs.scope != 'source-diagnostics'
         run: |
           SANITIZE=1 python3 tests/source_badge_readiness.py
           SANITIZE=1 python3 tests/source_badge_render.py
           bash tests/selospacote.sh
       - name: Badge regex and source-rule dependency regressions
-        if: steps.tests.outputs.scope != 'skip-buttons'
+        if: steps.tests.outputs.scope != 'skip-buttons' && steps.tests.outputs.scope != 'source-diagnostics'
         run: |
           SANITIZE=1 bash tests/regexjs_badge.sh
           bash tests/regexjs_v8.sh
@@ -77,26 +77,27 @@ jobs:
           bash tests/fonteregra.sh
           bash tests/fonteregra_oficial.sh
       - name: Source scrolling and stable ordering regressions
-        if: steps.tests.outputs.scope != 'skip-buttons'
+        if: steps.tests.outputs.scope != 'skip-buttons' && steps.tests.outputs.scope != 'source-diagnostics'
         run: |
           SANITIZE=1 python3 tests/source_scroll.py
           SANITIZE=1 python3 tests/source_formatter_motion.py
       - name: Source scoring and candidate cache regressions
-        if: steps.tests.outputs.scope != 'skip-buttons'
+        if: steps.tests.outputs.scope != 'skip-buttons' && steps.tests.outputs.scope != 'source-diagnostics'
         run: |
           SANITIZE=1 python3 tests/source_selection.py
           bash tests/fontenota.sh
       - name: Source audio filtering and backdrop regressions
-        if: steps.tests.outputs.scope != 'skip-buttons'
+        if: steps.tests.outputs.scope != 'skip-buttons' && steps.tests.outputs.scope != 'source-diagnostics'
         run: |
           SANITIZE=1 python3 tests/source_audio_cache.py
           SANITIZE=1 python3 tests/source_backdrop.py
       - name: Source refresh identity regressions
-        if: steps.tests.outputs.scope != 'skip-buttons'
+        if: steps.tests.outputs.scope != 'skip-buttons' && steps.tests.outputs.scope != 'source-diagnostics'
         run: SANITIZE=1 python3 tests/source_refresh_identity.py
       - name: Unpack offline formatter emoji
         run: python3 tools/formatter_emoji_assets.py
       - name: Install host test dependencies
+        if: steps.tests.outputs.scope != 'source-diagnostics'
         timeout-minutes: 6
         run: bash .github/build/host_deps.sh
       - name: Manual skip-button settings and marker regressions
@@ -390,3 +391,4 @@ jobs:
       - name: Remove temporary configuration
         if: always()
         run: rm -rf local.properties .build-private
+

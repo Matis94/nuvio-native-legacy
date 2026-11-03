@@ -25,6 +25,34 @@ SOURCE_FILES = {
 
 DIAGNOSTIC_FILES = {"src/app.c", "src/main.c"}
 
+# CI-only rebuild of the audited motion-diagnostics snapshot: the entire src
+# tree must be unchanged, not just the files listed here. Other application or
+# build-script changes still use the normal source/full regression selection.
+DIAGNOSTIC_REBUILD_PINS = {
+    'src/sourceperf.h': '3c3d59683fa5cba9f0bdc1e03e22c777b392b785',
+    'src/main.c': 'ccd01297f99314f87b24d7d81906ca2719bdc435',
+    'src/streams.c': 'd1e4c0cc9a76a05651fe47721d090d7da6fb73cb',
+}
+DIAGNOSTIC_REBUILD_FILES = {
+    '.github/build/test_scope.py', 'tests/test_scope.py',
+    '.github/workflows/playback-v17-ipk.yml',
+}
+
+def diagnostic_rebuild_safe(base, head, paths):
+    if not paths or not set(paths) <= DIAGNOSTIC_REBUILD_FILES:
+        return False
+    base = base or head + '^'
+    if not build_configuration_safe(base, head):
+        return False
+    try:
+        def blob(ref, path):
+            return subprocess.check_output(['git', 'rev-parse', ref+':'+path],
+                                           text=True, stderr=subprocess.DEVNULL).strip()
+        return (blob(base, 'src') == blob(head, 'src') and
+                all(blob(head, path) == sha for path, sha in DIAGNOSTIC_REBUILD_PINS.items()))
+    except (OSError, subprocess.CalledProcessError):
+        return False
+
 # A one-time, verified feature port may use focused Settings/marker tests.
 # Any later shared-code edit that changes one of these blobs falls back to full.
 SKIP_BUTTON_APPLICATION = {
@@ -100,7 +128,7 @@ def diagnostic_change_safe(base, head, path):
     # source-sheet wrapper. Every other app/main runtime edit keeps full CI.
     if path == "src/app.c":
         texts = list(map(without_source_backdrop, texts))
-    return without_scene_probes(texts[0]) == without_scene_probes(texts[1])
+    return without_scene_probes(texts[0]).rstrip('\n') == without_scene_probes(texts[1]).rstrip('\n')
 
 
 def build_signature(text):
@@ -145,7 +173,9 @@ if __name__ == "__main__":
         force = True
     probes = [path for path in paths if diagnostic_change_safe(base, head, path)]
     scope = choose(paths, force, probes)
-    if not force and skip_buttons_change_safe(base, head, paths):
+    if not force and diagnostic_rebuild_safe(base, head, paths):
+        scope = 'source-diagnostics'
+    elif not force and skip_buttons_change_safe(base, head, paths):
         scope = 'skip-buttons'
     print(f"[ci-tests] scope={scope}; changed_paths={len(paths)}; unknown or shared changes use full regressions")
     with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
