@@ -19,7 +19,7 @@ fixture = r'''
 #define NV_COR_FUNDO_G .05f
 #define NV_COR_FUNDO_B .05f
 #define GL_COLOR_BUFFER_BIT 1
-static unsigned now,tex_n_falta,generation,revision=1,color;
+static unsigned now,tex_n_falta,generation,revision=1,color,content,episodes;
 static uint64_t profile=1;
 static int opened=1,detail=1,covered=1,player,mini,retained,trailer,trailerOpen,saved,context,menu,all,logOpen,spot,glass;
 static int gfx_hdr_output,nv_grad_ativo,anim_politica_reduzida,available=1,snapshot,empty,title,language;
@@ -33,6 +33,7 @@ GET(trailer_aberto,trailerOpen)
 GET(spainel_visivel,saved) GET(ctx_aberto,context) GET(menu_aberto,menu) GET(vertudo_aberta,all)
 GET(registro_aberto,logOpen) GET(spot_cheio,spot) GET(ajustes_vidro,glass) GET(gfx_snap_ok,available)
 GET(gfx_snap_ativo,snapshot) GET(corviva_retargets,color) GET(detail_indice,title) GET(ajustes_idioma,language)
+GET(cat_revisao_itens,content) GET(cat_versao_episodios,episodes)
 static const char *transition="-";
 static const char *detail_transicao(void){return transition;}
 static uint64_t nv_perfil_sessao_ler(void){return profile;}
@@ -54,14 +55,18 @@ int main(void){
  frame(700);assert(captures==1 && copies==1 && draws==3);
  for(unsigned i=701;i<770;i++)frame(i);
  assert(captures==1 && draws==3 && copies==70);
- frame(2700);assert(captures==2); // bounded refresh for late metadata
- generation++;frame(2701);assert(captures==3); // another modal used the shared FBO
- revision++;frame(2702);assert(captures==3);frame(3402);assert(captures==4);
- title++;frame(3403);frame(4103);assert(captures==5);
- profile++;frame(4104);frame(4804);assert(captures==6);
- color++;frame(4805);frame(5505);assert(captures==7);
- language++;frame(5506);frame(6206);assert(captures==8);
- scale=1.2f;frame(6207);frame(6907);assert(captures==9);
+ frame(2700);assert(captures==1); // unchanged background stays cached
+ generation++;frame(2701);assert(captures==2); // another modal used the shared FBO
+ content++;frame(2702);frame(3402);assert(captures==3); // late title metadata
+ revision++;frame(3403);assert(captures==3);frame(4103);assert(captures==4);
+ title++;frame(4104);frame(4804);assert(captures==5);
+ profile++;frame(4805);frame(5505);assert(captures==6);
+ color++;frame(5506);frame(6206);assert(captures==7);
+ language++;frame(6207);frame(6907);assert(captures==8);
+ scale=1.2f;frame(6908);frame(7608);assert(captures==9);
+ episodes++;frame(7609);frame(8309);assert(captures==10);
+ for(unsigned i=0;i<17647;i++)frame(now+17);
+ assert(captures==10); // no two-second spikes during five minutes of scrolling
  int *guards[]={&player,&mini,&retained,&trailer,&trailerOpen,&saved,&context,&menu,&all,&logOpen,&spot,&glass,&gfx_hdr_output};
  for(unsigned i=0;i<sizeof guards/sizeof *guards;i++){
   int previous=captures;*guards[i]=1;frame(now+1);assert(captures==previous);*guards[i]=0;
@@ -81,6 +86,11 @@ int main(void){
  frame(now+1);pending=1;frame(now+700);assert(captures==previous+1);
  frame(now+149);assert(captures==previous+1);frame(now+1);assert(captures==previous+2);
  pending=0;frame(now+150);assert(captures==previous+3);
+ int settledDraws=draws,settledCopies=copies;
+ frame(now+1);frame(now+348);
+ assert(captures==previous+3 && copies==settledCopies && draws==settledDraws+2);
+ frame(now+1);assert(captures==previous+4); // final logo fade is captured
+ frame(now+2000);assert(captures==previous+4);
  // Permanently missing art cannot keep the fast retry cadence forever.
  profile++;frame(now+1);pending=1;frame(now+700);previous=captures;
  for(int i=0;i<89;i++)frame(now+150);
@@ -92,7 +102,7 @@ int main(void){
  int oldCopies=copies,oldLive=live;frame(now+700);
  assert(copies==oldCopies && live==oldLive+1 && !snapshot);
  previous=captures;frame(now+2000);assert(captures==previous && copies==oldCopies);
- puts("PASS: existing FBO reuse, warmup/metadata/art refresh, ownership, profile/title/theme invalidation, live-video/transition/nested-modal guards and empty-capture fallback; no texture allocations");
+ puts("PASS: five-minute settled snapshot reuse without periodic repaints, metadata/episode revisions, late-art fade, ownership, profile/title/theme invalidation, live-video/transition/nested-modal guards and empty-capture fallback; no texture allocations");
 }
 '''.replace("@BODY@", body)
 with tempfile.TemporaryDirectory(prefix="nuvio-source-backdrop-") as directory:

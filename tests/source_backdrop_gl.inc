@@ -32,9 +32,13 @@ static void backdropLive(int p,unsigned rev,void (*draw)(void *),void *ctx){(voi
 #define corviva_retargets backdropNo
 #define detail_indice backdropNo
 #define ajustes_idioma backdropNo
+#define cat_revisao_itens backdropNo
+#define cat_versao_episodios backdropNo
 #define spainel_fundo backdropLive
 #include "../src/source_backdrop.inc"
 #undef spainel_fundo
+#undef cat_revisao_itens
+#undef cat_versao_episodios
 #undef ajustes_idioma
 #undef detail_indice
 #undef corviva_retargets
@@ -80,7 +84,9 @@ static void sourceBackdropPixels(void){
     txt_novo_quadro();gfx_sem_recorte();glClear(GL_COLOR_BUFFER_BIT);
     backdropPattern(NULL);backdropForeground(frame);glFinish();
     glReadPixels(0,0,1920,1080,GL_RGBA,GL_UNSIGNED_BYTE,reference);
-    glClear(GL_COLOR_BUFFER_BIT);backdropClock=700+frame*16;
+    // Also cross the former two-second repaint interval. The static title
+    // page remains pixel-identical and is painted only for the first copy.
+    glClear(GL_COLOR_BUFFER_BIT);backdropClock=700+frame*2500;
     int before=backdropPaints;
     testedFontesFundo(0,1,backdropPattern,NULL);backdropForeground(frame);glFinish();
     assert(backdropPaints==before+(frame==0));

@@ -7,14 +7,14 @@ static void fontes_fundo(int podeParar, unsigned rev, void (*fundo)(void *), voi
     !defined(__EMSCRIPTEN__) && !defined(NV_LINUX_DESKTOP) && !defined(__APPLE__))
   typedef struct {
     uint64_t profile;
-    unsigned catalog, color;
+    unsigned catalog, content, episodes, color;
     int title, language;
     float w, h, scale;
   } BackdropKey;
   static struct {
     BackdropKey key;
     unsigned since, painted, owner, copies, artRetries;
-    int active, ready, missing, failed;
+    int active, ready, missing, failed, settling;
   } cache;
   unsigned now = SDL_GetTicks();
   int allowed = stream_folha_aberta() && detail_aberto() && detail_cobre_tela() &&
@@ -30,6 +30,7 @@ static void fontes_fundo(int podeParar, unsigned rev, void (*fundo)(void *), voi
     BackdropKey key;
     memset(&key, 0, sizeof key);
     key.profile = nv_perfil_sessao_ler(); key.catalog = rev;
+    key.content = cat_revisao_itens(); key.episodes = cat_versao_episodios();
     key.color = (unsigned)corviva_retargets(); key.title = detail_indice();
     key.language = ajustes_idioma(); key.w = NV_TELA_W; key.h = NV_TELA_H;
     key.scale = gfx_escala_ui();
@@ -37,13 +38,19 @@ static void fontes_fundo(int podeParar, unsigned rev, void (*fundo)(void *), voi
       memset(&cache, 0, sizeof cache);
       cache.active = 1; cache.since = now; memcpy(&cache.key, &key, sizeof key);
     }
-    // Let background entry/art/color fades settle. Repaint periodically for
-    // late metadata; missing texture requests must stay fresher than 200 ms.
+    // Metadata revisions invalidate the snapshot; an unchanged, complete
+    // background needs no periodic repaint while the source list scrolls.
+    // Keep retrying missing art, and let a newly available logo's fade finish
+    // live before taking one final, settled copy (detail.c: 260 ms).
     if (!cache.failed && now - cache.since >= 700) {
       if (cache.owner != gfx_snap_geracao()) cache.ready = 0;
       unsigned interval = cache.missing && cache.artRetries < 80 ? 150 : 2000;
-      if (cache.ready && now - cache.painted < interval) {
+      unsigned elapsed = now - cache.painted;
+      if (cache.ready && !cache.settling && (!cache.missing || elapsed < interval)) {
         cache.copies++; gfx_snap_desenhar(); return;
+      }
+      if (cache.ready && cache.settling && elapsed < 350) {
+        spainel_fundo(podeParar, rev, fundo, ctx); return;
       }
       gfx_snap_comecar();
       if (gfx_snap_ativo()) {
@@ -52,7 +59,9 @@ static void fontes_fundo(int podeParar, unsigned rev, void (*fundo)(void *), voi
         glClear(GL_COLOR_BUFFER_BIT);
         unsigned missing = tex_n_falta;
         if (fundo) fundo(ctx);
-        cache.missing = tex_n_falta != missing;
+        int stillMissing = tex_n_falta != missing;
+        cache.settling = cache.missing && !stillMissing;
+        cache.missing = stillMissing;
         cache.artRetries = cache.missing ? cache.artRetries + 1 : 0;
         gfx_sem_recorte();
         int maxChannel = 0;
