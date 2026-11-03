@@ -195,6 +195,31 @@ static void cardPixels(void) {
   }
   free(pixels);tex_encerrar();puts("PASS: final formatter metadata renders on selected and unselected cards");
 }
+static void formatterMotionPixels(void) {
+  assert(nOrdem>=2&&tex_iniciar(64));gfx_icones_dir("deploy/app/art");
+  int index=ordem[1],automatic=automaticaDaFolha();
+  float height=linhaAltura(1);
+  for(int frame=0;frame<40;frame++) {
+    txt_novo_quadro();tex_novo_quadro();tex_bombear(8);
+    glClearColor(.05f,.05f,.06f,1);glClear(GL_COLOR_BUFFER_BIT);
+    desenharCartaoAddon(index,1,(GfxRect){40,100,720,height},66,734,
+                       automatic,1,1,100,-INFINITY,INFINITY);
+    SDL_Delay(5);
+  }
+  size_t size=800u*1000u*4u;
+  unsigned char *reference=malloc(size),*pixels=malloc(size);assert(reference&&pixels);
+  for(int frame=0;frame<36;frame++) {
+    int delta=frame/12;float phase=(frame%12)*.039f;
+    txt_novo_quadro();glClearColor(.05f,.05f,.06f,1);glClear(GL_COLOR_BUFFER_BIT);
+    desenharCartaoAddon(index,1,(GfxRect){40+delta+phase,100+delta+phase,720,height},
+                       66+delta+phase,734+delta+phase,automatic,1,1,100,-INFINITY,INFINITY);
+    glFinish();glReadPixels(delta,80-delta,800,1000,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+    if(!frame)memcpy(reference,pixels,size);
+    else assert(!memcmp(reference,pixels,size));
+  }
+  free(reference);free(pixels);tex_encerrar();
+  puts("PASS: real GLES formatter pixels translate as one card across fractional scroll phases");
+}
 static void completeCards(const char *dir,int pixels) {
   Stream cards[4]={0};
   for(int i=0;i<3;i++) {
@@ -499,7 +524,7 @@ int main(int argc,char **argv) {
     setting(dir,1);assert(ajustes_selos_embaixo()==badgesBottom);
     parserAndCache();geometry(dir);measuredScrollGeometry(dir);
     completeCards(dir,!logicOnly);screenshotCards(dir,!logicOnly);
-    if(!logicOnly){firstCardScrollPixels(dir);wrappedFilenamePixels();clippedFormatterPixels();emojiPixels();}
+    if(!logicOnly){formatterMotionPixels();firstCardScrollPixels(dir);wrappedFilenamePixels();clippedFormatterPixels();emojiPixels();}
 #ifdef NV_SOURCE_PERF_DIAG
     if(!logicOnly)sourceTimingIntegration(dir);
 #endif

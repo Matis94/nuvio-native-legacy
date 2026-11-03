@@ -125,6 +125,9 @@ static TxtLinha txt_linha_corta(TxtEstilo e,const char *s,int r,int g,int b,int 
  TxtLinha t=txt_linha(e,s,r,g,b,a);if(t.w>max)t.w=(int)max;return t;
 }
 static void txt_desenhar_tom(TxtLinha t,float x,float y,float r,float g,float b,float a){record((GfxRect){x,y,t.w,t.h},r,g,b,a,0);}
+static float gfx_px_por_unidade(void){return 1;}
+static float gfx_escala(void){return 1;}
+@PIXEL@
 @DRAW@
 static void clippedDraw(void){
  LinhaAddon lines[12]={0};AddonDesenho pieces[256];int count=0;
@@ -162,6 +165,7 @@ for key, signature in [("APPEND", "static void ordemAcrescentar("),
                        ("SIZE", "static long tamanhoOrdem("),
                        ("SORT", "static void ordenarTamanho(")]:
     fixture = fixture.replace("@" + key + "@", function(source, signature))
+fixture = fixture.replace("@PIXEL@", function(draw, "static float addonPixel("))
 fixture = fixture.replace("@DRAW@", function(draw, "static void addonDesenharPecas("))
 with tempfile.TemporaryDirectory(prefix="nuvio-source-scroll-") as directory:
     temp = Path(directory)

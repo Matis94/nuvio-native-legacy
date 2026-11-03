@@ -73,7 +73,9 @@ jobs:
           bash tests/fonteregra.sh
           bash tests/fonteregra_oficial.sh
       - name: Source scrolling and stable ordering regressions
-        run: SANITIZE=1 python3 tests/source_scroll.py
+        run: |
+          SANITIZE=1 python3 tests/source_scroll.py
+          SANITIZE=1 python3 tests/source_formatter_motion.py
       - name: Source scoring and candidate cache regressions
         run: |
           SANITIZE=1 python3 tests/source_selection.py

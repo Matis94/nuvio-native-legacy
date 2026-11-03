@@ -6281,6 +6281,8 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       float b = y + r.h > NV_TELA_H ? NV_TELA_H : y + r.h;
       if (b > t) ponteiro_alvo(r.x, t, r.w, b - t, ponteiroFolhaLinha, NULL, row, 0);
     }
+    float addonTx=tx, addonTr=tr;
+    if(ajustes_fonte_texto_addon())addonAlinharCartao(&r,&addonTx,&addonTr);
     if(!sel && ajustes_fonte_texto_addon())
       gfx_cor(r,FOLHA_RAIO/h,.085f,.085f,.105f,.96f*anim);
     if(sel){
@@ -6296,7 +6298,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       }
     }
     if(ajustes_fonte_texto_addon()) {
-      desenharCartaoAddon(i,row,r,tx,tr,automatica,sel,anim,agora,FOLHA_TOPO-1.0f,folhaBase);
+      desenharCartaoAddon(i,row,r,addonTx,addonTr,automatica,sel,anim,agora,FOLHA_TOPO-1.0f,folhaBase);
       continue;
     }
     // COLUNA DA DIREITA: tamanho grande, addon embaixo. Medida primeiro: o

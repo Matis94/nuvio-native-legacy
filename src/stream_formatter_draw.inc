@@ -1,12 +1,29 @@
 // Presentation only: source ranking, filters, track selection and playback
 // continue to use the same Stream. Called only for visible From addon cards.
+// Text already snaps to the drawable pixel grid in text.c. Give the whole
+// formatter card that same moving origin, so unsnapped emoji/artwork cannot
+// slide by a fraction of a pixel relative to independently snapped text.
+// This affects drawing only; scrolling, row heights and hit testing stay float.
+static float addonPixel(float value, float pixels) {
+  return pixels > 0 ? roundf(value * pixels) / pixels : value;
+}
+static void addonAlinharCartao(GfxRect *r, float *left, float *right) {
+  float pixels = gfx_px_por_unidade() * gfx_escala();
+  if (pixels <= 0) return;
+  float leftOffset = addonPixel(*left - r->x, pixels), width = *right - *left;
+  r->x = addonPixel(r->x, pixels);
+  r->y = addonPixel(r->y, pixels);
+  *left = r->x + leftOffset; *right = *left + width;
+}
 static void addonDesenharPecas(const LinhaAddon *ls,const AddonDesenho *ds,int nd,
                                float x,float y,float largura,
                                float altura,TxtEstilo estilo,int sel,float anim,
                                float clipTop,float clipBottom) {
+  float pixels=gfx_px_por_unidade()*gfx_escala();
+  x=addonPixel(x,pixels);y=addonPixel(y,pixels);
   for(int j=0;j<nd;j++) {
     const AddonDesenho *d=&ds[j];
-    float dy=d->visual*FOLHA_ADDON_LD;
+    float dx=addonPixel(d->x,pixels),dy=addonPixel(d->visual*FOLHA_ADDON_LD,pixels);
     if(dy+22>altura+.5f)break;
     // The card can be much taller than the viewport (long filenames). The
     // GL scissor hid these pixels already; avoid submitting invisible pieces.
@@ -18,7 +35,7 @@ static void addonDesenharPecas(const LinhaAddon *ls,const AddonDesenho *ds,int n
     int c=sel ? (d->linha?205:230) : (d->linha?165:195);
     if(estilo==TXT_CALLOUT)c=sel?250:225;
     if(d->icone) {
-      GfxRect icon={x+d->x,y+dy+3,22,22};
+      GfxRect icon={x+dx,y+dy+addonPixel(3,pixels),22,22};
       if(icon.y+icon.h<clipTop-4.0f)continue;
       if(!gfx_icone_cor(icon,l->ic[d->peca],a))
         gfx_icone(icon,emojiReserva(l->ic[d->peca]),c/255.f,c/255.f,c/255.f,a);
@@ -33,7 +50,7 @@ static void addonDesenharPecas(const LinhaAddon *ls,const AddonDesenho *ds,int n
         ? txt_linha_corta(estilo,texto,255,255,255,255,fmaxf(1,largura-d->x))
         : txt_linha(estilo,texto,255,255,255,255);
       if(y+dy+line.h<clipTop-4.0f)continue;
-      txt_desenhar_tom(line,x+d->x,y+dy,c/255.f,c/255.f,c/255.f,a);
+      txt_desenhar_tom(line,x+dx,y+dy,c/255.f,c/255.f,c/255.f,a);
     }
   }
 }
@@ -57,7 +74,12 @@ static void desenharCartaoAddon(int i,int row,GfxRect r,float tx,float tr,
                                 int automatica,int sel,float anim,Uint32 agora,
                                 float clipTop,float clipBottom) {
   const Stream *s=&lista[i];const TextoAddon *t=textoAddonDa(i);
-  float y=r.y+FOLHA_ADDON_TOPO,largura=tr-tx;
+  float largura=tr-tx;
+  addonAlinharCartao(&r,&tx,&tr);
+  float pixels=gfx_px_por_unidade()*gfx_escala();
+  // Calculate block offsets before adding the animated card origin. This
+  // keeps half-pixel rounding consistent at reduced/enlarged UI scales too.
+  float y=FOLHA_ADDON_TOPO;
   float bodyX=tx,bodyW=largura;
   if(sel) {
     GfxRect ring=addonFocoRect(r,row);
@@ -67,13 +89,13 @@ static void desenharCartaoAddon(int i,int row,GfxRect r,float tx,float tr,
     const char *marca=i==atual ? "Reproduzindo agora" : i==preferida ? "Sua escolha anterior" :
       fitPesada(i) ? "Acima da conexão" : s->foraCache && !cacheConfirmado(s) ? "Fora do cache" :
       (!canalFolha && stream_vod_falhou_ha(i)>=0) ? "Falhou" : "Escolha automática";
-    txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,marca,185,185,183,255,largura-32),tx,y,anim);
-    if(i==atual)desenharAudioBars(tr-60,y+3,14,anim,agora);
+    txt_desenhar_alpha(txt_linha_corta(TXT_PG_FIM,marca,185,185,183,255,largura-32),tx,r.y+addonPixel(y,pixels),anim);
+    if(i==atual)desenharAudioBars(tr-60,r.y+addonPixel(y+3,pixels),14,anim,agora);
     y+=FOLHA_ADDON_MARCA;
   }
   float titleY, bodyY, badgesY;
   addonPosicoes(t,s,y,ajustes_selos_embaixo(),&titleY,&bodyY,&badgesY);
-  y=badgesY;
+  y=r.y+addonPixel(badgesY,pixels);
   // Badges live in their own full-width row and do not compete with filename,
   // language flags or the addon identity for horizontal space.
   float tamanhoW=0;
@@ -94,9 +116,9 @@ static void desenharCartaoAddon(int i,int row,GfxRect r,float tx,float tr,
     if(!s->dolbyVision && badges_fonte_hdr_marca(s->badges)<0 && used+64<bw)
       marca_formato(FMT_SDR,tx+used+(used?12:0),y,FOLHA_SELO_H,.7f,.7f,.7f,anim);
   }
-  y=titleY;
+  y=r.y+addonPixel(titleY,pixels);
   addonDesenharPecas(&t->cabecalho,t->nome,t->nn,bodyX,y,bodyW,36,TXT_CALLOUT,sel,anim,clipTop,clipBottom);
-  y=bodyY;
+  y=r.y+addonPixel(bodyY,pixels);
   addonDesenharPecas(t->linhas,t->desenhos,t->nd,bodyX,y,bodyW,
                      t->nv*FOLHA_ADDON_LD,TXT_PG_FIM,sel,anim,clipTop,clipBottom);
   if(!t->nl)desenharFaixas(s,bodyX,y,bodyW,sel,anim);

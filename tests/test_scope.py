@@ -14,6 +14,7 @@ spec.loader.exec_module(scope)
 assert scope.choose(["src/streams.c", "src/sourceperf.h", "tests/sourceperf.c",
                      ".github/workflows/playback-v17-ipk.yml"]) == "sources"
 assert scope.choose(["src/fontenota.c", "tests/source_selection.py"]) == "sources"
+assert scope.choose(["src/stream_formatter_draw.inc", "tests/source_formatter_motion.py"]) == "sources"
 assert scope.choose(["src/source_backdrop.inc", "tests/source_backdrop_gl.inc", "tests/source_audio_cache.py"]) == "sources"
 assert scope.choose(["src/selospacote.c", "src/selospacote.h", "tests/source_badge_render.py",
                      "tests/source_badge_gl.inc", "tests/selospacote.c", "src/regexjs.c", "src/regexjs.h",
