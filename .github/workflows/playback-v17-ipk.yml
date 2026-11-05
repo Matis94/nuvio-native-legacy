@@ -25,7 +25,7 @@ jobs:
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'
       NUVIO_REQUIRE_ALL: '1'
-      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST
+      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST -DNV_HEVC_SEI_TEST
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -130,6 +130,12 @@ jobs:
           NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 NV_TEST_P7_MAPPING=1 SANITIZE=1 bash tests/dvaudio_lg.sh
           SANITIZE=1 bash tests/video_buffering_state.sh
           NV_TEST_TRUEHD=1 bash tests/video_acb_lg.sh
+      - name: Experimental HEVC SEI compatibility regressions
+        if: steps.tests.outputs.scope == 'playback-picture-test' || steps.tests.outputs.full == 'true'
+        timeout-minutes: 3
+        run: |
+          SANITIZE=1 bash tests/hevc_sei.sh
+          NV_TEST_HEVC_SEI=1 NV_TEST_VIDEO_DIAG=1 bash tests/dts_pipeline.sh
       - name: Manual skip-button settings and marker regressions
         if: steps.tests.outputs.scope == 'skip-buttons' || steps.tests.outputs.full == 'true'
         timeout-minutes: 4
