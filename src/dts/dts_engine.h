@@ -58,7 +58,8 @@ void dts_engine_dv(DtsEngine *, int enabled);
  * Ignored outside the DV packet path and without NV_DV_FIXED_AUDIO_TEST. */
 void dts_engine_dv_audio(DtsEngine *, int mode);
 /* Snapshot before open. Keep DTS undecoded while identifying the selected
- * track; the playback worker must hand a final DTS selection back to URI. */
+ * track. Ordinary builds hand final DTS back to URI; the separate
+ * NV_DV_NATIVE_DTS_TEST adapter can attempt original DTS with DV video. */
 void dts_engine_native_dts(DtsEngine *, int enabled);
 /* Explicit opt-in before open: P7 conversion and webOS recovery. Default off. */
 void dts_engine_allow_p7(DtsEngine *, int enabled);

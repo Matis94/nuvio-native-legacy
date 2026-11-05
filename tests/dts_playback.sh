@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 flags=()
+if [[ ${NV_TEST_NATIVE_DTS:-0} == 1 ]];then flags+=(-DNV_DV_NATIVE_DTS_TEST);fi
 if [[ ${NV_TEST_P7_MAPPING:-0} == 1 ]];then flags+=(-DNV_DV7_MAPPING_TEST);fi
 if [[ ${NV_TEST_MP4:-0} == 1 || ${NV_TEST_MP4_BUILD:-0} == 1 ]]; then flags+=(-DNV_MP4_BD_TEST); fi
 if [[ ${NV_TEST_TRUEHD:-0} == 1 ]]; then flags+=(-DNV_DV_TRUEHD_TEST); fi
@@ -16,7 +17,7 @@ if [[ $(uname -s) == Darwin ]]; then
 else
  cc "${flags[@]}" -std=c11 -D_GNU_SOURCE -DNV_DTS_WEBOS_RECOVERY -Wall -Wextra -Werror -Isrc tests/dts_playback.c src/dts/dts_playback.c src/js.c src/linguas.c src/audioinfo.c -pthread -lm -Wl,--wrap=clock_gettime -o "$tmp/test"
 fi
-for scenario in native-dts-unknown native-dts-nondts native-dts-rejected native-dts-default; do
+for scenario in native-dts-unknown native-dts-nondts native-dts-rejected native-dts-default native-dts-refused native-dts-async; do
  "$tmp/test" "$scenario"
 done
 if [[ ${NV_TEST_P7_MAPPING:-0} == 1 ]];then "$tmp/test" p7-mapping;exit;fi

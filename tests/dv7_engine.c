@@ -110,6 +110,16 @@ int main(int argc,char **argv) {
   assert(drain(e)==20);
   check(e,dts_engine_seek(e,.4)); assert(drain(e)>0);
   check(e,dts_engine_seek(e,0)); assert(drain(e)==20);
+  /* Original DTS stays compressed while every video frame retains the P8.1
+   * RPU, including mapping, seeks and independent fixed-output preferences. */
+  dts_engine_native_dts(e,1);
+  for(int mode=0;mode<=2;mode++) {
+    dts_engine_dv_audio(e,mode);
+    check(e,dts_engine_audio(e,3,0,0));
+    assert(!strcmp(dts_engine_info(e)->audio_codec,"dts") && drain(e)==20);
+    check(e,dts_engine_seek(e,.4));assert(drain(e)>0);
+  }
+  dts_engine_native_dts(e,0);dts_engine_dv_audio(e,0);
   /* The same container, AVIO cache and DV7 state survive both passthrough
    * and DTS transcoder switches, including return to the original track. */
   check(e,dts_engine_audio(e,2,0,.4));assert(drain(e)>0);

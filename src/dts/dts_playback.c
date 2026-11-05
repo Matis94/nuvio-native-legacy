@@ -314,8 +314,13 @@ static int prepareModePrimed(DtsPlayback *p, int stream, int core, double target
   if(p->dv && (!info || (info->dovi_profile!=5 && info->dovi_profile!=8))) {
     fail(p,"Dolby Vision configuration absent or unsupported");return 0;
   }
-  if(p->native_dts && info && !strcmp(info->audio_codec,"dts")) {
+  if(p->native_dts && info && !strcmp(info->audio_codec,"dts") &&
+     !nv_dts_native_dv_test(p->dv,p->native_dts)) {
     fail(p,DTS_ENGINE_NATIVE_DTS_REQUIRED);return 0;
+  }
+  if(info && !strcmp(info->audio_codec,"dts") && nv_dts_native_dv_test(p->dv,p->native_dts)) {
+    printf("[dts] experimental native DTS + DV: profile=%d p7Allowed=%d channels=%d rate=%d\n",
+      info->dovi_profile,p->allow_p7,info->channels,info->sample_rate);fflush(stdout);
   }
   if (hold) {
     int got = dts_engine_next(p->engine, primed);
@@ -348,7 +353,11 @@ static int prepareModePrimed(DtsPlayback *p, int stream, int core, double target
                                     p->major, nativeEvent, p);
   if (!p->pipeline) { fail(p, "DTS native pipeline unavailable"); return 0; }
   if (!info || !dts_pipeline_load(p->pipeline, info, target)) {
-    fail(p, dts_pipeline_error(p->pipeline)); return 0;
+    if(info && !strcmp(info->audio_codec,"dts") && nv_dts_native_dv_test(p->dv,p->native_dts)) {
+      printf("[dts] native DTS + DV Load refused: %s\n",dts_pipeline_error(p->pipeline));fflush(stdout);
+      fail(p,DTS_ENGINE_NATIVE_DTS_REQUIRED);
+    } else fail(p, dts_pipeline_error(p->pipeline));
+    return 0;
   }
   {
     char event[128];
@@ -614,7 +623,10 @@ static void *run(void *user) {
       pthread_mutex_unlock(&p->lock);
     }
     if (audio_error) {
-      fail(p, "DTS stereo output is not supported by this pipeline");
+      const DtsMediaInfo *info=dts_engine_info(p->engine);
+      if(info && !strcmp(info->audio_codec,"dts") && nv_dts_native_dv_test(p->dv,p->native_dts))
+        fail(p,DTS_ENGINE_NATIVE_DTS_REQUIRED);
+      else fail(p, "DTS stereo output is not supported by this pipeline");
       break;
     }
     if (p->starved >= DTS_DV_STARVED_WINDOWS && !network_hold) {

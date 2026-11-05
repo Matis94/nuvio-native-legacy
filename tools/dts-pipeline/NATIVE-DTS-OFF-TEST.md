@@ -1,38 +1,54 @@
-# Native DTS Off experiment
+# Native DTS Off + Dolby Vision experiment
 
-Branch: `native-dts-off-test-2.0.8`. This is an experimental change and needs
-LG hardware testing, including with DTS Restore Plus. It is not enabled on
-the shared `buffer-dts-dv-test-2.0.8` branch.
+Branch: `native-dts-off-test-2.0.8`. This experiment is isolated from
+`buffer-dts-dv-test-2.0.8` and PR #749. Physical LG testing is required.
 
-The LG DTS output setting appends native Off after the existing AAC and AC3
-values. Saved modes, buffer sizes, HTTP worker limits, TrueHD handling and
-DV/P7/mapping settings keep their existing meanings and defaults.
+## Enable the experiment
 
-Off leaves known DTS sources on URI playback. For audio discovered only after
-MP4/MKV demuxing, the worker snapshots Off before opening the engine. Provisional
-DTS is kept compressed while the actual selected source track is resolved;
-neither the app's DTS decoder nor its AAC/AC3 encoder is instantiated for it,
-even with fixed DV audio enabled. A selected non-DTS track can still use the DV
-pipeline. An actually selected DTS track returns to URI playback before any
-unsupported DTS BUFFERSTREAM Load or Feed.
+Select **DTS output: Off (native)**, enable the existing Dolby Vision P7
+conversion option, and reopen the video. P7 mapping and experimental DV MP4
+remain separate opt-ins. AAC stereo remains the default DTS setting.
 
-## Current limitation
+This branch's workflow enables `NV_DV_NATIVE_DTS_TEST` in both the application
+and its two separately compiled webOS Starfish adapters. With Off selected,
+the engine keeps DTS packets compressed, without its DTS decoder or AAC/AC3
+encoder, even when fixed DV output is configured. The existing video path can
+convert P7 to P8.1 and retain optional mapping while original DTS audio goes to
+BUFFERSTREAM. Non-DV DTS continues to use ordinary native URI playback.
 
-DTS Restore Plus restores the native URI/GStreamer decoder. Nuvio's current
-BUFFERSTREAM adapter accepts AAC, AC3 and EAC3, not raw DTS. Native DTS therefore
-cannot yet share the P7/MP4 packet-conversion pipeline. When DTS is selected with
-Off, P7 conversion and mapping are not applied; normal native playback depends
-on the TV/restore installation. Keeping both original DTS and converted P7 video
-requires another implementation and physical LG validation. This experiment
-does not claim DTS bitstream passthrough to a receiver.
+The adapter uses codec `DTS` and `contents.dtsInfo` with channels and frequency
+in kHz. This protocol follows Kodi's primary-source webOS implementation:
+https://github.com/xbmc/xbmc/blob/e7ead100967c9221ddf95568c6a7e970ed82dd5d/xbmc/cores/VideoPlayer/MediaPipelineWebOS.cpp
 
-## Regression coverage
+This supplies the missing Nuvio protocol support; it does not establish that
+a particular LG firmware or DTS Restore Plus installation accepts DTS in
+BUFFERSTREAM. DTS-HD input stays unchanged, but lossless receiver bitstream
+output and DTS:X object rendering are not guaranteed. There are no new frame
+buffers, cache allocations or HTTP lanes.
 
-- Legacy native-buffer fixtures link against explicit DTS-setting test support.
-- LG AAC/AC3/Off values and Samsung migration remain checked independently.
-- Controller tests cover known DTS, mapped non-DTS selection and late MP4 policy.
-- Worker tests cover final-track resolution, rejection before native Load,
-  unchanged default conversion and policy consumption after a rejected start.
-- Real MKV/MP4 tests compare original DTS packets byte-for-byte and check that
-  no app decoder/encoder exists with Off, including fixed output, seeks,
-  audio changes, reopen, policy reset and cancellation.
+## Failure behavior
+
+If native DTS Load is refused or the firmware reports unsupported audio
+(error 200), the worker requests the existing native URI handoff. It does not
+silently transcode DTS to AAC. That fallback does not perform app P7 conversion
+or mapping. Other DV failures retain their existing recovery behavior.
+
+A firmware that accepts Load but produces silent audio requires manual testing;
+there is no reliable API here to prove that the TV actually outputs sound.
+
+## Validation
+
+Host adapter tests cover both ABIs, exact DTS JSON, audio/video feed, pause,
+seek, synchronous refusal, and rejection without the experimental build flag.
+Sanitized worker tests cover selected-track resolution, original DTS startup,
+seek, synchronous/asynchronous firmware rejection, defaults and policy reset.
+LG controller tests cover known DTS, late MP4 discovery and unchanged SDR routing.
+Real MKV/MP4 packet tests compare DTS byte-for-byte without an app decoder or
+encoder, including fixed output and audio changes.
+
+The Actions real P7 engine tests additionally exercise MEL/FEL conversion with
+original DTS, mapping, fixed-output preferences and seeking. These need Rust and
+the pinned FFmpeg toolchain. Host protocol tests use a mocked firmware boundary;
+actual DV/DTS playback, MP4 behavior, audio switches and seeking must be tested
+on LG. Existing defaults, buffer sizes, HTTP limits and TrueHD conversion remain
+unchanged.

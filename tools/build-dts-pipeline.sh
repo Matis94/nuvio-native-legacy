@@ -17,18 +17,23 @@ if [ "$inside" = 0 ]; then
   runtime="${NUVIO_CONTAINER_RUNTIME:-podman}"
   image="${NUVIO_DTS_SDK_IMAGE:-localhost/nuvio-webos-sdk:latest}"
   output=$(cd "$output" && pwd)
-  exec "$runtime" run --rm -v "$PWD:/work" -v "$output:/dts-out" -w /work "$image" \
+  exec "$runtime" run --rm -v "$PWD:/work" -v "$output:/dts-out" -w /work \
+    -e NUVIO_EXTRA_CFLAGS="${NUVIO_EXTRA_CFLAGS:-}" "$image" \
     bash tools/build-dts-pipeline.sh --in-container --output /dts-out
 fi
 cxx="${NUVIO_DTS_CXX:-/opt/arm-webos-linux-gnueabi_sdk-buildroot/bin/arm-webos-linux-gnueabi-g++}"
 cc="${NUVIO_DTS_CC:-/opt/arm-webos-linux-gnueabi_sdk-buildroot/bin/arm-webos-linux-gnueabi-gcc}"
 tmp=$(mktemp -d)
+extra=()
+case " ${NUVIO_EXTRA_CFLAGS:-} " in
+  *" -DNV_DV_NATIVE_DTS_TEST "*) extra+=(-DNV_DV_NATIVE_DTS_TEST);;
+esac
 trap 'rm -rf "$tmp"' EXIT
 "$cc" -std=c11 -D_GNU_SOURCE -O2 -fPIC -Isrc -c src/js.c -o "$tmp/js.o"
 for abi in 0 1; do
   generation=3
   if [ "$abi" = 1 ]; then generation=4; fi
-  "$cxx" -std=c++11 -O2 -fPIC -shared -D_GLIBCXX_USE_CXX11_ABI=$abi \
+  "$cxx" -std=c++11 -O2 -fPIC -shared -D_GLIBCXX_USE_CXX11_ABI=$abi "${extra[@]}" \
     -Isrc -Isrc/dts/adapter src/dts/adapter/starfish.cpp "$tmp/js.o" \
     -o "$output/dts-starfish-webos$generation.so" -ldl -pthread
 done

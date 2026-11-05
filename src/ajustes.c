@@ -8157,7 +8157,11 @@ static const char *ajudaOpcaoBase(int op) {
 #ifdef NV_TPK
     case AJ_DTS_AC3: return "Esta TV não toca DTS nem TrueHD: o app converte o som na hora. 5.1 (Dolby Digital) mantém o surround para barra de som e receiver; 7.1, Atmos e DTS:X viram 5.1, sem os objetos. Estéreo (AAC) serve qualquer TV. Desligado: esses vídeos tocam sem som, como antes. Vale a partir do próximo vídeo.";
 #else
+#ifdef NV_DV_NATIVE_DTS_TEST
+    case AJ_DTS_AC3: return "DTS audio output (LG). AAC stereo remains the default. Off keeps original DTS and experimentally attempts Dolby Vision P7 conversion/mapping with native DTS audio. Requires firmware DTS support; DTS Restore Plus compatibility must be tested on TV. Native playback fallback loses app P7 processing. Reopen the video to apply.";
+#else
     case AJ_DTS_AC3: return "Como o áudio DTS é entregue à TV quando o app o converte (só na LG). Estéreo (AAC) é o modo provado e serve qualquer TV. 5.1 (Dolby Digital) mantém o som surround para barra de som e receiver por ARC/eARC. Desligado (nativo) deixa o DTS original para a TV, por exemplo com DTS Restore Plus; sem suporte nativo pode ficar sem som. Para Dolby Vision P7 e MP4 com DTS selecionado, a conversão de vídeo não pode substituir o áudio DTS por AAC/AC3 neste modo, por isso a fonte fica no player nativo. Vale a partir do próximo vídeo.";
+#endif
 #endif
     case AJ_PS_CONTINUAR: return "Ligado, cada perfil mostra na escolha de perfil o cartão com o que ele estava assistindo. Desligado, a tela mostra só os perfis.";
     case AJ_HIST_CONTA: return "Ligado (padrão): o que você assiste neste perfil sobe para a conta Nuvio, com o progresso e os vistos. Desligado: nada disso é enviado à conta; o Trakt e o Simkl vinculados a este perfil continuam recebendo. Vale só para este perfil.";

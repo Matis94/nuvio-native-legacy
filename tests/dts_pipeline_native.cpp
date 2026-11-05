@@ -44,7 +44,16 @@ bool StarfishMediaAPIs::Load(const char *j,void (*cb)(int,long long,const char *
  assert(js_bruto(contents,nullptr,"esInfo",es,sizeof es) && js_num(es,nullptr,"ptsToDecode",-1)==2500000000);
  assert(js_bruto(contents,nullptr,"codec",codec,sizeof codec));
  assert(js_texto_raiz(codec,"video",text,sizeof text) && !strcmp(text,"H265"));
- assert(js_texto_raiz(codec,"audio",text,sizeof text) && !strcmp(text,"AAC"));
+ const bool original_dts=getenv("DTS_FIXTURE_NATIVE_DTS")!=nullptr;
+ assert(js_texto_raiz(codec,"audio",text,sizeof text) && !strcmp(text,original_dts?"DTS":"AAC"));
+ if(original_dts) {
+  char dts[256],unused[256];
+  assert(js_bruto(contents,nullptr,"dtsInfo",dts,sizeof dts));
+  assert(js_num(dts,nullptr,"channels",0)==2 && js_num(dts,nullptr,"frequency",0)==48);
+  assert(!js_bruto(contents,nullptr,"aacInfo",unused,sizeof unused));
+  assert(!js_bruto(contents,nullptr,"ac3PlusInfo",unused,sizeof unused));
+  if(getenv("DTS_REFUSE_NATIVE_DTS"))return false;
+ }
  assert(strstr(j,"\"format\":\"RAW\"")); assert(strstr(j,"\"frequency\":48"));
  assert(strstr(j,"\"channels\":2"));
  if(strstr(j,"DolbyHdrInfo")) {

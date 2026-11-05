@@ -52,6 +52,30 @@ int main(int argc,char **argv) {
  DtsPipeline *p=dts_pipeline_create("app","\"window",0,event,&loads); assert(p);
  assert(!strcmp(dts_pipeline_media_id(p),getenv("DTS_MEDIA_ID_PHASE") ? "" : "fake-media"));
  DtsMediaInfo m={0}; strcpy(m.video_codec,"hevc"); strcpy(m.audio_codec,"aac"); m.channels=2;m.sample_rate=48000;m.width=1920;m.height=1080;
+ if(getenv("DTS_NATIVE_TEST_ONLY")) {
+  strcpy(m.audio_codec,"dts");
+  assert(!dts_pipeline_load(p,&m,2.5)); // Ordinary SDR DTS still belongs to URI.
+  m.dovi_profile=8;m.dovi_bl_present=m.dovi_rpu_present=1;strcpy(m.hdr,"DolbyVision");
+  m.channels=9;assert(!dts_pipeline_load(p,&m,2.5));m.channels=2;
+  m.sample_rate=0;assert(!dts_pipeline_load(p,&m,2.5));m.sample_rate=48000;
+#ifdef NV_DV_NATIVE_DTS_TEST
+  if(getenv("DTS_REFUSE_NATIVE_DTS")) {
+   assert(!dts_pipeline_load(p,&m,2.5));
+   assert(strstr(dts_pipeline_error(p),"Load refused"));
+  } else {
+   assert(dts_pipeline_load(p,&m,2.5));assert(dts_pipeline_play(p));
+   unsigned char packet[4]={2,2,2,2};
+   DtsFrame f={0};f.data=packet;f.size=4;f.pts_ns=3000000000LL;
+   f.kind=DTS_AUDIO;assert(dts_pipeline_feed(p,&f)==1);
+   f.kind=DTS_VIDEO;assert(dts_pipeline_feed(p,&f)==1 && play_calls()==1);
+   assert(dts_pipeline_pause(p));assert(dts_pipeline_flush(p,5));
+  }
+#else
+  assert(!dts_pipeline_load(p,&m,2.5));
+#endif
+  dts_pipeline_destroy(p);dlclose(native);
+  puts("PASS native DTS/DV adapter: build gate, exact dtsInfo schema, A/V feed, pause/seek and native refusal");return 0;
+ }
  strcpy(m.audio_codec,"ac3");m.channels=9;assert(!dts_pipeline_load(p,&m,2.5));m.channels=2;
  strcpy(m.audio_codec,"eac3");m.channels=0;assert(!dts_pipeline_load(p,&m,2.5));strcpy(m.audio_codec,"aac");m.channels=2;
  m.channels=6;assert(!dts_pipeline_load(p,&m,2.5));m.channels=2;

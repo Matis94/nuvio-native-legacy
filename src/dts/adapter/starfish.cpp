@@ -13,6 +13,7 @@ extern "C" {
 #include <mutex>
 #include <new>
 #include <sstream>
+#include "../dts_audio_codec.h"
 #include <string>
 #include <vector>
 using SF = StarfishMediaAPIs;
@@ -202,13 +203,14 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
   auto *p = static_cast<Pipeline *>(ctx); const char *v = video_codec(m->video_codec);
   const bool ac3 = !strcmp(m->audio_codec,"ac3");
   const bool dv = m->dovi_profile != 0;
+  const bool original_dts=nv_dts_native_dv_test(dv,1) && !strcmp(m->audio_codec,"dts");
   const bool valid_dv = (m->dovi_profile == 5 || m->dovi_profile == 8) &&
     !strcmp(v ? v : "", "H265") && m->dovi_bl_present && m->dovi_rpu_present && !m->dovi_el_present;
   /* AC-3 (DTS converted to 5.1, or passed through on the Dolby Vision path)
    * and E-AC-3 (passed through). Names and the ac3PlusInfo block are the ones
    * libpf-1.0.so parses on webOS 4.10; on the LG C9 E-AC-3 5.1 was heard and
    * a passed-through AC-3 5.1 track played with codec "AC3" + ac3PlusInfo. */
-  const char *pass = !strcmp(m->audio_codec,"eac3") ? "AC3 PLUS" : ac3 ? "AC3" : nullptr;
+  const char *pass = original_dts ? "DTS" : !strcmp(m->audio_codec,"eac3") ? "AC3 PLUS" : ac3 ? "AC3" : nullptr;
   const bool audio_ok = pass ? (m->channels > 0 && m->channels <= 8 && m->sample_rate > 0)
     : (!strcmp(m->audio_codec,"aac") && m->channels == 2 && m->sample_rate == 48000);
   if (p->loaded || !v || !valid_target(target) || m->width <= 0 || m->height <= 0 || !audio_ok ||
@@ -228,7 +230,12 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
     << target_ns(target) << ",\"videoWidth\":" << m->width << ",\"videoHeight\":" << m->height;
   if (m->fps_num > 0 && m->fps_den > 0) j << ",\"videoFpsValue\":" << m->fps_num << ",\"videoFpsScale\":" << m->fps_den;
   j << "}";
-  if (pass) j << ",\"ac3PlusInfo\":{\"channels\":" << m->channels << ",\"frequency\":"
+  /* Same codec spelling and contents.dtsInfo layout as Kodi's webOS
+   * MediaPipelineWebOS.cpp (e7ead100967c9221ddf95568c6a7e970ed82dd5d).
+   * This is not a claim that a particular firmware/restore accepts the Load. */
+  if(original_dts) j << ",\"dtsInfo\":{\"channels\":" << m->channels << ",\"frequency\":"
+    << m->sample_rate / 1000.0 << "}";
+  else if (pass) j << ",\"ac3PlusInfo\":{\"channels\":" << m->channels << ",\"frequency\":"
     << m->sample_rate / 1000.0 << "}";
   else j << ",\"aacInfo\":{\"channels\":" << m->channels << ",\"frequency\":"
     << m->sample_rate / 1000.0 << ",\"profile\":2,\"format\":\"raw\"}";

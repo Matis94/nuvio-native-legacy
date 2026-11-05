@@ -20,7 +20,7 @@ jobs:
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'
       NUVIO_REQUIRE_ALL: '1'
-      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST
+      NUVIO_EXTRA_CFLAGS: -DNV_DV_NATIVE_DTS_TEST -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -56,6 +56,10 @@ jobs:
       - name: Native buffering regressions
         timeout-minutes: 8
         run: |
+          NV_TEST_NATIVE_DTS=1 bash tests/dts_pipeline.sh
+          NV_TEST_NATIVE_DTS=1 NV_TEST_P7_MAPPING=1 SANITIZE=1 bash tests/dts_playback.sh
+          NV_TEST_NATIVE_DTS=1 NV_TEST_MP4=1 SANITIZE=1 bash tests/dts_playback.sh
+          NV_TEST_NATIVE_DTS=1 NV_TEST_DTS_OFF=1 NV_TEST_MP4=1 bash tests/dvaudio_lg.sh
           bash tests/dts_conversion_off_settings.sh
           python3 tests/ajustes_dts_tpk.py
           NV_TEST_DTS_OFF=1 NV_TEST_MP4=1 bash tests/dvaudio_lg.sh
@@ -225,6 +229,10 @@ jobs:
           p.write_text(source.replace(hook, "python3 .github/build/strip_app.py\n" + hook))
           PY
           bash tools/arm.sh --ipk --build
+          for adapter in deploy/app/lib/dts-starfish-webos{3,4}.so; do
+            test -s "$adapter"
+            LC_ALL=C grep -a -q dtsInfo "$adapter"
+          done
           git checkout -- tools/arm.sh
           mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-native-dts-off-test.ipk
       - name: Check ARM dynamic dependencies

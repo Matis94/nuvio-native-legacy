@@ -174,14 +174,24 @@ static void testarDtsOff(void) {
     assert(iniciarDts(-1) && partidas==1 && !strcmp(partidaFaixa.codec,"A_EAC3"));
     dtsSessao=NULL; // Mapped source selection wins over the old native list.
     montar(m,2,t,1,0);dvMkvPerfil=7;assert(dvPronto());dtsModoDv=1;partidas=0;
+#ifdef NV_DV_NATIVE_DTS_TEST
+    assert(iniciarDts(-1) && partidas==1 && dtsModoDv && fixtureNativePolicy==1);
+    assert(!strcmp(partidaFaixa.codec,"A_DTS"));dtsSessao=NULL;
+#else
     assert(!iniciarDts(-1) && !partidas && !dtsModoDv && !dvHabilitado);
+#endif
     montar(NULL,0,t,1,0);dtsHabilitado=1;dvHabilitado=0;dtsTentou=0;partidas=0;
     video_bombear();assert(!partidas && !dtsSessao); // Standalone native DTS.
   }
 #ifdef NV_MP4_BD_TEST
   { Tv t[]={{"en","dts",6}};
     montar(NULL,0,t,1,0);mp4TestPending=1;dtsModoDv=1;partidas=0;
+#ifdef NV_DV_NATIVE_DTS_TEST
+    assert(iniciarDts(-1) && partidas==1 && fixtureNativePolicy==1 && dtsModoDv);
+    dtsSessao=NULL;
+#else
     assert(!iniciarDts(-1) && !partidas && !mp4TestPending);
+#endif
     montar(NULL,0,NULL,0,-1);mp4TestPending=1;dtsModoDv=1;partidas=0;
     assert(iniciarDts(-1) && partidas==1 && fixtureNativePolicy==1);
     dtsSessao=NULL;mp4TestPending=0;

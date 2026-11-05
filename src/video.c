@@ -3253,7 +3253,7 @@ static int iniciarDts(int stream) {
     int mkvDts = mapped &&
                  (!strncasecmp(dvAudioCodec[m], "A_DTS", 5) ||
                   !strncasecmp(dvAudioCodec[m], "dts", 3));
-    if (mapped ? mkvDts : video_faixa_dts(a)) {
+    if ((mapped ? mkvDts : video_faixa_dts(a)) && !nv_dts_native_dv_test(dtsModoDv,1)) {
       printf("[dts] original DTS requested; app conversion bypassed (DV=%d)\n", dtsModoDv);
       fflush(stdout);
       dtsTentou = 1; /* avoid retrying the same native DTS source each pump */
@@ -3548,7 +3548,10 @@ static void bombearDts(void) {
     }
     /* Converted only when the source track is DTS; on the Dolby Vision path
      * AC-3/E-AC-3 pass through untouched and there is nothing to label. */
-    if (!dtsModoDv || (audioAtual >= 0 && audioAtual < nAudio && !strcmp(faixaAudio[audioAtual].codec, "dts"))) {
+    if(dtsModoDv && !strcmp(st.info.audio_codec,"dts")) {
+      snprintf(dtsSaida,sizeof dtsSaida,"DTS: Original (DV test)");
+      dtsEstado=VIDEO_DTS_NATIVO; // No misleading converted-audio notification.
+    } else if (!dtsModoDv || (audioAtual >= 0 && audioAtual < nAudio && !strcmp(faixaAudio[audioAtual].codec, "dts"))) {
       snprintf(dtsSaida, sizeof dtsSaida, "%s", !strcmp(st.info.audio_codec, "ac3") ? "DTS → AC3 5.1" : "DTS → AAC Stereo");
       dtsEstado = VIDEO_DTS_CONVERTIDO;
     } else {
@@ -4094,7 +4097,7 @@ void video_escolher_audio(int i) {
   if (dtsSessao && f) {
     if (f->stream_index < 0) return;
     if (nv_dts_audio_feeds(f->codec,dtsModoDv) &&
-        !(ajustes_dts_desligado() && video_faixa_dts(f))) {
+        !(ajustes_dts_desligado() && video_faixa_dts(f) && !nv_dts_native_dv_test(dtsModoDv,1))) {
 #ifdef NV_NATIVE_SEEK_TEST
       if (i == audioAtual) return;
       dts_playback_audio_at(dtsSessao, f->stream_index, posSeg);
