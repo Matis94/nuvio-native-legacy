@@ -446,6 +446,13 @@ static int ajTipo(int op) {
 static const char *ajRotSeg(int op, int i) {
   static char b[3][96];
   char *p;
+#ifdef NV_WEBOS
+  if (op == AJ_DTS_AC3) {
+    /* Keep the 2.0.8.6 segmented row compact after appending Off. */
+    static const char *const nomes[] = { "Stereo AAC", "Dolby 5.1", "Off" };
+    return nomes[i];
+  }
+#endif
   if (op == AJ_DV_AUDIO_FIXO) {
     static const char *const nomes[] = { "Original", "AAC 2.0", "DD 5.1" };
     return nomes[i];

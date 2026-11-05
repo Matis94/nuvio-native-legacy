@@ -5,7 +5,7 @@
 #include <string.h>
 int main(void) {
   assert(N_DTS_SAIDA == 3);
-  assert(!strcmp(V_DTS_SAIDA[2], "Desligado (nativo)"));
+  assert(!strcmp(V_DTS_SAIDA[2], "Off"));
   assert(valorPadrao[AJ_DTS_AC3] == 0);
   assert(!ajustes_dts_desligado() && !ajustes_dts_ac3());
   valor[AJ_DTS_AC3]=1;

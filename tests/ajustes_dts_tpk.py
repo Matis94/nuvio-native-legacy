@@ -73,7 +73,7 @@ tpk = re.search(r'#ifdef NV_TPK\nstatic const char \*V_DTS_SAIDA\[\] = \{([^}]*)
                 r'(?:/\*[^*]*\*/\n)?static const char \*V_DTS_SAIDA\[\] = \{([^}]*)\};\n#define N_DTS_SAIDA 3', src)
 confere(tpk is not None and tpk.group(1).strip() == '"Desligado", "5.1 (Dolby Digital)", "Estéreo (AAC)"',
         '.tpk values: Desligado / 5.1 (Dolby Digital) / Estereo (AAC)')
-confere(tpk is not None and tpk.group(2).strip() == '"Estéreo (AAC)", "5.1 (Dolby Digital)", "Desligado (nativo)"',
+confere(tpk is not None and tpk.group(2).strip() == '"Estéreo (AAC)", "5.1 (Dolby Digital)", "Off"',
         'LG AAC/AC3 positions unchanged; native Off appended')
 confere(re.search(r'#ifdef NV_TPK\n  "dtsTpkLocal",[^\n]*\n#else\n  "dtsSaidaLocal",\n#endif', src) is not None,
         '.tpk saves the row as dtsTpkLocal, LG keeps dtsSaidaLocal')

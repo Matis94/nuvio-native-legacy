@@ -833,7 +833,7 @@ static const char *V_DTS_SAIDA[] = { "Desligado", "5.1 (Dolby Digital)", "Estér
 #define N_DTS_SAIDA 3
 #else
 /* Append-only: LG saved modes 0=AAC and 1=AC3 remain unchanged. */
-static const char *V_DTS_SAIDA[] = { "Estéreo (AAC)", "5.1 (Dolby Digital)", "Desligado (nativo)" };
+static const char *V_DTS_SAIDA[] = { "Estéreo (AAC)", "5.1 (Dolby Digital)", "Off" };
 #define N_DTS_SAIDA 3
 #endif
 static const char *V_PROPORCAO[] = { "Último usado", "Original", "Recortar", "Esticar", "Zoom leve", "Zoom cinema", "Zoom ultra", "Ajustar altura", "Ajustar largura" };
@@ -8158,7 +8158,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_DTS_AC3: return "Esta TV não toca DTS nem TrueHD: o app converte o som na hora. 5.1 (Dolby Digital) mantém o surround para barra de som e receiver; 7.1, Atmos e DTS:X viram 5.1, sem os objetos. Estéreo (AAC) serve qualquer TV. Desligado: esses vídeos tocam sem som, como antes. Vale a partir do próximo vídeo.";
 #else
 #ifdef NV_DV_NATIVE_DTS_TEST
-    case AJ_DTS_AC3: return "DTS audio output (LG). AAC stereo remains the default. Off keeps original DTS and experimentally attempts Dolby Vision P7 conversion/mapping with native DTS audio. Requires firmware DTS support; DTS Restore Plus compatibility must be tested on TV. Native playback fallback loses app P7 processing. Reopen the video to apply.";
+    case AJ_DTS_AC3: return "DTS audio output (LG). AAC stereo remains the default. Off disables DTS conversion. Dolby Vision P7 conversion/mapping stays active; if native DTS is unsupported, the video continues without sound. TrueHD conversion is independent. DTS Restore Plus compatibility remains experimental. Reopen the video to apply.";
 #else
     case AJ_DTS_AC3: return "Como o áudio DTS é entregue à TV quando o app o converte (só na LG). Estéreo (AAC) é o modo provado e serve qualquer TV. 5.1 (Dolby Digital) mantém o som surround para barra de som e receiver por ARC/eARC. Desligado (nativo) deixa o DTS original para a TV, por exemplo com DTS Restore Plus; sem suporte nativo pode ficar sem som. Para Dolby Vision P7 e MP4 com DTS selecionado, a conversão de vídeo não pode substituir o áudio DTS por AAC/AC3 neste modo, por isso a fonte fica no player nativo. Vale a partir do próximo vídeo.";
 #endif
