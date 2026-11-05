@@ -136,6 +136,15 @@ jobs:
         run: |
           SANITIZE=1 bash tests/hevc_sei.sh
           NV_TEST_HEVC_SEI=1 NV_TEST_VIDEO_DIAG=1 bash tests/dts_pipeline.sh
+      - name: Real HEVC demux and seek diagnostic isolation
+        if: steps.tests.outputs.scope == 'playback-picture-test'
+        timeout-minutes: 8
+        env:
+          NUVIO_DTS_ROOT: /tmp/nuvio-dts-picture
+          NUVIO_DTS_JOBS: '3'
+        run: |
+          bash .github/build/host_ffmpeg.sh
+          SANITIZE=1 bash tests/hevc_structure_engine.sh
       - name: Manual skip-button settings and marker regressions
         if: steps.tests.outputs.scope == 'skip-buttons' || steps.tests.outputs.full == 'true'
         timeout-minutes: 4
@@ -288,6 +297,7 @@ jobs:
           NUVIO_DTS_JOBS: '3'
         run: |
           bash .github/build/host_ffmpeg.sh
+          SANITIZE=1 bash tests/hevc_structure_engine.sh
           SANITIZE=1 bash tests/dts_resolver_reuse.sh
           bash tests/moviebuffer.sh
           bash tests/moviebuffer.sh parallel
