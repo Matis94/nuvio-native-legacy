@@ -45,7 +45,7 @@ jobs:
           python3 .github/build/test_scope.py
           # Temporary LG picture test: only the audited playback snapshot may
           # omit unrelated suites. Any source/test/build edit restores full CI.
-          playback_snapshot=82d8b955070447d724b9019699e5b8fc11c3e4c0
+          playback_snapshot=34253be8c60cde787864fda13408d3eb6efff3e7
           if [ "$NUVIO_FULL_TESTS" != "true" ] && \
              git cat-file -e "$playback_snapshot^{commit}" 2>/dev/null && \
              git diff --quiet "$playback_snapshot" HEAD -- . ':(exclude).github/workflows/playback-v17-ipk.yml'; then
