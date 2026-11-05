@@ -164,9 +164,6 @@ int logexport_create(const char *source, char *path, size_t size) {
     "Automatic redaction is best effort: review before sharing publicly.\n"
     "Source bytes: %ld; retained input limit: %ld; older bytes omitted: %ld\n\n",
     (long long)time(NULL), total, SNAPSHOT_MAX, start);
-#ifdef NV_PLAYBACK_TEST_BUILD
-  fprintf(out,"Experimental playback build: v%d\n\n",NV_PLAYBACK_TEST_BUILD);
-#endif
 #ifdef NV_DV_NATIVE_DTS_TEST
   fputs("Native DTS + Dolby Vision experiment: v1; transition diagnostics enabled.\n"
         "Original DTS audio and P7/mapping depend on LG firmware support.\n\n",out);
