@@ -33,6 +33,21 @@ int main(void) {
   FILE *f = fdopen(fd, "wb"); assert(f);
   const char *safe = "[playback-diag] tick=123 generation=2 pos=123.456 readyBytes=268435456 availableKiB=245760";
   logexport_redact(safe, out, sizeof out); assert(!strcmp(safe, out));
+  const char *native_logs[]={
+    "[dts-native] v=1 phase=config gate=1 off=1 dv=1 p7=1 mapping=1 fixedRequested=2 seamless=1 mp4=1 stream=3 ordinal=0 count=4 target=123.500 paused=0",
+    "[dts-native] v=1 phase=prepare codec=dts stream=3 channels=6 rate=48000 profile=8 compat=1 bl=1 el=0 rpu=1 p7=1",
+    "[dts-native] v=1 phase=load codec=DTS channels=6 rate=48000 profile=8 compat=1 target=123.500",
+    "[dts-native] v=1 phase=callback type=18 value=200",
+    "[dts-native] v=1 phase=control seek=1 audio=0 stream=3 target=200.000 at=123.500 paused=0 ready=1 clock=1 audioError=0",
+    "[dts-native] v=1 phase=fallback fromDv=1 mp4=0 target=123.500 output=URI",
+    "[dts] stage=native-foreground-refused continuing to Load"};
+  for(size_t i=0;i<sizeof native_logs/sizeof *native_logs;i++) {
+    logexport_redact(native_logs[i],out,sizeof out);assert(!strcmp(out,native_logs[i]));
+    fprintf(f,"%s\n",native_logs[i]);
+  }
+  hides("[dts-native] token=shortpw","shortpw");
+  hides("[dts-native] phase=config url=https://private.example/shortpw","shortpw");
+  hides("[dts] stage=native-foreground-refusedSECRET","SECRET");
   const char *range_logs[]={
     "[range-progress] start=4194303 waitMs=3012 got=2031616 gained=2031616 kept=1",
     "[dts-rebuffer] event=start reason=seek target=9282.482 contiguousKiB=4095 readyKiB=135167",
@@ -127,6 +142,10 @@ int main(void) {
   char build[64];snprintf(build,sizeof build,"Experimental playback build: v%d",NV_PLAYBACK_TEST_BUILD);
   assert(strstr(out,build));
 #endif
+#ifdef NV_DV_NATIVE_DTS_TEST
+  assert(strstr(out,"Native DTS + Dolby Vision experiment: v1"));
+#endif
+  for(size_t i=0;i<sizeof native_logs/sizeof *native_logs;i++)assert(strstr(out,native_logs[i]));
   assert(!strstr(out, "shortpw") && !strstr(out, "secondpw") && !strstr(out, "ENDSECRET"));
   assert(strstr(out, "oversized log line")); unlink(path);
   /* Taking a tail cannot leak the partial first line. */

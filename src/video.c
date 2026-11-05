@@ -3430,6 +3430,10 @@ static void bombearDts(void) {
     if(!strcmp(st.error,DTS_ENGINE_NATIVE_DTS_REQUIRED)) {
       char lu[sizeof legUrlAtual];
       snprintf(lu,sizeof lu,"%s",legUrlAtual);
+#ifdef NV_DV_NATIVE_DTS_TEST
+      printf("[dts-native] v=1 phase=fallback fromDv=%d mp4=%d target=%.3f output=URI\n",
+        dtsModoDv,fonteMp4,posSeg);fflush(stdout);
+#endif
       printf("[dts] original DTS identified after demux: returning to native URI playback\n");
       fflush(stdout);
       dvNao=VIDEO_DV_NAO_AUDIO;dvRecuoAviso=0;dvHabilitado=0;dtsModoDv=0;

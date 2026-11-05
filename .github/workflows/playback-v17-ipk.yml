@@ -46,7 +46,7 @@ jobs:
         timeout-minutes: 3
         run: |
           bash tests/diagnostics_qr_settings.sh
-          SANITIZE=1 bash tests/logexport.sh
+          NV_TEST_NATIVE_DTS=1 SANITIZE=1 bash tests/logexport.sh
           CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular_export.sh
       - name: Conversion refill and progressing HTTP gaps
         timeout-minutes: 3

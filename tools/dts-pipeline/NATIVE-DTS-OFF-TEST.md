@@ -52,3 +52,22 @@ the pinned FFmpeg toolchain. Host protocol tests use a mocked firmware boundary;
 actual DV/DTS playback, MP4 behavior, audio switches and seeking must be tested
 on LG. Existing defaults, buffer sizes, HTTP limits and TrueHD conversion remain
 unchanged.
+
+## Diagnostics QR
+
+Diagnostics QR is already available under the log/diagnostics settings and
+remains OFF by default. Enable it, reproduce the issue, open the log panel
+(Blue/F10), then use its download/export QR. The frozen snapshot includes all
+ordinary logs plus `[dts-native] v=1` transition records from this experiment.
+
+Records include the effective startup policy (Off, DV, P7, mapping, MP4,
+fixed-output preference), selected stream number, original codec/channels/rate,
+converted DV profile/compatibility/BL/EL/RPU flags, native Load and control
+callbacks, seek/audio-switch targets, failures and URI fallback. Existing
+first-feed, worker-rate, HTTP and refill logs remain available. No per-frame
+measurement buffers or periodic DTS-native logging are added. Logs cannot
+prove audible DTS output; report whether sound was actually heard on the TV.
+
+The export identifies this experiment and retains these numeric records while
+continuing to mask URLs, credentials and private payloads. New records never
+print source URLs, headers, track names, raw native JSON or packet addresses.

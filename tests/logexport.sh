@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 task_tmp=$(mktemp -d)
 trap 'rm -rf "$task_tmp"' EXIT
 flags=(-std=c11 -O1 -g -Wall -Wextra -Werror -Isrc)
+if [[ ${NV_TEST_NATIVE_DTS:-0} == 1 ]];then flags+=(-DNV_DV_NATIVE_DTS_TEST);fi
 if [[ ${SANITIZE:-0} == 1 ]]; then flags+=(-fsanitize=address,undefined -fno-omit-frame-pointer); fi
 cc "${flags[@]}" src/logexport.c tests/logexport.c -o "$task_tmp/test"
 "$task_tmp/test"

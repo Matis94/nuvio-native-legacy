@@ -59,7 +59,8 @@ static int public_stage(const char *line,const char *p,size_t len) {
   static const char *names[]={"native-buffered-reposition","native-seek-progress-confirmed",
     "native-seek-accepted","native-seek-unavailable","native-seek-refused",
     "native-seek-fallback","startup-audio-reuse","startup-audio-reopen",
-    "dv-audio-prepared-before-unload","audio-format-reload"};
+    "dv-audio-prepared-before-unload","audio-format-reload",
+    "native-foreground-refused"};
   if(strncmp(line,"[dts] stage=",12) || p!=line+12)return 0;
   for(size_t i=0;i<sizeof names/sizeof names[0];i++)
     if(strlen(names[i])==len && !memcmp(p,names[i],len))return 1;
@@ -165,6 +166,10 @@ int logexport_create(const char *source, char *path, size_t size) {
     (long long)time(NULL), total, SNAPSHOT_MAX, start);
 #ifdef NV_PLAYBACK_TEST_BUILD
   fprintf(out,"Experimental playback build: v%d\n\n",NV_PLAYBACK_TEST_BUILD);
+#endif
+#ifdef NV_DV_NATIVE_DTS_TEST
+  fputs("Native DTS + Dolby Vision experiment: v1; transition diagnostics enabled.\n"
+        "Original DTS audio and P7/mapping depend on LG firmware support.\n\n",out);
 #endif
   left = total - start;
   /* Discard an incomplete first line when taking the tail. */

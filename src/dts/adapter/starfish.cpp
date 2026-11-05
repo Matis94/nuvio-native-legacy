@@ -122,6 +122,15 @@ static void callback(int type, int64_t value, const char *str, void *ctx) {
     char detail[48]; snprintf(detail,sizeof detail,"type=%d",type);
     stage(p,"native-callback",detail);
   }
+#ifdef NV_DV_NATIVE_DTS_TEST
+  if(type==PF_EVENT_TYPE_INT_ERROR || type==PF_EVENT_TYPE_STR_ERROR ||
+     type==PF_EVENT_TYPE_STR_STATE_UPDATE__LOADCOMPLETED ||
+     type==PF_EVENT_TYPE_STR_STATE_UPDATE__PLAYING ||
+     type==PF_EVENT_TYPE_STR_STATE_UPDATE__PAUSED ||
+     type==PF_EVENT_TYPE_STR_STATE_UPDATE__SEEKDONE) {
+    printf("[dts-native] v=1 phase=callback type=%d value=%lld\n",type,static_cast<long long>(value));fflush(stdout);
+  }
+#endif
   /* Seek is asynchronous. Old-segment frame clocks cannot acknowledge the
    * new position; wait for the native SEEKDONE before publishing them. */
   if (type == PF_EVENT_TYPE_FRAMEREADY && p->seeking) return;
@@ -246,6 +255,12 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
   if (!p->n.foreground(p->sf)) stage(p,"native-foreground-refused","continuing to Load");
   { char d[96]; snprintf(d,sizeof d,"dv=%d profile=%d audio=%s ch=%d",int(dv),m->dovi_profile,
       pass ? pass : "AAC",m->channels); stage(p,"native-load-requested",d); }
+#ifdef NV_DV_NATIVE_DTS_TEST
+  if(original_dts) {
+    printf("[dts-native] v=1 phase=load codec=DTS channels=%d rate=%d profile=%d compat=%d target=%.3f\n",
+      m->channels,m->sample_rate,m->dovi_profile,m->dovi_bl_compatibility_id,target);fflush(stdout);
+  }
+#endif
   if (!p->n.load(p->sf,j.str().c_str(),callback,p)) {
     p->error = "Starfish Load refused"; return 0;
   }

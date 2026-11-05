@@ -65,6 +65,21 @@ struct DtsPlayback {
   DtsPlaybackStatus status;
 };
 
+/* Transition-only numeric diagnostics: no URLs, headers, track titles or
+ * per-packet measurements. Included in the ordinary log and QR snapshot. */
+static void nativeTraceMedia(DtsPlayback *p,const char *phase,const DtsMediaInfo *m) {
+#ifdef NV_DV_NATIVE_DTS_TEST
+  if(p->native_dts && p->dv && m) {
+    printf("[dts-native] v=1 phase=%s codec=%.16s stream=%d channels=%d rate=%d profile=%d compat=%d bl=%d el=%d rpu=%d p7=%d\n",
+      phase,m->audio_codec,m->audio_stream,m->channels,m->sample_rate,
+      m->dovi_profile,m->dovi_bl_compatibility_id,m->dovi_bl_present,
+      m->dovi_el_present,m->dovi_rpu_present,p->allow_p7);fflush(stdout);
+  }
+#else
+  (void)p;(void)phase;(void)m;
+#endif
+}
+
 static void clearSubtitles(DtsPlayback *p) {
   pthread_mutex_lock(&p->lock);
   for (int i = 0; i < p->subtitle_count; i++) free(p->subtitles[i].cue.rgba);
@@ -163,6 +178,12 @@ static void fail(DtsPlayback *p, const char *error) {
   p->status.failed = 1;
   snprintf(p->status.error, sizeof p->status.error, "%s", error ? error : "DTS playback failed");
   pthread_mutex_unlock(&p->lock);
+#ifdef NV_DV_NATIVE_DTS_TEST
+  if(p->native_dts && p->dv) {
+    printf("[dts-native] v=1 phase=failed uriFallback=%d\n",
+      error && !strcmp(error,DTS_ENGINE_NATIVE_DTS_REQUIRED));fflush(stdout);
+  }
+#endif
 }
 static int stopped(DtsPlayback *p) {
   int value;
@@ -322,6 +343,7 @@ static int prepareModePrimed(DtsPlayback *p, int stream, int core, double target
     printf("[dts] experimental native DTS + DV: profile=%d p7Allowed=%d channels=%d rate=%d\n",
       info->dovi_profile,p->allow_p7,info->channels,info->sample_rate);fflush(stdout);
   }
+  nativeTraceMedia(p,"prepare",info);
   if (hold) {
     int got = dts_engine_next(p->engine, primed);
     if (stopped(p)) return 0;
@@ -359,6 +381,7 @@ static int prepareModePrimed(DtsPlayback *p, int stream, int core, double target
     } else fail(p, dts_pipeline_error(p->pipeline));
     return 0;
   }
+  nativeTraceMedia(p,"loaded",info);
   {
     char event[128];
     snprintf(event, sizeof event, "{\"dtsStage\":{\"name\":\"native-load-returned\",\"detail\":\"ms=%.0f\"}}",
@@ -440,6 +463,7 @@ static int reposition(DtsPlayback *p,int stream,int core,double target,DtsFrame 
   int subtitle;
   pthread_mutex_lock(&p->lock);subtitle=p->subtitle_stream;pthread_mutex_unlock(&p->lock);
   if(!selectSubtitle(p,subtitle)) { fail(p,"DTS subtitle decoder unavailable");return 0; }
+  nativeTraceMedia(p,"reposition",info);
   nativeEvent(p,"{\"dtsStage\":{\"name\":\"native-buffered-reposition\"}}");
   return 1;
 }
@@ -567,6 +591,12 @@ static void *run(void *user) {
     subtitle = p->subtitle_dirty; p->subtitle_dirty = 0; subtitle_stream = p->subtitle_stream;
     pthread_mutex_unlock(&p->lock);
     if (stop) break;
+#ifdef NV_DV_NATIVE_DTS_TEST
+    if(p->native_dts && p->dv && (seek || audio || pause_dirty || audio_error)) {
+      printf("[dts-native] v=1 phase=control seek=%d audio=%d stream=%d target=%.3f at=%.3f paused=%d ready=%d clock=%d audioError=%d\n",
+        seek,audio,new_stream,target,presented,pause,complete,clock_seen,audio_error);fflush(stdout);
+    }
+#endif
     double wall = clockSeconds(CLOCK_MONOTONIC);
 #ifdef NV_DTS_WEBOS_RECOVERY
     if(network_hold && (seek || audio)) {
@@ -992,6 +1022,12 @@ done:
   /* Ignore closing callbacks after terminal failure, too. */
   pthread_mutex_lock(&p->lock); p->suppress_events = 1; pthread_mutex_unlock(&p->lock);
   pthread_mutex_lock(&p->lock);
+#ifdef NV_DV_NATIVE_DTS_TEST
+  if(p->native_dts && p->dv) {
+    printf("[dts-native] v=1 phase=end failed=%d prepared=%d loaded=%d at=%.3f\n",
+      p->status.failed,p->status.prepared,p->load_complete,p->presented);fflush(stdout);
+  }
+#endif
   p->status.buffer = (DtsBufferInfo){0};p->status.buffered_until = 0;p->status.buffering_ms=0;
   pthread_mutex_unlock(&p->lock);
   dts_subtitles_destroy(p->subtitle_decoder); p->subtitle_decoder = NULL;
@@ -1057,6 +1093,17 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
   dts_engine_allow_p7(p->engine, p->allow_p7);
 #ifdef NV_DV7_MAPPING_TEST
   dts_engine_p7_mapping(p->engine,p->dv && p->allow_p7 && p7_mapping);
+#endif
+#ifdef NV_DV_NATIVE_DTS_TEST
+  {
+    int mapping=0;
+#ifdef NV_DV7_MAPPING_TEST
+    mapping=p->dv && p->allow_p7 && p7_mapping;
+#endif
+    printf("[dts-native] v=1 phase=config gate=1 off=%d dv=%d p7=%d mapping=%d fixedRequested=%d seamless=%d mp4=%d stream=%d ordinal=%d count=%d target=%.3f paused=%d\n",
+      p->native_dts,p->dv,p->allow_p7,mapping,dv_audio,p->seamless,
+      mp4_test,audio_stream,ordinal,count,position,!!paused);fflush(stdout);
+  }
 #endif
   dts_engine_mp4_test(p->engine,mp4_test);
   snprintf(p->url, sizeof p->url, "%s", url);
