@@ -22,6 +22,18 @@ int main(void) {
   assert(gravar());assert(!ajustes_buffer_dados());
   assert(ajustes_buffer_native_connections()==1 && ajustes_buffer_conversion_connections()==4);
   assert(!uxDiferente(AJ_BUFFER));
+  // Saved AAC/AC3 indices remain valid; native Off round-trips independently
+  // of both HTTP selectors and DV/fixed-audio preferences.
+  for(int mode=0;mode<3;mode++) {
+    int dv=ajustes_dv7(),fixed=ajustes_dv_audio_fixo();
+    assert(definirValorDireto(AJ_DTS_AC3,mode));
+    valor[AJ_DTS_AC3]=(mode+1)%3;ajustes_dir(dir);
+    assert(valor[AJ_DTS_AC3]==mode && ajustes_dts_desligado()==(mode==2));
+    assert(ajustes_dts_ac3()==(mode==1));
+    assert(ajustes_buffer_native_connections()==1 && ajustes_buffer_conversion_connections()==4);
+    assert(ajustes_dv7()==dv && ajustes_dv_audio_fixo()==fixed);
+  }
+  assert(definirValorDireto(AJ_DTS_AC3,0));
   assert(ajustes_escopo(AJ_BUFFER_NATIVE_CONNECTIONS)==ESC_TV && ajustes_escopo(AJ_BUFFER_CONVERSION_CONNECTIONS)==ESC_TV);
   assert(!ajustePortavel(AJ_BUFFER_NATIVE_CONNECTIONS) && !ajusteAparelho(AJ_BUFFER_NATIVE_CONNECTIONS));
   for(int native=1;native<=4;native++)for(int conversion=1;conversion<=4;conversion++) {

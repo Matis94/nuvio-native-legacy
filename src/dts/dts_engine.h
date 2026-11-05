@@ -4,6 +4,8 @@
 typedef struct DtsEngine DtsEngine;
 /* Recoverable by a fresh native Load/decoder timeline, not a decode failure. */
 #define DTS_ENGINE_TIMESTAMP_DISCONTINUITY "DTS timestamp discontinuity requires reload"
+/* Original DTS must stay on URI playback: the packet adapter has no DTS ABI. */
+#define DTS_ENGINE_NATIVE_DTS_REQUIRED "Original DTS requires native URI playback"
 /* Numeric worker-only transport diagnostics, reset on open. No URL or headers
  * are retained here. Short reads exclude the final range at end of content.
  * Counters describe consumed ranges; range_wait_ns sums their HTTP durations,
@@ -55,6 +57,9 @@ void dts_engine_dv(DtsEngine *, int enabled);
  * 1 = AAC stereo, 2 = AC3 5.1 (stereo input does not gain surround content).
  * Ignored outside the DV packet path and without NV_DV_FIXED_AUDIO_TEST. */
 void dts_engine_dv_audio(DtsEngine *, int mode);
+/* Snapshot before open. Keep DTS undecoded while identifying the selected
+ * track; the playback worker must hand a final DTS selection back to URI. */
+void dts_engine_native_dts(DtsEngine *, int enabled);
 /* Explicit opt-in before open: P7 conversion and webOS recovery. Default off. */
 void dts_engine_allow_p7(DtsEngine *, int enabled);
 /* Snapshot before open; P7 RPU only, no extra video or HTTP buffers. */

@@ -3249,10 +3249,11 @@ static int iniciarDts(int stream) {
    * Native HTTP buffer/connections remain independent from DV conversion. */
   if (ajustes_dts_desligado()) {
     int m = dvAudioMkvOrd >= 0 ? dvAudioMkvOrd : dvAudioMkvAtual;
-    int mkvDts = dtsModoDv && m >= 0 && m < dvAudios &&
+    int mapped = dtsModoDv && m >= 0 && m < dvAudios;
+    int mkvDts = mapped &&
                  (!strncasecmp(dvAudioCodec[m], "A_DTS", 5) ||
                   !strncasecmp(dvAudioCodec[m], "dts", 3));
-    if (video_faixa_dts(a) || mkvDts) {
+    if (mapped ? mkvDts : video_faixa_dts(a)) {
       printf("[dts] original DTS requested; app conversion bypassed (DV=%d)\n", dtsModoDv);
       fflush(stdout);
       dtsTentou = 1; /* avoid retrying the same native DTS source each pump */
@@ -3332,6 +3333,7 @@ static int iniciarDts(int stream) {
   dts_engine_set_http_workers(ajustes_buffer_conversion_connections());
   dts_engine_set_ahead_mib(cacheboost_backend_buffer_mb());   // #338: Settings > Buffer size
   dts_playback_next_dv(dtsModoDv);
+  dts_playback_next_native_dts(ajustes_dts_desligado());
 #ifdef NV_DV7_MAPPING_TEST
   dts_playback_next_p7_mapping(ajustes_dv7_mapping());
 #endif
@@ -3425,6 +3427,19 @@ static void bombearDts(void) {
   if (st.failed) {
     /* A fast startup failure can happen before the main thread sees its stages. */
     while (dts_playback_event(dtsSessao, event, sizeof event)) logDtsStage(event);
+    if(!strcmp(st.error,DTS_ENGINE_NATIVE_DTS_REQUIRED)) {
+      char lu[sizeof legUrlAtual];
+      snprintf(lu,sizeof lu,"%s",legUrlAtual);
+      printf("[dts] original DTS identified after demux: returning to native URI playback\n");
+      fflush(stdout);
+      dvNao=VIDEO_DV_NAO_AUDIO;dvRecuoAviso=0;dvHabilitado=0;dtsModoDv=0;
+#ifdef NV_MP4_BD_TEST
+      mp4TestPending=mp4TestStarted=0;
+#endif
+      dtsSaida[0]=0;dtsEstado=0;
+      if(!recarregarMesmaFonte(posSeg,-1,-1,lu))falhou=1;
+      return;
+    }
     if (!dtsFalhaLogada) {
       printf("[dts] playback failed: %.159s\n", st.error); fflush(stdout);
       dtsFalhaLogada = 1;

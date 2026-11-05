@@ -15,6 +15,7 @@ static int test_buffer_preset;
 int ajustes_buffer_preset(void) { return test_buffer_preset; }
 int ajustes_buffer_native_connections(void) { return 1; }
 int ajustes_buffer_conversion_connections(void) { return 4; }
+int ajustes_dts_desligado(void) { return 0; }
 void dts_engine_set_source_workers(int n) { (void)n; }
 void dts_engine_set_http_workers(int n) { (void)n; }
 long memlog_livre_mb(void) { return 4096; }

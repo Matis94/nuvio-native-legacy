@@ -55,7 +55,9 @@ static void (*native_event)(void *,const char *);
 static void *native_user;
 enum { NORMAL, OPEN_FAIL, BACKPRESSURE, BLOCK_READ, EOF_MODE, MAPPING, MAPPING_BAD, SUBTITLES, CORE_RECOVERY, NO_CORE_FAIL, CPU_BUDGET, DELAYED_ID, PACING, SUSTAINED, SEEK_PREROLL, SEEK_SEGMENT, TIMESTAMP_ONCE, TIMESTAMP_REPEAT, TIMESTAMP_PAUSED, TIMESTAMP_CANCEL, NATIVE_STALL, NATIVE_REPEAT, NATIVE_NO_CLOCK, NATIVE_TRANSIENT, NATIVE_RECOVERY_NO_CLOCK, NATIVE_RECOVERY_UNLOADED, DV_MAPPING };
 static int timestampScenario(void) { return scenario>=TIMESTAMP_ONCE && scenario<=TIMESTAMP_CANCEL; }
-struct DtsEngine { DtsMediaInfo info; atomic_int cancelled; unsigned char packet[98304]; int serial, core, dv_audio; double base; };
+struct DtsEngine { DtsMediaInfo info; atomic_int cancelled; unsigned char packet[98304]; int serial, core, dv_audio, native_dts; double base; };
+static int native_first_fixture;
+void dts_engine_native_dts(DtsEngine *e,int on) { e->native_dts=!!on; }
 struct DtsPipeline { void (*event)(void *,const char *); void *user; int loaded, completed, running, flushed, audio_ready, video_ready, generation, packets, broken_segment; double target; };
 static void nap(void) { struct timespec t={0,1000000};nanosleep(&t,NULL); }
 static void emit(const char *json) {
@@ -75,6 +77,12 @@ void dts_engine_dv(DtsEngine *e,int on) { (void)e; last_dv=on; }
 void dts_engine_mp4_test(DtsEngine *e,int on) { (void)e;assert(on==mp4_fixture); }
 void dts_engine_dv_audio(DtsEngine *e,int mode) { e->dv_audio=mode; }
 static void fixedInfo(DtsEngine *e) {
+ if(e->native_dts)for(int i=0;i<e->info.n_tracks;i++) {
+  DtsTrack *t=&e->info.tracks[i];
+  if(t->stream_index==e->info.audio_stream && !strcmp(t->codec,"dts")) {
+   strcpy(e->info.audio_codec,"dts");e->info.channels=t->channels;return;
+  }
+ }
  if(e->dv_audio) {
   strcpy(e->info.audio_codec,e->dv_audio==2?"ac3":"aac");
   e->info.channels=e->dv_audio==2?6:2;e->info.sample_rate=48000;
@@ -108,6 +116,10 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,
  if(scenario==MAPPING_BAD) { e->info.tracks[4]=e->info.tracks[3];e->info.tracks[4].stream_index=10;e->info.n_tracks=5; }
  if(scenario==SUBTITLES || scenario==SEEK_SEGMENT || timestampScenario()) {
   e->info.tracks[4]=(DtsTrack){.stream_index=20,.kind=DTS_SUBTITLE};strcpy(e->info.tracks[4].codec,"srt");e->info.n_tracks=5;
+ }
+ if(native_first_fixture) {
+  strcpy(e->info.tracks[1].codec,"dts");
+  if(stream<0)e->info.audio_stream=1;
  }
  fixedInfo(e);
  e->core=core;e->base=target;e->serial=0;return 0;
@@ -350,6 +362,28 @@ static DtsPlayback *start(int paused,int stream,const DtsTrack *selected,int ord
 }
 int main(int argc,char **argv) {
  assert(argc==2);assert(!dts_playback_enabled());DtsPlayback *p;DtsPlaybackStatus s;
+ if(!strncmp(argv[1],"native-dts-",11)) {
+  int nondts=!strcmp(argv[1],"native-dts-nondts");
+  int rejected=!strcmp(argv[1],"native-dts-rejected");
+  int normal=!strcmp(argv[1],"native-dts-default");
+  scenario=DV_MAPPING;native_first_fixture=1;
+  dts_playback_next_dv(1);dts_playback_next_seamless(1);
+  dts_playback_next_dv_audio(2);dts_playback_next_native_dts(!normal);
+  if(rejected)assert(!dts_playback_start("",NULL,-1,0,0,NULL,0,NULL,0,0));
+  DtsTrack selected={.kind=DTS_AUDIO,.channels=6};
+  strcpy(selected.codec,"ac3");strcpy(selected.language,"ru");
+  p=start(0,-1,nondts?&selected:NULL,nondts?1:0,nondts?3:0);
+  s=wait_status(p,!nondts && !rejected && !normal,0);
+  if(nondts || rejected || normal) {
+   assert(!s.failed && strcmp(s.info.audio_codec,"dts"));
+   if(nondts)assert(s.info.audio_stream==4);
+  } else {
+   assert(!strcmp(s.error,DTS_ENGINE_NATIVE_DTS_REQUIRED));
+   assert(!s.prepared && count(&loads)==0 && count(&accepted)==0);
+  }
+  dts_playback_close(p);assert(count(&creates)==count(&destroys));
+  printf("PASS %s: per-session policy, exact final track, no unsupported native DTS Load\n",argv[1]);return 0;
+ }
 #ifdef NV_DV7_MAPPING_TEST
  if(!strcmp(argv[1],"p7-mapping")) {
   dts_playback_next_p7_mapping(1);

@@ -42,7 +42,7 @@ struct DtsPlayback {
   int seamless, seamless_disabled, clock_guard;
   double clock_target, clock_anchor;
   int clock_advances;
-  int allow_p7, dv, starved; /* Dolby Vision path: passthrough audio, starvation fallback. */
+  int allow_p7, dv, starved, native_dts; /* Per-session audio policy. */
   pthread_t thread;
   pthread_mutex_t lock;
   pthread_cond_t wake;
@@ -314,6 +314,9 @@ static int prepareModePrimed(DtsPlayback *p, int stream, int core, double target
   if(p->dv && (!info || (info->dovi_profile!=5 && info->dovi_profile!=8))) {
     fail(p,"Dolby Vision configuration absent or unsupported");return 0;
   }
+  if(p->native_dts && info && !strcmp(info->audio_codec,"dts")) {
+    fail(p,DTS_ENGINE_NATIVE_DTS_REQUIRED);return 0;
+  }
   if (hold) {
     int got = dts_engine_next(p->engine, primed);
     if (stopped(p)) return 0;
@@ -435,7 +438,7 @@ static int reposition(DtsPlayback *p,int stream,int core,double target,DtsFrame 
  * native presentation clock rather than a timestamp fed ahead of playback. */
 static int recover(DtsPlayback *p, int *core, int *core_tried,
                    int stream, double target, int allow_core) {
-  if (!allow_core || *core_tried || *core || !dts_engine_has_core(p->engine)) return 0;
+  if (p->native_dts || !allow_core || *core_tried || *core || !dts_engine_has_core(p->engine)) return 0;
   *core_tried = 1; *core = 1;
   return prepare(p, stream, *core, target);
 }
@@ -985,7 +988,8 @@ done:
   return NULL;
 }
 
-static int dvNext, p7Next, seamlessNext, dvAudioNext, mp4Next;
+static int dvNext, p7Next, seamlessNext, dvAudioNext, mp4Next, nativeDtsNext;
+void dts_playback_next_native_dts(int enabled) { nativeDtsNext=!!enabled; }
 #ifdef NV_DV7_MAPPING_TEST
 static int p7MappingNext;
 void dts_playback_next_p7_mapping(int enabled) { p7MappingNext=!!enabled; }
@@ -1004,6 +1008,7 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
                                int paused, const char *window, int major,
                                const DtsTrack *selected, int ordinal, int count) {
   DtsPlayback *p;
+  int native_dts=nativeDtsNext;nativeDtsNext=0;
   double resume_pct=resumePctNext;resumePctNext=0;
   int dv_audio=dvAudioNext;dvAudioNext=0;
   int mp4_test=mp4Next;mp4Next=0;
@@ -1023,6 +1028,8 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
   if (!p->engine) { dts_playback_close(p); return NULL; }
   p->seamless=seamlessNext;seamlessNext=0;
   p->dv = dvNext; dvNext = 0;
+  p->native_dts=native_dts;
+  dts_engine_native_dts(p->engine,p->native_dts);
   dts_engine_dv(p->engine, p->dv);
   dts_engine_dv_audio(p->engine,p->dv && p->seamless ? dv_audio : 0);
   {

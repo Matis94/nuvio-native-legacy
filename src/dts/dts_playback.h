@@ -35,6 +35,9 @@ void dts_playback_next_seamless(int enabled);
 /* Snapshot before start; 0 v12, 1 AAC stereo, 2 fixed AC3 5.1. DV only.
  * Consumed even if start is rejected; changes apply to the next source. */
 void dts_playback_next_dv_audio(int mode);
+/* DTS Off: never instantiate a DTS decoder/encoder, even before audio metadata
+ * arrives. Other DV audio and video preferences remain independent. */
+void dts_playback_next_native_dts(int enabled);
 /* Optional initial account resume, resolved against demux duration before
  * the first native Load. Consumed even when the next start is rejected. */
 void dts_playback_next_resume_pct(double percent);

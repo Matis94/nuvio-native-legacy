@@ -83,6 +83,11 @@ static void fixtureNextDvAudio(int mode) { partidaFixedAudio=mode; }
 #define ajustes_dv_audio_fixo fixtureFixedPref
 #define dts_playback_next_dv_audio fixtureNextDvAudio
 #endif
+static int fixtureNativeDts, fixtureNativePolicy;
+static int fixtureDtsOff(void) { return fixtureNativeDts; }
+static void fixtureNextNativeDts(int enabled) { fixtureNativePolicy=enabled; }
+#define ajustes_dts_desligado fixtureDtsOff
+#define dts_playback_next_native_dts fixtureNextNativeDts
 #undef __APPLE__
 #include "../src/video.c"
 
@@ -156,6 +161,36 @@ static const char *abrir(void) {
   return partidaComFaixa ? partidaFaixa.language : "";
 }
 
+static void testarDtsOff(void) {
+  fixtureNativeDts=1;acb=0;bindVivo=bindPendente=0;
+  fonteMp4=0;modoLoad=0;seekEm=seekEnvEm=seekRetryEm=0;dvSilencio=0;
+  { Mkv m[]={{"A_EAC3","en","DD+"}};Tv t[]={{"en","eac3",6}};
+    montar(m,1,t,1,0);dvMkvPerfil=7;
+    assert(abrir() && fixtureNativePolicy==1 && partidaOrdinal==0);
+  }
+  { Mkv m[]={{"A_DTS","en","DTS"},{"A_EAC3","en","DD+"}};
+    Tv t[]={{"en","dts",6}};
+    montar(m,2,t,1,0);dvAudioMkvOrd=1;dtsModoDv=1;partidas=0;
+    assert(iniciarDts(-1) && partidas==1 && !strcmp(partidaFaixa.codec,"A_EAC3"));
+    dtsSessao=NULL; // Mapped source selection wins over the old native list.
+    montar(m,2,t,1,0);dvMkvPerfil=7;assert(dvPronto());dtsModoDv=1;partidas=0;
+    assert(!iniciarDts(-1) && !partidas && !dtsModoDv && !dvHabilitado);
+    montar(NULL,0,t,1,0);dtsHabilitado=1;dvHabilitado=0;dtsTentou=0;partidas=0;
+    video_bombear();assert(!partidas && !dtsSessao); // Standalone native DTS.
+  }
+#ifdef NV_MP4_BD_TEST
+  { Tv t[]={{"en","dts",6}};
+    montar(NULL,0,t,1,0);mp4TestPending=1;dtsModoDv=1;partidas=0;
+    assert(!iniciarDts(-1) && !partidas && !mp4TestPending);
+    montar(NULL,0,NULL,0,-1);mp4TestPending=1;dtsModoDv=1;partidas=0;
+    assert(iniciarDts(-1) && partidas==1 && fixtureNativePolicy==1);
+    dtsSessao=NULL;mp4TestPending=0;
+  }
+#endif
+  fixtureNativeDts=0;
+  puts("PASS DTS Off controller: known native DTS, mapped non-DTS DV, late MP4 policy and unchanged standalone routing");
+}
+
 int main(void) {
 #ifdef NV_NATIVE_SEEK_TEST
   (void)SDL_GetTicks();SDL_Delay(2); // Keep test events away from the zero timestamp sentinel.
@@ -166,6 +201,7 @@ int main(void) {
   setvbuf(stdout, NULL, _IOLBF, 0);
   lsCall = fakeCall; lsPayload = fakePayload;
   bus = (LSHandle *)(uintptr_t)1; sessao = 40;
+  if(getenv("NV_TEST_DTS_OFF")) { testarDtsOff();return 0; }
 #ifdef NV_DV_TRUEHD_TEST
   // Keep the exact selected TrueHD track at startup instead of substituting
   // another language/codec or handing the picture back to the URI player.

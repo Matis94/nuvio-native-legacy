@@ -1,12 +1,12 @@
-name: Build buffer DTS DV connection test 2.0.8
+name: Build native DTS Off experiment 2.0.8
 on:
   push:
-    branches: [buffer-dts-dv-test-2.0.8]
+    branches: [native-dts-off-test-2.0.8]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: buffer-dts-dv-test-2.0.8
+  group: native-dts-off-test-2.0.8
   cancel-in-progress: true
 jobs:
   build:
@@ -56,6 +56,9 @@ jobs:
       - name: Native buffering regressions
         timeout-minutes: 8
         run: |
+          bash tests/dts_conversion_off_settings.sh
+          python3 tests/ajustes_dts_tpk.py
+          NV_TEST_DTS_OFF=1 NV_TEST_MP4=1 bash tests/dvaudio_lg.sh
           bash tests/video_http_buffer.sh
           bash tests/video_http_buffer_build.sh
           bash tests/video_moviebuffer.sh
@@ -110,6 +113,7 @@ jobs:
           NUVIO_DTS_JOBS: '3'
         run: |
           bash .github/build/host_ffmpeg.sh
+          SANITIZE=1 bash tests/dts_native_policy.sh
           bash tests/moviebuffer.sh
           bash tests/moviebuffer.sh parallel
           bash tests/dts_buffer_reporting.sh
@@ -209,7 +213,7 @@ jobs:
           data = json.loads(p.read_text())
           assert data["version"] == "2.0.8"
           assert data["id"] == "space.nuvio.native.legacy"
-          data["title"] = "Nuvio Legacy (buffer DTS DV test)"
+          data["title"] = "Nuvio Legacy (native DTS Off test)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -222,7 +226,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-buffer-dts-dv-test.ipk
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-native-dts-off-test.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -238,7 +242,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: buffer-dts-dv-test-2.0.8-full-arm-ipk
+          name: native-dts-off-test-2.0.8-full-arm-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14

@@ -43,6 +43,7 @@ DtsEngine *dts_engine_create(void) { return calloc(1, sizeof(DtsEngine)); }
 int dts_engine_available(void) { return 0; }
 void dts_engine_dv(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
 void dts_engine_dv_audio(DtsEngine *e,int mode) { (void)e;(void)mode; }
+void dts_engine_native_dts(DtsEngine *e,int enabled) { (void)e;(void)enabled; }
 void dts_engine_allow_p7(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
 void dts_engine_p7_mapping(DtsEngine *e,int enabled) { (void)e;(void)enabled; }
 void dts_engine_mp4_test(DtsEngine *e,int enabled) { (void)e;(void)enabled; }
@@ -143,7 +144,7 @@ struct DtsEngine {
   /* Samsung remux (dts_engine_open_demux): container only, large ranges and
    * the final address reused, like the Dolby Vision path, because the whole
    * video also flows through this reader. Never set on webOS. */
-  int remux;
+  int remux, native_dts;
   /* Remux only: abort the CURRENT read without the permanent cancel (a stuck
    * range while the player already gave up on that segment). Cleared by the
    * caller before the next run; the demuxer state is then reset by a seek. */
@@ -1122,6 +1123,7 @@ void dts_engine_dv_audio(DtsEngine *e,int mode) {
   (void)e;(void)mode;
 #endif
 }
+void dts_engine_native_dts(DtsEngine *e,int enabled) { if(e)e->native_dts=!!enabled; }
 void dts_engine_allow_p7(DtsEngine *e, int enabled) { if (e) e->allow_p7 = !!enabled; }
 void dts_engine_p7_mapping(DtsEngine *e,int enabled) {
 #ifdef NV_DV7_MAPPING_TEST
@@ -1184,8 +1186,13 @@ static int configure_audio(DtsEngine *e,int core,double start) {
    * native decoder must see the same codec, channel layout and rate from its
    * initial Load onward. Reuse v12 Seek; never call changeAudioCodec. */
   int fixed=e->dv && e->dv_audio;
-  e->passthrough=ap->codec_id!=AV_CODEC_ID_DTS &&
-    !(e->dv && nv_dts_truehd_codec(avcodec_get_name(ap->codec_id))) && !fixed;
+  /* This also covers DTS discovered only by the MP4/MKV demux. Do not even
+   * prepare AAC/AC3 while the worker resolves a filtered source-track list.
+   * A final DTS selection is rejected by the worker before native Load/Feed;
+   * a selected AC3/EAC3/TrueHD track may still replace this provisional one. */
+  e->passthrough=(e->native_dts && ap->codec_id==AV_CODEC_ID_DTS) ||
+    (ap->codec_id!=AV_CODEC_ID_DTS &&
+     !(e->dv && nv_dts_truehd_codec(avcodec_get_name(ap->codec_id))) && !fixed);
   if(e->passthrough) {
     e->in=av_packet_alloc(); e->out=av_packet_alloc();
     if(!e->in || !e->out) return fail(e,"Audio queue allocation",0);

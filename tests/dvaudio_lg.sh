@@ -33,3 +33,4 @@ done
 cc "${flags[@]}" "${sources[@]}" tests/dvaudio_lg.c -o "$dir/test" \
   "${libs[@]}"
 "$dir/test"
+if [[ ${NV_TEST_DTS_OFF:-0} != 1 ]];then NV_TEST_DTS_OFF=1 "$dir/test";fi
