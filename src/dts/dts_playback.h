@@ -6,6 +6,7 @@
 typedef struct DtsPlayback DtsPlayback;
 typedef struct {
   int prepared, failed, eof, revision, native_loaded;
+  int audio_disabled; /* Original DTS rejected by TV: retain DV video without audio. */
   int load_revision; /* Native Load generation; audio-only metadata can change revision. */
   DtsMediaInfo info;
   char media_id[64], error[160];

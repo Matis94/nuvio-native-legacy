@@ -20,6 +20,7 @@ cc -std=c11 -Wall -Wextra -Werror "${extra[@]}" -Isrc tests/dts_pipeline.c src/d
 # Each runtime exports only its real generation Feed ABI. Auto probe must fall back correctly.
 for generation in 3 4; do
   ln -sf "libplayerAPIs.so.$generation" "$tmp/native/libplayerAPIs.so"
+  DTS_NATIVE_TEST_ONLY=1 DTS_FIXTURE_VIDEO_ONLY=1 LD_LIBRARY_PATH="$tmp/native" "$tmp/test" "$tmp/good" "$tmp/bad"
   DTS_NATIVE_TEST_ONLY=1 DTS_FIXTURE_NATIVE_DTS=1 LD_LIBRARY_PATH="$tmp/native" "$tmp/test" "$tmp/good" "$tmp/bad"
   DTS_NATIVE_TEST_ONLY=1 DTS_FIXTURE_NATIVE_DTS=1 DTS_REFUSE_NATIVE_DTS=1 LD_LIBRARY_PATH="$tmp/native" "$tmp/test" "$tmp/good" "$tmp/bad"
   # Explicit other-generation probes must reject the Feed ABI mismatch.

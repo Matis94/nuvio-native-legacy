@@ -17,9 +17,13 @@ if [[ $(uname -s) == Darwin ]]; then
 else
  cc "${flags[@]}" -std=c11 -D_GNU_SOURCE -DNV_DTS_WEBOS_RECOVERY -Wall -Wextra -Werror -Isrc tests/dts_playback.c src/dts/dts_playback.c src/js.c src/linguas.c src/audioinfo.c -pthread -lm -Wl,--wrap=clock_gettime -o "$tmp/test"
 fi
-for scenario in native-dts-unknown native-dts-nondts native-dts-rejected native-dts-default native-dts-refused native-dts-async; do
+for scenario in native-dts-unknown native-dts-nondts native-dts-rejected native-dts-default native-dts-refused native-dts-async native-dts-never native-dts-never-paused native-dts-never-cancel native-dts-never-video; do
  "$tmp/test" "$scenario"
 done
+if [[ ${NV_TEST_NATIVE_DTS:-0} == 1 ]];then
+ "$tmp/test" native-switch
+ if [[ ${NV_TEST_TRUEHD:-0} == 1 ]];then "$tmp/test" native-switch-truehd;fi
+fi
 if [[ ${NV_TEST_P7_MAPPING:-0} == 1 ]];then "$tmp/test" p7-mapping;exit;fi
 if [[ ${NV_TEST_MP4:-0} == 1 ]];then
  for scenario in mp4-seek-series mp4-seek-off mp4-seek-timeout mp4-seek-paused mp4-seek-cancel mp4-seek-audio;do "$tmp/test" "$scenario";done

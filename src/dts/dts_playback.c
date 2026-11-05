@@ -42,6 +42,7 @@ struct DtsPlayback {
   int seamless, seamless_disabled, clock_guard;
   double clock_target, clock_anchor;
   int clock_advances;
+  int native_dts_rejected; /* Per session: never retry a rejected DTS decoder. */
   int allow_p7, dv, starved, native_dts; /* Per-session audio policy. */
   pthread_t thread;
   pthread_mutex_t lock;
@@ -70,16 +71,23 @@ struct DtsPlayback {
 static void nativeTraceMedia(DtsPlayback *p,const char *phase,const DtsMediaInfo *m) {
 #ifdef NV_DV_NATIVE_DTS_TEST
   if(p->native_dts && p->dv && m) {
-    printf("[dts-native] v=1 phase=%s codec=%.16s stream=%d channels=%d rate=%d profile=%d compat=%d bl=%d el=%d rpu=%d p7=%d\n",
+    printf("[dts-native] v=1 phase=%s codec=%.16s stream=%d channels=%d rate=%d profile=%d compat=%d bl=%d el=%d rpu=%d p7=%d disabled=%d\n",
       phase,m->audio_codec,m->audio_stream,m->channels,m->sample_rate,
       m->dovi_profile,m->dovi_bl_compatibility_id,m->dovi_bl_present,
-      m->dovi_el_present,m->dovi_rpu_present,p->allow_p7);fflush(stdout);
+      m->dovi_el_present,m->dovi_rpu_present,p->allow_p7,
+      p->native_dts_rejected && !strcmp(m->audio_codec,"dts"));fflush(stdout);
   }
 #else
   (void)p;(void)phase;(void)m;
 #endif
 }
 
+static int nativeDtsOutput(DtsPlayback *p,const DtsMediaInfo *info) {
+  return info && nv_dts_native_dv_test(p->dv,p->native_dts) && !strcmp(info->audio_codec,"dts");
+}
+static int nativeDtsSilent(DtsPlayback *p,const DtsMediaInfo *info) {
+  return p->native_dts_rejected && nativeDtsOutput(p,info);
+}
 static void clearSubtitles(DtsPlayback *p) {
   pthread_mutex_lock(&p->lock);
   for (int i = 0; i < p->subtitle_count; i++) free(p->subtitles[i].cue.rgba);
@@ -228,6 +236,27 @@ static void retirePipeline(DtsPlayback *p, double target) {
   p->suppress_events = 0;
   pthread_mutex_unlock(&p->lock);
 }
+/* Native DTS audio is optional. If firmware refuses it, retry only the
+ * renderer with needAudio=false; keep compressed media, DV and HTTP cache. */
+static int loadRenderer(DtsPlayback *p,const DtsMediaInfo *info,double target) {
+  for(int attempt=0;attempt<2;attempt++) {
+    DtsMediaInfo output=*info;
+    if(nativeDtsSilent(p,info)) {
+      strcpy(output.audio_codec,"none");output.channels=output.sample_rate=0;
+    }
+    p->pipeline=dts_pipeline_create(NV_APP_ID,p->window,p->major,nativeEvent,p);
+    if(!p->pipeline) {fail(p,"DTS native pipeline unavailable");return 0;}
+    if(dts_pipeline_load(p->pipeline,&output,target))return 1;
+    if(!nativeDtsOutput(p,info) || p->native_dts_rejected) {
+      fail(p,dts_pipeline_error(p->pipeline));return 0;
+    }
+    printf("[dts-native] v=1 phase=audio-disabled reason=load-refused target=%.3f\n",target);fflush(stdout);
+    p->native_dts_rejected=1;
+    pthread_mutex_lock(&p->lock);p->suppress_events=1;pthread_mutex_unlock(&p->lock);
+    retirePipeline(p,target);
+  }
+  return 0;
+}
 static int prepareModePrimed(DtsPlayback *p, int stream, int core, double target,
                              int reuse, DtsFrame *primed, int source_ready) {
   const DtsMediaInfo *info;
@@ -371,16 +400,7 @@ static int prepareModePrimed(DtsPlayback *p, int stream, int core, double target
       info->dovi_el_present,info->dovi_rpu_present,reused,target);
     nativeEvent(p,event);
   }
-  p->pipeline = dts_pipeline_create(NV_APP_ID, p->window,
-                                    p->major, nativeEvent, p);
-  if (!p->pipeline) { fail(p, "DTS native pipeline unavailable"); return 0; }
-  if (!info || !dts_pipeline_load(p->pipeline, info, target)) {
-    if(info && !strcmp(info->audio_codec,"dts") && nv_dts_native_dv_test(p->dv,p->native_dts)) {
-      printf("[dts] native DTS + DV Load refused: %s\n",dts_pipeline_error(p->pipeline));fflush(stdout);
-      fail(p,DTS_ENGINE_NATIVE_DTS_REQUIRED);
-    } else fail(p, dts_pipeline_error(p->pipeline));
-    return 0;
-  }
+  if (!info || !loadRenderer(p,info,target)) return 0;
   nativeTraceMedia(p,"loaded",info);
   {
     char event[128];
@@ -390,6 +410,7 @@ static int prepareModePrimed(DtsPlayback *p, int stream, int core, double target
   }
   pthread_mutex_lock(&p->lock);
   p->status.info = *info;
+  p->status.audio_disabled=nativeDtsSilent(p,info);
   p->status.prepared = 1;
   p->status.start_position = target;
   p->status.revision++;
@@ -450,6 +471,7 @@ static int reposition(DtsPlayback *p,int stream,int core,double target,DtsFrame 
   p->event_count=p->event_read=p->event_write=0;
   if(ok) {
     p->status.info=*info;p->status.eof=0;
+    p->status.audio_disabled=nativeDtsSilent(p,info);
     if(stream!=before.audio_stream) p->status.revision++;
     p->status.buffer=(DtsBufferInfo){0};p->status.buffered_until=0;
     p->presented=p->preroll_target=target;p->clock_seen=0;
@@ -568,6 +590,7 @@ static void *run(void *user) {
 #endif
   double hold_since=0,hold_target=0;
   double fast_since=0, fast_started=0, fast_target=0;
+  double native_audio_wait=0;int native_audio_revision=-1,native_blocked=0;
   resetStall(&stall, position);
   if (!prepare(p, stream, core, position)) goto done;
   pthread_mutex_lock(&p->lock);position=p->preroll_target;pthread_mutex_unlock(&p->lock);
@@ -576,6 +599,7 @@ static void *run(void *user) {
   for (;;) {
     int stop, pause, pause_dirty, seek, audio, new_stream, audio_error, complete, clock_seen;
     int subtitle, subtitle_stream, volume, volume_dirty, clock_advances;
+    int load_revision,mute_reload=0;
     double target, presented, preroll;
     pthread_mutex_lock(&p->lock);
     stop = p->stop || p->status.failed;
@@ -584,7 +608,7 @@ static void *run(void *user) {
     audio = p->audio_dirty; p->audio_dirty = 0;
     new_stream = p->audio_stream; target = p->target;
     audio_error = p->native_audio_error; p->native_audio_error = 0;
-    complete = p->load_complete;
+    complete = p->load_complete;load_revision=p->status.load_revision;
     clock_seen = p->clock_seen;clock_advances=p->clock_advances;
     presented = p->presented; preroll = p->preroll_target;
     volume = p->volume; volume_dirty = p->volume_dirty; p->volume_dirty = 0;
@@ -652,12 +676,33 @@ static void *run(void *user) {
       snprintf(p->status.media_id,sizeof p->status.media_id,"%s",media_id ? media_id : "");
       pthread_mutex_unlock(&p->lock);
     }
-    if (audio_error) {
-      const DtsMediaInfo *info=dts_engine_info(p->engine);
-      if(info && !strcmp(info->audio_codec,"dts") && nv_dts_native_dv_test(p->dv,p->native_dts))
-        fail(p,DTS_ENGINE_NATIVE_DTS_REQUIRED);
-      else fail(p, "DTS stereo output is not supported by this pipeline");
-      break;
+    /* A decoder can accept Load without ever completing it. Start this
+     * deadline only after preroll data or native backpressure proves there
+     * is data to decode; slow network reads alone must not disable audio. */
+    const DtsMediaInfo *native_info=dts_engine_info(p->engine);
+    int raw_dts=nativeDtsOutput(p,native_info);
+    int raw_wait=raw_dts && !pause && !audio && !seek && !dv_audio_hold && !network_hold &&
+      !(clock_seen && presented>preroll+0.25) &&
+      ((fed_audio>=preroll+2 && fed_video>=preroll+2) || native_blocked);
+    if(load_revision!=native_audio_revision || !raw_wait) {
+      native_audio_revision=load_revision;native_audio_wait=wall;
+    }
+    int raw_timeout=raw_wait && wall-native_audio_wait>=10.0;
+    if(raw_timeout && p->native_dts_rejected) {
+      fail(p,"Video-only Dolby Vision pipeline did not start");break;
+    }
+    if((audio_error || raw_timeout) && raw_dts && !p->native_dts_rejected) {
+      p->native_dts_rejected=1;mute_reload=1;p->starved=0;
+      rate=(DtsRate){.start=wall};native_blocked=0;
+      if(!audio) {new_stream=stream;if(!seek)target=clock_seen?presented:preroll;}
+      audio=1;seek=0;
+      printf("[dts-native] v=1 phase=audio-disabled reason=%s target=%.3f\n",
+        raw_timeout?"no-start":"unsupported",target);fflush(stdout);
+#ifdef NV_DTS_WEBOS_RECOVERY
+      network_hold=0;refillPublish(p,0,0);
+#endif
+    } else if(audio_error) {
+      fail(p,"DTS stereo output is not supported by this pipeline");break;
     }
     if (p->starved >= DTS_DV_STARVED_WINDOWS && !network_hold) {
       fail(p, DTS_PLAYBACK_STARVED);
@@ -722,7 +767,7 @@ static void *run(void *user) {
     /* The adapter now requests a native segment seek and gates controls on
      * SEEKDONE. Test both DV and DTS while retaining one bounded cache/player. */
     int audio_prepared=0;
-    if((seek || audio) && p->seamless && !p->seamless_disabled && !native_unhealthy &&
+    if((seek || audio) && !mute_reload && p->seamless && !p->seamless_disabled && !native_unhealthy &&
        complete && (clock_seen || pause) && !eof) {
       int selected=audio?new_stream:stream;
       int moved=reposition(p,selected,audio?0:core,target,&frame);
@@ -950,6 +995,8 @@ static void *run(void *user) {
         (frame.kind == DTS_AUDIO && frame.size > 2 * 1024 * 1024)) {
       fail(p, "DTS packet exceeds playback memory budget"); break;
     }
+    int silent_dts=nativeDtsSilent(p,dts_engine_info(p->engine));
+    if(silent_dts && frame.kind==DTS_AUDIO) {have_frame=0;continue;}
     if (frame.kind == DTS_SUBTITLE) {
       DtsSubtitle cue;
       int selected;
@@ -997,7 +1044,7 @@ static void *run(void *user) {
       if (feed_started >= 0 && feed_ended >= feed_started) rate.feed_wall += feed_ended-feed_started;
       if (r < 0) { fail(p, dts_pipeline_error(p->pipeline)); break; }
       if (r) {
-        stall.full_since = -1;
+        native_blocked=0;stall.full_since = -1;
         position = frame.pts_ns / 1e9;
         /* A paused seek still needs the keyframe preroll and both streams at
          * its target; Load completion alone does not establish video preroll
@@ -1005,13 +1052,14 @@ static void *run(void *user) {
         if (seek_preroll && position >= preroll) {
           if (frame.kind == DTS_AUDIO) seek_audio = 1;
           else if (frame.kind == DTS_VIDEO) seek_video = 1;
-          if (seek_audio && seek_video) seek_preroll = 0;
+          if ((silent_dts || seek_audio) && seek_video) seek_preroll = 0;
         }
         if (frame.kind == DTS_AUDIO) { rate.audio++; if (position > fed_audio) fed_audio = position; }
         else { rate.video++; if (position > fed_video) fed_video = position; }
+        if(silent_dts)fed_audio=fed_video;
         have_frame = 0;
       } else {
-        rate.full++;
+        native_blocked=1;rate.full++;
         if (!pause && (recovery_waiting || (complete && clock_seen && !seek_preroll)) && stall.full_since < 0)
           stall.full_since = feed_ended;
         rest(p);

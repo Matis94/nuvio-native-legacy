@@ -21,7 +21,8 @@ static atomic_int allow_decode_failure, transport_stalled, release_transport, st
 static atomic_int jam_native, native_full, seek_failure;
 static atomic_int timestamp_fault, timestamp_fail_open, timestamp_block_open, timestamp_open_entered;
 static int last_dv, audio_reconfigs, audio_fail_once, missing_dv;
-static int truehd_fixture, native_refuse, native_async;
+static int truehd_fixture, native_refuse, native_async, native_never, native_video_never;
+static atomic_int silent_loads, silent_video;
 static atomic_int prime_block, prime_entered, prime_release;
 static int prime_serial;
 static int seamless_fixture, flush_refuse, audio_format_change, stale_clock;
@@ -58,7 +59,7 @@ static int timestampScenario(void) { return scenario>=TIMESTAMP_ONCE && scenario
 struct DtsEngine { DtsMediaInfo info; atomic_int cancelled; unsigned char packet[98304]; int serial, core, dv_audio, native_dts; double base; };
 static int native_first_fixture;
 void dts_engine_native_dts(DtsEngine *e,int on) { e->native_dts=!!on; }
-struct DtsPipeline { void (*event)(void *,const char *); void *user; int loaded, completed, running, flushed, audio_ready, video_ready, generation, packets, broken_segment; double target; };
+struct DtsPipeline { void (*event)(void *,const char *); void *user; int loaded, completed, running, silent, raw_dts, flushed, audio_ready, video_ready, generation, packets, broken_segment; double target; };
 static void nap(void) { struct timespec t={0,1000000};nanosleep(&t,NULL); }
 static void emit(const char *json) {
  void (*cb)(void *,const char *);void *u;
@@ -226,7 +227,9 @@ DtsPipeline *dts_pipeline_create(const char *a,const char *w,int m,void (*cb)(vo
  pthread_mutex_lock(&fixture);creates++;p->generation=creates;p->flushed=creates>1;native_event=cb;native_user=u;pthread_mutex_unlock(&fixture);return p;
 }
 int dts_pipeline_load(DtsPipeline *p,const DtsMediaInfo *m,double t) {
- if(native_refuse && !strcmp(m->audio_codec,"dts"))return 0;
+ p->silent=!strcmp(m->audio_codec,"none");p->raw_dts=!strcmp(m->audio_codec,"dts");
+ if(p->silent) {assert(m->dovi_profile==8 && !m->channels && !m->sample_rate);silent_loads++;}
+ if(native_refuse && p->raw_dts)return 0;
  if(native_async && !strcmp(m->audio_codec,"dts"))p->event(p->user,"{\"errorCode\":200}");
  if(p->loaded) return 0;
  p->loaded=1;p->target=t;
@@ -234,6 +237,8 @@ int dts_pipeline_load(DtsPipeline *p,const DtsMediaInfo *m,double t) {
 }
 int dts_pipeline_feed(DtsPipeline *p,const DtsFrame *f) {
  assert(p->loaded);int refused=0;
+ if(p->silent) {assert(f->kind==DTS_VIDEO);silent_video++;}
+ if((native_never && p->raw_dts) || (native_video_never && p->silent)) {atomic_fetch_add(&stall_wall_ns,INT64_C(1000000000));return 0;}
  if(scenario==SEEK_SEGMENT && p->broken_segment && f->kind==DTS_VIDEO) return 0;
  if(scenario>=NATIVE_STALL &&
     ((scenario==NATIVE_REPEAT && p->packets>=4) ||
@@ -365,12 +370,40 @@ static DtsPlayback *start(int paused,int stream,const DtsTrack *selected,int ord
 }
 int main(int argc,char **argv) {
  assert(argc==2);assert(!dts_playback_enabled());DtsPlayback *p;DtsPlaybackStatus s;
+#ifdef NV_DV_NATIVE_DTS_TEST
+ if(!strcmp(argv[1],"native-switch") || !strcmp(argv[1],"native-switch-truehd")) {
+  truehd_fixture=!strcmp(argv[1],"native-switch-truehd");
+  scenario=DV_MAPPING;native_first_fixture=1;native_async=1;seamless_fixture=1;
+  dts_playback_next_dv(1);dts_playback_next_seamless(1);
+  dts_playback_next_dv_audio(2);dts_playback_next_native_dts(1);
+  int good=truehd_fixture?9:4;
+  p=start(0,good,NULL,0,0);s=wait_status(p,0,0);wait_count(&accepted,8);
+  assert(!s.audio_disabled && strcmp(s.info.audio_codec,"dts"));
+  dts_playback_audio_at(p,1,.5);
+  for(int i=0;i<1500;i++) {
+    dts_playback_status(p,&s);assert(!s.failed);
+    if(s.prepared && s.native_loaded && s.audio_disabled)break;
+    nap();
+  }
+  assert(s.audio_disabled && s.native_loaded && s.info.dovi_profile==8);
+  assert(silent_loads==1 && silent_video>0 && count(&opens)==1);
+  dts_playback_audio_at(p,good,1);s=wait_audio_status(p,good);
+  assert(!s.audio_disabled && !s.failed && strcmp(s.info.audio_codec,"dts"));
+  assert(s.info.dovi_profile==8 && count(&opens)==1);
+  dts_playback_close(p);assert(count(&creates)==count(&destroys));
+  printf("PASS %s: supported audio to rejected DTS retains silent DV, supported audio restores sound\n",argv[1]);return 0;
+ }
+#endif
  if(!strncmp(argv[1],"native-dts-",11)) {
   int nondts=!strcmp(argv[1],"native-dts-nondts");
   int rejected=!strcmp(argv[1],"native-dts-rejected");
   int normal=!strcmp(argv[1],"native-dts-default");
   native_refuse=!strcmp(argv[1],"native-dts-refused");
   native_async=!strcmp(argv[1],"native-dts-async");
+  native_never=strstr(argv[1],"native-dts-never")!=NULL;
+  native_video_never=!strcmp(argv[1],"native-dts-never-video");
+  int paused_never=strstr(argv[1],"never-paused")!=NULL;
+  int cancel_never=strstr(argv[1],"never-cancel")!=NULL;
   int native_allowed=0;
 #ifdef NV_DV_NATIVE_DTS_TEST
   native_allowed=1;
@@ -381,20 +414,48 @@ int main(int argc,char **argv) {
   if(rejected)assert(!dts_playback_start("",NULL,-1,0,0,NULL,0,NULL,0,0));
   DtsTrack selected={.kind=DTS_AUDIO,.channels=6};
   strcpy(selected.codec,"ac3");strcpy(selected.language,"ru");
-  p=start(0,-1,nondts?&selected:NULL,nondts?1:0,nondts?3:0);
+  p=start(paused_never || cancel_never,-1,nondts?&selected:NULL,nondts?1:0,nondts?3:0);
   int raw=!nondts && !rejected && !normal;
-  int failed=raw && (!native_allowed || native_refuse || native_async);
+  int failed=raw && (!native_allowed || native_video_never);
   s=wait_status(p,failed,0);
   if(nondts || rejected || normal) {
    assert(!s.failed && strcmp(s.info.audio_codec,"dts"));
    if(nondts)assert(s.info.audio_stream==4);
   } else if(!failed) {
    assert(s.prepared && !s.failed && !strcmp(s.info.audio_codec,"dts"));
+   if((paused_never || cancel_never) && native_allowed) {
+    while(atomic_load(&stall_wall_ns)<INT64_C(12000000000))nap();
+    dts_playback_status(p,&s);assert(!s.failed && !s.audio_disabled && count(&creates)==1);
+    if(cancel_never) {
+      dts_playback_close(p);assert(count(&creates)==count(&destroys));
+      puts("PASS native DTS pending startup: user pause excludes deadline, cancel joins worker");return 0;
+    }
+    dts_playback_pause(p,0);
+   }
+   if(native_refuse || native_async || native_never) {
+    for(int i=0;i<1500 && (!s.audio_disabled || !s.native_loaded);i++) {
+      nap();dts_playback_status(p,&s);assert(!s.failed);
+    }
+    assert(s.audio_disabled && s.native_loaded && silent_loads==1);
+    for(int i=0;i<1000 && !silent_video;i++)nap();
+    assert(silent_video>0 && last_dv && count(&opens)==1);
+   }
    wait_count(&accepted,1);
-   dts_playback_seek(p,2);wait_count(&seeks,1);
+   int seek_before=count(&seeks);dts_playback_seek(p,2);wait_count(&seeks,seek_before+1);
+   if(native_allowed && (native_refuse || native_async || native_never)) {
+    // Switching away restores the supported converted output, returning to
+    // DTS stays silent without reattempting the rejected native decoder.
+    dts_playback_audio_at(p,4,2);s=wait_audio_status(p,4);assert(!s.audio_disabled);
+    dts_playback_audio_at(p,1,2);s=wait_audio_status(p,1);assert(s.audio_disabled);
+    assert(count(&opens)==1 && !s.failed);
+   }
   } else {
-   assert(!strcmp(s.error,DTS_ENGINE_NATIVE_DTS_REQUIRED));
-   if(!native_async || !native_allowed)assert(!s.prepared && count(&loads)==0 && count(&accepted)==0);
+   if(native_allowed && native_video_never) {
+    assert(strstr(s.error,"Video-only") && s.audio_disabled && count(&creates)==2 && count(&opens)==1);
+   } else {
+    assert(!strcmp(s.error,DTS_ENGINE_NATIVE_DTS_REQUIRED));
+    if(!native_async || !native_allowed)assert(!s.prepared && count(&loads)==0 && count(&accepted)==0);
+   }
   }
   dts_playback_close(p);assert(count(&creates)==count(&destroys));
   printf("PASS %s: per-session policy, exact final track, gated native DTS, seek and bounded firmware refusal\n",argv[1]);return 0;

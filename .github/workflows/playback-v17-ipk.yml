@@ -57,7 +57,7 @@ jobs:
         timeout-minutes: 8
         run: |
           NV_TEST_NATIVE_DTS=1 bash tests/dts_pipeline.sh
-          NV_TEST_NATIVE_DTS=1 NV_TEST_P7_MAPPING=1 SANITIZE=1 bash tests/dts_playback.sh
+          NV_TEST_NATIVE_DTS=1 NV_TEST_TRUEHD=1 NV_TEST_P7_MAPPING=1 SANITIZE=1 bash tests/dts_playback.sh
           NV_TEST_NATIVE_DTS=1 NV_TEST_MP4=1 SANITIZE=1 bash tests/dts_playback.sh
           NV_TEST_NATIVE_DTS=1 NV_TEST_DTS_OFF=1 NV_TEST_MP4=1 bash tests/dvaudio_lg.sh
           bash tests/dts_conversion_off_settings.sh

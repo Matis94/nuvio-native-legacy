@@ -3552,7 +3552,10 @@ static void bombearDts(void) {
     }
     /* Converted only when the source track is DTS; on the Dolby Vision path
      * AC-3/E-AC-3 pass through untouched and there is nothing to label. */
-    if(dtsModoDv && !strcmp(st.info.audio_codec,"dts")) {
+    if(dtsModoDv && st.audio_disabled) {
+      snprintf(dtsSaida,sizeof dtsSaida,"DTS: unsupported (no sound)");
+      dtsEstado=VIDEO_DTS_SEM_SOM;
+    } else if(dtsModoDv && !strcmp(st.info.audio_codec,"dts")) {
       snprintf(dtsSaida,sizeof dtsSaida,"DTS: Original (DV test)");
       dtsEstado=VIDEO_DTS_NATIVO; // No misleading converted-audio notification.
     } else if (!dtsModoDv || (audioAtual >= 0 && audioAtual < nAudio && !strcmp(faixaAudio[audioAtual].codec, "dts"))) {

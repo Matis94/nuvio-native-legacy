@@ -34,6 +34,8 @@ int main(void) {
   const char *safe = "[playback-diag] tick=123 generation=2 pos=123.456 readyBytes=268435456 availableKiB=245760";
   logexport_redact(safe, out, sizeof out); assert(!strcmp(safe, out));
   const char *native_logs[]={
+    "[dts-native] v=1 phase=audio-disabled reason=unsupported target=123.500",
+    "[dts-native] v=1 phase=audio-disabled reason=no-start target=123.500",
     "[dts-native] v=1 phase=config gate=1 off=1 dv=1 p7=1 mapping=1 fixedRequested=2 seamless=1 mp4=1 stream=3 ordinal=0 count=4 target=123.500 paused=0",
     "[dts-native] v=1 phase=prepare codec=dts stream=3 channels=6 rate=48000 profile=8 compat=1 bl=1 el=0 rpu=1 p7=1",
     "[dts-native] v=1 phase=load codec=DTS channels=6 rate=48000 profile=8 compat=1 target=123.500",

@@ -85,7 +85,7 @@ struct Pipeline {
   /* Accepted controls belong to the worker. Native state callbacks never
    * clear these guards: a late/duplicate callback must not reissue controls. */
   bool loaded = false, want_play = false, play_issued = false, pause_issued = false, poisoned = false;
-  bool audio_fed = false, video_fed = false, started = false;
+  bool audio_fed = false, video_fed = false, started = false, video_only = false;
   bool backpressure_reported = false;
   uint64_t refused_feeds = 0;
   unsigned play_count = 0, pause_count = 0;
@@ -212,6 +212,7 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
   auto *p = static_cast<Pipeline *>(ctx); const char *v = video_codec(m->video_codec);
   const bool ac3 = !strcmp(m->audio_codec,"ac3");
   const bool dv = m->dovi_profile != 0;
+  const bool no_audio=nv_dts_native_dv_test(dv,1) && !strcmp(m->audio_codec,"none") && !m->channels && !m->sample_rate;
   const bool original_dts=nv_dts_native_dv_test(dv,1) && !strcmp(m->audio_codec,"dts");
   const bool valid_dv = (m->dovi_profile == 5 || m->dovi_profile == 8) &&
     !strcmp(v ? v : "", "H265") && m->dovi_bl_present && m->dovi_rpu_present && !m->dovi_el_present;
@@ -220,8 +221,8 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
    * libpf-1.0.so parses on webOS 4.10; on the LG C9 E-AC-3 5.1 was heard and
    * a passed-through AC-3 5.1 track played with codec "AC3" + ac3PlusInfo. */
   const char *pass = original_dts ? "DTS" : !strcmp(m->audio_codec,"eac3") ? "AC3 PLUS" : ac3 ? "AC3" : nullptr;
-  const bool audio_ok = pass ? (m->channels > 0 && m->channels <= 8 && m->sample_rate > 0)
-    : (!strcmp(m->audio_codec,"aac") && m->channels == 2 && m->sample_rate == 48000);
+  const bool audio_ok = no_audio || (pass ? (m->channels > 0 && m->channels <= 8 && m->sample_rate > 0)
+    : (!strcmp(m->audio_codec,"aac") && m->channels == 2 && m->sample_rate == 48000));
   if (p->loaded || !v || !valid_target(target) || m->width <= 0 || m->height <= 0 || !audio_ok ||
       (dv && !valid_dv) || (m->hdr[0] && strcmp(m->hdr,"SDR") && strcmp(m->hdr,"PQ") &&
       strcmp(m->hdr,"HDR10") && strcmp(m->hdr,"HLG") && !(dv && !strcmp(m->hdr,"DolbyVision")))) {
@@ -230,9 +231,10 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
   std::ostringstream j;
   j << "{\"args\":[{\"mediaTransportType\":\"BUFFERSTREAM\",\"option\":{\"appId\":" << quote(p->app.c_str());
   if (!p->window.empty()) j << ",\"windowId\":" << quote(p->window.c_str());
-  j << ",\"queryPosition\":false,\"externalStreamingInfo\":{\"contents\":{\"codec\":{\"video\":" << quote(v)
-    << ",\"audio\":" << quote(pass ? pass : "AAC")
-    << "}";
+  if(no_audio)j << ",\"needAudio\":false";
+  j << ",\"queryPosition\":false,\"externalStreamingInfo\":{\"contents\":{\"codec\":{\"video\":" << quote(v);
+  if(!no_audio)j << ",\"audio\":" << quote(pass ? pass : "AAC");
+  j << "}";
   if (dv) j << ",\"DolbyHdrInfo\":{\"encryptionType\":\"clear\",\"profileId\":"
     << m->dovi_profile << ",\"trackType\":\"single\"}";
   j << ",\"format\":\"RAW\",\"provider\":\"Chrome\",\"esInfo\":{\"pauseAtDecodeTime\":true,\"seperatedPTS\":true,\"ptsToDecode\":"
@@ -246,7 +248,7 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
     << m->sample_rate / 1000.0 << "}";
   else if (pass) j << ",\"ac3PlusInfo\":{\"channels\":" << m->channels << ",\"frequency\":"
     << m->sample_rate / 1000.0 << "}";
-  else j << ",\"aacInfo\":{\"channels\":" << m->channels << ",\"frequency\":"
+  else if(!no_audio) j << ",\"aacInfo\":{\"channels\":" << m->channels << ",\"frequency\":"
     << m->sample_rate / 1000.0 << ",\"profile\":2,\"format\":\"raw\"}";
   j << "},\"bufferingCtrInfo\":{\"srcBufferLevelVideo\":{\"minimum\":0,\"maximum\":8388608},\"srcBufferLevelAudio\":{\"minimum\":0,\"maximum\":2097152}}},\"transmission\":{\"contentsType\":\"LIVE\",\"trickType\":\"client-side\"}}}]}";
   /* Foreground notification is advisory: both reference players still Load
@@ -254,13 +256,14 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
    * by webOS; let Load report whether resources can actually be acquired. */
   if (!p->n.foreground(p->sf)) stage(p,"native-foreground-refused","continuing to Load");
   { char d[96]; snprintf(d,sizeof d,"dv=%d profile=%d audio=%s ch=%d",int(dv),m->dovi_profile,
-      pass ? pass : "AAC",m->channels); stage(p,"native-load-requested",d); }
+      no_audio ? "NONE" : pass ? pass : "AAC",m->channels); stage(p,"native-load-requested",d); }
 #ifdef NV_DV_NATIVE_DTS_TEST
-  if(original_dts) {
-    printf("[dts-native] v=1 phase=load codec=DTS channels=%d rate=%d profile=%d compat=%d target=%.3f\n",
-      m->channels,m->sample_rate,m->dovi_profile,m->dovi_bl_compatibility_id,target);fflush(stdout);
+  if(original_dts || no_audio) {
+    printf("[dts-native] v=1 phase=load codec=%s needAudio=%d channels=%d rate=%d profile=%d compat=%d target=%.3f\n",
+      no_audio?"NONE":"DTS",!no_audio,m->channels,m->sample_rate,m->dovi_profile,m->dovi_bl_compatibility_id,target);fflush(stdout);
   }
 #endif
+  p->video_only=no_audio;
   if (!p->n.load(p->sf,j.str().c_str(),callback,p)) {
     p->error = "Starfish Load refused"; return 0;
   }
@@ -276,7 +279,7 @@ static int play(void *ctx) {
   /* Some firmware completes Load synchronously before accepting any packets.
    * Both configured streams need their first packet before initial Play.
    * Once started, pause/resume controls keep their normal immediate ordering. */
-  if (!p->started && (!p->audio_fed || !p->video_fed)) return 1;
+  if (!p->started && ((!p->video_only && !p->audio_fed) || !p->video_fed)) return 1;
   if (p->play_issued) return 1;
   if (!p->n.play(p->sf)) { p->error = "Starfish Play refused"; return 0; }
   p->play_issued = true; p->pause_issued = false; p->started = true;
@@ -287,7 +290,8 @@ static int play(void *ctx) {
 static int feed(void *ctx,const DtsFrame *f) {
   auto *p = static_cast<Pipeline *>(ctx);
   if (!p->loaded || p->poisoned || !f->data || !f->size || f->size > 16u*1024u*1024u ||
-      (f->kind != DTS_VIDEO && f->kind != DTS_AUDIO) || f->pts_ns < 0) {
+      (f->kind != DTS_VIDEO && f->kind != DTS_AUDIO) ||
+      (p->video_only && f->kind==DTS_AUDIO) || f->pts_ns < 0) {
     p->error = "invalid packet or unavailable pipeline"; return -1;
   }
   try { p->pending.assign(f->data,f->data+f->size); }

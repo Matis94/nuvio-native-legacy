@@ -56,8 +56,10 @@ int main(int argc,char **argv) {
   strcpy(m.audio_codec,"dts");
   assert(!dts_pipeline_load(p,&m,2.5)); // Ordinary SDR DTS still belongs to URI.
   m.dovi_profile=8;m.dovi_bl_present=m.dovi_rpu_present=1;strcpy(m.hdr,"DolbyVision");
+  if(getenv("DTS_FIXTURE_VIDEO_ONLY")) {strcpy(m.audio_codec,"none");m.channels=m.sample_rate=0;goto native_output_ready;}
   m.channels=9;assert(!dts_pipeline_load(p,&m,2.5));m.channels=2;
   m.sample_rate=0;assert(!dts_pipeline_load(p,&m,2.5));m.sample_rate=48000;
+native_output_ready:
 #ifdef NV_DV_NATIVE_DTS_TEST
   if(getenv("DTS_REFUSE_NATIVE_DTS")) {
    assert(!dts_pipeline_load(p,&m,2.5));
@@ -66,9 +68,13 @@ int main(int argc,char **argv) {
    assert(dts_pipeline_load(p,&m,2.5));assert(dts_pipeline_play(p));
    unsigned char packet[4]={2,2,2,2};
    DtsFrame f={0};f.data=packet;f.size=4;f.pts_ns=3000000000LL;
-   f.kind=DTS_AUDIO;assert(dts_pipeline_feed(p,&f)==1);
+   f.kind=DTS_AUDIO;assert(dts_pipeline_feed(p,&f)==(getenv("DTS_FIXTURE_VIDEO_ONLY")?-1:1));
    f.kind=DTS_VIDEO;assert(dts_pipeline_feed(p,&f)==1 && play_calls()==1);
    assert(dts_pipeline_pause(p));assert(dts_pipeline_flush(p,5));
+   if(getenv("DTS_FIXTURE_VIDEO_ONLY")) {
+    assert(dts_pipeline_play(p));f.pts_ns=6000000000LL;
+    assert(dts_pipeline_feed(p,&f)==1 && play_calls()==2);
+   }
   }
 #else
   assert(!dts_pipeline_load(p,&m,2.5));

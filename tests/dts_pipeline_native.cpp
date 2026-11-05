@@ -44,7 +44,18 @@ bool StarfishMediaAPIs::Load(const char *j,void (*cb)(int,long long,const char *
  assert(js_bruto(contents,nullptr,"esInfo",es,sizeof es) && js_num(es,nullptr,"ptsToDecode",-1)==2500000000);
  assert(js_bruto(contents,nullptr,"codec",codec,sizeof codec));
  assert(js_texto_raiz(codec,"video",text,sizeof text) && !strcmp(text,"H265"));
+ const bool video_only=getenv("DTS_FIXTURE_VIDEO_ONLY")!=nullptr;
  const bool original_dts=getenv("DTS_FIXTURE_NATIVE_DTS")!=nullptr;
+ if(video_only) {
+  char unused[256];
+  assert(strstr(option,"\"needAudio\":false"));
+  assert(!js_texto_raiz(codec,"audio",text,sizeof text));
+  assert(!js_bruto(contents,nullptr,"dtsInfo",unused,sizeof unused));
+  assert(!js_bruto(contents,nullptr,"aacInfo",unused,sizeof unused));
+  assert(!js_bruto(contents,nullptr,"ac3PlusInfo",unused,sizeof unused));
+  assert(strstr(j,"\"profileId\":8") && strstr(j,"\"trackType\":\"single\""));
+  callback=cb;context=ctx;loaded=true;return true;
+ }
  assert(js_texto_raiz(codec,"audio",text,sizeof text) && !strcmp(text,original_dts?"DTS":"AAC"));
  if(original_dts) {
   char dts[256],unused[256];
@@ -77,7 +88,7 @@ extern "C" void dts_fixture_complete_load() {
 std::string StarfishMediaAPIs::Feed(const char *j) {
  void *address=nullptr; size_t size=0; long long pts=0; int kind=0;
  assert(sscanf(j,"{\"bufferAddr\":\"%p\",\"bufferSize\":%zu,\"pts\":%lld,\"esData\":%d}",&address,&size,&pts,&kind)==4);
- assert(size==4 && pts==3000000000LL && (kind==1 || kind==2));
+ assert(size==4 && (pts==3000000000LL || (getenv("DTS_FIXTURE_VIDEO_ONLY") && pts==6000000000LL)) && (kind==1 || kind==2));
  auto *data=static_cast<unsigned char *>(address);
  if(data[0]==1) return "BufferFull";
  // A completed preroll queue cannot drain until the deferred Play is issued.

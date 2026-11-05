@@ -5,7 +5,7 @@ Branch: `native-dts-off-test-2.0.8`. This experiment is isolated from
 
 ## Enable the experiment
 
-Select **DTS output: Off (native)**, enable the existing Dolby Vision P7
+Select **DTS output: Off**, enable the existing Dolby Vision P7
 conversion option, and reopen the video. P7 mapping and experimental DV MP4
 remain separate opt-ins. AAC stereo remains the default DTS setting.
 
@@ -28,10 +28,23 @@ buffers, cache allocations or HTTP lanes.
 
 ## Failure behavior
 
-If native DTS Load is refused or the firmware reports unsupported audio
-(error 200), the worker requests the existing native URI handoff. It does not
-silently transcode DTS to AAC. That fallback does not perform app P7 conversion
-or mapping. Other DV failures retain their existing recovery behavior.
+If native DTS Load is refused or firmware reports unsupported audio (error
+200), the worker retries the renderer as video-only. The native payload omits
+codec.audio and audio configuration and sets option.needAudio=false, following
+the same pinned Kodi webOS implementation. Compressed DTS packets are dropped,
+not decoded or transcoded, while P7 conversion, optional mapping and the existing
+HTTP cache remain active. No URI handoff is triggered by DTS rejection alone.
+
+A native DTS decoder that accepts Load but never starts also gets this fallback
+after 10 seconds of supplied preroll/backpressure without presentation progress.
+User pause and missing preroll data do not consume that deadline. A video-only
+renderer that itself cannot start fails within the same bounded deadline; a
+real video failure retains the existing recovery path.
+
+Unsupported DTS is remembered only for this playback session. Seeking keeps
+silent DV video; selecting AC3/EAC3 or converted TrueHD restores audio, and
+returning to DTS stays silent. TrueHD conversion and the user's saved buffer,
+HTTP connection, mapping and DV settings remain independent.
 
 A firmware that accepts Load but produces silent audio requires manual testing;
 there is no reliable API here to prove that the TV actually outputs sound.
@@ -41,7 +54,8 @@ there is no reliable API here to prove that the TV actually outputs sound.
 Host adapter tests cover both ABIs, exact DTS JSON, audio/video feed, pause,
 seek, synchronous refusal, and rejection without the experimental build flag.
 Sanitized worker tests cover selected-track resolution, original DTS startup,
-seek, synchronous/asynchronous firmware rejection, defaults and policy reset.
+seek, synchronous/asynchronous firmware rejection, video-only recovery, missing
+startup callbacks, audio restoration, defaults and policy reset.
 LG controller tests cover known DTS, late MP4 discovery and unchanged SDR routing.
 Real MKV/MP4 packet tests compare DTS byte-for-byte without an app decoder or
 encoder, including fixed output and audio changes.
@@ -63,7 +77,7 @@ ordinary logs plus `[dts-native] v=1` transition records from this experiment.
 Records include the effective startup policy (Off, DV, P7, mapping, MP4,
 fixed-output preference), selected stream number, original codec/channels/rate,
 converted DV profile/compatibility/BL/EL/RPU flags, native Load and control
-callbacks, seek/audio-switch targets, failures and URI fallback. Existing
+callbacks, seek/audio-switch targets, failures and video-only fallback. Existing
 first-feed, worker-rate, HTTP and refill logs remain available. No per-frame
 measurement buffers or periodic DTS-native logging are added. Logs cannot
 prove audible DTS output; report whether sound was actually heard on the TV.
@@ -71,3 +85,10 @@ prove audible DTS output; report whether sound was actually heard on the TV.
 The export identifies this experiment and retains these numeric records while
 continuing to mask URLs, credentials and private payloads. New records never
 print source URLs, headers, track names, raw native JSON or packet addresses.
+
+## Settings layout
+
+The playback section uses the same settings layout as Nuvio_webOS_2.0.8.6.
+The existing DTS row appends Off after AAC and Dolby Digital, preserving saved
+indices 0/1 and the AAC default. Compact in-row labels keep all three choices
+in the existing segmented control; DV, P7, mapping and Buffer size stay separate.
