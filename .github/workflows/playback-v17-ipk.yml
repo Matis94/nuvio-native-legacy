@@ -45,7 +45,7 @@ jobs:
           python3 .github/build/test_scope.py
           # Temporary LG picture test: only the audited playback snapshot may
           # omit unrelated suites. Any source/test/build edit restores full CI.
-          playback_snapshot=1ed996ab0a1d0354100973ac8370d7a289751f4e
+          playback_snapshot=17530f7ebd8d626f7bcd17d170f7cf1c1ff147f0
           if [ "$NUVIO_FULL_TESTS" != "true" ] && \
              git cat-file -e "$playback_snapshot^{commit}" 2>/dev/null && \
              git diff --quiet "$playback_snapshot" HEAD -- . ':(exclude).github/workflows/playback-v17-ipk.yml'; then
@@ -119,6 +119,7 @@ jobs:
         timeout-minutes: 10
         run: |
           SANITIZE=1 bash tests/video_packet_diag.sh
+          NV_TEST_VIDEO_DIAG=1 bash tests/dts_pipeline.sh
           SANITIZE=1 bash tests/logexport.sh
           SANITIZE=1 bash tests/video_audio_mkv.sh
           NV_TEST_VIDEO_DIAG=1 SANITIZE=1 bash tests/dts_rebuffer.sh
