@@ -45,7 +45,7 @@ jobs:
           python3 .github/build/test_scope.py
           # Temporary LG picture test: only the audited playback snapshot may
           # omit unrelated suites. Any source/test/build edit restores full CI.
-          playback_snapshot=34253be8c60cde787864fda13408d3eb6efff3e7
+          playback_snapshot=3e607e1eddaa434c9b456e01ee7c4a89f567fe18
           if [ "$NUVIO_FULL_TESTS" != "true" ] && \
              git cat-file -e "$playback_snapshot^{commit}" 2>/dev/null && \
              git diff --quiet "$playback_snapshot" HEAD -- . ':(exclude).github/workflows/playback-v17-ipk.yml'; then
@@ -136,7 +136,7 @@ jobs:
         run: |
           SANITIZE=1 bash tests/hevc_sei.sh
           NV_TEST_HEVC_SEI=1 NV_TEST_VIDEO_DIAG=1 bash tests/dts_pipeline.sh
-      - name: Real HEVC demux and seek diagnostic isolation
+      - name: Real HEVC demux, seek diagnostics and own Annex-B parameter sets
         if: steps.tests.outputs.scope == 'playback-picture-test'
         timeout-minutes: 8
         env:
@@ -145,6 +145,8 @@ jobs:
         run: |
           bash .github/build/host_ffmpeg.sh
           SANITIZE=1 bash tests/hevc_structure_engine.sh
+          SANITIZE=1 bash tests/hevc_annexb.sh
+          SANITIZE=1 bash tests/hevc_annexb_engine.sh
       - name: Manual skip-button settings and marker regressions
         if: steps.tests.outputs.scope == 'skip-buttons' || steps.tests.outputs.full == 'true'
         timeout-minutes: 4
@@ -298,6 +300,8 @@ jobs:
         run: |
           bash .github/build/host_ffmpeg.sh
           SANITIZE=1 bash tests/hevc_structure_engine.sh
+          SANITIZE=1 bash tests/hevc_annexb.sh
+          SANITIZE=1 bash tests/hevc_annexb_engine.sh
           SANITIZE=1 bash tests/dts_resolver_reuse.sh
           bash tests/moviebuffer.sh
           bash tests/moviebuffer.sh parallel
