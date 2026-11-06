@@ -1,7 +1,7 @@
-name: Build DTS HDR10 DV8 test 2.0.8.6
+name: Build webOS 2.0.8.7 (stable version)
 on:
   push:
-    branches: [dts-hdr10-dv8-test-2.0.8.6]
+    branches: [Nuvio_webOS_2.0.8.7]
   workflow_dispatch:
     inputs:
       full_regression:
@@ -11,7 +11,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: webos-dts-hdr10-dv8-2086-ipk
+  group: webos-2087-ipk
   cancel-in-progress: true
 jobs:
   build:
@@ -25,7 +25,7 @@ jobs:
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'
       NUVIO_REQUIRE_ALL: '1'
-      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST -DNV_HEVC_SEI_TEST -DNV_PICTURE_DIAG
+      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST -DNV_HEVC_SEI_TEST
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -371,8 +371,8 @@ jobs:
           assert data["id"] == "space.nuvio.native.legacy"
           # webOS requires a three-component technical version. Keep 2.0.8
           # and expose the custom release revision in the install label.
-          data["title"] = "Nuvio Legacy 2.0.8.6 (DTS HDR10-DV8 test)"
-          data["appDescription"] = "Nuvio webOS 2.0.8.6 (DTS HDR10-DV8 test)"
+          data["title"] = "Nuvio Legacy 2.0.8.7 (stable version)"
+          data["appDescription"] = "Nuvio webOS 2.0.8.7 (stable version)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -385,7 +385,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8.6_arm-dts-hdr10-dv8-test.ipk
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8.7_arm-stable.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -401,7 +401,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: nuvio-webos-2.0.8.6-dts-hdr10-dv8-test-full-arm-ipk
+          name: nuvio-webos-2.0.8.7-stable-full-arm-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14
