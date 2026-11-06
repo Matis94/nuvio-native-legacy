@@ -72,6 +72,9 @@ struct DtsPlayback {
   int audio_stream, major, native_audio_error, load_complete, suppress_events, clock_seen;
   DtsTrack selected;
   int source_ordinal, source_count, selected_known;
+  /* External audio (test): the session plays the audio of another file.
+   * Fixed at start; a new offset waits for the seek that applies it. */
+  int external, ext_offset_ms, ext_offset_dirty;
   double target, presented, preroll_target, resume_pct;
   DtsPlaybackStatus status;
 };
@@ -275,7 +278,7 @@ static int prepareModePrimed(DtsPlayback *p, int stream, int core, double target
     pthread_mutex_unlock(&p->lock);
     nativeEvent(p,"{\"dtsStage\":{\"name\":\"startup-resume\"}}");
   }
-  if (stream < 0 && info && !reused) {
+  if (stream < 0 && info && !reused && !p->external) {
     int i, count = 0, desired = -1, matches = 0, first_audio = -1;
     for (i = 0; i < info->n_tracks; i++) {
       const DtsTrack *t = &info->tracks[i];
@@ -576,6 +579,8 @@ static void *run(void *user) {
     stop = p->stop || p->status.failed;
     pause = p->pause; pause_dirty = p->pause_dirty; p->pause_dirty = 0;
     seek = p->seek_dirty; p->seek_dirty = 0;
+    int ext_offset = 0, ext_dirty = seek && p->ext_offset_dirty;
+    if (ext_dirty) { ext_offset = p->ext_offset_ms; p->ext_offset_dirty = 0; }
     audio = p->audio_dirty; p->audio_dirty = 0;
     new_stream = p->audio_stream; target = p->target;
     audio_error = p->native_audio_error; p->native_audio_error = 0;
@@ -586,6 +591,11 @@ static void *run(void *user) {
     subtitle = p->subtitle_dirty; p->subtitle_dirty = 0; subtitle_stream = p->subtitle_stream;
     pthread_mutex_unlock(&p->lock);
     if (stop) break;
+    if (ext_dirty) {
+      dts_engine_external_offset(p->engine, ext_offset);
+      printf("[ext-audio] offset=%d ms applied with seek target=%.3f\n", ext_offset, target);
+      fflush(stdout);
+    }
     double wall = clockSeconds(CLOCK_MONOTONIC);
 #ifdef NV_DTS_WEBOS_RECOVERY
     if(!network_hold && !dv_audio_hold)refill_full_since=-1;
@@ -1053,6 +1063,22 @@ done:
 }
 
 static int dvNext, p7Next, seamlessNext, dvAudioNext, mp4Next;
+static char extUrlNext[NV_MEDIA_URL_MAX], extHeadersNext[2048], extLangsNext[64];
+static int extOffsetNext;
+void dts_playback_next_external_audio(const char *url, const char *headers,
+                                      const char *langs, int offset_ms) {
+  snprintf(extUrlNext, sizeof extUrlNext, "%s", url ? url : "");
+  snprintf(extHeadersNext, sizeof extHeadersNext, "%s", headers ? headers : "");
+  snprintf(extLangsNext, sizeof extLangsNext, "%s", langs ? langs : "");
+  extOffsetNext = offset_ms;
+}
+void dts_playback_external_offset(DtsPlayback *p, int offset_ms) {
+  if (!p || !p->external) return;
+  pthread_mutex_lock(&p->lock);
+  p->ext_offset_ms = offset_ms; p->ext_offset_dirty = 1;
+  pthread_mutex_unlock(&p->lock);
+}
+int dts_playback_external(DtsPlayback *p) { return p && p->external; }
 #ifdef NV_DV7_MAPPING_TEST
 static int p7MappingNext;
 void dts_playback_next_p7_mapping(int enabled) { p7MappingNext=!!enabled; }
@@ -1074,6 +1100,12 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
   double resume_pct=resumePctNext;resumePctNext=0;
   int dv_audio=dvAudioNext;dvAudioNext=0;
   int mp4_test=mp4Next;mp4Next=0;
+  char ext_url[NV_MEDIA_URL_MAX], ext_headers[2048], ext_langs[64];
+  int ext_offset=extOffsetNext;
+  snprintf(ext_url,sizeof ext_url,"%s",extUrlNext);
+  snprintf(ext_headers,sizeof ext_headers,"%s",extHeadersNext);
+  snprintf(ext_langs,sizeof ext_langs,"%s",extLangsNext);
+  extUrlNext[0]=extHeadersNext[0]=extLangsNext[0]=0;extOffsetNext=0;
 #ifdef NV_DV7_MAPPING_TEST
   int p7_mapping=p7MappingNext;p7MappingNext=0;
 #endif
@@ -1107,6 +1139,12 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
   dts_engine_p7_mapping(p->engine,p->dv && p->allow_p7 && p7_mapping);
 #endif
   dts_engine_mp4_test(p->engine,mp4_test);
+  if(ext_url[0] && strcmp(ext_url,url)) {
+    p->external=1;p->ext_offset_ms=ext_offset;
+    dts_engine_external_audio(p->engine,ext_url,ext_headers,ext_langs,ext_offset);
+    printf("[ext-audio] session uses the audio of another source offsetMs=%d dv=%d\n",ext_offset,p->dv);
+    fflush(stdout);
+  }
   snprintf(p->url, sizeof p->url, "%s", url);
   snprintf(p->headers, sizeof p->headers, "%s", headers ? headers : "");
   snprintf(p->window, sizeof p->window, "%s", window ? window : "");
@@ -1163,7 +1201,7 @@ void dts_playback_seek(DtsPlayback *p, double seconds) {
   pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
 }
 void dts_playback_audio(DtsPlayback *p, int stream) {
-  if (!p || stream < 0) return;
+  if (!p || stream < 0 || p->external) return;
   pthread_mutex_lock(&p->lock);
   if (!p->seek_dirty) p->target = p->presented;
   p->audio_stream = stream; p->audio_dirty = 1;
@@ -1171,7 +1209,7 @@ void dts_playback_audio(DtsPlayback *p, int stream) {
   pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
 }
 void dts_playback_audio_at(DtsPlayback *p, int stream, double seconds) {
-  if (!p || stream < 0 || !isfinite(seconds) || seconds >= 9e9) return;
+  if (!p || stream < 0 || p->external || !isfinite(seconds) || seconds >= 9e9) return;
   pthread_mutex_lock(&p->lock);
   if (!p->seek_dirty) p->target = seconds < 0 ? 0 : seconds;
   p->audio_stream = stream; p->audio_dirty = 1;

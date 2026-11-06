@@ -58,7 +58,7 @@ static void (*native_event)(void *,const char *);
 static void *native_user;
 enum { NORMAL, OPEN_FAIL, BACKPRESSURE, BLOCK_READ, EOF_MODE, MAPPING, MAPPING_BAD, SUBTITLES, CORE_RECOVERY, NO_CORE_FAIL, CPU_BUDGET, DELAYED_ID, PACING, SUSTAINED, SEEK_PREROLL, SEEK_SEGMENT, TIMESTAMP_ONCE, TIMESTAMP_REPEAT, TIMESTAMP_PAUSED, TIMESTAMP_CANCEL, NATIVE_STALL, NATIVE_REPEAT, NATIVE_NO_CLOCK, NATIVE_TRANSIENT, NATIVE_RECOVERY_NO_CLOCK, NATIVE_RECOVERY_UNLOADED, DV_MAPPING };
 static int timestampScenario(void) { return scenario>=TIMESTAMP_ONCE && scenario<=TIMESTAMP_CANCEL; }
-struct DtsEngine { DtsMediaInfo info; atomic_int cancelled; unsigned char packet[98304]; int serial, core, dv_audio; double base; };
+struct DtsEngine { DtsMediaInfo info; atomic_int cancelled; unsigned char packet[98304]; int serial, core, dv_audio; double base; int external; };
 struct DtsPipeline { void (*event)(void *,const char *); void *user; int loaded, completed, running, flushed, audio_ready, video_ready, generation, packets, broken_segment; double target; };
 static void nap(void) { struct timespec t={0,1000000};nanosleep(&t,NULL); }
 static void emit(const char *json) {
@@ -86,6 +86,16 @@ static void fixedInfo(DtsEngine *e) {
 static int test_dts_off;
 int dts_engine_dts_off(void) { return test_dts_off; }
 DtsEngine *dts_engine_create(void) { return calloc(1,sizeof(DtsEngine)); }
+/* External audio: what the session handed to the engine. */
+static char ext_url[256],ext_headers[64],ext_langs[32];
+static int ext_calls,ext_offset;
+void dts_engine_external_audio(DtsEngine *e,const char *url,const char *headers,const char *langs,int offset_ms) {
+ pthread_mutex_lock(&fixture);ext_calls++;e->external=url && *url;
+ snprintf(ext_url,sizeof ext_url,"%s",url?url:"");snprintf(ext_headers,sizeof ext_headers,"%s",headers?headers:"");
+ snprintf(ext_langs,sizeof ext_langs,"%s",langs?langs:"");ext_offset=offset_ms;pthread_mutex_unlock(&fixture);
+}
+void dts_engine_external_offset(DtsEngine *e,int offset_ms) { (void)e;pthread_mutex_lock(&fixture);ext_offset=offset_ms;pthread_mutex_unlock(&fixture); }
+int dts_engine_external_active(DtsEngine *e) { return e->external; }
 int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,int core,double target) {
  (void)headers;assert(!strcmp(url,expected_url));
  pthread_mutex_lock(&fixture);opens++;last_stream=stream;last_open_target=target;if(core)core_opens++;pthread_mutex_unlock(&fixture);
@@ -116,6 +126,12 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,
  if(scenario==MAPPING_BAD) { e->info.tracks[4]=e->info.tracks[3];e->info.tracks[4].stream_index=10;e->info.n_tracks=5; }
  if(scenario==SUBTITLES || scenario==SEEK_SEGMENT || timestampScenario()) {
   e->info.tracks[4]=(DtsTrack){.stream_index=20,.kind=DTS_SUBTITLE};strcpy(e->info.tracks[4].codec,"srt");e->info.n_tracks=5;
+ }
+ if(e->external) {
+  /* The other file's track replaces every audio track of this one. */
+  e->info.audio_stream=DTS_ENGINE_EXTERNAL_STREAM;strcpy(e->info.audio_codec,"eac3");e->info.channels=6;
+  e->info.tracks[1]=(DtsTrack){.stream_index=DTS_ENGINE_EXTERNAL_STREAM,.kind=DTS_AUDIO,.channels=6};
+  strcpy(e->info.tracks[1].codec,"eac3");strcpy(e->info.tracks[1].language,"pol");e->info.n_tracks=2;
  }
  fixedInfo(e);
  e->core=core;e->base=target;e->serial=0;return 0;
@@ -381,6 +397,36 @@ int main(int argc,char **argv) {
   dts_playback_seek(p,5);wait_count(&seeks,1);
   dts_playback_close(p);assert(count(&creates)==count(&destroys));
   printf("PASS %s: identical-language DTS identified by full file ordinal, AAC output, audio switch and seek with one source\n",argv[1]);return 0;
+ }
+ if(!strcmp(argv[1],"external-audio")) {
+  scenario=NORMAL;
+  // A DTS track the plain path could not identify: external audio skips the
+  // main file's track matching entirely.
+  DtsTrack track={.kind=DTS_AUDIO,.channels=6};strcpy(track.codec,"dts");strcpy(track.language,"xx");
+  dts_playback_next_external_audio("fixture://other","X-Other: 1","pl,en",120);
+  p=start(0,-1,&track,7,9);s=wait_status(p,0,0);
+  assert(dts_playback_external(p));
+  assert(!s.failed && s.info.audio_stream==DTS_ENGINE_EXTERNAL_STREAM && !strcmp(s.info.audio_codec,"eac3"));
+  pthread_mutex_lock(&fixture);
+  assert(ext_calls==1 && !strcmp(ext_url,"fixture://other") && !strcmp(ext_headers,"X-Other: 1") &&
+         !strcmp(ext_langs,"pl,en") && ext_offset==120);
+  pthread_mutex_unlock(&fixture);
+  dts_playback_audio_at(p,4,2);dts_playback_audio(p,9);
+  for(int i=0;i<50;i++) nap();
+  assert(count(&audio_reconfigs)==0);
+  dts_playback_external_offset(p,-80);
+  for(int i=0;i<50;i++) nap();
+  pthread_mutex_lock(&fixture);assert(ext_offset==120);pthread_mutex_unlock(&fixture);   // waits for the seek
+  dts_playback_seek(p,3);wait_count(&seeks,1);
+  pthread_mutex_lock(&fixture);assert(ext_offset==-80 && last_seek==3);pthread_mutex_unlock(&fixture);
+  s=wait_status(p,0,0);assert(!s.failed && count(&opens)==1);
+  dts_playback_close(p);
+  // The session's own URL is not another source: plain playback.
+  dts_playback_next_external_audio("fixture://movie","","",0);
+  p=start(0,4,NULL,0,0);s=wait_status(p,0,0);
+  assert(!dts_playback_external(p) && s.info.audio_stream==4 && ext_calls==1);
+  dts_playback_close(p);assert(count(&creates)==count(&destroys));
+  puts("PASS external audio: other source handed to the engine, track changes ignored, offset applied with the seek");return 0;
  }
  if(!strcmp(argv[1],"late-dv")) {
   // Small UI probe missed RPU, but the real demux output is single-layer P8.

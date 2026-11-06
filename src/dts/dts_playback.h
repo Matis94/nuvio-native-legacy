@@ -38,6 +38,17 @@ void dts_playback_next_dv_audio(int mode);
 /* Optional initial account resume, resolved against demux duration before
  * the first native Load. Consumed even when the next start is rejected. */
 void dts_playback_next_resume_pct(double percent);
+/* Test: audio from another version of the same title. Main thread, right
+ * before dts_playback_start; consumed by it. The session reads the video of
+ * its own source and the audio (AC-3/E-AC-3/stereo AAC, preferred language
+ * from `langs`) of this one, shifted by offset_ms. Ignored when the URL is
+ * the session's own. Track changes are ignored while it is on. */
+void dts_playback_next_external_audio(const char *url, const char *headers,
+                                      const char *langs, int offset_ms);
+/* New offset; it takes effect with the next seek (the caller seeks to the
+ * current position right after, so the native timeline restarts cleanly). */
+void dts_playback_external_offset(DtsPlayback *p, int offset_ms);
+int dts_playback_external(DtsPlayback *p);
 DtsPlayback *dts_playback_start(const char *url, const char *headers,
                                int audio_stream, double position,
                                int paused, const char *window, int webos_major,

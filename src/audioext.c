@@ -1,0 +1,80 @@
+// Audio from another version of the title: the marked source (audioext.h).
+#include "audioext.h"
+#include "mediaurl.h"
+#include <stdio.h>
+#include <string.h>
+
+static char alvoAtual[64], alvoMarca[64];
+static char urlMarca[NV_MEDIA_URL_MAX], cabMarca[512], nomeMarca[192];
+static int offsetMs, tocando;
+static unsigned offsetGeracao;
+static char falha[160];
+
+void audioext_limpar(void) {
+  urlMarca[0] = cabMarca[0] = nomeMarca[0] = alvoMarca[0] = 0;
+  offsetMs = 0; offsetGeracao++;
+}
+// "tt123" and "tt123:1:2" are the same title: the detail page stamps the raw
+// id before the episode list arrives (addons.c). Another episode is not.
+static int mesmoAlvo(const char *a, const char *b) {
+  size_t na = strlen(a), nb = strlen(b);
+  if (!strcmp(a, b)) return 1;
+  if (na < nb) return !strncmp(a, b, na) && b[na] == ':' && !strchr(a, ':');
+  if (nb < na) return !strncmp(a, b, nb) && a[nb] == ':' && !strchr(b, ':');
+  return 0;
+}
+void audioext_alvo(const char *alvo) {
+  snprintf(alvoAtual, sizeof alvoAtual, "%s", alvo ? alvo : "");
+  if (urlMarca[0] && alvoAtual[0] && !mesmoAlvo(alvoAtual, alvoMarca)) {
+    printf("[ext-audio] mark cleared: another title or episode (%s)\n", alvoAtual);
+    fflush(stdout);
+    audioext_limpar();
+  }
+}
+int audioext_alternar(const char *url, const char *cabecalhos, const char *nome) {
+  if (!url || !*url) return -1;
+  if (audioext_marcada(url)) {
+    audioext_limpar();
+    printf("[ext-audio] mark cleared by the user\n"); fflush(stdout);
+    return 0;
+  }
+  snprintf(urlMarca, sizeof urlMarca, "%s", url);
+  snprintf(cabMarca, sizeof cabMarca, "%s", cabecalhos ? cabecalhos : "");
+  snprintf(nomeMarca, sizeof nomeMarca, "%s", nome ? nome : "");
+  snprintf(alvoMarca, sizeof alvoMarca, "%s", alvoAtual);
+  offsetMs = 0; offsetGeracao++;
+  // The name is the add-on's label, never the URL (signed links stay out of logs).
+  printf("[ext-audio] audio source marked: %.80s (target %s)\n", nomeMarca, alvoMarca);
+  fflush(stdout);
+  return 1;
+}
+int audioext_marcada(const char *url) {
+  return urlMarca[0] && url && !strcmp(url, urlMarca);
+}
+int audioext_pedido(const char *urlVideo) {
+  return urlMarca[0] && mesmoAlvo(alvoAtual, alvoMarca) && urlVideo && *urlVideo &&
+         strcmp(urlVideo, urlMarca) != 0;
+}
+const char *audioext_url(void) { return urlMarca; }
+const char *audioext_cabecalhos(void) { return cabMarca; }
+const char *audioext_nome(void) { return nomeMarca; }
+int audioext_offset_ms(void) { return offsetMs; }
+int audioext_offset_somar(int ms) {
+  offsetMs += ms;
+  if (offsetMs > 10000) offsetMs = 10000;
+  if (offsetMs < -10000) offsetMs = -10000;
+  offsetGeracao++;
+  return offsetMs;
+}
+unsigned audioext_offset_geracao(void) { return offsetGeracao; }
+void audioext_tocando_definir(int sim) { tocando = sim != 0; }
+int audioext_tocando(void) { return tocando; }
+void audioext_falhou(const char *motivo) {
+  snprintf(falha, sizeof falha, "%s", motivo && *motivo ? motivo : "unknown error");
+}
+int audioext_falha_consumir(char *dst, unsigned tam) {
+  if (!falha[0]) return 0;
+  if (dst && tam) snprintf(dst, tam, "%s", falha);
+  falha[0] = 0;
+  return 1;
+}

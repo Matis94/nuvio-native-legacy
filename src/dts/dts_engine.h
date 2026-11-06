@@ -88,6 +88,24 @@ int dts_engine_audio(DtsEngine *, int stream, int core_only, double seconds);
 void dts_engine_cancel(DtsEngine *);
 void dts_engine_destroy(DtsEngine *);
 const char *dts_engine_error(DtsEngine *);
+/* Test: audio from another version of the same title (external audio).
+ * Worker-owned, before open: the next opens read the video (and subtitles)
+ * of the main source and ONLY the audio of this second source, over its own
+ * small single-connection ring (DTS_ENGINE_EXTERNAL_RING_MIB). AC-3, E-AC-3
+ * and stereo 48 kHz AAC pass through; other codecs fail the open. `langs` is
+ * a comma list of preferred languages ("pl,en"), matched with the hook below;
+ * no match takes the first usable track. offset_ms shifts the external audio
+ * later (positive) or earlier (negative). url NULL/"" turns it off. */
+#define DTS_ENGINE_EXTERNAL_STREAM 4096
+#define DTS_ENGINE_EXTERNAL_RING_MIB 8
+void dts_engine_external_audio(DtsEngine *, const char *url, const char *headers,
+                               const char *langs, int offset_ms);
+/* Worker only: new offset for the next seek (applied by dts_engine_seek). */
+void dts_engine_external_offset(DtsEngine *, int offset_ms);
+int dts_engine_external_active(DtsEngine *);
+/* Language comparison for the external track choice (the app passes
+ * ling_casa); NULL or unset compares case-insensitively. Set once. */
+void dts_engine_set_lang_match(int (*match)(const char *code, const char *pref));
 /* Samsung remux (dts_remux.c): open only the container over the ranged reader
  * (4 MiB ranges, final address reused). 0 on success. dts_engine_avformat()
  * then returns the AVFormatContext (as void *: no FFmpeg type crosses this

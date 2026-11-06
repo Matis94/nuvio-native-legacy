@@ -53,6 +53,7 @@
 #include "ponteiro.h"
 #include "rolagemtoque.h"
 #include "player.h"
+#include "audioext.h"
 #include "plrilha.h"
 #include "partes.h"
 #include "ctxlista.h"
@@ -355,6 +356,7 @@ static int fitLinhas(int i) {
 }
 void stream_definir_alvo(const char *id) {
   snprintf(alvoPedido, sizeof alvoPedido, "%s", id ? id : "");
+  audioext_alvo(alvoPedido);
 }
 int stream_lista_do_alvo(const char *id) {
   if (!id || !*id || !alvoLista[0] || n < 1) return 0;
@@ -4249,6 +4251,7 @@ static int temMarca(int i, int automatica) {
   (void)automatica;
   // StreamFit (F03): a measured-heavy source carries its reason on the mark line.
   return i >= 0 && (i == atual || i == preferida || (i == melhorFolha && nFiltrados() > 1) ||
+                    audioext_marcada(lista[i].url) ||
                     fitPesada(i) || lista[i].foraCache || (!canalFolha && stream_vod_falhou_ha(i) >= 0));
 }
 // Altura de uma linha: base, marca, e o nome do arquivo que abre por mola na
@@ -5133,6 +5136,22 @@ void stream_folha_evento(const SDL_Event *e) {
     recarregarFonteConfirmacao = 0;
   if(k==SDLK_ESCAPE || k==SDLK_AC_BACK || k==SDLK_BACKSPACE || k==SDLK_DELETE) {aberta=0;return;}
   if(k==SDLK_r) {recarregar=1;return;}
+  // Test build: BLUE (or F4) marks the source in focus as the audio source of
+  // the next source played for this title (audioext.h). Only the webOS
+  // converter plays it.
+#if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
+  if(grupo==1 && !canalFolha && !e->key.repeat &&
+     ((int)e->key.keysym.scancode==NV_SCANCODE_BLUE || k==SDLK_F4)) {
+    int i=filtrado(foco);
+    if(i>=0) {
+      int r=audioext_alternar(lista[i].url,lista[i].cabecalhos,lista[i].rotulo);
+      if(player_aberto())
+        player_toast(r>0?"Audio source set. Play another source of this title.":
+                     r==0?"Audio source cleared.":"This source has no direct link.",2600);
+    }
+    return;
+  }
+#endif
   montar(automaticaDaFolha());
   int nf=nOrdem;
   if(grupo==1 && stream_detalhe_tecla_abre(e)) {
@@ -6382,6 +6401,10 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
         mx += caixaAlta(dica,135,130,125,mx,cy,anim)+18;
       }
       if(s->foraCache && !cacheConfirmado(s)) mx += caixaAlta("Fora do cache",185,179,171,mx,cy,anim)+18;
+      if(audioext_marcada(s->url)){
+        gfx_cor((GfxRect){mx,cy+5,7,7},.5f,.45f,.62f,.95f,anim);
+        mx+=16+caixaAlta("Audio source",150,180,240,mx+16,cy,anim)+18;
+      }
       if(fitPesada(i)){
         gfx_cor((GfxRect){mx,cy+5,7,7},.5f,.80f,.70f,.52f,anim);
         caixaAlta("Acima da conexão",204,178,132,mx+16,cy,anim);

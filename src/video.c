@@ -15,6 +15,7 @@
 #include "idioma.h"
 #include "linguas.h"
 #include "audioescolha.h"
+#include "audioext.h"
 #include <SDL2/SDL.h>
 #include "marco.h"
 #include "mkv.h"
@@ -80,6 +81,12 @@ void video_dv_guard_reiniciar(void) {
 
 static DtsPlayback *dtsSessao;
 static char dtsSaida[64];
+// Test: audio from another version of the title (audioext.h). extAtivo = the
+// converter session on screen plays the marked source's audio; extGen* = the
+// offset generation applied to it, and when a newer one was first seen.
+static int extAtivo;
+static unsigned extGenAplicada, extGenVista;
+static Uint32 extGenEm;
 // DOLBY VISION IN MKV (Settings > Playback, experimental). The TV's own URI
 // player turns a Dolby Vision MKV into HDR10 (measured on an LG C9). The same
 // Starfish BUFFERSTREAM path used for DTS conversion, fed by our demux with the
@@ -2653,6 +2660,19 @@ void video_bombear(void) {
   acbBindRecolher();
   if (ligado) acbConfigurarTipo(dtsSessao != NULL);
   audioMkvPedidoBombear();
+  // A new external audio offset (CH+/CH- on the player) applies 700 ms after
+  // the last press, with a seek to where the picture is: the native timeline
+  // restarts with the shifted audio instead of jumping under the decoder.
+  if (dtsSessao && extAtivo) {
+    unsigned g = audioext_offset_geracao();
+    if (g != extGenVista) { extGenVista = g; extGenEm = SDL_GetTicks(); }
+    if (g != extGenAplicada && extGenEm && SDL_GetTicks() - extGenEm >= 700) {
+      extGenAplicada = g; extGenEm = 0;
+      printf("[ext-audio] offset %d ms: seek to %.3f\n", audioext_offset_ms(), posSeg); fflush(stdout);
+      dts_playback_external_offset(dtsSessao, audioext_offset_ms());
+      video_buscar(posSeg);
+    }
+  }
   if (dtsSessao) bombearDts();
 #ifdef NV_MP4_BD_TEST
   else if(mp4TestPending && ligado && !modoLoad && urlAtual[0] && !dtsTentou) {
@@ -2662,6 +2682,16 @@ void video_bombear(void) {
 #endif
   else if (dvHabilitado && !dtsNativePending && !dtsTentou && !modoLoad && urlAtual[0] && dvPodeIniciar() && dvPronto()) {
     dtsModoDv = 1;
+    iniciarDts(-1);
+  }
+  // Audio from another source (test): once the TV player has loaded this one
+  // and the Dolby Vision probe has ruled it out (a DV source goes through the
+  // branch above and takes the external audio there), the converter plays its
+  // picture with the marked source's audio.
+  else if (audioext_pedido(urlAtual) && !dvHabilitado && pronto && !dtsNativePending && !dtsTentou &&
+           !modoLoad && urlAtual[0] && dts_playback_enabled() && dtsLiberadoNestaTv()) {
+    dtsModoDv = 0;
+    marco("External audio: converter path requested");
     iniciarDts(-1);
   }
   else if (dtsHabilitado && !dtsNativePending && !dtsTentou && !modoLoad && urlAtual[0]) {
@@ -3149,6 +3179,7 @@ static void pararSessao(void) {
   dtsSessao = NULL;
   if (antigoDts) dts_playback_close(antigoDts);
   dtsSaida[0] = 0;
+  extAtivo = 0; audioext_tocando_definir(0);
 
   // Invalida tambem a sessao que ainda esta esperando o retorno de load. Esse
   // era o caso abrir -> sair -> abrir que travava: nao havia mediaId para
@@ -3503,9 +3534,25 @@ static int iniciarDts(int stream) {
 #endif
     );fflush(stdout);
 #endif
+  extAtivo = audioext_pedido(urlAtual);
+  if (extAtivo) {
+    // Preferred languages for the other file's track: the one chosen by hand
+    // for this title, then the account's first and second audio languages.
+    char langs[64] = "";
+    const AudioLembrada *lem = audioesc_tem_lembrada() ? audioesc_lembrada() : NULL;
+    snprintf(langs, sizeof langs, "%s,%s,%s", lem && lem->idioma[0] ? lem->idioma : "",
+             ling_audio(), ling_audio2());
+    dts_engine_set_lang_match(ling_casa);
+    dts_playback_next_external_audio(audioext_url(), audioext_cabecalhos(), langs, audioext_offset_ms());
+    extGenAplicada = extGenVista = audioext_offset_geracao(); extGenEm = 0;
+    printf("[ext-audio] start: picture from this source, audio from \"%.60s\" offsetMs=%d dv=%d langs=%s\n",
+           audioext_nome(), audioext_offset_ms(), dtsModoDv, langs);
+    fflush(stdout);
+  } else dts_playback_next_external_audio(NULL, NULL, NULL, 0);
   dtsSessao = dts_playback_start(urlAtual, cabsHttp, stream, alvo,
                                paused, expWin, 0, (a || trocada) ? &selected : NULL, ordinal, count);
   if (!dtsSessao) {
+    if (extAtivo) { extAtivo = 0; audioext_falhou("converter unavailable"); }
     dtsMarcarAbertas(0);
     marco("DTS startup failed: software playback unavailable");
     dvCaminhoNaoAbriu();
@@ -3587,6 +3634,17 @@ static void bombearDts(void) {
       dtsFalhaLogada = 1;
     }
     dtsSaida[0] = 0;
+    if (extAtivo) {
+      // The other source's audio could not play: back to this source alone,
+      // without a DTS or Dolby Vision failure note (those paths were not tried).
+      printf("[ext-audio] failed: %.159s\n", st.error); fflush(stdout);
+      audioext_falhou(st.error);
+      extAtivo = 0; audioext_tocando_definir(0);
+      dtsModoDv = 0; dvHabilitado = 0;
+      dtsVoltarNativo("external audio");
+      dtsEstado = 0;
+      return;
+    }
     if (dtsModoDv) {
       dvRecuoAviso = !strcmp(st.error, DTS_PLAYBACK_STARVED) ? 1 : 2;
       dvNao = dvRecuoAviso == 1 ? VIDEO_DV_NAO_LENTO : VIDEO_DV_NAO_FALHOU;
@@ -3702,7 +3760,14 @@ static void bombearDts(void) {
     }
     /* Converted only when the source track is DTS; on the Dolby Vision path
      * AC-3/E-AC-3 pass through untouched and there is nothing to label. */
-    if (!dtsModoDv || (audioAtual >= 0 && audioAtual < nAudio && !strcmp(faixaAudio[audioAtual].codec, "dts"))) {
+    if (extAtivo) {
+      char sub[40];
+      if (!audioinfo_texto(st.info.audio_codec, st.info.channels, 0, sub, sizeof sub))
+        snprintf(sub, sizeof sub, "%.12s", st.info.audio_codec);
+      snprintf(dtsSaida, sizeof dtsSaida, "Audio from another source · %s", sub);
+      dtsEstado = 0;
+      audioext_tocando_definir(1);
+    } else if (!dtsModoDv || (audioAtual >= 0 && audioAtual < nAudio && !strcmp(faixaAudio[audioAtual].codec, "dts"))) {
       snprintf(dtsSaida, sizeof dtsSaida, "%s", !strcmp(st.info.audio_codec, "ac3") ? "DTS → AC3 5.1" : "DTS → AAC Stereo");
       dtsEstado = VIDEO_DTS_CONVERTIDO;
     } else {
