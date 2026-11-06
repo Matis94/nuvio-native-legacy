@@ -25,7 +25,7 @@ jobs:
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'
       NUVIO_REQUIRE_ALL: '1'
-      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST -DNV_HEVC_SEI_TEST
+      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST -DNV_HEVC_SEI_TEST -DNV_PICTURE_DIAG
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -43,18 +43,8 @@ jobs:
         run: |
           python3 tests/test_scope.py
           python3 .github/build/test_scope.py
-          # Temporary LG picture test: only the audited playback snapshot may
-          # omit unrelated suites. Any source/test/build edit restores full CI.
-          playback_snapshot=3e607e1eddaa434c9b456e01ee7c4a89f567fe18
-          if [ "$NUVIO_FULL_TESTS" != "true" ] && \
-             git cat-file -e "$playback_snapshot^{commit}" 2>/dev/null && \
-             git diff --quiet "$playback_snapshot" HEAD -- . ':(exclude).github/workflows/playback-v17-ipk.yml'; then
-            echo 'scope=playback-picture-test' >> "$GITHUB_OUTPUT"
-            echo 'full=false' >> "$GITHUB_OUTPUT"
-            echo '[ci-tests] audited playback snapshot: focused DTS/DV/picture tests; full ARM build retained'
-          fi
       - name: Source UI timing regressions
-        if: steps.tests.outputs.scope == 'sources' || steps.tests.outputs.full == 'true'
+        if: steps.tests.outputs.scope != 'skip-buttons'
         run: SANITIZE=1 bash tests/sourceperf.sh
       - name: Source loading VSync policy regressions
         if: steps.tests.outputs.full == 'true'
@@ -74,16 +64,16 @@ jobs:
           SANITIZE=1 bash tests/video_faixa_rotulo.sh
           SANITIZE=1 python3 tests/audio_source_group.py
       - name: Source badge position regressions
-        if: steps.tests.outputs.scope == 'sources' || steps.tests.outputs.full == 'true'
+        if: steps.tests.outputs.scope != 'skip-buttons'
         run: SANITIZE=1 python3 tests/source_badge_position.py
       - name: Stable source badge regressions
-        if: steps.tests.outputs.scope == 'sources' || steps.tests.outputs.full == 'true'
+        if: steps.tests.outputs.scope != 'skip-buttons'
         run: |
           SANITIZE=1 python3 tests/source_badge_readiness.py
           SANITIZE=1 python3 tests/source_badge_render.py
           bash tests/selospacote.sh
       - name: Badge regex and source-rule dependency regressions
-        if: steps.tests.outputs.scope == 'sources' || steps.tests.outputs.full == 'true'
+        if: steps.tests.outputs.scope != 'skip-buttons'
         run: |
           SANITIZE=1 bash tests/regexjs_badge.sh
           bash tests/regexjs_v8.sh
@@ -93,61 +83,34 @@ jobs:
           bash tests/fonteregra.sh
           bash tests/fonteregra_oficial.sh
       - name: Source scrolling and stable ordering regressions
-        if: steps.tests.outputs.scope == 'sources' || steps.tests.outputs.full == 'true'
+        if: steps.tests.outputs.scope != 'skip-buttons'
         run: |
           SANITIZE=1 python3 tests/source_scroll.py
           SANITIZE=1 python3 tests/source_formatter_motion.py
       - name: Source scoring and candidate cache regressions
-        if: steps.tests.outputs.scope == 'sources' || steps.tests.outputs.full == 'true'
+        if: steps.tests.outputs.scope != 'skip-buttons'
         run: |
           SANITIZE=1 python3 tests/source_selection.py
           bash tests/fontenota.sh
       - name: Source audio filtering and backdrop regressions
-        if: steps.tests.outputs.scope == 'sources' || steps.tests.outputs.full == 'true'
+        if: steps.tests.outputs.scope != 'skip-buttons'
         run: |
           SANITIZE=1 python3 tests/source_audio_cache.py
           SANITIZE=1 python3 tests/source_backdrop.py
       - name: Source refresh identity regressions
-        if: steps.tests.outputs.scope == 'sources' || steps.tests.outputs.full == 'true'
+        if: steps.tests.outputs.scope != 'skip-buttons'
         run: SANITIZE=1 python3 tests/source_refresh_identity.py
       - name: Unpack offline formatter emoji
         run: python3 tools/formatter_emoji_assets.py
       - name: Install host test dependencies
         timeout-minutes: 6
         run: bash .github/build/host_deps.sh
-      - name: Focused DTS DV picture and refill regressions
-        if: steps.tests.outputs.scope == 'playback-picture-test'
-        timeout-minutes: 10
-        run: |
-          SANITIZE=1 bash tests/video_packet_diag.sh
-          NV_TEST_VIDEO_DIAG=1 bash tests/dts_pipeline.sh
-          SANITIZE=1 bash tests/logexport.sh
-          SANITIZE=1 bash tests/video_audio_mkv.sh
-          NV_TEST_VIDEO_DIAG=1 SANITIZE=1 bash tests/dts_rebuffer.sh
-          NV_TEST_VIDEO_DIAG=1 SANITIZE=1 bash tests/dts_playback.sh
-          NV_TEST_VIDEO_DIAG=1 NV_TEST_TRUEHD=1 SANITIZE=1 bash tests/dts_playback.sh
-          NV_TEST_VIDEO_DIAG=1 NV_TEST_P7_MAPPING=1 SANITIZE=1 bash tests/dts_playback.sh
-          NV_TEST_VIDEO_DIAG=1 NV_TEST_MP4=1 SANITIZE=1 bash tests/dts_playback.sh
-          NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 NV_TEST_P7_MAPPING=1 SANITIZE=1 bash tests/dvaudio_lg.sh
-          SANITIZE=1 bash tests/video_buffering_state.sh
-          NV_TEST_TRUEHD=1 bash tests/video_acb_lg.sh
       - name: Experimental HEVC SEI compatibility regressions
-        if: steps.tests.outputs.scope == 'playback-picture-test' || steps.tests.outputs.full == 'true'
+        if: steps.tests.outputs.full == 'true'
         timeout-minutes: 3
         run: |
           SANITIZE=1 bash tests/hevc_sei.sh
           NV_TEST_HEVC_SEI=1 NV_TEST_VIDEO_DIAG=1 bash tests/dts_pipeline.sh
-      - name: Real HEVC demux, seek diagnostics and own Annex-B parameter sets
-        if: steps.tests.outputs.scope == 'playback-picture-test'
-        timeout-minutes: 8
-        env:
-          NUVIO_DTS_ROOT: /tmp/nuvio-dts-picture
-          NUVIO_DTS_JOBS: '3'
-        run: |
-          bash .github/build/host_ffmpeg.sh
-          SANITIZE=1 bash tests/hevc_structure_engine.sh
-          SANITIZE=1 bash tests/hevc_annexb.sh
-          SANITIZE=1 bash tests/hevc_annexb_engine.sh
       - name: Manual skip-button settings and marker regressions
         if: steps.tests.outputs.scope == 'skip-buttons' || steps.tests.outputs.full == 'true'
         timeout-minutes: 4
