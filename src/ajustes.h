@@ -220,6 +220,7 @@ int ajustes_update_notifications(void); // automatic update card/notices; on by 
 /* Independent device-local HTTP download limits for the next source. */
 int ajustes_buffer_native_connections(void);
 int ajustes_buffer_conversion_connections(void);
+int ajustes_buffer_conversion_stream(void);
 unsigned ajustes_link_prazo_s(void);
 int ajustes_fonte_escopo(void);
 int ajustes_fonte_regex_modo(void);

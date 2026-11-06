@@ -775,7 +775,7 @@ static const char *V_PALCO_FUNDO[] = { "Cortina", "Como está", "Só arte", "Pre
 static const char *V_TITULO_FIL[] = { "Clássico", "Ilha", "Editorial", "Acento" };
 static const char *V_DEGRADES[] = { "Automático", "Forte", "Desligado" };
 static const char *V_BUFFER_CONNECTIONS[] = { "Standard (1)", "Parallel - 2", "Parallel - 3", "Parallel - 4" };
-static const char *V_BUFFER_CONVERSION_CONNECTIONS[] = { "Standard (1) - Not recommended", "Parallel - 2", "Parallel - 3", "Parallel - 4 - Recommended" };
+static const char *V_BUFFER_CONVERSION_CONNECTIONS[] = { "Standard (1) - Not recommended", "Parallel - 2", "Parallel - 3", "Parallel - 4 - Recommended", "Stream (1) - Test" };
 static const char *V_DV_AUDIO_FIXO[] = { "Original audio", "AAC stereo", "Dolby Digital 5.1" };
 static const char *V_VIDRO_QUALIDADE[] = { "Automática", "Desempenho", "Alta" };
 static const char *V_FUNDO_DIN[] = { "Cinza", "Cor", "Imersivo", "Cinza escuro" };
@@ -1895,7 +1895,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Diagnostics QR", V_LIGA, 2),
   ESC("Update notifications", V_LIGA, 2),
   ESC("Standard native-player buffering", V_BUFFER_CONNECTIONS, 4),
-  ESC("DTS/TrueHD and DV7 buffering", V_BUFFER_CONVERSION_CONNECTIONS, 4),
+  ESC("DTS/TrueHD and DV7 buffering", V_BUFFER_CONVERSION_CONNECTIONS, 5),
   ESC("Remember last profile", V_LIGA, 2),
   ESC("Badge position (From addon)", V_SOURCE_BADGE_POSITION, 2),
   ESC("Show intro skip button", V_LIGA, 2),
@@ -3374,7 +3374,12 @@ int ajustes_ram_overlay(void) { return lig(AJ_RAM_OVERLAY); }
 int ajustes_ram_verde(void) { return lig(AJ_RAM_VERDE); }
 static int bufferConnections(int op,int fallback) { return valor[op]>=0 && valor[op]<4?valor[op]+1:fallback; }
 int ajustes_buffer_native_connections(void) { return bufferConnections(AJ_BUFFER_NATIVE_CONNECTIONS,1); }
-int ajustes_buffer_conversion_connections(void) { return bufferConnections(AJ_BUFFER_CONVERSION_CONNECTIONS,4); }
+int ajustes_buffer_conversion_connections(void) {
+  /* "Stream (1) - Test" (value 4) is one connection too. */
+  return valor[AJ_BUFFER_CONVERSION_CONNECTIONS]==4?1:bufferConnections(AJ_BUFFER_CONVERSION_CONNECTIONS,4);
+}
+/* Test option: the conversion reads over one continuous request (dts_engine). */
+int ajustes_buffer_conversion_stream(void) { return valor[AJ_BUFFER_CONVERSION_CONNECTIONS]==4; }
 int ajustes_dv7_mapping(void) {
 #if defined(NV_DV7_MAPPING_TEST) && defined(NV_WEBOS) && defined(NV_DV7_CONVERSION)
   return valor[AJ_DV7_MAPPING]==0;
@@ -8229,7 +8234,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_PLAYER_ANIME: return "Player só para anime (kitsu, MAL, AniList, ou animação japonesa). Igual ao Player usa a escolha acima. O player externo não sincroniza o progresso.";
     case AJ_BUFFER: return "Quanto vídeo o app guarda à frente. Automático é o de sempre; 64, 128 ou 256 MB ajudam arquivos 4K pesados e caem sozinhos se faltar memória na TV. No webOS vale para a conversão de DTS e Dolby Vision. Vale a partir do próximo vídeo.";
     case AJ_BUFFER_NATIVE_CONNECTIONS: return "Standard (default) downloads ordinary video through one sequential connection. Parallel 2, 3 or 4 uses that many HTTP range workers inside the same RAM buffer limit. Automatic uses a 64 MB buffer for parallel mode, subject to the RAM safety floor. Applies to the next video. Live/HLS/DASH keep their existing player path.";
-    case AJ_BUFFER_CONVERSION_CONNECTIONS: return "HTTP range downloads for DTS/TrueHD conversion and DV7 processing. Parallel 4 is the existing default. Standard limits this path to one download at a time; Parallel 2 or 3 allows fewer simultaneous downloads. RAM buffer limits stay the same. Applies to the next video.";
+    case AJ_BUFFER_CONVERSION_CONNECTIONS: return "HTTP range downloads for DTS/TrueHD conversion and DV7 processing. Parallel 4 is the existing default. Standard limits this path to one download at a time; Parallel 2 or 3 allows fewer simultaneous downloads. Stream (1) - Test reads the file over one continuous connection, like the Samsung converter, without a new request every 4 MB. RAM buffer limits stay the same. Applies to the next video.";
     case AJ_FONTE_IDIOMA_AUDIO: return "Na escolha automática, fontes com o seu Idioma do áudio ou áudio duplo passam na frente na mesma resolução. Não é filtro: sem elas, a melhor das outras toca.";
     case AJ_CACHE_SEEK: return "Com retomada rápida, guarda só o último título por até 3 horas. Trocar de perfil ou pouco espaço apagam o trecho.";
     case AJ_ANIM: return "Use Reduzidas para movimentos mais discretos ao navegar pela interface.";

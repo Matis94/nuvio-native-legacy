@@ -303,6 +303,7 @@ jobs:
           SANITIZE=1 bash tests/hevc_structure_engine.sh
           SANITIZE=1 bash tests/hevc_annexb.sh
           SANITIZE=1 bash tests/hevc_annexb_engine.sh
+          SANITIZE=1 bash tests/dts_conversion_stream.sh
           SANITIZE=1 bash tests/dts_resolver_reuse.sh
           bash tests/moviebuffer.sh
           bash tests/moviebuffer.sh parallel
