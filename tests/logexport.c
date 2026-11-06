@@ -34,6 +34,23 @@ int main(void) {
   const char *safe = "[playback-diag] tick=123 generation=2 pos=123.456 readyBytes=268435456 availableKiB=245760";
   logexport_redact(safe, out, sizeof out); assert(!strcmp(safe, out));
   const char *range_logs[]={
+    "[hevc-structure] phase=demux epoch=2 packet=1 ptsNs=600000000000 dtsNs=600000000000 durNs=41708000 keyframe=1 corrupt=0 length=4 bytes=542367 nals=11 vcl=1 vclBytes=541998 vclHash=af82c9f4 params=3 paramHash=2f3194b3 rpu=0 rpuHash=811c9dc5 sei=3 seiHash=0d56c47e firstSlice=1 slicePps=0 spsId=0 ppsId=0 ppsSps=0 vpsId=0 dependent=0 extraBits=0 tiles=0 wpp=1 clipped=0 malformed=0 syntaxUnknown=0 mapClipped=0 nalMap=32/0/1;24;af82c9f4;0;-1,33/0/1;51;2f3194b3;0;0,20/0/1;541998;af82c9f4;-1;0",
+    "[hevc-annexb] converter=own lengthSize=4 hvccSetBytes=121",
+    "[hevc-annexb] mode=inband ptsNs=1173000000000 count=3 container=0 inband=3 mixed=0",
+    "[video-timing] phase=engine epoch=2 packet=24 ptsNs=601000000000 dtsNs=600916666667 durNs=41666667 deltaPtsNs=-83333333 deltaDtsNs=41666667 ptsBack=11 dtsBack=0 missingPts=0 missingDts=0 minStepNs=-83333333 maxStepNs=208333333",
+    "[video-demux] epoch=2 packet=1 stream=0 pos=10042092337 flags=1 tb=1/1000 extradataBytes=121 extradataHash=2f3194b3",
+    "[dts] stage=hevc-sei found=1 removed=1 malformed=0 oversize=0 before=1200 after=1050 prefix=2 suffix=1",
+    "[dts] stage=hevc-sei found=0 removed=0 malformed=0 oversize=0 before=1200 after=1200 prefix=2 suffix=1",
+    "[dts] stage=hevc-sei-drop metadata-only packet; waiting for picture",
+    "[picture-diag] phase=native-copy epoch=1 packet=120 bytes=545678 ptsNs=118292000000 dtsNs=118292000000 hash=91ca40ff scanned=545678 clipped=0 nals=6 vcl=20 slices=1 irap=1 vps=1 sps=1 pps=1 sei=1 rpu=1 el=0 headerErr=0 spsOk=1 size=3840x2160 depth=10 colour=9/16/9 full=0 feed=1 copyOk=1",
+    "[dts] stage=native-video-config size=3840x2160 fps=24000/1001 colour=9/16/9 dv=8 compat=1 rpu=1 el=0 bl=1",
+    "[dts] stage=native-error type=18 code=204",
+    "[dts] stage=prepared-dv-route ",
+    "[audio-route] event=prepared-dv profile=8 compat=1 controllerDv=1",
+    "[video-packet] epoch=2 sample=1 bytes=286395 ptsNs=7536918000000 dtsNs=7536800000000 durNs=41708000 vcl=21 irap=1 vps=1 sps=1 pps=1 rpu=0 el=0 scanned=4096 clipped=1 headerErr=0 feed=1",
+    "[audio-route] profile=7 rpu=1 nativeDv=0 controllerDv=1 known=0 ordinal=-1 count=0 target=7534.103 paused=0 resumePct=0.000",
+    "[dv-state] generation=3 profile=7 probe=1 path=1 loaded=1 confirmed=1 playing=1 failed=0 refusal=0 audio=0",
+    "[dts-rebuffer] event=end ms=812 aheadA=1.85 aheadV=1.88 contiguousKiB=262567 reason=native-full",
     "[range-progress] start=4194303 waitMs=3012 got=2031616 gained=2031616 kept=1",
     "[dts-rebuffer] event=start reason=seek target=9282.482 contiguousKiB=4095 readyKiB=135167",
     "[dts-rebuffer] event=end ms=6430 aheadA=2.10 aheadV=2.00 contiguousKiB=20480",
@@ -116,10 +133,7 @@ int main(void) {
   struct stat st; assert(!stat(path, &st) && (st.st_mode & 0777) == 0600);
   f = fopen(path, "rb"); assert(f); size_t n = fread(out, 1, sizeof out - 1, f); out[n] = 0; fclose(f);
   assert(strstr(out, safe) && strstr(out, "[video] error=300") && strstr(out, "recovery=1"));
-#ifdef NV_PLAYBACK_TEST_BUILD
-  char build[64];snprintf(build,sizeof build,"Experimental playback build: v%d",NV_PLAYBACK_TEST_BUILD);
-  assert(strstr(out,build));
-#endif
+  assert(!strstr(out,"Experimental playback build:"));
   assert(!strstr(out, "shortpw") && !strstr(out, "secondpw") && !strstr(out, "ENDSECRET"));
   assert(strstr(out, "oversized log line")); unlink(path);
   /* Taking a tail cannot leak the partial first line. */

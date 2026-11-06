@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 flags=()
+if [[ ${NV_TEST_VIDEO_DIAG:-0} == 1 ]];then flags+=(-DNV_HTTP_BUFFER_DIAG -DNV_PICTURE_DIAG);fi
 if [[ ${NV_TEST_P7_MAPPING:-0} == 1 ]];then flags+=(-DNV_DV7_MAPPING_TEST);fi
 if [[ ${NV_TEST_MP4:-0} == 1 || ${NV_TEST_MP4_BUILD:-0} == 1 ]]; then flags+=(-DNV_MP4_BD_TEST); fi
 if [[ ${NV_TEST_TRUEHD:-0} == 1 ]]; then flags+=(-DNV_DV_TRUEHD_TEST); fi
@@ -16,7 +17,7 @@ if [[ $(uname -s) == Darwin ]]; then
 else
  cc "${flags[@]}" -std=c11 -D_GNU_SOURCE -DNV_DTS_WEBOS_RECOVERY -Wall -Wextra -Werror -Isrc tests/dts_playback.c src/dts/dts_playback.c src/js.c src/linguas.c src/audioinfo.c -pthread -lm -Wl,--wrap=clock_gettime -o "$tmp/test"
 fi
-for scenario in url-limit url-limit-dv;do "$tmp/test" "$scenario";done
+for scenario in late-dv hidden-dts-first hidden-dts-second hidden-dts-dv url-limit url-limit-dv;do "$tmp/test" "$scenario";done
 if [[ ${NV_TEST_P7_MAPPING:-0} == 1 ]];then "$tmp/test" p7-mapping;exit;fi
 if [[ ${NV_TEST_MP4:-0} == 1 ]];then
  for scenario in mp4-seek-series mp4-seek-off mp4-seek-timeout mp4-seek-paused mp4-seek-cancel mp4-seek-audio;do "$tmp/test" "$scenario";done
@@ -26,11 +27,15 @@ for scenario in audio-hold-ready audio-hold-gap audio-hold-paused audio-hold-dea
  "$tmp/test" "$scenario"
 done
 if [[ ${NV_TEST_TRUEHD:-0} == 1 ]]; then "$tmp/test" dv-truehd;exit;fi
-for scenario in startup-same startup-audio startup-fallback startup-no-dv resumeseek seekfallback timestamp timestampbound timestampprogress timestampopenfail timestampcancel timestamppause timestampdv timestampseek timestampaudio preparefail pause backpressure delayedid cancel seek seeksegment pausedseek pacing ordinal filtered ambiguous dv-codec dv-file-ordinal audio audioerror eof eoferror pausedreload eofpause overflow subtitles reordered core nocore volume cpu pausedcore controls stallpaced stallrecover stallbound stallnoclock stalltransient stallpause stallseek stallpausedseek stallrecovernoclock stallrecovercancel stallseeknoclock stallrecoverunloaded sustained; do
+for scenario in startup-same startup-audio startup-fallback startup-no-dv resumeseek seekfallback timestamp timestampbound timestampprogress timestampopenfail timestampcancel timestamppause timestampdv timestampseek timestampaudio preparefail pause backpressure delayedid cancel seek seeksegment pausedseek pacing ordinal filtered ambiguous dv-codec dv-file-ordinal dts-off-dv-ac3 dts-off-dv-dts dts-off-plain audio audioerror eof eoferror pausedreload eofpause overflow subtitles reordered core nocore volume cpu pausedcore controls stallpaced stallrecover stallbound stallnoclock stalltransient stallpause stallseek stallpausedseek stallrecovernoclock stallrecovercancel stallseeknoclock stallrecoverunloaded sustained; do
  "$tmp/test" "$scenario"
 done
 DV7_OFF=1 "$tmp/test" buffer
 for scenario in resume-init-pct resume-init-seconds resume-init-paused resume-init-audio resume-init-no-duration resume-init-rejected; do
+ "$tmp/test" "$scenario"
+done
+
+for scenario in seek-queue-series seek-queue-timeout seek-queue-paused seek-queue-cancel seek-queue-audio; do
  "$tmp/test" "$scenario"
 done
 

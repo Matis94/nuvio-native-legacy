@@ -362,7 +362,7 @@ void video_simular_estatisticas(const VideoStats *s);   // capturas; NULL zera
 #define NV_FAIXA_MAX 64
 
 typedef struct {
-  char rotulo[48];   // "Ingles · Atmos 5.1" ou "Legenda 3"
+  char rotulo[112];  // "Ingles · Atmos 5.1" ou "Legenda 3"; 112: the full file track title (the menu cuts by width)
   char idioma[8];    // "en"; vazio quando o arquivo nao etiqueta
   int  numero;       // indice que o selectTrack espera
   int  ordinalMkv;   // ordinal da legenda (AVPlay; no .tpk, o do arquivo, faixasmkv.c); -1 se nao informado
@@ -386,7 +386,7 @@ typedef struct {
 
 // Identity used by candidates and manual audio memory, separate from selectTrack.
 static inline int video_audio_numero_memoria(const VideoFaixa *f) {
-#ifdef NV_TPK
+#if defined(NV_TPK) || defined(NV_WEBOS)
   // MKV TrackNumber occupies a separate namespace from native player indices.
   if (f->numero < 0 && f->stream_id > 0) return 0x40000000 | f->stream_id;
 #endif

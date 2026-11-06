@@ -2,6 +2,13 @@
 #include "adapter.h"
 extern "C" {
 #include "js.h"
+#ifdef NV_HEVC_SEI_TEST
+#include "../hevc_sei.h"
+#endif
+#include "../dts_picture_diag.h"
+#ifdef NV_DTS_PICTURE_DIAG
+#include "../dts_video_diag.h"
+#endif
 }
 #include <starfish-media-pipeline/StarfishMediaAPIs.h>
 #include <dlfcn.h>
@@ -88,6 +95,13 @@ struct Pipeline {
   bool backpressure_reported = false;
   uint64_t refused_feeds = 0;
   unsigned play_count = 0, pause_count = 0;
+#ifdef NV_DTS_PICTURE_DIAG
+  unsigned picture_epoch=1, picture_count=0, picture_logged=0;
+  std::string picture_codec;
+#endif
+#ifdef NV_HEVC_SEI_TEST
+  bool hevc_sei=false, sei_logged=false, sei_removed=false, sei_invalid=false, sei_dropped=false;
+#endif
   std::vector<unsigned char> pending;
   ~Pipeline() {
     alive = false;
@@ -139,6 +153,12 @@ static void callback(int type, int64_t value, const char *str, void *ctx) {
   const char *video_json = type == PF_EVENT_TYPE_STR_VIDEO_INFO ? str : nullptr;
   if (str && strnlen(str,129) > 128) str = "native detail exceeds event budget";
   if (type == PF_EVENT_TYPE_STR_STATE_UPDATE__LOADCOMPLETED) p->completed = true;
+#ifdef NV_HTTP_BUFFER_DIAG
+  if(type==PF_EVENT_TYPE_INT_ERROR || type==PF_EVENT_TYPE_STR_ERROR) {
+    char detail[64];snprintf(detail,sizeof detail,"type=%d code=%lld",type,(long long)value);
+    stage(p,"native-error",detail);
+  }
+#endif
   if (p->event) {
     const char *name = nullptr;
     switch (type) {
@@ -216,6 +236,9 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
       strcmp(m->hdr,"HDR10") && strcmp(m->hdr,"HLG") && !(dv && !strcmp(m->hdr,"DolbyVision")))) {
     p->error = "unsupported codec, HDR/Dolby Vision metadata, target or repeated load"; return 0;
   }
+#ifdef NV_HEVC_SEI_TEST
+  p->hevc_sei=!strcmp(m->video_codec,"hevc") || !strcmp(m->video_codec,"h265");
+#endif
   std::ostringstream j;
   j << "{\"args\":[{\"mediaTransportType\":\"BUFFERSTREAM\",\"option\":{\"appId\":" << quote(p->app.c_str());
   if (!p->window.empty()) j << ",\"windowId\":" << quote(p->window.c_str());
@@ -239,6 +262,17 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
   if (!p->n.foreground(p->sf)) stage(p,"native-foreground-refused","continuing to Load");
   { char d[96]; snprintf(d,sizeof d,"dv=%d profile=%d audio=%s ch=%d",int(dv),m->dovi_profile,
       pass ? pass : "AAC",m->channels); stage(p,"native-load-requested",d); }
+#ifdef NV_DTS_PICTURE_DIAG
+  p->picture_codec=m->video_codec;
+#endif
+#ifdef NV_HTTP_BUFFER_DIAG
+  { char detail[160];snprintf(detail,sizeof detail,
+      "size=%dx%d fps=%d/%d colour=%d/%d/%d dv=%d compat=%d rpu=%d el=%d bl=%d",
+      m->width,m->height,m->fps_num,m->fps_den,m->color_primaries,m->color_transfer,m->color_matrix,
+      m->dovi_profile,m->dovi_bl_compatibility_id,m->dovi_rpu_present,m->dovi_el_present,m->dovi_bl_present);
+    stage(p,"native-video-config",detail);
+  }
+#endif
   if (!p->n.load(p->sf,j.str().c_str(),callback,p)) {
     p->error = "Starfish Load refused"; return 0;
   }
@@ -270,10 +304,50 @@ static int feed(void *ctx,const DtsFrame *f) {
   }
   try { p->pending.assign(f->data,f->data+f->size); }
   catch (...) { p->error = "packet copy allocation failed"; return -1; }
+#ifdef NV_DTS_PICTURE_DIAG
+  const bool inspect=f->kind==DTS_VIDEO && nv_video_picture_sample(p->picture_count+1) &&
+    p->picture_logged!=p->picture_count+1;
+  const int copy_ok=inspect ? !memcmp(f->data,p->pending.data(),f->size) : -1;
+#endif
+#ifdef NV_HEVC_SEI_TEST
+  if(f->kind==DTS_VIDEO && p->hevc_sei) {
+    NvHevcSeiReport report;size_t retained=p->pending.size();
+    int changed=nv_hevc_sei_filter(p->pending.data(),p->pending.size(),&retained,&report);
+    if(changed<0){p->poisoned=true;p->error="HEVC metadata filter validation failed";return -1;}
+    bool invalid=report.malformed || report.oversized;
+    if(!p->sei_logged || (changed && !p->sei_removed) || (invalid && !p->sei_invalid)) {
+      char detail[160];snprintf(detail,sizeof detail,
+        "found=%u removed=%u malformed=%u oversize=%u before=%zu after=%zu prefix=%u suffix=%u",
+        report.removed,changed?report.removed:0,report.malformed,report.oversized,
+        f->size,retained,report.prefix,report.suffix);
+      stage(p,"hevc-sei",detail);p->sei_logged=true;
+    }
+    p->sei_removed|=changed!=0;p->sei_invalid|=invalid;
+    p->pending.resize(retained);
+    if(p->pending.empty()) {
+      if(!p->sei_dropped){stage(p,"hevc-sei-drop","metadata-only packet; waiting for picture");p->sei_dropped=true;}
+#ifdef NV_DTS_PICTURE_DIAG
+      if(f->kind==DTS_VIDEO && p->picture_count<120)p->picture_count++;
+#endif
+      // Removing standalone dynamic metadata must not pretend a picture was
+      // fed or start the decoder before its first genuine audio/video packets.
+      return 1;
+    }
+  }
+#endif
   char j[256];
   snprintf(j,sizeof j,"{\"bufferAddr\":\"%p\",\"bufferSize\":%zu,\"pts\":%lld,\"esData\":%d}",
     p->pending.data(),p->pending.size(),static_cast<long long>(f->pts_ns),f->kind);
   const std::string result = p->n.feed(p->sf,j);
+#ifdef NV_DTS_PICTURE_DIAG
+  const bool accepted=result.find("Pending")==std::string::npos && result.find("Ok")!=std::string::npos;
+  if(inspect) {
+    DtsFrame copy=*f;copy.data=p->pending.data();copy.size=p->pending.size();
+    nv_video_picture_log("native-copy",p->picture_epoch,p->picture_count+1,&copy,p->picture_codec.c_str(),accepted?1:0,copy_ok);
+    p->picture_logged=p->picture_count+1;
+  }
+  if(f->kind==DTS_VIDEO && accepted && p->picture_count<120)p->picture_count++;
+#endif
   if (result.find("Pending") == std::string::npos && result.find("BufferFull") != std::string::npos) {
     p->pending.clear();
     ++p->refused_feeds;
@@ -347,6 +421,12 @@ static int flush(void *ctx,double target) {
   p->play_issued = p->pause_issued = p->started = false;
   p->audio_fed = p->video_fed = false;
   p->refused_feeds = 0;
+#ifdef NV_DTS_PICTURE_DIAG
+  p->picture_epoch++;p->picture_count=p->picture_logged=0;
+#endif
+#ifdef NV_HEVC_SEI_TEST
+  p->sei_logged=p->sei_removed=p->sei_invalid=p->sei_dropped=false;
+#endif
   stage(p,"native-seek-accepted",payload.c_str());
   return 1;
 }
