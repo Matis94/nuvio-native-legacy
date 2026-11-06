@@ -1,7 +1,7 @@
-name: Build webOS 2.0.8.6 (stable version)
+name: Build DTS HDR10 DV8 test 2.0.8.6
 on:
   push:
-    branches: [Nuvio_webOS_2.0.8.6]
+    branches: [dts-hdr10-dv8-test-2.0.8.6]
   workflow_dispatch:
     inputs:
       full_regression:
@@ -11,7 +11,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: webos-2086-ipk
+  group: webos-dts-hdr10-dv8-2086-ipk
   cancel-in-progress: true
 jobs:
   build:
@@ -25,7 +25,7 @@ jobs:
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'
       NUVIO_REQUIRE_ALL: '1'
-      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST
+      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST -DNV_HEVC_SEI_TEST -DNV_PICTURE_DIAG
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -61,6 +61,7 @@ jobs:
         run: |
           bash tests/audioescolha.sh
           bash tests/audiomemoria.sh
+          SANITIZE=1 bash tests/video_faixa_rotulo.sh
           SANITIZE=1 python3 tests/audio_source_group.py
       - name: Source badge position regressions
         if: steps.tests.outputs.scope != 'skip-buttons'
@@ -104,6 +105,12 @@ jobs:
       - name: Install host test dependencies
         timeout-minutes: 6
         run: bash .github/build/host_deps.sh
+      - name: Experimental HEVC SEI compatibility regressions
+        if: steps.tests.outputs.full == 'true'
+        timeout-minutes: 3
+        run: |
+          SANITIZE=1 bash tests/hevc_sei.sh
+          NV_TEST_HEVC_SEI=1 NV_TEST_VIDEO_DIAG=1 bash tests/dts_pipeline.sh
       - name: Manual skip-button settings and marker regressions
         if: steps.tests.outputs.scope == 'skip-buttons' || steps.tests.outputs.full == 'true'
         timeout-minutes: 4
@@ -189,7 +196,8 @@ jobs:
         if: steps.tests.outputs.full == 'true'
         timeout-minutes: 3
         run: |
-          SANITIZE=1 bash tests/dts_rebuffer.sh
+          SANITIZE=1 bash tests/video_packet_diag.sh
+          NV_TEST_VIDEO_DIAG=1 SANITIZE=1 bash tests/dts_rebuffer.sh
           SANITIZE=1 bash tests/range_progress.sh
       - name: Native buffering regressions
         if: steps.tests.outputs.full == 'true'
@@ -209,6 +217,7 @@ jobs:
           /tmp/dts-notice-test
           cc -std=c11 -O1 -g -Wall -Wextra -Werror -Isrc tests/video_seekview.c -lm -o /tmp/seek-view-test
           /tmp/seek-view-test
+          SANITIZE=1 bash tests/video_audio_mkv.sh
           bash tests/dvaudio.sh
           bash tests/dvaudio_lg.sh
           bash tests/dts_pipeline.sh
@@ -254,6 +263,11 @@ jobs:
           NUVIO_DTS_JOBS: '3'
         run: |
           bash .github/build/host_ffmpeg.sh
+          SANITIZE=1 bash tests/hevc_structure_engine.sh
+          SANITIZE=1 bash tests/hevc_annexb.sh
+          SANITIZE=1 bash tests/hevc_annexb_engine.sh
+          SANITIZE=1 bash tests/dts_conversion_stream.sh
+          SANITIZE=1 bash tests/dts_off_engine.sh
           SANITIZE=1 bash tests/dts_resolver_reuse.sh
           bash tests/moviebuffer.sh
           bash tests/moviebuffer.sh parallel
@@ -357,8 +371,8 @@ jobs:
           assert data["id"] == "space.nuvio.native.legacy"
           # webOS requires a three-component technical version. Keep 2.0.8
           # and expose the custom release revision in the install label.
-          data["title"] = "Nuvio Legacy 2.0.8.6 (stable version)"
-          data["appDescription"] = "Nuvio webOS 2.0.8.6 (stable version)"
+          data["title"] = "Nuvio Legacy 2.0.8.6 (DTS HDR10-DV8 test)"
+          data["appDescription"] = "Nuvio webOS 2.0.8.6 (DTS HDR10-DV8 test)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -371,7 +385,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8.6_arm-stable.ipk
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8.6_arm-dts-hdr10-dv8-test.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -387,7 +401,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: nuvio-webos-2.0.8.6-stable-full-arm-ipk
+          name: nuvio-webos-2.0.8.6-dts-hdr10-dv8-test-full-arm-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14

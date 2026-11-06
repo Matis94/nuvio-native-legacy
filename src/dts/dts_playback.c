@@ -4,6 +4,10 @@
 #include "dts_audio_codec.h"
 #include "dts_engine.h"
 #include "dts_pipeline.h"
+#include "dts_picture_diag.h"
+#ifdef NV_DTS_PICTURE_DIAG
+#include "dts_video_diag.h"
+#endif
 #include "../js.h"
 #include "../linguas.h"
 #include "../audioinfo.h"
@@ -35,6 +39,8 @@ typedef struct { DtsSubtitle cue; unsigned revision; } DtsQueuedSubtitle;
 #define DTS_DV_STARVED_WINDOWS 4
 #define DTS_REFILL_SECONDS 2.0
 #define DTS_REFILL_TIMEOUT_SECONDS 20.0
+#define DTS_REFILL_FULL_SECONDS 0.10
+#define DTS_REFILL_MIN_SECONDS 0.25
 struct DtsPlayback {
 #ifdef NV_MP4_BD_TEST
   int mp4_recovery;
@@ -42,6 +48,11 @@ struct DtsPlayback {
   int seamless, seamless_disabled, clock_guard;
   double clock_target, clock_anchor;
   int clock_advances;
+#ifdef NV_DTS_PICTURE_DIAG
+  unsigned picture_epoch,picture_samples;
+  int64_t picture_last_pts;
+  size_t picture_last_size;
+#endif
   int allow_p7, dv, starved; /* Dolby Vision path: passthrough audio, starvation fallback. */
   pthread_t thread;
   pthread_mutex_t lock;
@@ -184,7 +195,7 @@ static void rest(DtsPlayback *p) {
  * AC-3 and E-AC-3 pass through. The TrueHD experiment converts its audio;
  * anything else belongs to the native player. */
 static int codecFeeds(const DtsPlayback *p, const char *codec) {
-  return nv_dts_audio_feeds(codec,p->dv);
+  return nv_dts_audio_feeds_off(codec,p->dv,dts_engine_dts_off());
 }
 static int trackMatches(DtsPlayback *p, const DtsTrack *t) {
   const char *selected_codec = audioinfo_codec(p->selected.codec);
@@ -243,6 +254,15 @@ static int prepareModePrimed(DtsPlayback *p, int stream, int core, double target
     }
   }
   info = dts_engine_info(p->engine);
+  /* The demuxer can prove native P5/P8 even when the UI's short MKV probe
+   * could not. Keep the worker's seek/audio recovery policy on that same
+   * path; never infer DV merely from a filename or HDR transfer function. */
+  if(!p->dv && info && (info->dovi_profile==5 || info->dovi_profile==8) &&
+     !strcmp(info->video_codec,"hevc") && info->dovi_bl_present &&
+     info->dovi_rpu_present && !info->dovi_el_present) {
+    p->dv=1;dts_engine_dv(p->engine,1);
+    nativeEvent(p,"{\"dtsStage\":{\"name\":\"prepared-dv-route\"}}");
+  }
   int pct_resume=p->resume_pct>0;
   if(pct_resume) {
     double pct=p->resume_pct;p->resume_pct=0;
@@ -341,6 +361,9 @@ static int prepareModePrimed(DtsPlayback *p, int stream, int core, double target
       info->dovi_el_present,info->dovi_rpu_present,reused,target);
     nativeEvent(p,event);
   }
+#ifdef NV_DTS_PICTURE_DIAG
+  p->picture_epoch++;p->picture_samples=0;p->picture_last_pts=INT64_MIN;p->picture_last_size=0;
+#endif
   p->pipeline = dts_pipeline_create(NV_APP_ID, p->window,
                                     p->major, nativeEvent, p);
   if (!p->pipeline) { fail(p, "DTS native pipeline unavailable"); return 0; }
@@ -423,6 +446,9 @@ static int reposition(DtsPlayback *p,int stream,int core,double target,DtsFrame 
   }
   p->suppress_events=0;
   pthread_mutex_unlock(&p->lock);
+#ifdef NV_DTS_PICTURE_DIAG
+  if(ok){p->picture_epoch++;p->picture_samples=0;p->picture_last_pts=INT64_MIN;p->picture_last_size=0;}
+#endif
   if(format_changed) return REPOSITION_FORMAT_CHANGED; /* No duplicate demux seek. */
   if(!ok) return 0;
   int subtitle;
@@ -499,6 +525,11 @@ static int64_t refillGoal(const DtsBufferInfo *b) {
 static int refillTail(const DtsBufferInfo *b) {
   return b->total>0 && b->position>=b->total-b->contiguous_bytes;
 }
+static int refillFullReady(double since,double wall,int pending,int preroll,int complete,
+                           double audio,double video,double target) {
+  return since>=0 && wall-since>=DTS_REFILL_FULL_SECONDS && pending && !preroll && complete &&
+         audio>=target+DTS_REFILL_MIN_SECONDS && video>=target+DTS_REFILL_MIN_SECONDS;
+}
 static void refillPublish(DtsPlayback *p,int active,double elapsed) {
   unsigned ms=active?(unsigned)(fmax(0,elapsed)*1000)+1:0;
   pthread_mutex_lock(&p->lock);
@@ -520,13 +551,13 @@ static void *run(void *user) {
   double timestamp_anchor = position;
   int native_unhealthy = 0;
   int recovery_waiting = 0, fast_pending = 0;
-#ifdef NV_MP4_BD_TEST
-  int queued_seek=0;double queued_target=0;
-#endif
+  /* Seamless seek/track requests that arrive before the firmware reported
+   * the previous reposition's clock: only the latest one is kept. */
+  int queued_seek=0,queued_audio=0;double queued_target=0;
   int dv_audio_hold=0;
 #ifdef NV_DTS_WEBOS_RECOVERY
   int network_hold=0;
-  double network_since=0,network_target=0;
+  double network_since=0,network_target=0,refill_full_since=-1;
 #else
   const int network_hold=0;
 #endif
@@ -557,7 +588,9 @@ static void *run(void *user) {
     if (stop) break;
     double wall = clockSeconds(CLOCK_MONOTONIC);
 #ifdef NV_DTS_WEBOS_RECOVERY
+    if(!network_hold && !dv_audio_hold)refill_full_since=-1;
     if(network_hold && (seek || audio)) {
+      refill_full_since=-1;
       network_hold=0;refillPublish(p,0,0);p->starved=0;
       resetStall(&stall,presented);native_unhealthy=0;
     }
@@ -578,11 +611,13 @@ static void *run(void *user) {
       int enough=fed_audio>=network_target+DTS_REFILL_SECONDS &&
                  fed_video>=network_target+DTS_REFILL_SECONDS;
       int bytes_ready=b.contiguous_bytes>=refillGoal(&b) || refillTail(&b);
-      if(!pause && enough && bytes_ready) {
-        printf("[dts-rebuffer] event=end ms=%.0f aheadA=%.2f aheadV=%.2f contiguousKiB=%lld\n",
+      int full_ready=refillFullReady(refill_full_since,wall,have_frame,seek_preroll,complete,
+                                    fed_audio,fed_video,network_target);
+      if(!pause && (enough || full_ready) && bytes_ready) {
+        printf("[dts-rebuffer] event=end ms=%.0f aheadA=%.2f aheadV=%.2f contiguousKiB=%lld reason=%s\n",
           (wall-network_since)*1000,fed_audio-network_target,fed_video-network_target,
-          (long long)(b.contiguous_bytes/1024));fflush(stdout);
-        network_hold=0;p->starved=0;pause_dirty=1;refillPublish(p,0,0);
+          (long long)(b.contiguous_bytes/1024),enough?"ready":"native-full");fflush(stdout);
+        network_hold=0;refill_full_since=-1;p->starved=0;pause_dirty=1;refillPublish(p,0,0);
         resetStall(&stall,presented);native_unhealthy=0;
         rate=(DtsRate){.start=wall};
       } else if(!pause && wall-network_since>=DTS_REFILL_TIMEOUT_SECONDS) {
@@ -627,9 +662,14 @@ static void *run(void *user) {
       int tail=b.total>0 && b.position>=b.total-b.contiguous_bytes;
       int bytes_ready=b.capacity_bytes<=0 || b.contiguous_bytes>=goal || tail;
       if(pause)hold_since=wall;
-      if((enough && bytes_ready) || (!pause && wall-hold_since>=DTS_DV_AUDIO_HOLD_MAX_SECONDS)) {
+      int full_ready=0;
+#ifdef NV_DTS_WEBOS_RECOVERY
+      full_ready=refillFullReady(refill_full_since,wall,have_frame,seek_preroll,complete,
+                                fed_audio,fed_video,hold_target);
+#endif
+      if(!pause && (((enough || full_ready) && bytes_ready) || wall-hold_since>=DTS_DV_AUDIO_HOLD_MAX_SECONDS)) {
         printf("[dts] dv-audio-hold-release reason=%s ms=%.0f aheadA=%.2f aheadV=%.2f contiguousKiB=%lld\n",
-          enough && bytes_ready?"ready":"deadline",(wall-hold_since)*1000,
+          enough && bytes_ready?"ready":full_ready && bytes_ready?"native-full":"deadline",(wall-hold_since)*1000,
           fed_audio-hold_target,fed_video-hold_target,(long long)(b.contiguous_bytes/1024));
         fflush(stdout);dv_audio_hold=0;pause_dirty=1;
         fast_since=fast_started=wall;resetStall(&stall,hold_target);native_unhealthy=0;
@@ -654,26 +694,35 @@ static void *run(void *user) {
         fast_target,(wall-fast_since)*1000,(wall-fast_started)*1000);fflush(stdout);
       nativeEvent(p,"{\"dtsStage\":{\"name\":\"native-seek-fallback\",\"detail\":\"no presentation progress\"}}");
     }
-#ifdef NV_MP4_BD_TEST
     /* A second command can arrive before firmware reports the first accepted
-     * seek's clock. Feed that seek to completion and retain only the latest
-     * target, instead of treating the missing intermediate clock as failure.
-     * Existing no-progress deadlines and reload fallback remain authoritative. */
-    if(p->mp4_recovery) {
-      if(seek && fast_pending && !fast_failed && !pause && !audio &&
-         p->seamless && !p->seamless_disabled && !native_unhealthy && complete && !eof) {
+     * seamless reposition's clock (LG: a quick second seek, or a track change
+     * right after a seek). Without this the missing clock made the request
+     * take the fresh-Load path: the picture reloaded on every quick seek.
+     * Feed the pending reposition to completion and keep only the latest
+     * target/track; the existing no-progress deadline and reload fallback
+     * stay authoritative (a failed reposition reloads at the latest target). */
+    {
+      int can_queue=fast_pending && !fast_failed && !pause && p->seamless && !p->seamless_disabled &&
+                    !native_unhealthy && complete && !eof;
+      if(seek && !audio && can_queue) {
         queued_seek=1;queued_target=target;seek=0;
-        printf("[mp4-seek] deferred target=%.3f pending=%.3f\n",queued_target,fast_target);fflush(stdout);
+        printf("[dts-seek] deferred target=%.3f pending=%.3f\n",queued_target,fast_target);fflush(stdout);
       }
-      if(queued_seek && (!fast_pending || pause || audio)) {
-        if(!seek)target=queued_target;
-        if(fast_failed)fast_target=target;
-        else if(!audio)seek=1;
-        printf("[mp4-seek] latest target=%.3f reload=%d audio=%d\n",target,fast_failed,audio);fflush(stdout);
-        queued_seek=0;
+      if(audio && !seek && can_queue) {
+        queued_audio=1;audio=0;
+        printf("[dts-seek] deferred audio stream=%d pending=%.3f\n",new_stream,fast_target);fflush(stdout);
+      }
+      if((queued_seek || queued_audio) && (!fast_pending || pause || audio || seek)) {
+        /* A fresh seek wins; a queued seek gives its target to a track change;
+         * a track change alone starts where the picture is now. */
+        if(!seek) target=queued_seek?queued_target:audio?target:presented;
+        if(queued_audio) audio=1;
+        if(fast_failed && !audio) fast_target=target;
+        else if(queued_seek && !audio) seek=1;
+        printf("[dts-seek] latest target=%.3f reload=%d audio=%d\n",target,fast_failed,audio);fflush(stdout);
+        queued_seek=queued_audio=0;
       }
     }
-#endif
     /* The adapter now requests a native segment seek and gates controls on
      * SEEKDONE. Test both DV and DTS while retaining one bounded cache/player. */
     int audio_prepared=0;
@@ -947,11 +996,25 @@ static void *run(void *user) {
         rate.paced++; rest(p); continue;
       }
       double feed_started = clockSeconds(CLOCK_MONOTONIC);
+#ifdef NV_DTS_PICTURE_DIAG
+      if(frame.kind==DTS_VIDEO && nv_video_picture_sample(p->picture_samples+1) &&
+         (frame.pts_ns!=p->picture_last_pts || frame.size!=p->picture_last_size)) {
+        const DtsMediaInfo *mi=dts_engine_info(p->engine);
+        p->picture_last_pts=frame.pts_ns;p->picture_last_size=frame.size;
+        nv_video_picture_log("worker",p->picture_epoch,p->picture_samples+1,&frame,mi?mi->video_codec:"",-1,-1);
+      }
+#endif
       int r = dts_pipeline_feed(p->pipeline, &frame);
       double feed_ended = clockSeconds(CLOCK_MONOTONIC);
       if (feed_started >= 0 && feed_ended >= feed_started) rate.feed_wall += feed_ended-feed_started;
+#ifdef NV_DTS_PICTURE_DIAG
+      if(frame.kind==DTS_VIDEO && r>0 && p->picture_samples<120)p->picture_samples++;
+#endif
       if (r < 0) { fail(p, dts_pipeline_error(p->pipeline)); break; }
       if (r) {
+#ifdef NV_DTS_WEBOS_RECOVERY
+        refill_full_since=-1;
+#endif
         stall.full_since = -1;
         position = frame.pts_ns / 1e9;
         /* A paused seek still needs the keyframe preroll and both streams at
@@ -966,6 +1029,10 @@ static void *run(void *user) {
         else { rate.video++; if (position > fed_video) fed_video = position; }
         have_frame = 0;
       } else {
+#ifdef NV_DTS_WEBOS_RECOVERY
+        if((network_hold || dv_audio_hold) && !seek_preroll && complete && refill_full_since<0)
+          refill_full_since=feed_ended;
+#endif
         rate.full++;
         if (!pause && (recovery_waiting || (complete && clock_seen && !seek_preroll)) && stall.full_since < 0)
           stall.full_since = feed_ended;
