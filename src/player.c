@@ -4412,11 +4412,13 @@ void player_evento(const SDL_Event *e) {
   // latest offset shortly after the last press (video.c), with a short reload.
   if (!ehCanal() && audioext_tocando()) {
     int sc = e->key.keysym.scancode, d = 0;
-    if (sc == NV_SCANCODE_CH_UP || k == SDLK_PAGEUP) d = 50;
-    else if (sc == NV_SCANCODE_CH_DOWN || k == SDLK_PAGEDOWN) d = -50;
+    if (sc == NV_SCANCODE_CH_UP || k == SDLK_PAGEUP) d = ajustes_audio_externo_passo();
+    else if (sc == NV_SCANCODE_CH_DOWN || k == SDLK_PAGEDOWN) d = -ajustes_audio_externo_passo();
     if (d) {
       char t[64];
-      snprintf(t, sizeof t, "Audio offset %+d ms", audioext_offset_somar(d));
+      char v[24];
+      snprintf(v, sizeof v, "%+d ms", audioext_offset_somar(d));
+      snprintf(t, sizeof t, i18n("Audio sync: %s"), v);
       player_toast(t, 1800);
       return;
     }
@@ -4629,12 +4631,14 @@ void player_atualizar(float dt, Uint32 agora) {
   { // Test build: say when the audio of another source starts, and why not.
     static int extVisto;
     char falha[160], t[224];
+    // Settings > Audio from another version turned off: no mark survives.
+    if (!ajustes_audio_externo() && audioext_tem_marca()) audioext_limpar();
     if (audioext_falha_consumir(falha, sizeof falha)) {
-      snprintf(t, sizeof t, "Audio from the other source failed: %.150s", falha);
+      snprintf(t, sizeof t, i18n("Audio from the other version failed: %s"), falha);
       player_toast(t, 5000);
     }
     if (audioext_tocando() && !extVisto) {
-      snprintf(t, sizeof t, "Audio from: %.120s · CH+/CH- to sync", audioext_nome());
+      snprintf(t, sizeof t, i18n("Audio from: %s · CH+/CH- to sync"), audioext_nome());
       player_toast(t, 4000);
     }
     extVisto = audioext_tocando(); }

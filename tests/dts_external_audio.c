@@ -163,8 +163,8 @@ static Run play(DtsEngine *e, int64_t offset_ns, int limit) {
 }
 
 int main(int argc, char **argv) {
-  assert(argc == 4);
-  const char *main_file = argv[1], *other = argv[2], *dts_only = argv[3];
+  assert(argc == 5);
+  const char *main_file = argv[1], *other = argv[2], *dts_only = argv[3], *short_clip = argv[4];
   dts_engine_set_lang_match(lang_match);
   load_refs(other, "pol");
 
@@ -234,7 +234,14 @@ int main(int argc, char **argv) {
   assert(strstr(dts_engine_error(e), "External audio: no AC-3"));
   dts_engine_destroy(e);
 
-  /* 7. Turning it off restores the main file's own track selection. */
+  /* 7. A much shorter other file (a debrid "not cached" clip) is refused. */
+  e = dts_engine_create();
+  dts_engine_external_audio(e, short_clip, HEADERS, "", 0);
+  assert(dts_engine_open(e, main_file, HEADERS, -1, 0, 0) < 0);
+  assert(strstr(dts_engine_error(e), "not cached"));
+  dts_engine_destroy(e);
+
+  /* 8. Turning it off restores the main file's own track selection. */
   e = dts_engine_create();
   dts_engine_external_audio(e, other, HEADERS, "pl", 0);
   dts_engine_external_audio(e, NULL, NULL, NULL, 0);

@@ -369,3 +369,7 @@
   0, /* Show intro skip button: On */
   0, /* Show recap skip button: On */
   0, /* Show outro / credits skip button: On */
+  0, /* Audio from another version: On (webOS converter) */
+  0, /* Versions not in cache: Show dimmed */
+  1, /* Audio sync step: 50 ms */
+  0, /* Warn about large files: On */

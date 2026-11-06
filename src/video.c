@@ -87,6 +87,12 @@ static char dtsSaida[64];
 static int extAtivo;
 static unsigned extGenAplicada, extGenVista;
 static Uint32 extGenEm;
+// extSoAudio = the converter runs only because of the external audio (going
+// back to this file's own audio returns to the TV player). extReabrirPend =
+// the audio menu asked for another audio (audioext_pedido_geracao) and the
+// session is reopened at the current position on the next possible pump.
+static int extSoAudio, extReabrirPend;
+static unsigned extPedidoVisto;
 // DOLBY VISION IN MKV (Settings > Playback, experimental). The TV's own URI
 // player turns a Dolby Vision MKV into HDR10 (measured on an LG C9). The same
 // Starfish BUFFERSTREAM path used for DTS conversion, fed by our demux with the
@@ -2589,6 +2595,7 @@ int video_tocar(const char *url) {
 #endif
   dvRecuado = 0;
   dtsTentou = 0; dtsRevisao = 0; dtsSaida[0] = 0; dtsNativePending = 0; dtsEstado = 0;
+  extSoAudio = 0; extReabrirPend = 0; extPedidoVisto = audioext_pedido_geracao();
   { /* Settings > DTS "Off": no DTS conversion. The converter itself stays
      * available to Dolby Vision (P7/P8 MKV, MP4) with non-DTS audio. */
     int conversao = dts_playback_enabled() && dtsLiberadoNestaTv();
@@ -2652,6 +2659,43 @@ static void dtsImagemAtualizar(void) {
     dtsImagemExibida=1;
 }
 #endif
+// The audio menu chose another version's audio, or this file's own again
+// (audioext_escolher / audioext_original): reopen where the picture is.
+static void extReabrir(void) {
+  int quer;
+  if (!urlAtual[0] || modoLoad || falhou || terminou) { extReabrirPend = 0; return; }
+  if (bindAtivo()) return;   // next pump
+  quer = audioext_pedido(urlAtual);
+  if (dtsSessao) {
+    if (!quer && !extAtivo) { extReabrirPend = 0; return; }
+    extReabrirPend = 0;
+    if (!quer && extSoAudio) {
+      // Only the external audio needed the converter: the TV player again.
+      char lu[sizeof legUrlAtual];
+      printf("[ext-audio] back to the TV player at %.1fs\n", posSeg); fflush(stdout);
+      snprintf(lu, sizeof lu, "%s", legUrlAtual);
+      extSoAudio = 0;
+      if (!recarregarMesmaFonte(posSeg, -1, -1, lu)) falhou = 1;
+      ack_publicar();
+      return;
+    }
+    if (!quer) {
+      // Dolby Vision or DTS keep the converter: its own first usable track.
+      pthread_mutex_lock(&audioMkvLock); audioAtual = -1; pthread_mutex_unlock(&audioMkvLock);
+    }
+    printf("[ext-audio] reopening the converter at %.1fs external=%d dv=%d\n", posSeg, quer, dtsModoDv);
+    fflush(stdout);
+    iniciarDts(-1);
+    return;
+  }
+  if (!quer) { extReabrirPend = 0; return; }
+  if (!pronto) return;   // the TV player is still loading this source
+  extReabrirPend = 0;
+  if (!dts_playback_enabled() || !dtsLiberadoNestaTv()) { audioext_falhou("converter unavailable on this TV"); return; }
+  dtsModoDv = 0; extSoAudio = 1;
+  printf("[ext-audio] converter for the chosen audio at %.1fs\n", posSeg); fflush(stdout);
+  iniciarDts(-1);
+}
 void video_bombear(void) {
   ack_publicar();
   bufferLoadBombear();
@@ -2660,6 +2704,9 @@ void video_bombear(void) {
   acbBindRecolher();
   if (ligado) acbConfigurarTipo(dtsSessao != NULL);
   audioMkvPedidoBombear();
+  { unsigned g = audioext_pedido_geracao();
+    if (g != extPedidoVisto) { extPedidoVisto = g; extReabrirPend = 1; } }
+  if (extReabrirPend) extReabrir();
   // A new external audio offset (CH+/CH- on the player) applies 700 ms after
   // the last press, with a seek to where the picture is: the native timeline
   // restarts with the shifted audio instead of jumping under the decoder.
@@ -2681,7 +2728,7 @@ void video_bombear(void) {
   }
 #endif
   else if (dvHabilitado && !dtsNativePending && !dtsTentou && !modoLoad && urlAtual[0] && dvPodeIniciar() && dvPronto()) {
-    dtsModoDv = 1;
+    dtsModoDv = 1; extSoAudio = 0;
     iniciarDts(-1);
   }
   // Audio from another source (test): once the TV player has loaded this one
@@ -2690,7 +2737,7 @@ void video_bombear(void) {
   // picture with the marked source's audio.
   else if (audioext_pedido(urlAtual) && !dvHabilitado && pronto && !dtsNativePending && !dtsTentou &&
            !modoLoad && urlAtual[0] && dts_playback_enabled() && dtsLiberadoNestaTv()) {
-    dtsModoDv = 0;
+    dtsModoDv = 0; extSoAudio = 1;
     marco("External audio: converter path requested");
     iniciarDts(-1);
   }
@@ -2711,7 +2758,7 @@ void video_bombear(void) {
     // So a C9 e anteriores (webOS < 5) usam o caminho nativo + errorCode 200.
     if ((audioNaoSup && knownDts) || forcar ||
         nv_dts_converter_ja(webosMaior(), knownDts, 1, dtsTentou)) {
-      dtsEstado = VIDEO_DTS_PREPARANDO;
+      dtsEstado = VIDEO_DTS_PREPARANDO; extSoAudio = 0;
       iniciarDts(-1);
     }
   }
@@ -3540,8 +3587,8 @@ static int iniciarDts(int stream) {
     // for this title, then the account's first and second audio languages.
     char langs[64] = "";
     const AudioLembrada *lem = audioesc_tem_lembrada() ? audioesc_lembrada() : NULL;
-    snprintf(langs, sizeof langs, "%s,%s,%s", lem && lem->idioma[0] ? lem->idioma : "",
-             ling_audio(), ling_audio2());
+    snprintf(langs, sizeof langs, "%s,%s,%s,%s", audioext_idioma(),
+             lem && lem->idioma[0] ? lem->idioma : "", ling_audio(), ling_audio2());
     dts_engine_set_lang_match(ling_casa);
     dts_playback_next_external_audio(audioext_url(), audioext_cabecalhos(), langs, audioext_offset_ms());
     extGenAplicada = extGenVista = audioext_offset_geracao(); extGenEm = 0;
@@ -4322,6 +4369,9 @@ void video_definir_dv(int dv) { dvPedido = dv ? 1 : 0; }
 void video_escolher_audio(int i) {
   char b[192];
   const VideoFaixa *f = video_audio(i);
+  // The audio of another version: its one track is already playing. Another
+  // audio is chosen in the sheet's own rows (audioext.h), never here.
+  if (dtsSessao && extAtivo) return;
   if (dtsSessao && f) {
     if (f->stream_index < 0) return;
     if (nv_dts_audio_feeds_off(f->codec,dtsModoDv,dtsDesligado)) {

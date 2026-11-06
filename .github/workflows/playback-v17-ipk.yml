@@ -253,6 +253,8 @@ jobs:
           bash tests/player_ram_controls.sh
           NV_TEST_MP4=1 bash tests/buffer_player_settings.sh
           bash tests/ajustes_dts_segmentado.sh
+          cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined tests/audioextlista.c src/audioextlista.c -o /tmp/audioextlista-test
+          /tmp/audioextlista-test
           NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 NV_TEST_P7_MAPPING=1 bash tests/dvaudio_lg.sh
       - name: Build host FFmpeg and test real HTTP buffering
         if: steps.tests.outputs.full == 'true'

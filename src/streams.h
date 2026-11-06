@@ -449,6 +449,14 @@ int  stream_canal_proxima(int atual);
 // lista em que outras responderam, prazo curto.
 int  stream_canal_prazo_longo(int idx);
 
+// AUDIO FROM ANOTHER VERSION (audioextlista.h): this source as a candidate
+// (declared languages, audio codec, channels, cache, size; `atual` stays 0),
+// and its release label ("WEB-DL 1080p", "" unknown).
+struct AudioExtEntradaS;
+void stream_audioext_entrada(const Stream *s, struct AudioExtEntradaS *e);
+void stream_audioext_versao(const Stream *s, char *out, unsigned tam);
+// 1 when the list on hand belongs to the title/episode last asked for.
+int stream_lista_do_alvo_atual(void);
 // --- folha de fontes (a lista que sobe por cima do player/detalhe) ---
 void stream_folha_abrir(void);
 // Root feeds an actual movie/episode metadata runtime or measured media

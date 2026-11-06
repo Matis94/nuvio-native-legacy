@@ -28,6 +28,11 @@
 #include "cacheboost.h"
 #include "velocidade.h"
 #include "faixasmkv.h"
+#include "audioext.h"
+#include "audioextlista.h"
+#include "streams.h"
+#include "idiomacod.h"
+#include <stdlib.h>
 #define NV_ESCALA_TELA   // o arquivo inteiro mede pela tela virtual (escala.h)
 #include "escala.h"
 #include <stdio.h>
@@ -484,6 +489,7 @@ static int velVisivel(void) { return video_velocidade_suportada() && !player_id_
 // (Android: ExoPlayer cannot change the tempo of a bitstream it does not decode).
 static int velFocavel(void) { return velVisivel() && !video_velocidade_bloqueada(); }
 
+static void extMontar(int forcar);
 void faixas_abrir(void) { faixas_abrir_em(0); }
 
 // Abre JA NA COLUNA que o botao pediu. O player tem um icone de audio e um de
@@ -500,6 +506,7 @@ void faixas_abrir_em(int col) {
   ctl = -1;
   volFoco = 0; velFoco = 0;
   foco[0] = video_audio_atual();
+  if (!modo) extMontar(1);
   // A legenda pode estar desligada (-1); a primeira linha da coluna e sempre
   // "Desativada", entao o indice da lista e deslocado em um.
   foco[1] = linhaDaLeg(legendaAtiva()) + 1;
@@ -575,9 +582,84 @@ static int linhaDaLeg(int i) {
   return i;
 }
 
+// AUDIO FROM ANOTHER VERSION (audioext.h, test build): below the file's own
+// tracks the audio sheet lists other sources of the same title that can lend
+// their audio, grouped by language (audioextlista.h). While such audio plays,
+// two rows come first: Audio sync (LEFT/RIGHT) and this file's own audio.
+// Only the webOS converter plays it; the list is the source list on hand.
+#define FX_EXT_MAX 12
+enum { FXA_FAIXA = 0, FXA_SINC, FXA_ORIGINAL, FXA_CAND };
+static AudioExtCand extCand[FX_EXT_MAX];
+static AudioExtEntrada extEnt[FX_EXT_MAX];
+static char extVersao[FX_EXT_MAX][40];
+static int extN;
+static unsigned extGeracao;
+static int extListaN = -1;
+static int extMenu(void) {
+#if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
+  return ajustes_audio_externo() && !player_id_canal()[0];
+#else
+  return 0;
+#endif
+}
+static void extMontar(int forcar) {
+  int n = stream_n(), atual = stream_atual(), m = 0;
+  AudioExtEntrada *ent;
+  const char *pref1, *pref2, *urlVideo = video_url_atual();
+  if (!extMenu() || !stream_lista_do_alvo_atual()) { extN = 0; extListaN = -1; return; }
+  if (!forcar && extGeracao == stream_lista_geracao() && extListaN == n) return;
+  extGeracao = stream_lista_geracao(); extListaN = n; extN = 0;
+  if (n <= 0) return;
+  ent = malloc((size_t)n * sizeof *ent);
+  if (!ent) return;
+  for (int i = 0; i < n; i++) {
+    const Stream *st = stream_item(i);
+    stream_audioext_entrada(st, &ent[i]);
+    ent[i].atual = i == atual || (st && urlVideo && urlVideo[0] && !strcmp(st->url, urlVideo));
+  }
+  // The audio language of the account/TV; without one ("All", free), the
+  // interface language puts its own versions on top.
+  pref1 = ling_audio();
+  if (!pref1[0]) pref1 = idioma_iso(ajustes_idioma());
+  pref2 = ling_audio2();
+  m = audioext_candidatos(ent, n, pref1, pref2, ajustes_audio_externo_ocultar_fora_cache(),
+                          ling_casa, extCand, FX_EXT_MAX);
+  for (int k = 0; k < m; k++) {
+    extEnt[k] = ent[extCand[k].indice];
+    stream_audioext_versao(stream_item(extCand[k].indice), extVersao[k], sizeof extVersao[k]);
+  }
+  extN = m;
+  free(ent);
+}
+static int nExtras(void) {
+  if (!extMenu()) return 0;
+  return (audioext_tocando() ? 2 : 0) + extN;
+}
+// Row `i` of the audio list: the file's track `*k`, a candidate `*k`, or one
+// of the two rows of the audio being played from another version.
+static int tipoLinha(int i, int *k) {
+  int nA = video_n_audio();
+  if (k) *k = i;
+  if (i < nA) return FXA_FAIXA;
+  i -= nA;
+  if (extMenu() && audioext_tocando()) {
+    if (i == 0) return FXA_SINC;
+    if (i == 1) return FXA_ORIGINAL;
+    i -= 2;
+  }
+  if (k) *k = i;
+  return FXA_CAND;
+}
+static const Stream *extFonte(int k) {
+  return k >= 0 && k < extN ? stream_item(extCand[k].indice) : NULL;
+}
+static int extGrande(int k) {
+  return k >= 0 && k < extN && extEnt[k].bytes > UINT64_C(20000000000);
+}
+
 static int nLinhas(int col) {
   if (col == FX_COL_ESTILO) return FX_N_ESTILO;
-  if (col == 0) { int n = video_n_audio(); return n; }
+  if (col == 0) { int n = video_n_audio(); return n + nExtras(); }
   return nLegendas() + 1;   // +1 pela linha "Desativada"
 }
 
@@ -942,7 +1024,35 @@ static void lembrarManual(int i) {
   lembrarEscolha(&e);
 }
 
+static void aplicarExterno(int tipo, int k) {
+  if (tipo == FXA_ORIGINAL) {
+    audioext_original();
+    player_toast(i18n("Back to this file's own audio…"), 2500);
+  } else if (tipo == FXA_CAND) {
+    const Stream *st = extFonte(k);
+    char t[224];
+    if (!st) return;
+    legsync_audio_trocou();
+    audioext_escolher(st->url, st->cabecalhos, st->rotulo, extCand[k].idioma);
+    if (extGrande(k) && ajustes_audio_externo_avisar_grande()) {
+      char tam[24];
+      audioext_tamanho_texto(extEnt[k].bytes, tam, sizeof tam);
+      plrui_decimal(tam);
+      snprintf(t, sizeof t, i18n("Large file (%s): it is downloaded in full next to this video."), tam);
+      player_toast_ex(t, 6000, "aj_triangle-alert", 1);
+    } else player_toast(i18n("Loading the audio of the other version…"), 2500);
+  }
+}
+
 static void aplicar(void) {
+  if (coluna == 0 && tipoLinha(foco[0], NULL) != FXA_FAIXA) {
+    int k, tipo = tipoLinha(foco[0], &k);
+    aplicarExterno(tipo, k);
+    return;
+  }
+  // The track listed while another version's audio plays is that audio:
+  // nothing to switch, and nothing to remember for this title.
+  if (coluna == 0 && extMenu() && audioext_tocando()) return;
   if (coluna == 0) {
     // F06: outra faixa de audio = outras falas; a escuta em curso nao vale mais.
     if (video_audio_atual() != foco[0]) legsync_audio_trocou();
@@ -1250,11 +1360,19 @@ void faixas_evento(const SDL_Event *e) {
   // Na de audio nao ha para onde ir — antes elas pulavam para a coluna de
   // legenda, que e justamente o que fazia os dois botoes do player parecerem o
   // mesmo botao.
+  if ((k == SDLK_LEFT || k == SDLK_RIGHT) && !modo && coluna == 0 && tipoLinha(foco[0], NULL) == FXA_SINC) {
+    int passo = ajustes_audio_externo_passo();
+    if (e->key.repeat) passo = passo < 50 ? 50 : passo * 2;   // holding speeds up
+    audioext_offset_somar(k == SDLK_RIGHT ? passo : -passo);
+    return;
+  }
   if (k == SDLK_LEFT || k == SDLK_RIGHT) return;
   if (k == SDLK_UP)    { if (foco[coluna] > 0) foco[coluna]--; ajustarRolagem(); return; }
   if (k == SDLK_DOWN)  { if (foco[coluna] < nLinhas(coluna) - 1) foco[coluna]++;
                          ajustarRolagem(); return; }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+    // The sync row is live (LEFT/RIGHT); its OK only closes, like Volume.
+    if (!modo && coluna == 0 && tipoLinha(foco[0], NULL) == FXA_SINC) { aberta = 0; return; }
     aplicar(); aberta = 0; return;
   }
 }
@@ -1289,6 +1407,12 @@ static void avisarQueda(int e) {
 
 void faixas_atualizar(float dt, Uint32 agora) {
   if (aberta && modo && coluna == 1) legendasui_atualizar(dt);
+  // Other versions arrive with the add-ons (AIOStreams after 15-20 s): the
+  // list follows them while the sheet is open; the focus stays on its row.
+  if (aberta && !modo) {
+    extMontar(0);
+    if (foco[0] >= nLinhas(0)) foco[0] = nLinhas(0) > 0 ? nLinhas(0) - 1 : 0;
+  }
   // #202: the platform refused the speed (LG/.tpk answer after the request):
   // the row is gone and playback is back at 1x; say it once.
   if (velPedidaUi != VEL_NORMAL && !video_velocidade_suportada()) {
@@ -1517,6 +1641,83 @@ static void rostoIdioma(GfxRect r, const char *idioma, const char *icone, int se
   }
 }
 
+// A row of the audio of another version: Audio sync, this file's own audio,
+// or a candidate ("Polski · DD+ 5.1" over "From another version · WEB-DL
+// 1080p · 6.1 GB · Cached"). Not cached: dimmed.
+static void linhaExterna(int i, float x, float y, float w, int sel, float a) {
+  int k, tipo = tipoLinha(i, &k), ativo = 0, c = sel ? 255 : 219, cs = 122;
+  char nome[112] = "", sub[160] = "", val[24] = "";
+  const char *icone = NULL, *idioma = NULL;
+  float da = a, dir = x + w - 22.0f;
+  GfxRect lr = { x, y, w, IL_LN_H };
+  if (tipo == FXA_SINC) {
+    int o = audioext_offset_ms();
+    snprintf(nome, sizeof nome, "%s", i18n("Audio sync"));
+    snprintf(sub, sizeof sub, "%s", i18n(o > 0 ? "Audio later" : o < 0 ? "Audio earlier" : "In sync with the file"));
+    snprintf(val, sizeof val, "%+d ms", o);
+    icone = "pl_audio-lines";
+  } else if (tipo == FXA_ORIGINAL) {
+    snprintf(nome, sizeof nome, "%s", i18n("This file's own audio"));
+    snprintf(sub, sizeof sub, "%s", i18n("Back to the tracks of the playing source"));
+    icone = "pl_rotate-ccw";
+  } else {
+    const Stream *st = extFonte(k);
+    char codec[24], tam[24];
+    const AudioExtEntrada *en = k < extN ? &extEnt[k] : NULL;
+    idioma = k < extN ? extCand[k].idioma : NULL;
+    audioext_codec_texto(en ? en->codec : AEXT_DESCONHECIDO, en ? en->canais : 0, codec, sizeof codec);
+    audioext_tamanho_texto(en ? en->bytes : 0, tam, sizeof tam);
+    plrui_decimal(tam);
+    snprintf(nome, sizeof nome, "%s%s%s", idioma && idioma[0] ? i18n(ling_nome(idioma)) : i18n("Faixa"),
+             codec[0] ? " · " : "", codec);
+    snprintf(sub, sizeof sub, "%s", i18n("From another version"));
+    if (k < extN && extVersao[k][0]) { strncat(sub, " · ", sizeof sub - strlen(sub) - 1); strncat(sub, extVersao[k], sizeof sub - strlen(sub) - 1); }
+    if (tam[0]) { strncat(sub, " · ", sizeof sub - strlen(sub) - 1); strncat(sub, tam, sizeof sub - strlen(sub) - 1); }
+    if (extGrande(k) && ajustes_audio_externo_avisar_grande()) { strncat(sub, " · ", sizeof sub - strlen(sub) - 1); strncat(sub, i18n("Large file"), sizeof sub - strlen(sub) - 1); }
+    if (en && en->cache > 0) { strncat(sub, " · ", sizeof sub - strlen(sub) - 1); strncat(sub, i18n("Cached"), sizeof sub - strlen(sub) - 1); }
+    if (en && en->cache < 0) { strncat(sub, " · ", sizeof sub - strlen(sub) - 1); strncat(sub, i18n("Not cached"), sizeof sub - strlen(sub) - 1); da = a * 0.5f; }
+    ativo = st && audioext_tocando() && audioext_marcada(st->url);
+  }
+  if (sel) plrui_linha_foco(lr, 22.0f, a);
+  rostoIdioma((GfxRect){ x + 22.0f, y + (IL_LN_H - 52.0f) * 0.5f, 52.0f, 52.0f }, idioma, icone, sel, da);
+  if (val[0]) {
+    float yc = y + IL_LN_H * 0.5f, ar, ag, ab;
+    TxtLinha lv;
+    if (audioext_offset_ms()) {
+      ajustes_acento(&ar, &ag, &ab);
+      lv = txt_linha(TXT_ILHA_FORTE, val, (int)(ar * 255.0f), (int)(ag * 255.0f), (int)(ab * 255.0f), 255);
+    } else lv = txt_linha(TXT_ILHA_FORTE, val, c, c, c - 2, 255);
+    if (sel) {
+      GfxRect d = { dir - 34.0f, yc - 17.0f, 34.0f, 34.0f };
+      gfx_cor(d, 0.5f, 1, 1, 1, 0.10f * a);
+      gfx_icone((GfxRect){ d.x + 7.0f, d.y + 7.0f, 20.0f, 20.0f }, "pl_chevron-right", 1, 1, 1, a);
+      dir -= 34.0f + 10.0f;
+    }
+    { float slot = (float)txt_largura(TXT_ILHA_FORTE, "+10000 ms");
+      txt_desenhar_alpha(lv, dir - slot + (slot - (float)lv.w) * 0.5f, yc - (float)lv.h * 0.5f, a);
+      dir -= slot + 10.0f; }
+    if (sel) {
+      GfxRect d = { dir - 34.0f, yc - 17.0f, 34.0f, 34.0f };
+      gfx_cor(d, 0.5f, 1, 1, 1, 0.10f * a);
+      gfx_icone((GfxRect){ d.x + 7.0f, d.y + 7.0f, 20.0f, 20.0f }, "pl_chevron-left", 1, 1, 1, a);
+      dir -= 34.0f;
+    }
+    dir -= 18.0f;
+  } else if (ativo) dir -= 46.0f;
+  { float tx = x + 22.0f + 52.0f + 18.0f, tw = dir - tx;
+    TxtLinha ln = txt_linha_corta(TXT_ILHA_FORTE, nome, c, c, c - 2, 255, tw);
+    TxtLinha ls = txt_linha_corta(TXT_ILHA_GENERO, sub, cs, cs, cs - 2, 255, tw);
+    float th = (float)ln.h + 5.0f + (float)ls.h, ty = y + (IL_LN_H - th) * 0.5f;
+    txt_desenhar_alpha(ln, tx, ty, da);
+    txt_desenhar_alpha(ls, tx, ty + (float)ln.h + 5.0f, da); }
+  if (ativo) {
+    float ar, ag, ab;
+    ajustes_acento(&ar, &ag, &ab);
+    gfx_icone((GfxRect){ x + w - 22.0f - 28.0f, y + (IL_LN_H - 28.0f) * 0.5f, 28.0f, 28.0f },
+              "pl_check", ar, ag, ab, a);
+  }
+}
+
 // Uma linha da lista (audio ou legenda) em (x, y), largura w.
 static void linhaLista(int col, int i, float x, float y, float w, float a) {
   int sel = col == coluna && i == foco[col] && !(col == 0 && (volFoco || velFoco));
@@ -1525,6 +1726,7 @@ static void linhaLista(int col, int i, float x, float y, float w, float a) {
   int ativo;
   GfxRect lr = { x, y, w, IL_LN_H };
   nome[0] = sub[0] = 0;
+  if (!col && tipoLinha(i, NULL) != FXA_FAIXA) { linhaExterna(i, x, y, w, sel, a); return; }
   if (!col) {
     const VideoFaixa *f = video_audio(i);
     partirRotulo(f ? f->rotulo : "", nome, sizeof nome, sub, sizeof sub);
@@ -1741,8 +1943,12 @@ static void corpoLista(GfxRect c, float a) {
     float ty = y;
     txt_desenhar_alpha(t, x0 + 10.0f, ty, a);
     if (!modo) {
-      char q[32];
-      snprintf(q, sizeof q, i18n("%d faixas"), n);
+      char q[96];
+      snprintf(q, sizeof q, i18n("%d faixas"), video_n_audio());
+      if (extMenu() && addons_busca_parcial()) {
+        strncat(q, " · ", sizeof q - strlen(q) - 1);
+        strncat(q, i18n("searching add-ons…"), sizeof q - strlen(q) - 1);
+      }
       { TxtLinha l = txt_linha(TXT_G18R, q, 243, 242, 239, 115);
         txt_desenhar_alpha(l, x0 + w - 10.0f - l.w, ty + (float)t.h - (float)l.h - 8.0f, a); }
     } else {
@@ -1808,6 +2014,9 @@ static void corpoLista(GfxRect c, float a) {
     { TxtLinha l = txt_linha(TXT_ILHA_APOIO, q, 243, 242, 239, 115);
       txt_desenhar_alpha(l, x0 + 10.0f, yc - (float)l.h * 0.5f, a); }
     if (!modo && (volFoco || velFoco)) {
+      const char *k[2] = { "\xe2\x86\x90 \xe2\x86\x92", "Voltar" }, *rt[2] = { "Ajustar", "Fechar" };
+      plrui_dicas(k, rt, 2, x0 + w - 10.0f, yc, 1, a);
+    } else if (!modo && tipoLinha(foco[0], NULL) == FXA_SINC) {
       const char *k[2] = { "\xe2\x86\x90 \xe2\x86\x92", "Voltar" }, *rt[2] = { "Ajustar", "Fechar" };
       plrui_dicas(k, rt, 2, x0 + w - 10.0f, yc, 1, a);
     } else if (!modo) {

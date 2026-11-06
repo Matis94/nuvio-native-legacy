@@ -54,6 +54,7 @@
 #include "rolagemtoque.h"
 #include "player.h"
 #include "audioext.h"
+#include "audioextlista.h"
 #include "plrilha.h"
 #include "partes.h"
 #include "ctxlista.h"
@@ -362,6 +363,8 @@ int stream_lista_do_alvo(const char *id) {
   if (!id || !*id || !alvoLista[0] || n < 1) return 0;
   return !strcmp(alvoLista, id);
 }
+// The list on hand is the one asked for the title/episode on screen.
+int stream_lista_do_alvo_atual(void) { return alvoPedido[0] && stream_lista_do_alvo(alvoPedido); }
 void stream_definir_atual(int i) { atual = i >= 0 && i < n ? i : -1; }
 int stream_atual(void) { return atual; }
 
@@ -3901,6 +3904,74 @@ static int audioListaEm(const char *p,size_t limite,const char *pref) {
   }
   return 0;
 }
+// AUDIO FROM ANOTHER VERSION (audioextlista.h): what the add-on declared for
+// this source, as the candidate list reads it. Languages come from the
+// declared audio list, or from the label hints when none was declared.
+static int filtroTem(const Stream *s, int cat, const char *nome) {
+  for (int i = 0; i < fontefiltro_opcoes_n(cat); i++)
+    if (!strcmp(fontefiltro_opcao(cat, i), nome)) return (s->filtro.valores[cat] & fontefiltro_bit(cat, i)) != 0;
+  return 0;
+}
+void stream_audioext_entrada(const Stream *s, AudioExtEntrada *e) {
+  const char *lista, *p, *fim;
+  size_t limite;
+  memset(e, 0, sizeof *e);
+  if (!s) return;
+  e->temUrl = s->url[0] != 0 && !s->notWebReady;
+  e->hls = s->tsContinuo || strstr(s->url, ".m3u8") != NULL;
+  e->naoVideo = s->naoVideo;
+  lista = s->audioIdiomas[0] ? s->audioIdiomas : s->audioRotulos;
+  limite = s->audioIdiomas[0] ? sizeof s->audioIdiomas : sizeof s->audioRotulos;
+  p = lista; fim = p + strnlen(p, limite);
+  while (p < fim && e->nIdiomas < AUDIOEXT_IDIOMAS) {
+    const char *f = memchr(p, ',', (size_t)(fim - p)), *ate = f ? f : fim;
+    char raw[513], codigo[32];
+    const char *cod;
+    while (p < ate && isspace((unsigned char)*p)) p++;
+    while (ate > p && isspace((unsigned char)ate[-1])) ate--;
+    size_t len = (size_t)(ate - p);
+    if (len >= sizeof raw) len = sizeof raw - 1;
+    memcpy(raw, p, len); raw[len] = 0;
+    cod = len <= 3 && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo) ? codigo : NULL;
+    if (!cod) cod = faixaIdiomaDoNome(raw);
+    if (!cod && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo)) cod = codigo;
+    if (cod && faixaIdiomaInformado(raw, len) && strcasecmp(cod, "mul")) {
+      int dup = 0;
+      for (int j = 0; j < e->nIdiomas; j++) if (!strcasecmp(e->idiomas[j], cod)) dup = 1;
+      if (!dup) snprintf(e->idiomas[e->nIdiomas++], sizeof e->idiomas[0], "%s", cod);
+    }
+    p = f ? f + 1 : fim;
+  }
+  // Several audio tags (a Polish DD and an English DTS-HD): the one the TV
+  // takes as it is decides; DTS/TrueHD only when nothing else was declared.
+  if (filtroTem(s, FONTEFILTRO_AUDIO, "DD+")) e->codec = AEXT_DDP;
+  else if (filtroTem(s, FONTEFILTRO_AUDIO, "DD")) e->codec = AEXT_DD;
+  else if (filtroTem(s, FONTEFILTRO_AUDIO, "AAC")) e->codec = AEXT_AAC;
+  else if (filtroTem(s, FONTEFILTRO_AUDIO, "TrueHD")) e->codec = AEXT_TRUEHD;
+  else if (filtroTem(s, FONTEFILTRO_AUDIO, "DTS:X") || filtroTem(s, FONTEFILTRO_AUDIO, "DTS-HD MA") ||
+           filtroTem(s, FONTEFILTRO_AUDIO, "DTS-HD") || filtroTem(s, FONTEFILTRO_AUDIO, "DTS-ES") ||
+           filtroTem(s, FONTEFILTRO_AUDIO, "DTS")) e->codec = AEXT_DTS;
+  else if (filtroTem(s, FONTEFILTRO_AUDIO, "OPUS") || filtroTem(s, FONTEFILTRO_AUDIO, "FLAC")) e->codec = AEXT_OUTRO;
+  else e->codec = AEXT_DESCONHECIDO;
+  e->canais = filtroTem(s, FONTEFILTRO_CANAIS, "7.1") ? 8 : filtroTem(s, FONTEFILTRO_CANAIS, "6.1") ? 7 :
+              filtroTem(s, FONTEFILTRO_CANAIS, "5.1") ? 6 : filtroTem(s, FONTEFILTRO_CANAIS, "2.0") ? 2 : 0;
+  e->cache = s->emCache || s->cacheNativo ? 1 : (s->foraCache || s->cacheNegado) ? -1 : 0;
+  e->bytes = s->tamanhoBytes ? s->tamanhoBytes : s->tamanhoMB > 0 ? (uint64_t)s->tamanhoMB * 1000000u : 0;
+}
+// The release label of this source for the audio menu ("WEB-DL 1080p").
+void stream_audioext_versao(const Stream *s, char *out, unsigned tam) {
+  const char *q = "";
+  if (!out || !tam) return;
+  out[0] = 0;
+  if (!s) return;
+  for (int i = 0; i + 1 < fontefiltro_opcoes_n(FONTEFILTRO_QUALIDADE); i++)
+    if (s->filtro.valores[FONTEFILTRO_QUALIDADE] & fontefiltro_bit(FONTEFILTRO_QUALIDADE, i)) {
+      q = fontefiltro_opcao(FONTEFILTRO_QUALIDADE, i); break;
+    }
+  if (q[0] && s->altura > 0) snprintf(out, tam, "%s %dp", q, s->altura);
+  else if (q[0]) snprintf(out, tam, "%s", q);
+  else if (s->altura > 0) snprintf(out, tam, "%dp", s->altura);
+}
 static int audioDeclaradoEm(const Stream *s,const char *pref) {
   return audioListaEm(s->audioIdiomas,sizeof s->audioIdiomas,pref);
 }
@@ -5140,14 +5211,14 @@ void stream_folha_evento(const SDL_Event *e) {
   // the next source played for this title (audioext.h). Only the webOS
   // converter plays it.
 #if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
-  if(grupo==1 && !canalFolha && !e->key.repeat &&
+  if(grupo==1 && !canalFolha && !e->key.repeat && ajustes_audio_externo() &&
      ((int)e->key.keysym.scancode==NV_SCANCODE_BLUE || k==SDLK_F4)) {
     int i=filtrado(foco);
     if(i>=0) {
       int r=audioext_alternar(lista[i].url,lista[i].cabecalhos,lista[i].rotulo);
       if(player_aberto())
-        player_toast(r>0?"Audio source set. Play another source of this title.":
-                     r==0?"Audio source cleared.":"This source has no direct link.",2600);
+        player_toast(i18n(r>0?"Audio source set. Play another source of this title.":
+                          r==0?"Audio source cleared.":"This source has no direct link."),2600);
     }
     return;
   }

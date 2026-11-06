@@ -740,6 +740,12 @@ typedef enum {
   AJ_SHOW_SKIP_INTRO, // button visibility only; profile-local, default ON
   AJ_SHOW_SKIP_RECAP,
   AJ_SHOW_SKIP_CREDITS, // outro and credits share the same marker type
+  // Audio from another version of the title (audioext.h, webOS converter).
+  // Device-local, append-only: on, uncached shown dimmed, 50 ms step, warn.
+  AJ_EXT_AUDIO,
+  AJ_EXT_AUDIO_CACHE,
+  AJ_EXT_AUDIO_PASSO,
+  AJ_EXT_AUDIO_GRANDE,
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -775,6 +781,8 @@ static const char *V_PALCO_FUNDO[] = { "Cortina", "Como está", "Só arte", "Pre
 static const char *V_TITULO_FIL[] = { "Clássico", "Ilha", "Editorial", "Acento" };
 static const char *V_DEGRADES[] = { "Automático", "Forte", "Desligado" };
 static const char *V_BUFFER_CONNECTIONS[] = { "Standard (1)", "Parallel - 2", "Parallel - 3", "Parallel - 4" };
+static const char *V_EXT_AUDIO_CACHE[] = { "Show dimmed", "Hide" };
+static const char *V_EXT_AUDIO_PASSO[] = { "10 ms", "50 ms", "100 ms" };
 static const char *V_BUFFER_CONVERSION_CONNECTIONS[] = { "Standard (1)", "Parallel - 2", "Parallel - 3", "Parallel - 4" };
 static const char *V_DV_AUDIO_FIXO[] = { "Original audio", "AAC stereo", "Dolby Digital 5.1" };
 static const char *V_VIDRO_QUALIDADE[] = { "Automática", "Desempenho", "Alta" };
@@ -1903,6 +1911,10 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Show intro skip button", V_LIGA, 2),
   ESC("Show recap skip button", V_LIGA, 2),
   ESC("Show outro / credits skip button", V_LIGA, 2),
+  ESC("Audio from another version", V_LIGA, 2),
+  ESC("Versions not in cache", V_EXT_AUDIO_CACHE, 2),
+  ESC("Audio sync step", V_EXT_AUDIO_PASSO, 3),
+  ESC("Warn about large files", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2251,6 +2263,10 @@ static const char *CHAVE[] = {
   "showSkipIntroButtonLocal",
   "showSkipRecapButtonLocal",
   "showSkipCreditsButtonLocal",
+  "externalAudioLocal",
+  "externalAudioUncachedLocal",
+  "externalAudioSyncStepLocal",
+  "externalAudioLargeWarningLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2979,6 +2995,10 @@ int ajustes_pular_creditos(void)      { return lig(AJ_PULAR_CREDITOS); }
 int ajustes_show_skip_intro(void)     { return lig(AJ_SHOW_SKIP_INTRO); }
 int ajustes_show_skip_recap(void)     { return lig(AJ_SHOW_SKIP_RECAP); }
 int ajustes_show_skip_credits(void)   { return lig(AJ_SHOW_SKIP_CREDITS); }
+int ajustes_audio_externo(void)       { return lig(AJ_EXT_AUDIO); }
+int ajustes_audio_externo_ocultar_fora_cache(void) { return valor[AJ_EXT_AUDIO_CACHE] == 1; }
+int ajustes_audio_externo_passo(void) { int v = valor[AJ_EXT_AUDIO_PASSO]; return v == 0 ? 10 : v == 2 ? 100 : 50; }
+int ajustes_audio_externo_avisar_grande(void) { return lig(AJ_EXT_AUDIO_GRANDE); }
 int ajustes_medidor_desempenho(void)  { return valor[AJ_MEDIDOR]; }
 int ajustes_fonte_manual(void)        { return lig(AJ_FONTE_MANUAL); }
 int ajustes_fonte_primeira(void)      { return ajustes_fonte_prioridade() == 3 || valor[AJ_FONTE_AUTO] == 1; }
@@ -6213,6 +6233,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_DTS_AC3:        /* o conversor de DTS e desta TV */
     case AJ_DV_MKV:         /* o demux e o decoder sao desta TV */
     case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
+    case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE:
     case AJ_HIST_CONTA: case AJ_SOCIAL: /* por perfil desta TV (perfilLocal); o web nao tem */
     case AJ_TAM_MAX: case AJ_TAM_MIN: /* o web nao tem a faixa de tamanho */
     case AJ_ESPACO_FILEIRAS: case AJ_ESPACO_TITULOS: /* o web nao tem espacamento */
@@ -6309,6 +6330,7 @@ static int soNaTv(int op) {
     case AJ_P2P_LIGADO: case AJ_JF_LIGADO: case AJ_POSTER_PROV: case AJ_EPG_PAIS:
     case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: case AJ_RELOGIO_12H:
     case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_DIAGNOSTICS_QR: case AJ_UPDATE_NOTIFICATIONS: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS: case AJ_REMEMBER_PROFILE:
+    case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE:
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_BUFFER:
     case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
     case AJ_TUNNELING: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO:
@@ -6896,6 +6918,10 @@ static int foraDestaPlataforma(int op) {
 #endif
 #if !defined(NV_DV_FIXED_AUDIO_TEST) || !defined(NV_WEBOS)
   if(op==AJ_DV_AUDIO_FIXO) return 1;
+#endif
+#if defined(NV_TPK) || defined(NV_ANDROID) || defined(__EMSCRIPTEN__)
+  // Only the webOS converter plays the audio of another version.
+  if (op == AJ_EXT_AUDIO || op == AJ_EXT_AUDIO_CACHE || op == AJ_EXT_AUDIO_PASSO || op == AJ_EXT_AUDIO_GRANDE) return 1;
 #endif
 #if !defined(NV_DV7_MAPPING_TEST) || !defined(NV_WEBOS) || !defined(NV_DV7_CONVERSION)
   if(op==AJ_DV7_MAPPING)return 1;
@@ -7590,6 +7616,7 @@ static int inativa(int op) {
     case AJ_LINK_PRAZO: return !lig(AJ_LINK_REUSAR);
     // Remover so vale para o pacote escolhido que foi posto nesta TV.
     case AJ_SOURCE_BADGE_POSITION: return !ajustes_fonte_texto_addon();
+    case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: return !ajustes_audio_externo();
     case AJ_SELOS_PACOTE_REM: return selospacote_ativo() < 0 || !selospacote_da_tv(selospacote_ativo());
     case AJ_URL_REM: return valor[AJ_URL_LISTA] < 1;
     // Sem o relogio nao ha ilha para onde minimizar: sai para a pagina, como antes.
@@ -7877,6 +7904,10 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_PULAR_ABERTURA: return "Pula a abertura sozinho quando o episódio tem o trecho marcado, e avisa na tela. Sem marcador, nada é pulado. O botão manual depende de Show intro skip button.";
     case AJ_SHOW_SKIP_INTRO: return "Show the manual Skip intro button when an intro marker is available. Turning this off hides the button, including while player controls are open. Automatic intro skipping is controlled separately.";
     case AJ_SHOW_SKIP_RECAP: return "Show the manual Skip recap button when a recap marker is available. Turning this off hides only this button. Automatic recap skipping is controlled separately.";
+    case AJ_EXT_AUDIO: return "Play the picture of one source with the audio of another version of the same title, for example a dub from a WEB-DL over a remux. The other versions appear in the player's audio menu. The audio file is read in full over its own connection, so a small version (WEB-DL) is the better choice.";
+    case AJ_EXT_AUDIO_CACHE: return "Versions the debrid service does not have ready may not load. Show them dimmed at the end of their language, or hide them.";
+    case AJ_EXT_AUDIO_PASSO: return "How much one press moves the audio of another version in the player (Audio sync row, CH+/CH-).";
+    case AJ_EXT_AUDIO_GRANDE: return "Say so when the chosen audio comes from a file larger than 20 GB: it is downloaded in full next to the video.";
     case AJ_SHOW_SKIP_CREDITS: return "Show the manual Skip outro / credits button when a credits marker is available. Outro and credits use the same marker type. Automatic credits skipping and next-episode playback are controlled separately.";
     case AJ_PULAR_RESUMO: return "Pula o resumo do episódio anterior sozinho quando o episódio tem o trecho marcado, e avisa na tela. Sem marcador, nada é pulado.";
     case AJ_PULAR_CREDITOS: return "Pula os créditos sozinho, e avisa na tela, só quando o marcador diz onde eles começam e onde acabam. Sem marcador completo, e nos créditos que vão até o fim do episódio, nada é pulado: quem cuida é o próximo episódio.";
@@ -10929,6 +10960,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_SELOS_PACOTE:
     case AJ_REACAO_CREDITOS: case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PROXIMO_AUTO: case AJ_PULAR_CREDITOS: case AJ_PROXIMO_CONTAGEM:
     case AJ_SHOW_SKIP_INTRO: case AJ_SHOW_SKIP_RECAP: case AJ_SHOW_SKIP_CREDITS:
+    case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE:
     case AJ_FONTE_PRAZO: case AJ_TAM_MAX: case AJ_TAM_MIN: case AJ_PROPORCAO_PADRAO: case AJ_DTS_AC3:
     case AJ_FONTE_ESCOPO: case AJ_FONTE_ADDONS_PERM: case AJ_FONTE_PLUGINS_PERM: case AJ_FONTE_OUTROS:
     case AJ_FONTE_REGEX: case AJ_FONTE_REGEX_PADRAO: case AJ_FONTE_REGEX_MODELO:

@@ -19,6 +19,15 @@ void audioext_alvo(const char *alvo);
 // already is the marked one. 1 = marked now, 0 = cleared, -1 = refused (no URL).
 int audioext_alternar(const char *url, const char *cabecalhos, const char *nome);
 void audioext_limpar(void);
+// From the audio menu while playing: use this source's audio now (`idioma` is
+// the language it was listed under, tried first in that file). The webOS
+// player reopens the converter at the current position (audioext_pedido_geracao).
+void audioext_escolher(const char *url, const char *cabecalhos, const char *nome, const char *idioma);
+// From the audio menu: back to this file's own audio, reopened the same way.
+void audioext_original(void);
+unsigned audioext_pedido_geracao(void);
+int audioext_tem_marca(void);
+const char *audioext_idioma(void);
 // The source with this URL is the marked one (for the sheet's label).
 int audioext_marcada(const char *url);
 // 1 when a mark exists for the current target and it is not the video itself.

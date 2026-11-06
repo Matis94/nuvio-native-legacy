@@ -8,10 +8,11 @@ static char alvoAtual[64], alvoMarca[64];
 static char urlMarca[NV_MEDIA_URL_MAX], cabMarca[512], nomeMarca[192];
 static int offsetMs, tocando;
 static unsigned offsetGeracao;
-static char falha[160];
+static char falha[160], idiomaMarca[8];
+static unsigned pedidoGeracao;
 
 void audioext_limpar(void) {
-  urlMarca[0] = cabMarca[0] = nomeMarca[0] = alvoMarca[0] = 0;
+  urlMarca[0] = cabMarca[0] = nomeMarca[0] = alvoMarca[0] = idiomaMarca[0] = 0;
   offsetMs = 0; offsetGeracao++;
 }
 // "tt123" and "tt123:1:2" are the same title: the detail page stamps the raw
@@ -42,12 +43,35 @@ int audioext_alternar(const char *url, const char *cabecalhos, const char *nome)
   snprintf(cabMarca, sizeof cabMarca, "%s", cabecalhos ? cabecalhos : "");
   snprintf(nomeMarca, sizeof nomeMarca, "%s", nome ? nome : "");
   snprintf(alvoMarca, sizeof alvoMarca, "%s", alvoAtual);
+  idiomaMarca[0] = 0;
   offsetMs = 0; offsetGeracao++;
   // The name is the add-on's label, never the URL (signed links stay out of logs).
   printf("[ext-audio] audio source marked: %.80s (target %s)\n", nomeMarca, alvoMarca);
   fflush(stdout);
   return 1;
 }
+void audioext_escolher(const char *url, const char *cabecalhos, const char *nome, const char *idioma) {
+  if (!url || !*url) return;
+  if (!audioext_marcada(url)) {
+    snprintf(urlMarca, sizeof urlMarca, "%s", url);
+    snprintf(cabMarca, sizeof cabMarca, "%s", cabecalhos ? cabecalhos : "");
+    snprintf(nomeMarca, sizeof nomeMarca, "%s", nome ? nome : "");
+    snprintf(alvoMarca, sizeof alvoMarca, "%s", alvoAtual);
+    offsetMs = 0; offsetGeracao++;
+  }
+  snprintf(idiomaMarca, sizeof idiomaMarca, "%s", idioma ? idioma : "");
+  pedidoGeracao++;
+  printf("[ext-audio] chosen in the audio menu: %.80s lang=%s (target %s)\n", nomeMarca, idiomaMarca, alvoMarca);
+  fflush(stdout);
+}
+void audioext_original(void) {
+  audioext_limpar();
+  pedidoGeracao++;
+  printf("[ext-audio] back to this file's own audio\n"); fflush(stdout);
+}
+unsigned audioext_pedido_geracao(void) { return pedidoGeracao; }
+int audioext_tem_marca(void) { return urlMarca[0] != 0; }
+const char *audioext_idioma(void) { return idiomaMarca; }
 int audioext_marcada(const char *url) {
   return urlMarca[0] && url && !strcmp(url, urlMarca);
 }

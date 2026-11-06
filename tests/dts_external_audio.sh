@@ -32,4 +32,9 @@ ffmpeg -hide_banner -loglevel error \
   -f lavfi -i 'color=size=64x64:rate=25:duration=4' \
   -f lavfi -i 'sine=frequency=300:sample_rate=48000:duration=4' \
   -map 0:v -map 1:a -c:v libx264 -c:a dca -strict -2 -ac 2 "$TMP/dts.mkv"
-"$TMP/ext" "$TMP/main.mkv" "$TMP/other.mkv" "$TMP/dts.mkv"
+# A 1 s clip with usable audio: what a debrid serves for a file not in cache.
+ffmpeg -hide_banner -loglevel error \
+  -f lavfi -i 'color=size=64x64:rate=25:duration=1' \
+  -f lavfi -i 'sine=frequency=300:sample_rate=48000:duration=1' \
+  -map 0:v -map 1:a -c:v libx264 -c:a ac3 "$TMP/short.mkv"
+"$TMP/ext" "$TMP/main.mkv" "$TMP/other.mkv" "$TMP/dts.mkv" "$TMP/short.mkv"

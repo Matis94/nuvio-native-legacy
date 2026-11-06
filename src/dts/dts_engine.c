@@ -1412,6 +1412,13 @@ static int configure_external(DtsEngine *e,double start) {
       fa>0 && fb>0 && fabs(fa-fb)>0.05?" WARNING: frame rates differ, audio will drift":"");
     fflush(stdout);
   }
+  /* A debrid file that is not cached answers with a short warning clip that
+   * plays normally: far shorter than the picture, it is not this title. */
+  if(x->fmt->duration<e->fmt->duration/2) {
+    snprintf(e->error,sizeof e->error,"External audio: the other version lasts %.0f s, this one %.0f s (not cached?)",
+      x->fmt->duration/1e6,e->fmt->duration/1e6);
+    return -1;
+  }
   AVStream *as=x->fmt->streams[k]; AVCodecParameters *ap=as->codecpar;
   e->ext_stream=k; e->ext_have=e->ext_eof=0; e->ext_clock_ns=INT64_MIN;
   e->ext_pkt=av_packet_alloc(); e->in=av_packet_alloc(); e->out=av_packet_alloc();

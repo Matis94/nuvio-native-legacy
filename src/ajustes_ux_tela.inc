@@ -18,6 +18,10 @@ static const Item TELA[] = {
 #ifdef NV_TPK
       OPC(AJ_AUDIO_OFFSET),
 #endif
+#if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
+    ROT("Audio from another version"),
+      OPC(AJ_EXT_AUDIO), OPC(AJ_EXT_AUDIO_CACHE), OPC(AJ_EXT_AUDIO_PASSO), OPC(AJ_EXT_AUDIO_GRANDE),
+#endif
     ROT("Escolha da fonte"),
       OPC(AJ_FONTE_MANUAL), OPC(AJ_FONTE_PRIORIDADE), OPC(AJ_FONTE_IDIOMA_AUDIO), OPC(AJ_FONTE_PRAZO),
       OPC(AJ_FONTE_REPOR), OPC(AJ_TAM_MAX),
