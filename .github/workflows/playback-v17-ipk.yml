@@ -1,7 +1,7 @@
-name: Build webOS 2.0.8.7 (stable version)
+name: Build webOS 2.0.8.7 external audio test
 on:
   push:
-    branches: [Nuvio_webOS_2.0.8.7]
+    branches: [external-audio-test-2.0.8.7]
   workflow_dispatch:
     inputs:
       full_regression:
@@ -11,7 +11,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: webos-2087-ipk
+  group: webos-2087-external-audio-ipk
   cancel-in-progress: true
 jobs:
   build:
@@ -372,8 +372,8 @@ jobs:
           assert data["id"] == "space.nuvio.native.legacy"
           # webOS requires a three-component technical version. Keep 2.0.8
           # and expose the custom release revision in the install label.
-          data["title"] = "Nuvio Legacy 2.0.8.7 (stable version)"
-          data["appDescription"] = "Nuvio webOS 2.0.8.7 (stable version)"
+          data["title"] = "Nuvio Legacy 2.0.8.7 (external audio test)"
+          data["appDescription"] = "Nuvio webOS 2.0.8.7 (external audio test)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -386,7 +386,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8.7_arm-stable.ipk
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8.7_arm-external-audio-test.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -402,7 +402,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: nuvio-webos-2.0.8.7-stable-full-arm-ipk
+          name: nuvio-webos-2.0.8.7-external-audio-test-arm-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14
