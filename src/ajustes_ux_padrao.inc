@@ -363,7 +363,7 @@
 
 0, // Update notifications: on by default, device-local
   0, /* native player: one sequential connection */
-  3, /* DTS/TrueHD/DV7: four HTTP range workers */
+  1, /* DTS/TrueHD/DV7: Parallel - 2 (owner, 06/11/2026) */
   1, /* Remember last profile: Off (V_LIGA), device-wide opt-in */
   0, /* From addon badge position: Top */
   0, /* Show intro skip button: On */
