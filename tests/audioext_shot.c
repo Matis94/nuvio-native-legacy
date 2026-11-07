@@ -175,6 +175,8 @@ int main(int argc, char **argv) {
   // Polish first, then the rest by language.
   faixas_abrir_em(0); estado(); quadros(40);
   fprintf(stderr, "sheet open=%d player=%d tracks=%d\n", faixas_aberta(), player_aberto(), video_n_audio());
+  /* This file is English: the Polish WEB-DL that also has English is marked. */
+  assert(!strcmp(audioext_idioma_principal(), "en") && stream_audio_tem(&lista[1], "en") && !stream_audio_tem(&lista[2], "en"));
   salvar("audio-other-versions");
   // 2. Down to the first other version, the focused row.
   tecla(SDLK_DOWN); tecla(SDLK_DOWN); estado(); quadros(20);
@@ -203,26 +205,34 @@ int main(int argc, char **argv) {
   assert(audioext_offset_ms() == 150);
   estado(); quadros(20);
   salvar("audio-other-version-playing-sync");
-  // 3b. OK: the precise editor (min : s : ms). Digits fill seconds then ms;
-  // the other version is 100 s longer, so the lengths suggest -100 s.
+  // 3b. OK: the sync editor, rows for the remote. A match found nothing
+  // trusted but left candidates; the other version is 100 s longer.
   audioext_diferenca(100, 0);
+  audioext_dopasuj_pedir();
+  { AudioExtDopasuj f = { 0, 0, 0, -100000, 0, 2, { -350, 41900 }, { 13, 12 } };
+    audioext_dopasuj_resultado(0, &f); }
   tecla(SDLK_RETURN); estado(); quadros(20);
   salvar("audio-sync-editor");
-  tecla(SDLK_1); tecla(SDLK_4); tecla(SDLK_0); tecla(SDLK_5); tecla(SDLK_0);
-  fprintf(stderr, "typed: %d ms\n", audioext_offset_ms());
-  assert(audioext_offset_ms() == 14050);
-  tecla(SDLK_LEFT); tecla(SDLK_LEFT); tecla(SDLK_UP);   /* minutes +1 */
-  assert(audioext_offset_ms() == 74050);
+  tecla(SDLK_RIGHT);                          /* +100 ms (the step) */
+  assert(audioext_offset_ms() == 250);
+  tecla(SDLK_DOWN); tecla(SDLK_RIGHT);        /* step 1 s */
+  tecla(SDLK_UP); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT);
+  fprintf(stderr, "editor: %d ms\n", audioext_offset_ms());
+  assert(audioext_offset_ms() == 2250);
+  tecla(SDLK_DOWN); tecla(SDLK_DOWN); tecla(SDLK_RETURN);   /* candidate 1 */
+  assert(audioext_offset_ms() == -350);
   estado(); quadros(10);
-  salvar("audio-sync-editor-typed");
-  tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT);   /* -> Use the suggestion */
+  salvar("audio-sync-editor-candidate");
+  tecla(SDLK_ESCAPE);                         /* cancel: back to +150 ms */
+  assert(audioext_offset_ms() == 150 && faixas_aberta());
+  tecla(SDLK_RETURN);                         /* again: the lengths' hint, then OK */
+  for (int i = 0; i < 4; i++) tecla(SDLK_DOWN);
   tecla(SDLK_RETURN);
   assert(audioext_offset_ms() == -100000);
   estado(); quadros(10);
   salvar("audio-sync-editor-hint");
-  tecla(SDLK_LEFT); tecla(SDLK_RETURN);   /* Reset */
-  assert(audioext_offset_ms() == 0);
-  tecla(SDLK_ESCAPE); assert(faixas_aberta());   /* Back closes the editor only */
+  tecla(SDLK_RETURN);                         /* confirmed and closed */
+  assert(audioext_offset_ms() == -100000 && faixas_aberta());
   estado(); quadros(10);
   tecla(SDLK_DOWN); estado(); quadros(10);
   salvar("audio-other-version-match");

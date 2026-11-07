@@ -161,9 +161,14 @@ int main(void) {
     assert(audioext_offset_ms() == -39500);
     // Not found, with the lengths' hint, for the toast.
     audioext_dopasuj_pedir();
-    AudioExtDopasuj f = { 0, 0, 0, -100000, 0 };
+    AudioExtDopasuj f = { 0, 0, 0, -100000, 0, 2, { -350, 41900 }, { 13, 12 } };
     audioext_dopasuj_resultado(0, &f);
     assert(audioext_dopasuj_aviso_consumir(&got) == -1 && got.dica_ms == -100000 && audioext_offset_ms() == -39500);
+    { int km[3], kp[3];   // its candidates stay for the sync editor
+      assert(audioext_kandydatos(km, kp, 3) == 2 && km[0] == -350 && kp[1] == 12); }
+    audioext_diferenca(2998, 0);   // an extended cut 50 min longer: no hint
+    assert(audioext_dica_ms() == 0);
+    audioext_diferenca(-100, 0);
     // Held keys: 100 ms, 1 s, 10 s.
     assert(audioext_passo(50, 0) == 50 && audioext_passo(50, 3) == 100 && audioext_passo(50, 12) == 1000 && audioext_passo(50, 40) == 10000);
     audioext_formatar_offset(690, v, sizeof v, "%c%u.%03u s", "%c%u min %u.%03u s"); assert(!strcmp(v, "+690 ms"));
@@ -172,6 +177,7 @@ int main(void) {
     // A new mark starts at the same speed again.
     audioext_escolher("https://a/other.mkv", "", "Other", "pl");
     assert(audioext_velocidade() == 0 && audioext_offset_ms() == 0);
+    { int km[3], kp[3]; assert(audioext_kandydatos(km, kp, 3) == 0); }
     audioext_limpar();
   }
   puts("audioext: marks, menu requests, offsets, series memory and matching passed");

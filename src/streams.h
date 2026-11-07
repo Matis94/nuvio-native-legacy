@@ -459,6 +459,8 @@ void stream_audioext_versao(const Stream *s, char *out, unsigned tam);
 const char *stream_edicao(const Stream *s);
 // 1 when two versions are likely different cuts (no name = theatrical).
 int stream_outro_corte(const Stream *a, const Stream *b);
+// 1 when the add-on declares this audio language for the version.
+int stream_audio_tem(const Stream *s, const char *idioma);
 // 1 when the list on hand belongs to the title/episode last asked for.
 int stream_lista_do_alvo_atual(void);
 // --- folha de fontes (a lista que sobe por cima do player/detalhe) ---

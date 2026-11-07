@@ -55,6 +55,7 @@
 #include "player.h"
 #include "audioext.h"
 #include "audioextlista.h"
+#include "faixas.h"
 #include "plrilha.h"
 #include "partes.h"
 #include "ctxlista.h"
@@ -4054,6 +4055,9 @@ void stream_audioext_versao(const Stream *s, char *out, unsigned tam) {
 static int audioDeclaradoEm(const Stream *s,const char *pref) {
   return audioListaEm(s->audioIdiomas,sizeof s->audioIdiomas,pref);
 }
+int stream_audio_tem(const Stream *s, const char *idioma) {
+  return s && idioma && idioma[0] && audioDeclaradoEm(s, idioma);
+}
 // O IDIOMA nao tem logo no pacote de selos, entao vai como texto no fim da
 // fileira. Os rotulos antigos continuam onde o addon nao informa audio;
 // quando informa, nenhum deles contradiz a lista declarada.
@@ -5311,6 +5315,7 @@ static void fonteMenuAbrir(int i) {
   snprintf(fmUrl, sizeof fmUrl, "%s", lista[i].url);
   fmMarcada = audioext_marcada(lista[i].url);
   fmIndice = i;
+  faixas_idioma_principal_atualizar();
   fmModoFaixas = 0; fmSondaN = -2;
   fmAcoes[fmN++] = FM_AUDIO;
   if (audioext_sonda_disponivel()) fmAcoes[fmN++] = FM_FAIXAS;
@@ -5347,6 +5352,11 @@ static void fmMontarFaixas(void) {
     if (f->titulo[0] && strlen(f->titulo) < 40)
       snprintf(fmRotFaixa[k], sizeof fmRotFaixa[k], "%s \xc2\xb7 %s%s \xc2\xb7 %s", lg, fmCodecTexto(f->codec), ch, f->titulo);
     else snprintf(fmRotFaixa[k], sizeof fmRotFaixa[k], "%s \xc2\xb7 %s%s", lg, fmCodecTexto(f->codec), ch);
+    // This file's language: "Match automatically" compares this track.
+    { const char *ip = audioext_idioma_principal();
+      size_t u = strlen(fmRotFaixa[k]);
+      if (ip[0] && f->idioma[0] && ling_casa(f->idioma, ip) && u + 4 < sizeof fmRotFaixa[k])
+        snprintf(fmRotFaixa[k] + u, sizeof fmRotFaixa[k] - u, " \xc2\xb7 %s", i18n("used for sync")); }
   }
 }
 static int fmLinhas(void) {

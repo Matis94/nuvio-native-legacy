@@ -98,15 +98,24 @@ int audioext_dopasuj_ativo(void);
 // 2 length hint, 3 +-60 s, 4 +-5 min, 5 speed, measured later on its own),
 // dica_ms the offset the lengths suggest and pesado the wide search skipped
 // for its download (not found).
-typedef struct { int ms, ppm, como, dica_ms, pesado; } AudioExtDopasuj;
+typedef struct { int ms, ppm, como, dica_ms, pesado, nkand, kand_ms[3], kand_pct[3]; } AudioExtDopasuj;
 void audioext_dopasuj_resultado(int ok, const AudioExtDopasuj *r);
 // Once, for a toast: 1 found, -1 not trusted, 0 nothing.
 int audioext_dopasuj_aviso_consumir(AudioExtDopasuj *out);
 // The other version's speed from a match (ppm; 0 the same): the webOS player
 // opens that version at it.
 int audioext_velocidade(void);
-// The offset the two lengths suggest (another cut), 0 when they are close.
+// The offset the two lengths suggest (another cut), 0 when they are close or
+// beyond the sync's reach (10 min).
 int audioext_dica_ms(void);
+// The best places the last match found (offset ms, score %), for the sync
+// editor to try; count, kept until another version or title.
+int audioext_kandydatos(int *ms, int *pct, int max);
+// The playing file's own audio language (its chosen track), kept while another
+// version plays: a version that also has it matches surely (the same language
+// is compared, owner's log 07/11).
+void audioext_idioma_principal_definir(const char *idioma);
+const char *audioext_idioma_principal(void);
 // The step of a sync key: `base` (Settings) for a tap; held (repeticoes =
 // key repeats so far) 100 ms, then 1 s, then 10 s.
 int audioext_passo(int base, int repeticoes);

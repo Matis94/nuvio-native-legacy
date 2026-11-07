@@ -101,6 +101,9 @@ int dts_engine_external_replace(DtsEngine *e,const char *u,const char *h,const c
 #include <errno.h>
 #include <poll.h>
 #include <pthread.h>
+#include <unistd.h>
+#include <sys/resource.h>
+#include <sys/syscall.h>
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
 #include <libavcodec/bsf.h>
@@ -243,6 +246,7 @@ struct DtsEngine {
   struct MatchCap *mt;   /* "Match automatically": capture in progress */
   int mt_state, mt_offset_ms, mt_score;   /* 0 none, 1 capturing, 2 found, 3 not trusted / failed */
   int mt_ratio_ppm, mt_how, mt_hint_ms, mt_heavy;   /* the rest of DtsMatchInfo */
+  int mt_ncand, mt_cand_ms[3], mt_cand_sc[3];
   uint64_t mt_started_ms;
   struct MatchJob *mj;   /* background search over a reader of its own */
   int mt_check;          /* the capture in progress is the second look (speed) */
@@ -2278,7 +2282,7 @@ typedef struct {
   DtsMatchEnv ev; int64_t t0_ns; int cap;
   float *env[DTS_MATCH_BANDS];
 } MatchSide;
-struct MatchCap { int main_stream; MatchSide s[2]; };
+struct MatchCap { int main_stream, donor_stream; MatchSide s[2]; };
 struct MatchJob {
   pthread_t th; pthread_mutex_t lock; int started, done, cancel;
   DtsEngine *holder;                       /* the capture in progress, to cancel its reads */
@@ -2286,7 +2290,30 @@ struct MatchJob {
   float *menv[DTS_MATCH_BANDS]; int mn; double mt0;   /* this file's capture (a copy) */
   double center, base, k0, kf, main_dur, donor_dur; int cut_s; int64_t donor_total;
   int found, how, heavy; double off, ratio, score;    /* result (raw offset, s) */
+  int ncand; double cand[DTS_MATCH_CAND], cand_sc[DTS_MATCH_CAND];   /* best places, raw */
 };
+/* The best places over several searches, 0.5 s apart, best first. */
+static void match_cand_add(int *n,double *off,double *sc,double o,double v) {
+  for(int i=0;i<*n;i++) if(fabs(off[i]-o)<0.5) { if(v>sc[i]) { sc[i]=v; off[i]=o; } goto sort; }
+  if(*n<DTS_MATCH_CAND) { off[*n]=o; sc[*n]=v; (*n)++; }
+  else if(v>sc[*n-1]) { off[*n-1]=o; sc[*n-1]=v; }
+sort:
+  for(int i=1;i<*n;i++) for(int k=i;k>0 && sc[k]>sc[k-1];k--) {
+    double t=sc[k]; sc[k]=sc[k-1]; sc[k-1]=t; t=off[k]; off[k]=off[k-1]; off[k-1]=t;
+  }
+}
+/* Not confident: is one of its candidates confirmed on the two halves? */
+static int match_try_verify(const DtsMatchSig *sm,const DtsMatchSig *sd,double k,DtsMatchResult *r) {
+  for(int i=0;i<r->ncand;i++)
+    if(dts_match_verify(sm,sd,k,r->cand_off[i])) {
+      printf("[ext-audio] match: %.3f s (score %.2f) confirmed on both halves of the capture\n",r->cand_off[i],r->cand_score[i]);
+      fflush(stdout);
+      r->offset_s=r->cand_off[i]; r->score=r->cand_score[i]; r->confident=1;
+      return 1;
+    }
+  return 0;
+}
+static void match_respiro(void) { usleep(1000); }
 static void match_side_free(MatchSide *m) {
   avcodec_free_context(&m->dec); swr_free(&m->swr); av_frame_free(&m->fr);
   for(int b=0;b<DTS_MATCH_BANDS;b++) av_freep(&m->env[b]);
@@ -2341,6 +2368,10 @@ static void match_disarm(DtsEngine *e) {
   if(!mc) return;
   if(e->fmt && mc->main_stream>=0 && (unsigned)mc->main_stream<e->fmt->nb_streams)
     e->fmt->streams[mc->main_stream]->discard=AVDISCARD_ALL;
+  /* The other version's track read only for the comparison goes back off. */
+  if(e->ext && e->ext->fmt && mc->donor_stream!=e->ext_stream && mc->donor_stream>=0 &&
+     (unsigned)mc->donor_stream<e->ext->fmt->nb_streams)
+    e->ext->fmt->streams[mc->donor_stream]->discard=AVDISCARD_ALL;
   match_side_free(&mc->s[0]); match_side_free(&mc->s[1]);
   av_free(mc); e->mt=NULL; e->mt_check=0;
 }
@@ -2401,6 +2432,12 @@ static int match_capture(struct MatchJob *j,double from,double seconds,MatchSide
 }
 static void *match_job_run(void *arg) {
   struct MatchJob *j=arg;
+  /* Below the interface and the playback threads: the menu keeps its frames
+   * (owner's log 07/11: the +-5 min search made it stutter). */
+#ifdef SYS_gettid
+  setpriority(PRIO_PROCESS,(id_t)syscall(SYS_gettid),10);
+#endif
+  dts_match_respiro=match_respiro;
   DtsMatchSig sm={{j->menv[0],j->menv[1],j->menv[2],j->menv[3]},j->mn,j->mt0};
   const double tm=j->mt0+j->mn/2.0/DTS_MATCH_HZ;   /* centre of this file's window */
   const double bps=j->donor_total>0 && j->donor_dur>0?j->donor_total/j->donor_dur:0;
@@ -2409,18 +2446,23 @@ static void *match_job_run(void *arg) {
   /* The lengths suggest where the extra minutes are: all at the start
    * (offset -cut), spread evenly (proportional), or at the end (no change,
    * already searched). */
+  /* Over 10 minutes apart (an extended against a theatrical cut, owner's log
+   * 07/11): the extra scenes are spread through the film, so only the
+   * proportional place makes sense, searched wider; +-5 min is skipped. */
+  int far=abs(j->cut_s)>600;
   if(abs(j->cut_s)>10) {
     double h1=-j->cut_s+j->base, h2=-j->cut_s*(j->main_dur>0?tm/j->main_dur:0)+j->base;
-    st[n].c=h1; st[n].r=10; st[n].cap_mb=1e9; st[n++].how=2;
-    if(fabs(h2-h1)>15 && fabs(h2-j->center)>15) { st[n].c=h2; st[n].r=10; st[n].cap_mb=1e9; st[n++].how=2; }
+    if(!far) { st[n].c=h1; st[n].r=10; st[n].cap_mb=1e9; st[n++].how=2; }
+    if(far || (fabs(h2-h1)>15 && fabs(h2-j->center)>15)) { st[n].c=h2; st[n].r=far?60:10; st[n].cap_mb=300; st[n++].how=2; }
   }
-  st[n].c=j->center; st[n].r=60; st[n].cap_mb=400; st[n++].how=3;
-  st[n].c=j->center; st[n].r=300; st[n].cap_mb=600; st[n++].how=4;
+  st[n].c=j->center; st[n].r=60; st[n].cap_mb=300; st[n++].how=3;
+  if(!far) { st[n].c=j->center; st[n].r=300; st[n].cap_mb=300; st[n++].how=4; }
   for(int i=0;i<n && !__atomic_load_n(&j->cancel,__ATOMIC_RELAXED) && !j->found;i++) {
     if(st[i].how==2 && fabs(st[i].c-j->center)<10) continue;   /* the first search covered it */
     double lo=1e18, hi=-1e18;
+    const double pad=DTS_MATCH_WIN_S/2.0+5.0;   /* the window, and the two halves of the check */
     for(int q=0;q<nk;q++) {
-      double a=(tm-6.0-(st[i].c+st[i].r))/ks[q], b=(tm+6.0-(st[i].c-st[i].r))/ks[q];
+      double a=(tm-pad-(st[i].c+st[i].r))/ks[q], b=(tm+pad-(st[i].c-st[i].r))/ks[q];
       if(a<lo) lo=a;
       if(b>hi) hi=b;
     }
@@ -2441,9 +2483,12 @@ static void *match_job_run(void *arg) {
       DtsMatchSig sd; match_side_sig(&side,&sd);
       for(int q=0;q<nk;q++) {
         DtsMatchResult r;
-        if(dts_match_search(&sm,&sd,ks[q],st[i].c,st[i].r,&r) && r.confident && (!j->found || r.score>j->score)) {
+        int got=dts_match_search(&sm,&sd,ks[q],st[i].c,st[i].r,&r);
+        if(got && !r.confident) match_try_verify(&sm,&sd,ks[q],&r);
+        if(got && r.confident && (!j->found || r.score>j->score)) {
           j->found=1; j->how=st[i].how; j->off=r.offset_s; j->ratio=ks[q]; j->score=r.score;
         }
+        if(got && ks[q]==j->k0) for(int c=0;c<r.ncand;c++) match_cand_add(&j->ncand,j->cand,j->cand_sc,r.cand_off[c],r.cand_score[c]);
         printf("[ext-audio] match: ratio %.5f around %.1f s: offset %.3f s score %.2f margin %.2f%s\n",ks[q],st[i].c-j->base,
           r.offset_s-j->base,r.score,r.margin,r.confident?" (trusted)":"");
         fflush(stdout);
@@ -2463,9 +2508,17 @@ static void match_report(DtsEngine *e,double off_raw,double ratio,double score,i
 }
 static void match_fail(DtsEngine *e,int heavy) {
   e->mt_state=3; e->mt_how=0; e->mt_heavy=heavy;
-  e->mt_hint_ms=abs(e->ext_cut_s)>10?-e->ext_cut_s*1000:0;
-  if(e->mt_hint_ms>600000) e->mt_hint_ms=600000;
-  if(e->mt_hint_ms<-600000) e->mt_hint_ms=-600000;
+  /* The lengths' hint only within the sync's reach: an extended cut 50 min
+   * longer is no hint (owner's log 07/11 showed it clipped to +10 min). */
+  e->mt_hint_ms=abs(e->ext_cut_s)>10 && abs(e->ext_cut_s)<=600?-e->ext_cut_s*1000:0;
+}
+static void match_set_cands(DtsEngine *e,int n,const double *off,const double *sc) {
+  e->mt_ncand=0;
+  for(int i=0;i<n && e->mt_ncand<3;i++) {
+    int64_t u=llrint((off[i]*1e9-e->ext_base_ns)/1e6);
+    if(u>600000 || u<-600000) continue;
+    e->mt_cand_ms[e->mt_ncand]=(int)u; e->mt_cand_sc[e->mt_ncand++]=(int)lround(sc[i]*100.0);
+  }
 }
 /* A find at the same speed is looked at again 5 minutes later: a drift
  * between the two means another speed (owner's log 07/11: 23.970 vs 23.976
@@ -2500,9 +2553,12 @@ static void match_finish(DtsEngine *e) {
   double base=e->ext_base_ns/1e9, center=e->ext_offset_ns/1e9+base, k0=ext_k(e);
   double ks[2]={k0,e->ext_fps_ratio}; int nk=e->ext_fps_ratio>0 && fabs(e->ext_fps_ratio-k0)>0.0005?2:1;
   DtsMatchResult best={0}; double bk=k0; int found=0;
+  e->mt_ncand=0;
   for(int q=0;q<nk;q++) {
     DtsMatchResult r;
     int got=dts_match_search(&sm,&sd,ks[q],center,10.0,&r);
+    if(got && !r.confident) match_try_verify(&sm,&sd,ks[q],&r);
+    if(got && ks[q]==k0) match_set_cands(e,r.ncand,r.cand_off,r.cand_score);
     printf("[ext-audio] match: ratio %.5f: %s offset %d ms (was %d) score %.2f margin %.2f\n",ks[q],
       got && r.confident?"found":"not trusted",got?(int)lround(r.offset_s*1000.0-base*1000.0):0,
       (int)(e->ext_offset_ns/1000000),got?r.score:0.0,got?r.margin:0.0);
@@ -2520,7 +2576,10 @@ static void match_finish(DtsEngine *e) {
   if(j) {
     pthread_mutex_init(&j->lock,NULL);
     j->url=strdup(e->ext_url); j->headers=strdup(e->ext_headers?e->ext_headers:"");
-    j->stream=e->ext_stream; j->mn=sm.n; j->mt0=sm.t0;
+    j->stream=mc->donor_stream>=0?mc->donor_stream:e->ext_stream; j->mn=sm.n; j->mt0=sm.t0;
+    /* The passive candidates go on with the wider search's. */
+    for(int c=0;c<e->mt_ncand;c++)
+      match_cand_add(&j->ncand,j->cand,j->cand_sc,(e->mt_cand_ms[c]*1e6+e->ext_base_ns)/1e9,e->mt_cand_sc[c]/100.0);
     int ok=j->url && j->headers;
     for(int b=0;b<DTS_MATCH_BANDS;b++) if(sm.env[b] && ok) {
       if(!(j->menv[b]=malloc(sizeof(float)*(size_t)sm.n))) ok=0;
@@ -2552,56 +2611,91 @@ static void match_cancel(DtsEngine *e) {
   e->mt_state=3; e->mt_offset_ms=e->mt_score=0; e->mt_how=e->mt_hint_ms=e->mt_heavy=0;
   printf("[ext-audio] match: interrupted\n"); fflush(stdout);
 }
-/* This file's track to compare: the default one (or the first), never a
- * commentary, its language before others, the lightest to decode. */
-static int match_main_track(DtsEngine *e) {
-  int first=-1, def=-1, best=-1, rank=-1;
-  char lang[16]="";
-  for(unsigned i=0;i<e->fmt->nb_streams;i++) {
-    AVStream *st=e->fmt->streams[i];
-    if(st->codecpar->codec_type!=AVMEDIA_TYPE_AUDIO || !avcodec_find_decoder(st->codecpar->codec_id)) continue;
-    if(first<0) first=(int)i;
-    if(def<0 && (st->disposition&AV_DISPOSITION_DEFAULT)) def=(int)i;
-  }
-  if(first<0) return -1;
-  copy_metadata(lang,sizeof lang,e->fmt->streams[def>=0?def:first]->metadata,"language");
-  for(unsigned i=0;i<e->fmt->nb_streams;i++) {
-    AVStream *st=e->fmt->streams[i]; AVCodecParameters *p=st->codecpar;
-    if(p->codec_type!=AVMEDIA_TYPE_AUDIO || !avcodec_find_decoder(p->codec_id)) continue;
-    char title[64]="", l[16]="";
-    copy_metadata(title,sizeof title,st->metadata,"title");
-    copy_metadata(l,sizeof l,st->metadata,"language");
-    for(char *c=title;*c;c++) *c=(char)tolower((unsigned char)*c);
-    if((st->disposition&AV_DISPOSITION_COMMENT) || strstr(title,"comment") || strstr(title,"komentarz")) continue;
-    int r=(!lang[0] || !strcmp(l,lang)?10:0)
-         +(p->codec_id==AV_CODEC_ID_AC3 || p->codec_id==AV_CODEC_ID_EAC3 || p->codec_id==AV_CODEC_ID_AAC ||
-           p->codec_id==AV_CODEC_ID_MP3 || p->codec_id==AV_CODEC_ID_OPUS || p->codec_id==AV_CODEC_ID_VORBIS?3:
-           p->codec_id==AV_CODEC_ID_DTS?2:1);
+/* Tracks worth comparing: decodable audio, never a commentary. Rank: the
+ * lighter to decode the better (lossy, then DTS core, then the rest). */
+static int match_rank(AVStream *st) {
+  AVCodecParameters *p=st->codecpar;
+  char title[64]="";
+  if(p->codec_type!=AVMEDIA_TYPE_AUDIO || !avcodec_find_decoder(p->codec_id)) return 0;
+  copy_metadata(title,sizeof title,st->metadata,"title");
+  for(char *c=title;*c;c++) *c=(char)tolower((unsigned char)*c);
+  if((st->disposition&AV_DISPOSITION_COMMENT) || strstr(title,"comment") || strstr(title,"komentarz")) return 0;
+  return p->codec_id==AV_CODEC_ID_AC3 || p->codec_id==AV_CODEC_ID_EAC3 || p->codec_id==AV_CODEC_ID_AAC ||
+         p->codec_id==AV_CODEC_ID_MP3 || p->codec_id==AV_CODEC_ID_OPUS || p->codec_id==AV_CODEC_ID_VORBIS?3:
+         p->codec_id==AV_CODEC_ID_DTS?2:1;
+}
+/* The best track of `f` in language `lang` ("" any), -1 none. */
+static int match_track_lang(AVFormatContext *f,const char *lang) {
+  int best=-1, rank=0;
+  for(unsigned i=0;i<f->nb_streams;i++) {
+    char l[16]="";
+    int r=match_rank(f->streams[i]);
+    if(!r) continue;
+    copy_metadata(l,sizeof l,f->streams[i]->metadata,"language");
+    if(lang[0] && !ext_lang_is(l,lang) && !ext_lang_is(lang,l) && strcasecmp(l,lang)) continue;
     if(r>rank) { rank=r; best=(int)i; }
   }
-  return best>=0?best:first;
+  return best;
+}
+/* WHAT TO COMPARE (owner's log 07/11: this file's English against the other
+ * version's Polish voice-over barely correlated, 7-16 %): the same language
+ * in both files when there is one, whatever track plays. The other
+ * version's language first (this file may have it), then this file's
+ * default language in the other version, then any language both have.
+ * `alt` 0: the other version's playing track only (its other tracks are
+ * not read: an MP4 read by its audio chunks alone). */
+static void match_pair(DtsEngine *e,int alt,int *mains,int *donor) {
+  AVFormatContext *mf=e->fmt, *df=e->ext->fmt;
+  char ld[16]="", lm[16]="";
+  int m=-1, d=e->ext_stream, def=-1;
+  copy_metadata(ld,sizeof ld,df->streams[e->ext_stream]->metadata,"language");
+  if(ld[0]) m=match_track_lang(mf,ld);
+  for(unsigned i=0;i<mf->nb_streams && def<0;i++)
+    if(match_rank(mf->streams[i]) && (mf->streams[i]->disposition&AV_DISPOSITION_DEFAULT)) def=(int)i;
+  if(def<0) def=match_track_lang(mf,"");
+  if(m<0 && alt && def>=0) {
+    copy_metadata(lm,sizeof lm,mf->streams[def]->metadata,"language");
+    int k=lm[0]?match_track_lang(df,lm):-1;
+    if(k>=0) { m=def; d=k; }
+  }
+  for(unsigned i=0;i<mf->nb_streams && m<0 && alt;i++) {
+    char l[16]="";
+    if(!match_rank(mf->streams[i])) continue;
+    copy_metadata(l,sizeof l,mf->streams[i]->metadata,"language");
+    int k=l[0]?match_track_lang(df,l):-1;
+    if(k>=0) { m=(int)i; d=k; }
+  }
+  if(m<0) m=def;
+  *mains=m; *donor=d;
 }
 static int match_arm(DtsEngine *e,int check) {
   if(!e || !e->ext || !e->ext->fmt || !e->fmt || e->ext_stream<0) return -1;
   match_disarm(e);
-  int best=match_main_track(e);
+  int best=-1, donor=e->ext_stream;
+  match_pair(e,e->ext->sp_n<=0,&best,&donor);
   if(best<0) return -1;
   struct MatchCap *mc=av_mallocz(sizeof *mc);
   if(!mc) return -1;
-  mc->main_stream=best; e->mt=mc;
+  mc->main_stream=best; mc->donor_stream=donor; e->mt=mc;
   if(match_side_open(&mc->s[0],e->fmt->streams[best],DTS_MATCH_MAX)<0 ||
-     match_side_open(&mc->s[1],e->ext->fmt->streams[e->ext_stream],DTS_MATCH_MAX)<0) { match_disarm(e); return -1; }
+     match_side_open(&mc->s[1],e->ext->fmt->streams[donor],DTS_MATCH_MAX)<0) { match_disarm(e); return -1; }
   e->fmt->streams[best]->discard=AVDISCARD_DEFAULT;
+  if(donor!=e->ext_stream) e->ext->fmt->streams[donor]->discard=AVDISCARD_DEFAULT;
   e->mt_check=check;
-  printf("[ext-audio] match: %scapturing %d s of this file's track %d (%s) and the other version's\n",
-    check?"second look, ":"",DTS_MATCH_SECONDS,best,avcodec_get_name(e->fmt->streams[best]->codecpar->codec_id));
+  { char lm[16]="", ld[16]="";
+    copy_metadata(lm,sizeof lm,e->fmt->streams[best]->metadata,"language");
+    copy_metadata(ld,sizeof ld,e->ext->fmt->streams[donor]->metadata,"language");
+    printf("[ext-audio] match: %scapturing %d s of this file's track %d (%s %s) and the other version's track %d (%s %s%s)\n",
+      check?"second look, ":"",DTS_MATCH_SECONDS,best,avcodec_get_name(e->fmt->streams[best]->codecpar->codec_id),lm[0]?lm:"-",
+      donor,avcodec_get_name(e->ext->fmt->streams[donor]->codecpar->codec_id),ld[0]?ld:"-",
+      donor!=e->ext_stream?", compared only":""); }
   fflush(stdout);
   return 0;
 }
 int dts_engine_external_match_arm(DtsEngine *e) {
   if(!e) return -1;
   match_job_stop(e); e->mt_t1=-1;
-  e->mt_heavy=e->mt_hint_ms=e->mt_how=0;
+  e->mt_heavy=e->mt_hint_ms=e->mt_how=e->mt_ncand=0;
   if(match_arm(e,0)<0) { match_fail(e,0); return -1; }
   e->mt_state=1; e->mt_started_ms=clock_ns(CLOCK_MONOTONIC)/1000000u;
   return 0;
@@ -2625,12 +2719,19 @@ int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) {
         if(j->ratio==1.0) { e->mt_t1=j->mt0+j->mn/2.0/DTS_MATCH_HZ; e->mt_o1=j->off;
                             e->mt_o1_user_ns=(int64_t)e->mt_offset_ms*1000000; }
       } else match_fail(e,j->heavy);
-      printf("[ext-audio] match: wider search %s\n",j->found?"found it":"found nothing trusted"); fflush(stdout);
+      match_set_cands(e,j->ncand,j->cand,j->cand_sc);
+      printf("[ext-audio] match: wider search %s\n",j->found?"found it":"found nothing trusted");
+      for(int c=0;c<e->mt_ncand;c++) printf("[ext-audio] match: candidate %d: %d ms (score %d)\n",c+1,e->mt_cand_ms[c],e->mt_cand_sc[c]);
+      fflush(stdout);
       pthread_join(j->th,NULL); j->started=0;
       match_job_free(j); e->mj=NULL;
     } else return 0;
   }
   if(e->mt_state==1 && e->mt && !e->mt_check && clock_ns(CLOCK_MONOTONIC)/1000000u-e->mt_started_ms>90000u) match_cancel(e);  /* paused or stuck */
+  if(e->mt_state==2 || e->mt_state==3) {
+    o->ncand=e->mt_ncand;
+    for(int c=0;c<e->mt_ncand;c++) { o->cand_ms[c]=e->mt_cand_ms[c]; o->cand_score[c]=e->mt_cand_sc[c]; }
+  }
   if(e->mt_state==2) {
     o->offset_ms=e->mt_offset_ms; o->score=e->mt_score; o->ratio_ppm=e->mt_ratio_ppm; o->how=e->mt_how;
     e->mt_state=0; return 1;
@@ -2680,8 +2781,9 @@ static int ext_fill_conv(DtsEngine *e) {
       continue;
     }
     if(r<0) return fail(e,cancelled(e)?"Cancelled":"External audio read",r);
+    if(e->mt && e->ext_in->stream_index==e->mt->donor_stream)
+      match_feed(e,1,e->ext_in,e->ext->fmt->streams[e->ext_in->stream_index]->time_base);
     if(e->ext_in->stream_index==e->ext_stream) {
-      if(e->mt) match_feed(e,1,e->ext_in,e->ext->fmt->streams[e->ext_stream]->time_base);
       r=avcodec_send_packet(e->dec,e->ext_in);
       /* A damaged packet costs a few ms of sound, not the whole playback. */
       if(r<0 && r!=AVERROR(EAGAIN) && r!=AVERROR_INVALIDDATA) { av_packet_unref(e->ext_in); return fail(e,"External audio decode input",r); }
@@ -2701,9 +2803,12 @@ static int ext_fill(DtsEngine *e) {
       return fail(e,"External audio read",r);
     }
     AVPacket *k=e->ext_pkt;
+    /* "Match automatically" may compare another track of this version (the
+     * language this file has, owner's log 07/11). */
+    if(e->mt && k->stream_index==e->mt->donor_stream)
+      match_feed(e,1,k,e->ext->fmt->streams[k->stream_index]->time_base);
     if(k->stream_index!=e->ext_stream || k->pts==AV_NOPTS_VALUE) { av_packet_unref(k); continue; }
     AVRational tb=e->ext->fmt->streams[e->ext_stream]->time_base;
-    if(e->mt) match_feed(e,1,k,tb);
     int64_t pts=ns(k->pts,tb)+e->ext_offset_ns+e->ext_base_ns, dur=k->duration>0?ns(k->duration,tb):0;
     if(pts<0 || pts+dur<=e->target_ns || pts<e->ext_floor_ns) { av_packet_unref(k); continue; }
     e->ext_pts=pts; e->ext_have=1;

@@ -26,6 +26,7 @@ static int dopasujPedido, dopasujAtivo, dopasujAviso;
 static AudioExtDopasuj dopasujInfo;
 // The other version's speed from a match (ppm; 0 the same), with the offset.
 static int velocidadePpm;
+static int kandN, kandMs[3], kandPct[3];   // the last match's best places
 // The donor's audio stream picked in the menu (-1 = by language), for the mark.
 static int faixaMarca = -1;
 // One remembered series at a time (test build, not saved).
@@ -37,7 +38,7 @@ static void serieDe(const char *alvo, char *out, size_t tam) {
 
 void audioext_limpar(void) {
   urlMarca[0] = cabMarca[0] = nomeMarca[0] = alvoMarca[0] = idiomaMarca[0] = 0;
-  offsetMs = 0; offsetGeracao++; velocidadePpm = 0;
+  offsetMs = 0; offsetGeracao++; velocidadePpm = 0; kandN = 0;
   pendente = 0; faixaMarca = -1; carregando = 0;
   dopasujPedido = dopasujAtivo = 0;
 }
@@ -70,7 +71,7 @@ int audioext_alternar(const char *url, const char *cabecalhos, const char *nome)
   snprintf(nomeMarca, sizeof nomeMarca, "%s", nome ? nome : "");
   snprintf(alvoMarca, sizeof alvoMarca, "%s", alvoAtual);
   idiomaMarca[0] = 0;
-  offsetMs = 0; offsetGeracao++; velocidadePpm = 0;
+  offsetMs = 0; offsetGeracao++; velocidadePpm = 0; kandN = 0;
   pendente = 0; faixaMarca = -1;
   // The name is the add-on's label, never the URL (signed links stay out of logs).
   printf("[ext-audio] audio source marked: %.80s (target %s)\n", nomeMarca, alvoMarca);
@@ -84,7 +85,7 @@ void audioext_escolher(const char *url, const char *cabecalhos, const char *nome
     snprintf(cabMarca, sizeof cabMarca, "%s", cabecalhos ? cabecalhos : "");
     snprintf(nomeMarca, sizeof nomeMarca, "%s", nome ? nome : "");
     snprintf(alvoMarca, sizeof alvoMarca, "%s", alvoAtual);
-    offsetMs = 0; offsetGeracao++; velocidadePpm = 0; velocidadePpm = 0;
+    offsetMs = 0; offsetGeracao++; velocidadePpm = 0; kandN = 0; kandN = 0; velocidadePpm = 0;
     faixaMarca = -1;
   }
   snprintf(idiomaMarca, sizeof idiomaMarca, "%s", idioma ? idioma : "");
@@ -208,6 +209,10 @@ void audioext_dopasuj_resultado(int ok, const AudioExtDopasuj *r) {
   if (!dopasujAtivo && !(ok && r->como == 5)) return;
   dopasujAtivo = 0; dopasujPedido = 0;
   dopasujInfo = *r;
+  if (r->como != 5) {   // a second look keeps the click's candidates
+    kandN = r->nkand < 0 ? 0 : r->nkand > 3 ? 3 : r->nkand;
+    for (int i = 0; i < kandN; i++) { kandMs[i] = r->kand_ms[i]; kandPct[i] = r->kand_pct[i]; }
+  }
   if (ok && urlMarca[0]) {
     int ms = r->ms;
     if (ms > AUDIOEXT_OFFSET_MAX) ms = AUDIOEXT_OFFSET_MAX;
@@ -245,8 +250,21 @@ int audioext_velocidade(void) { return urlMarca[0] ? velocidadePpm : 0; }
 // the start), 0 when they are close: for the sync editor.
 int audioext_dica_ms(void) {
   if (!urlMarca[0] || (avisoCorte <= 10 && avisoCorte >= -10)) return 0;
-  int ms = -avisoCorte * 1000;
-  return ms > AUDIOEXT_OFFSET_MAX ? AUDIOEXT_OFFSET_MAX : ms < -AUDIOEXT_OFFSET_MAX ? -AUDIOEXT_OFFSET_MAX : ms;
+  // Beyond the sync's reach (an extended against a theatrical cut, owner's
+  // log 07/11 showed it clipped to +10 min): no hint at all.
+  if (avisoCorte > AUDIOEXT_OFFSET_MAX / 1000 || avisoCorte < -AUDIOEXT_OFFSET_MAX / 1000) return 0;
+  return -avisoCorte * 1000;
+}
+static char idiomaPrincipal[8];
+void audioext_idioma_principal_definir(const char *idioma) {
+  snprintf(idiomaPrincipal, sizeof idiomaPrincipal, "%s", idioma ? idioma : "");
+}
+const char *audioext_idioma_principal(void) { return idiomaPrincipal; }
+int audioext_kandydatos(int *ms, int *pct, int max) {
+  int n = urlMarca[0] ? kandN : 0;
+  if (n > max) n = max;
+  for (int i = 0; i < n; i++) { ms[i] = kandMs[i]; pct[i] = kandPct[i]; }
+  return n;
 }
 int audioext_carregando(void) { return carregando && urlMarca[0]; }
 void audioext_inicio_reproducao(const char *urlVideo) {

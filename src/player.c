@@ -4651,10 +4651,9 @@ void player_atualizar(float dt, Uint32 agora) {
         snprintf(t, sizeof t, i18n("The other version plays at another speed (%s): corrected. Sync: %s"), pc, v);
         player_toast(t, 6000);
       } else if (a > 0) { snprintf(t, sizeof t, i18n("Matched automatically: %s"), v); player_toast(t, 4000); }
-      else if (a < 0 && d.dica_ms) {
-        snprintf(t, sizeof t, i18n("Could not match automatically. The lengths of the versions suggest about %s: set it in the audio menu (Sync), then Match here."), v);
-        player_toast_ex(t, 7000, "aj_triangle-alert", 1);
-      } else if (a < 0 && d.pesado)
+      else if (a < 0 && (d.nkand || d.dica_ms))
+        player_toast_ex(i18n("Could not match for sure: try the candidates in Audio sync (audio menu, OK on Audio sync)."), 7000, "aj_triangle-alert", 1);
+      else if (a < 0 && d.pesado)
         player_toast_ex(i18n("Could not match automatically: a wider search would download too much of the other version. Set the sync by hand in the audio menu."), 7000, "aj_triangle-alert", 1);
       else if (a < 0) player_toast_ex(i18n("Could not match automatically: use the manual sync (CH+/CH-)."), 5000, "aj_triangle-alert", 1); }
     if (audioext_voltou_padrao_consumir())

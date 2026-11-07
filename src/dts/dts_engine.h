@@ -137,6 +137,8 @@ typedef struct {
   int how;          /* found: 1 near, 2 length hint, 3 +-60 s, 4 +-5 min, 5 speed (second look) */
   int hint_ms;      /* not found: offset the lengths suggest (0: none) */
   int too_heavy;    /* not found: the wide search was skipped (too much to download) */
+  int ncand;        /* the best places found, for the person to try (offset ms, score %) */
+  int cand_ms[3], cand_score[3];
 } DtsMatchInfo;
 int dts_engine_external_match_arm(DtsEngine *);
 int dts_engine_external_match_poll(DtsEngine *, DtsMatchInfo *out);

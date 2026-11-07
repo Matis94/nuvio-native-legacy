@@ -15,7 +15,9 @@
 #ifndef NV_DTS_MATCH_H
 #define NV_DTS_MATCH_H
 #define DTS_MATCH_HZ 100        /* envelope values per second */
-#define DTS_MATCH_SECONDS 30    /* captured from each audio while playing */
+#define DTS_MATCH_SECONDS 40    /* captured from each audio while playing */
+#define DTS_MATCH_WIN_S 20      /* compared: the middle of this file's capture */
+#define DTS_MATCH_CAND 3        /* best places kept for the person to try */
 #define DTS_MATCH_MAX (DTS_MATCH_HZ * DTS_MATCH_SECONDS)
 #define DTS_MATCH_BANDS 4       /* all, < 200 Hz, 300-3000 Hz, > 4 kHz */
 
@@ -24,6 +26,8 @@ typedef struct {
   double score;      /* correlation at the peak, -1..1 */
   double margin;     /* peak minus the best value outside +-250 ms */
   int confident;     /* 1: apply it */
+  int ncand;         /* the best separate peaks (>= 0.5 s apart), best first */
+  double cand_off[DTS_MATCH_CAND], cand_score[DTS_MATCH_CAND];
 } DtsMatchResult;
 
 /* One capture: env[b] = energies per 10 ms of band b (NULL: band absent),

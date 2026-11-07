@@ -145,7 +145,14 @@ render(sys.argv[1] + '/c_dub.wav', 160, [(bed, lambda t: t + 40), (bursts(13, 16
 render(sys.argv[1] + '/c_pal.wav', 120 / K, [(bed, lambda t: t / K), (bursts(15, 120, 500, 0.5), lambda t: t)])
 PY
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=32x32:rate=24000/1001:duration=120' -i "$TMP/c_main.wav" \
-  -map 0:v -map 1:a -c:v libx264 -bf 0 -g 24 -c:a ac3 -ar 48000 -b:a 96k -shortest "$TMP/cut_main.mkv"
+  -map 0:v -map 1:a -c:v libx264 -bf 0 -g 24 -c:a ac3 -ar 48000 -b:a 96k -metadata:s:a:0 language=eng -shortest "$TMP/cut_main.mkv"
+# A version with this film's English 3.2 s later and an unrelated Polish
+# track (the one played): the English one is what gets compared.
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=green:size=32x32:rate=24000/1001:duration=124' \
+  -i "$TMP/c_main.wav" -i "$TMP/c_dub.wav" \
+  -filter_complex '[1:a]adelay=3200,aresample=48000[en];[2:a]aresample=48000[pl]' \
+  -map 0:v -map '[en]' -map '[pl]' -c:v libx264 -bf 0 -g 24 -c:a eac3 -b:a 96k \
+  -metadata:s:a:0 language=eng -metadata:s:a:1 language=pol -shortest "$TMP/pair_dub.mkv"
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=32x32:rate=24000/1001:duration=160' -i "$TMP/c_dub.wav" \
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 24 -c:a eac3 -ar 48000 -b:a 96k -metadata:s:a:0 language=pol -shortest "$TMP/cut_dub.mkv"
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=blue:size=32x32:rate=25:duration=116' -i "$TMP/c_pal.wav" \
@@ -153,4 +160,4 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=blue:size=32x32:rate=25
 "$TMP/ext" "$TMP/main.mkv" "$TMP/other.mkv" "$TMP/dts.mkv" "$TMP/short.mkv" "$TMP/other.mp4" "$TMP/aac44.mkv" \
   "$TMP/main60.mkv" "$TMP/long.mkv" "$TMP/long_nocues.mkv" "$TMP/match_main.mkv" "$TMP/match_dub.mkv" \
   "$TMP/main.avi" "$TMP/other.avi" "$TMP/other.ts" "$TMP/xvid.avi" "$TMP/film.mkv" \
-  "$TMP/cut_main.mkv" "$TMP/cut_dub.mkv" "$TMP/pal_dub.mkv"
+  "$TMP/cut_main.mkv" "$TMP/cut_dub.mkv" "$TMP/pal_dub.mkv" "$TMP/pair_dub.mkv"

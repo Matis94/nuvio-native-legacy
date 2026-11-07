@@ -67,20 +67,30 @@ static void onsets(const float *e, int n, float *y) {
   }
 }
 
+/* Optional: called now and then during a wide search (the engine sleeps a
+ * moment there, so the interface keeps its frames). */
+static void (*dts_match_respiro)(void);
+
 /* Weights of the bands: speech (the band a dub changes) counts half. */
 static const double dts_match_weight[DTS_MATCH_BANDS] = { 1.0, 1.0, 0.5, 1.0 };
 
-static int dts_match_search(const DtsMatchSig *m, const DtsMatchSig *d, double ratio,
-                            double center_s, double radius_s, DtsMatchResult *out) {
+/* win_s of this file's capture centred at `pos` (0..1 of it) against the
+ * other's, offsets center_s +- radius_s. */
+static int dts_match_search_at(const DtsMatchSig *m, const DtsMatchSig *d, double ratio,
+                               double center_s, double radius_s, double win_s, double pos,
+                               DtsMatchResult *out) {
   const double step = 1.0 / DTS_MATCH_HZ;
-  const int w = 10 * DTS_MATCH_HZ;          /* 10 s of this file, in the middle of what was captured */
+  int w = (int)(win_s * DTS_MATCH_HZ);
   int lags = (int)(radius_s * DTS_MATCH_HZ + 0.5), best = -1, ok = 0, nb = 0;
   int same = fabs(ratio - 1.0) < 1e-9;
   float *ym[DTS_MATCH_BANDS] = { 0 }, *yd[DTS_MATCH_BANDS] = { 0 };
   double *a[DTS_MATCH_BANDS] = { 0 }, saa[DTS_MATCH_BANDS] = { 0 }, *c = NULL;
   memset(out, 0, sizeof *out);
-  if (m->n < w + 2 || d->n < w / 2 || lags < 1 || ratio <= 0.5 || ratio >= 2.0) return 0;
-  int m0 = (m->n - w) / 2;
+  if (m->n < w + 2) w = m->n - 2;           /* a shorter capture: what there is (10 s at least) */
+  if (w < 10 * DTS_MATCH_HZ || d->n < w / 2 || lags < 1 || ratio <= 0.5 || ratio >= 2.0) return 0;
+  int m0 = (int)(pos * m->n) - w / 2;
+  if (m0 < 0) m0 = 0;
+  if (m0 > m->n - w) m0 = m->n - w;
   for (int b = 0; b < DTS_MATCH_BANDS; b++) {
     if (!m->env[b] || !d->env[b]) continue;
     ym[b] = malloc(sizeof(float) * (size_t)m->n); yd[b] = malloc(sizeof(float) * (size_t)d->n);
@@ -97,6 +107,7 @@ static int dts_match_search(const DtsMatchSig *m, const DtsMatchSig *d, double r
   if (!nb || !c) goto done;
   for (int k = -lags; k <= lags; k++) {
     double o = center_s + k * step;
+    if (dts_match_respiro && radius_s > 15.0 && !((k + lags) & 255)) dts_match_respiro();
     /* this file at t pairs with the other at (t - offset) / ratio */
     double x0 = ((m->t0 + m0 * step - o) / ratio - d->t0) / step, dx = 1.0 / ratio;
     double v = -2.0;
@@ -140,8 +151,23 @@ static int dts_match_search(const DtsMatchSig *m, const DtsMatchSig *d, double r
     out->offset_s = center_s + (best - lags + frac) * step;
     out->score = p;
     out->margin = q > -2.0 ? p - q : p;
-    /* A wide search has many more chances of a lucky peak: a larger margin. */
-    out->confident = p >= 0.25 && out->margin >= (radius_s > 15.0 ? 0.08 : 0.06);
+    /* Applied on its own only when clearly right (owner's log 07/11: a 0.27
+     * peak was wrong); a wide search has more chances of a lucky peak. */
+    out->confident = p >= 0.35 && out->margin >= (radius_s > 15.0 ? 0.12 : 0.10);
+    /* The best separate peaks, for the person to try when not confident. */
+    for (int t = 0; t < DTS_MATCH_CAND; t++) {
+      int bi = -1;
+      for (int i = 0; i < 2 * lags + 1; i++) {
+        int near = 0;
+        if (c[i] <= -2.0) continue;
+        for (int u = 0; u < out->ncand; u++)
+          if (fabs(center_s + (i - lags) * step - out->cand_off[u]) < 0.5) near = 1;
+        if (!near && (bi < 0 || c[i] > c[bi])) bi = i;
+      }
+      if (bi < 0) break;
+      out->cand_off[out->ncand] = bi == best ? out->offset_s : center_s + (bi - lags) * step;
+      out->cand_score[out->ncand++] = c[bi];
+    }
   }
 done:
   for (int b = 0; b < DTS_MATCH_BANDS; b++) { free(ym[b]); free(yd[b]); free(a[b]); }
@@ -149,6 +175,20 @@ done:
   return ok;
 }
 
+static int dts_match_search(const DtsMatchSig *m, const DtsMatchSig *d, double ratio,
+                            double center_s, double radius_s, DtsMatchResult *out) {
+  return dts_match_search_at(m, d, ratio, center_s, radius_s, DTS_MATCH_WIN_S, 0.5, out);
+}
+/* A place found without confidence, checked on two separate halves of the
+ * capture (15 s each): both must peak there again (within 60 ms) for it to be
+ * taken. Two windows that do not overlap rarely agree by chance (a peak lands
+ * in a 120 ms slot of +-3 s about 2 % of the time, both about 0.05 %). */
+static int dts_match_verify(const DtsMatchSig *m, const DtsMatchSig *d, double ratio, double at_s) {
+  DtsMatchResult a, b;
+  if (!dts_match_search_at(m, d, ratio, at_s, 3.0, 15.0, 0.25, &a) ||
+      !dts_match_search_at(m, d, ratio, at_s, 3.0, 15.0, 0.75, &b)) return 0;
+  return fabs(a.offset_s - at_s) < 0.06 && fabs(b.offset_s - at_s) < 0.06 && a.score > 0.05 && b.score > 0.05;
+}
 #if defined(__GNUC__)
 __attribute__((unused))
 #endif

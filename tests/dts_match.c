@@ -43,6 +43,23 @@ int main(void) {
    * 2 s earlier (the other version's clock) needs +2 s more: +1.30 s. */
   assert(dts_match_offset(m, N, 100.0, d, N, 98.0, 2.0, 10.0, &r) == 1);
   assert(r.confident && fabs(r.offset_s - 1.30) < 0.02);
+  /* A voice-over over the original ducked low: the right offset is among the
+   * candidates offered to the person, trusted or not. */
+  { static float lk[N];
+    for (int i = 0; i < N; i++) lk[i] = 1e-4f + 0.25f * bed[i + 200 - SHIFT];
+    bursts(lk, N, 700, 1.2, 5);
+    assert(dts_match_offset(m, N, 100.0, lk, N, 100.0, 0.0, 10.0, &r) == 1);
+    printf("voice-over: offset %.3f s score %.2f margin %.2f confident %d, candidates", r.offset_s, r.score, r.margin, r.confident);
+    int hit = 0;
+    for (int i = 0; i < r.ncand; i++) { printf(" %.2f(%.2f)", r.cand_off[i], r.cand_score[i]); hit |= fabs(r.cand_off[i] + 0.70) < 0.03; }
+    printf("\n");
+    assert(r.ncand >= 2 && hit && fabs(r.cand_off[1] - r.cand_off[0]) >= 0.5);
+    /* The two halves of the capture agree on the right place only. */
+    DtsMatchSig sm = { { m, NULL, NULL, NULL }, N, 100.0 }, sl = { { lk, NULL, NULL, NULL }, N, 100.0 };
+    int good = dts_match_verify(&sm, &sl, 1.0, -0.70), bad = 0;
+    for (int i = 0; i < r.ncand; i++) if (fabs(r.cand_off[i] + 0.70) >= 0.03) bad += dts_match_verify(&sm, &sl, 1.0, r.cand_off[i]);
+    printf("voice-over checked on two halves: right %d, wrong ones passing %d\n", good, bad);
+    assert(good && !bad); }
   /* Unrelated audio: no trusted result. */
   bursts(other, N, 1400, 1.0, 99);
   for (int i = 0; i < N; i++) other[i] += 1e-4f;
@@ -51,6 +68,10 @@ int main(void) {
   assert(!r.confident);
   /* Too little audio: no comparison at all. */
   assert(dts_match_offset(m, 500, 0, d, 500, 0, 0, 10, &r) == 0);
+  /* Unrelated: none of its candidates passes the check either. */
+  assert(dts_match_offset(m, N, 100.0, other, N, 100.0, 0.0, 10.0, &r) == 1);
+  { DtsMatchSig sm = { { m, NULL, NULL, NULL }, N, 100.0 }, so = { { other, NULL, NULL, NULL }, N, 100.0 };
+    for (int i = 0; i < r.ncand; i++) assert(!dts_match_verify(&sm, &so, 1.0, r.cand_off[i])); }
   /* A bed in continuous time, sampled on each file's own clock: for a PAL
    * version (sped up 25/23.976) and for a far offset (another cut). */
   {

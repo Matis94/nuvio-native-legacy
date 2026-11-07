@@ -167,12 +167,12 @@ static Run play(DtsEngine *e, int64_t offset_ns, int limit) {
 }
 
 int main(int argc, char **argv) {
-  assert(argc == 20);
+  assert(argc == 21);
   const char *main_file = argv[1], *other = argv[2], *dts_only = argv[3], *short_clip = argv[4], *mp4 = argv[5];
   const char *aac44 = argv[6], *main60 = argv[7], *long_idx = argv[8], *long_noidx = argv[9];
   const char *match_main = argv[10], *match_dub = argv[11];
   const char *main_avi = argv[12], *other_avi = argv[13], *other_ts = argv[14], *main_xvid = argv[15], *film = argv[16];
-  const char *cut_main = argv[17], *cut_dub = argv[18], *pal_dub = argv[19];
+  const char *cut_main = argv[17], *cut_dub = argv[18], *pal_dub = argv[19], *pair_dub = argv[20];
   dts_engine_set_lang_match(lang_match);
   load_refs(other, "pol");
 
@@ -474,6 +474,18 @@ int main(int argc, char **argv) {
     for (int i = 0; i < 600 && !(res = dts_engine_external_match_poll(e, &mi)); i++) usleep(50000);
     fprintf(stderr, "another cut: result %d offset %d ms how %d score %d\n", res, mi.offset_ms, mi.how, mi.score);
     assert(res == 1 && mi.how == 2 && mi.offset_ms > -40080 && mi.offset_ms < -39920 && mi.ratio_ppm == 0); }
+  dts_engine_destroy(e);
+  /* The same language in both files: the other version plays Polish, its
+   * English (3.2 s later) is compared with this file's English. */
+  e = dts_engine_create();
+  dts_engine_external_audio(e, pair_dub, HEADERS, "pl", 0);
+  assert(dts_engine_open(e, cut_main, HEADERS, -1, 0, 0) == 0);
+  { DtsMatchInfo mi; int res = 0;
+    assert(dts_engine_external_match_arm(e) == 0);
+    r = play(e, 0, 0);
+    for (int i = 0; i < 200 && !(res = dts_engine_external_match_poll(e, &mi)); i++) usleep(50000);
+    fprintf(stderr, "same language: result %d offset %d ms how %d score %d\n", res, mi.offset_ms, mi.how, mi.score);
+    assert(res == 1 && mi.how == 1 && mi.offset_ms > -3240 && mi.offset_ms < -3160 && mi.score >= 60); }
   dts_engine_destroy(e);
   /* Interrupted: the session closes while the reader works. */
   e = dts_engine_create();
