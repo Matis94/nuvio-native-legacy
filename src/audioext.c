@@ -22,11 +22,14 @@ static int avisoCorte, avisoVelocidade, avisoPendente;   // other cut / speed, o
 static int carregando;   // the other version's audio is being opened (player card)
 // "Match automatically": requested (for the player), working, and the outcome
 // for one toast: 1 found (offset applied), -1 not trusted.
-static int dopasujPedido, dopasujAtivo, dopasujAviso, dopasujMs;
+static int dopasujPedido, dopasujAtivo, dopasujAviso;
+static AudioExtDopasuj dopasujInfo;
+// The other version's speed from a match (ppm; 0 the same), with the offset.
+static int velocidadePpm;
 // The donor's audio stream picked in the menu (-1 = by language), for the mark.
 static int faixaMarca = -1;
 // One remembered series at a time (test build, not saved).
-static struct { char serie[64], episodio[64]; AudioExtIdent id; int offset, ativo; } memo;
+static struct { char serie[64], episodio[64]; AudioExtIdent id; int offset, velocidade, ativo; } memo;
 static void serieDe(const char *alvo, char *out, size_t tam) {
   const char *c = alvo ? strchr(alvo, ':') : NULL;
   snprintf(out, tam, "%.*s", c ? (int)(c - alvo) : 0, c ? alvo : "");
@@ -34,7 +37,7 @@ static void serieDe(const char *alvo, char *out, size_t tam) {
 
 void audioext_limpar(void) {
   urlMarca[0] = cabMarca[0] = nomeMarca[0] = alvoMarca[0] = idiomaMarca[0] = 0;
-  offsetMs = 0; offsetGeracao++;
+  offsetMs = 0; offsetGeracao++; velocidadePpm = 0;
   pendente = 0; faixaMarca = -1; carregando = 0;
   dopasujPedido = dopasujAtivo = 0;
 }
@@ -67,7 +70,7 @@ int audioext_alternar(const char *url, const char *cabecalhos, const char *nome)
   snprintf(nomeMarca, sizeof nomeMarca, "%s", nome ? nome : "");
   snprintf(alvoMarca, sizeof alvoMarca, "%s", alvoAtual);
   idiomaMarca[0] = 0;
-  offsetMs = 0; offsetGeracao++;
+  offsetMs = 0; offsetGeracao++; velocidadePpm = 0;
   pendente = 0; faixaMarca = -1;
   // The name is the add-on's label, never the URL (signed links stay out of logs).
   printf("[ext-audio] audio source marked: %.80s (target %s)\n", nomeMarca, alvoMarca);
@@ -81,7 +84,7 @@ void audioext_escolher(const char *url, const char *cabecalhos, const char *nome
     snprintf(cabMarca, sizeof cabMarca, "%s", cabecalhos ? cabecalhos : "");
     snprintf(nomeMarca, sizeof nomeMarca, "%s", nome ? nome : "");
     snprintf(alvoMarca, sizeof alvoMarca, "%s", alvoAtual);
-    offsetMs = 0; offsetGeracao++;
+    offsetMs = 0; offsetGeracao++; velocidadePpm = 0; velocidadePpm = 0;
     faixaMarca = -1;
   }
   snprintf(idiomaMarca, sizeof idiomaMarca, "%s", idioma ? idioma : "");
@@ -173,9 +176,13 @@ const char *audioext_cabecalhos(void) { return cabMarca; }
 const char *audioext_nome(void) { return nomeMarca; }
 int audioext_offset_ms(void) { return offsetMs; }
 int audioext_offset_somar(int ms) {
-  offsetMs += ms;
-  if (offsetMs > 10000) offsetMs = 10000;
-  if (offsetMs < -10000) offsetMs = -10000;
+  return audioext_offset_definir(offsetMs + ms);
+}
+// +-10 min: another cut can be minutes away (owner, 07/11).
+int audioext_offset_definir(int ms) {
+  offsetMs = ms;
+  if (offsetMs > AUDIOEXT_OFFSET_MAX) offsetMs = AUDIOEXT_OFFSET_MAX;
+  if (offsetMs < -AUDIOEXT_OFFSET_MAX) offsetMs = -AUDIOEXT_OFFSET_MAX;
   offsetGeracao++;
   { char sr[64]; serieDe(alvoMarca, sr, sizeof sr);
     if (memo.ativo && sr[0] && !strcmp(sr, memo.serie)) memo.offset = offsetMs; }
@@ -194,18 +201,53 @@ void audioext_dopasuj_pedir(void) {
 }
 int audioext_dopasuj_pedido_consumir(void) { int p = dopasujPedido; dopasujPedido = 0; return p; }
 int audioext_dopasuj_ativo(void) { return dopasujAtivo; }
-void audioext_dopasuj_resultado(int ok, int ms) {
+void audioext_dopasuj_resultado(int ok, const AudioExtDopasuj *r) {
+  AudioExtDopasuj z = { 0 };
+  if (!r) r = &z;
+  // A second look (como 5) arrives on its own, after the click's result.
+  if (!dopasujAtivo && !(ok && r->como == 5)) return;
   dopasujAtivo = 0; dopasujPedido = 0;
+  dopasujInfo = *r;
   if (ok && urlMarca[0]) {
-    if (ms > 10000) ms = 10000;
-    if (ms < -10000) ms = -10000;
+    int ms = r->ms;
+    if (ms > AUDIOEXT_OFFSET_MAX) ms = AUDIOEXT_OFFSET_MAX;
+    if (ms < -AUDIOEXT_OFFSET_MAX) ms = -AUDIOEXT_OFFSET_MAX;
     offsetMs = ms; offsetGeracao++;
+    // Another speed: the other version is opened again at it (the swap).
+    if (r->ppm != velocidadePpm) { velocidadePpm = r->ppm; pedidoGeracao++; }
     { char sr[64]; serieDe(alvoMarca, sr, sizeof sr);
-      if (memo.ativo && sr[0] && !strcmp(sr, memo.serie)) memo.offset = offsetMs; }
+      if (memo.ativo && sr[0] && !strcmp(sr, memo.serie)) { memo.offset = offsetMs; memo.velocidade = velocidadePpm; } }
   }
-  dopasujAviso = ok ? 1 : -1; dopasujMs = offsetMs;
+  dopasujInfo.ms = offsetMs;
+  dopasujAviso = ok ? 1 : -1;
 }
-int audioext_dopasuj_aviso_consumir(int *ms) { int a = dopasujAviso; dopasujAviso = 0; *ms = dopasujMs; return a; }
+int audioext_dopasuj_aviso_consumir(AudioExtDopasuj *out) {
+  int a = dopasujAviso;
+  dopasujAviso = 0;
+  *out = dopasujInfo;
+  return a;
+}
+int audioext_passo(int base, int repeticoes) {
+  if (repeticoes <= 0) return base;            // a tap: the step from Settings
+  if (repeticoes < 10) return base > 100 ? base : 100;
+  if (repeticoes < 25) return 1000;
+  return 10000;                                // held: 100 ms, 1 s, then 10 s
+}
+void audioext_formatar_offset(int ms, char *dst, unsigned tam, const char *fmtSeg, const char *fmtMin) {
+  char sinal = ms < 0 ? '-' : '+';
+  unsigned a = ms < 0 ? (unsigned)(-(long)ms) : (unsigned)ms;
+  if (a < 10000) snprintf(dst, tam, "%c%u ms", sinal, a);
+  else if (a < 60000) snprintf(dst, tam, fmtSeg, sinal, a / 1000, a % 1000);
+  else snprintf(dst, tam, fmtMin, sinal, a / 60000, a / 1000 % 60, a % 1000);
+}
+int audioext_velocidade(void) { return urlMarca[0] ? velocidadePpm : 0; }
+// The offset the two lengths suggest (another cut with its extra minutes at
+// the start), 0 when they are close: for the sync editor.
+int audioext_dica_ms(void) {
+  if (!urlMarca[0] || (avisoCorte <= 10 && avisoCorte >= -10)) return 0;
+  int ms = -avisoCorte * 1000;
+  return ms > AUDIOEXT_OFFSET_MAX ? AUDIOEXT_OFFSET_MAX : ms < -AUDIOEXT_OFFSET_MAX ? -AUDIOEXT_OFFSET_MAX : ms;
+}
 int audioext_carregando(void) { return carregando && urlMarca[0]; }
 void audioext_inicio_reproducao(const char *urlVideo) {
   if (!audioext_pedido(urlVideo)) return;
@@ -259,7 +301,7 @@ void audioext_lembrar_serie(const AudioExtIdent *id) {
   memset(&memo, 0, sizeof memo);
   snprintf(memo.serie, sizeof memo.serie, "%s", sr);
   snprintf(memo.episodio, sizeof memo.episodio, "%s", alvoMarca);
-  memo.id = *id; memo.offset = offsetMs; memo.ativo = 1;
+  memo.id = *id; memo.offset = offsetMs; memo.velocidade = velocidadePpm; memo.ativo = 1;
   printf("[ext-audio] series memory: group=%s addon=%.40s lang=%s %dp codec=%d\n", memo.id.grupo[0] ? memo.id.grupo : "-",
          memo.id.addon, memo.id.idioma, memo.id.altura, memo.id.codec);
   fflush(stdout);
@@ -281,7 +323,7 @@ void audioext_serie_achou(const char *url, const char *cabecalhos, const char *n
   snprintf(alvoMarca, sizeof alvoMarca, "%s", alvoAtual);
   snprintf(idiomaMarca, sizeof idiomaMarca, "%s", memo.id.idioma);
   snprintf(memo.episodio, sizeof memo.episodio, "%s", alvoAtual);
-  offsetMs = memo.offset; offsetGeracao++;
+  offsetMs = memo.offset; offsetGeracao++; velocidadePpm = memo.velocidade;
   faixaMarca = -1;
   pedidoGeracao++;
   printf("[ext-audio] series memory: this episode uses %.80s, offset %d ms\n", nomeMarca, offsetMs);

@@ -20,6 +20,13 @@ static void bursts(float *e, int n, int count, double amp, unsigned s) {
   }
 }
 
+/* Decaying hits at times list[] (seconds), sampled at t. */
+static double bed_at(double t, const double *list, const double *amp, int n) {
+  double v = 1e-4;
+  for (int i = 0; i < n; i++) { double d = t - list[i]; if (d >= 0 && d < 0.6) v += amp[i] * exp(-d / 0.12); }
+  return v;
+}
+
 int main(void) {
   enum { N = DTS_MATCH_MAX, SHIFT = 70 };   /* 0.70 s */
   static float bed[N + 400], m[N], d[N], other[N];
@@ -44,6 +51,65 @@ int main(void) {
   assert(!r.confident);
   /* Too little audio: no comparison at all. */
   assert(dts_match_offset(m, 500, 0, d, 500, 0, 0, 10, &r) == 0);
-  puts("dts_match: shared bed found at the right offset, unrelated audio refused");
+  /* A bed in continuous time, sampled on each file's own clock: for a PAL
+   * version (sped up 25/23.976) and for a far offset (another cut). */
+  {
+    enum { EV = 4000 };
+    static double at[EV], amp[EV], sp1[EV], sp2[EV];
+    static float mm[DTS_MATCH_MAX], dd[DTS_MATCH_MAX], wide[140 * DTS_MATCH_HZ];
+    seed = 7;
+    for (int i = 0; i < EV; i++) { at[i] = rnd() * 2000.0; amp[i] = 0.3 + rnd(); sp1[i] = rnd() * 2000.0; sp2[i] = rnd() * 2000.0; }
+    #define BED(t, list) bed_at((t), (list), amp, EV)
+    const double k = 25.0 / (24000.0 / 1001.0), o = 3.25, t0m = 1200.0;
+    for (int i = 0; i < DTS_MATCH_MAX; i++) {
+      double t = t0m + i * 0.01;
+      mm[i] = (float)(BED(t, at) + 0.6 * BED(t, sp1));
+    }
+    /* The other version's clock: d, with this file's time d * k + o. */
+    double t0d = (t0m - o) / k - 5.0;
+    for (int j = 0; j < DTS_MATCH_MAX; j++) {
+      double dt = t0d + j * 0.01;
+      dd[j] = (float)(BED(dt * k + o, at) + 0.6 * BED(dt, sp2));
+    }
+    DtsMatchSig sm = { { mm, NULL, NULL, NULL }, DTS_MATCH_MAX, t0m }, sd = { { dd, NULL, NULL, NULL }, DTS_MATCH_MAX, t0d };
+    assert(dts_match_search(&sm, &sd, k, 0.0, 10.0, &r) == 1);
+    printf("PAL version, ratio %.5f: offset %.3f s score %.2f margin %.2f confident %d\n", k, r.offset_s, r.score, r.margin, r.confident);
+    assert(r.confident && fabs(r.offset_s - o) < 0.03);
+    /* Taken at the same speed, the 4 % drift smears it over the window. */
+    double local = t0m + 15.0 - (t0m + 15.0 - o) / k;
+    assert(dts_match_search(&sm, &sd, 1.0, local, 10.0, &r) == 1);
+    printf("PAL version at ratio 1: score %.2f margin %.2f confident %d\n", r.score, r.margin, r.confident);
+    assert(!r.confident);
+    /* Another cut: the other version is 47.3 s later, found in +-60 s. */
+    const double far = -47.3;
+    for (int j = 0; j < 140 * DTS_MATCH_HZ; j++) {
+      double dt = t0m + 15.0 - far - 70.0 + j * 0.01;
+      wide[j] = (float)(BED(dt + far, at) + 0.6 * BED(dt, sp2));
+    }
+    DtsMatchSig sw = { { wide, NULL, NULL, NULL }, 140 * DTS_MATCH_HZ, t0m + 15.0 - far - 70.0 };
+    assert(dts_match_search(&sm, &sw, 1.0, 0.0, 60.0, &r) == 1);
+    printf("another cut, 47.3 s: offset %.3f s score %.2f margin %.2f confident %d\n", r.offset_s, r.score, r.margin, r.confident);
+    assert(r.confident && fabs(r.offset_s - far) < 0.03);
+    /* Unrelated audio over +-60 s: still refused. */
+    for (int j = 0; j < 140 * DTS_MATCH_HZ; j++) wide[j] = (float)BED(j * 0.01 + 500.0, sp2);
+    assert(dts_match_search(&sm, &sw, 1.0, 0.0, 60.0, &r) == 1);
+    printf("unrelated over +-60 s: score %.2f margin %.2f confident %d\n", r.score, r.margin, r.confident);
+    assert(!r.confident);
+  }
+  /* Band envelopes: a 100 Hz tone lands in the low band, not the high one. */
+  {
+    static float b0[400], b1[400], b2[400], b3[400], tone[48000];
+    float *env[DTS_MATCH_BANDS] = { b0, b1, b2, b3 };
+    DtsMatchEnv v;
+    for (int i = 0; i < 48000; i++) tone[i] = (float)sin(2 * M_PI * 100.0 * i / 48000.0);
+    dts_match_env_init(&v, 48000, env, 400);
+    dts_match_env_push(&v, tone, 48000);
+    assert(v.n == 100 && v.env[1] && v.env[3]);
+    printf("100 Hz tone: all %.3f low %.3f speech %.3f high %.5f\n", b0[50], b1[50], b2[50], b3[50]);
+    assert(b1[50] > 0.3 && b3[50] < 0.001 && b2[50] < 0.1);
+    dts_match_env_init(&v, 8000, env, 400);   /* 8 kHz: no high band */
+    assert(v.env[1] && v.env[2] && !v.env[3]);
+  }
+  puts("dts_match: shared bed found at the right offset, PAL speed and far cuts found, unrelated audio refused");
   return 0;
 }

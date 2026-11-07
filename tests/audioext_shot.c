@@ -148,8 +148,13 @@ int main(int argc, char **argv) {
   fonte(&lista[4], "WEB-DL PL uncached", "https://example.invalid/webdl-pl-unc.mkv", "pl", "DD+", "5.1", "WEB-DL", 1080, 5.4, -1);
   fonte(&lista[5], "WEB-DL CZ", "https://example.invalid/webdl-cz.mkv", "cs", "DD+", "5.1", "WEB-DL", 1080, 5.2, 1);
   fonte(&lista[6], "WEBRip DE", "https://example.invalid/webrip-de.mkv", "de", "AAC", "2.0", "WEBRip", 1080, 2.1, 0);
-  fonte(&lista[7], "BluRay PL DTS", "https://example.invalid/bd-pl-dts.mkv", "pl", "DTS-HD MA", "5.1", "BluRay", 1080, 14.0, 1);
+  fonte(&lista[7], "BluRay PL DTS Extended", "https://example.invalid/bd-pl-dts.mkv", "pl", "DTS-HD MA", "5.1", "BluRay", 1080, 14.0, 1);
   fonte(&lista[8], "WEB-DL ES", "https://example.invalid/webdl-es.mkv", "es", "DD+", "5.1", "WEB-DL", 1080, 4.8, 1);
+  /* Cut names: "Extended" is another cut than an unnamed (theatrical) one. */
+  assert(!strcmp(stream_edicao(&lista[7]), "Extended") && !stream_edicao(&lista[0]));
+  assert(stream_outro_corte(&lista[7], &lista[0]) && !stream_outro_corte(&lista[6], &lista[0]));
+  { Stream dc = lista[0]; snprintf(dc.rotulo, sizeof dc.rotulo, "Movie.2001.Directors.Cut.1080p");
+    assert(!strcmp(stream_edicao(&dc), "Director's Cut")); }
   stream_definir_alvo("tt0000001");
   stream_definir_lista(lista, 9);
   stream_definir_atual(0);
@@ -198,6 +203,27 @@ int main(int argc, char **argv) {
   assert(audioext_offset_ms() == 150);
   estado(); quadros(20);
   salvar("audio-other-version-playing-sync");
+  // 3b. OK: the precise editor (min : s : ms). Digits fill seconds then ms;
+  // the other version is 100 s longer, so the lengths suggest -100 s.
+  audioext_diferenca(100, 0);
+  tecla(SDLK_RETURN); estado(); quadros(20);
+  salvar("audio-sync-editor");
+  tecla(SDLK_1); tecla(SDLK_4); tecla(SDLK_0); tecla(SDLK_5); tecla(SDLK_0);
+  fprintf(stderr, "typed: %d ms\n", audioext_offset_ms());
+  assert(audioext_offset_ms() == 14050);
+  tecla(SDLK_LEFT); tecla(SDLK_LEFT); tecla(SDLK_UP);   /* minutes +1 */
+  assert(audioext_offset_ms() == 74050);
+  estado(); quadros(10);
+  salvar("audio-sync-editor-typed");
+  tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT);   /* -> Use the suggestion */
+  tecla(SDLK_RETURN);
+  assert(audioext_offset_ms() == -100000);
+  estado(); quadros(10);
+  salvar("audio-sync-editor-hint");
+  tecla(SDLK_LEFT); tecla(SDLK_RETURN);   /* Reset */
+  assert(audioext_offset_ms() == 0);
+  tecla(SDLK_ESCAPE); assert(faixas_aberta());   /* Back closes the editor only */
+  estado(); quadros(10);
   tecla(SDLK_DOWN); estado(); quadros(10);
   salvar("audio-other-version-match");
   tecla(SDLK_DOWN); estado(); quadros(10);

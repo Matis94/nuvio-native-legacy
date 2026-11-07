@@ -3950,9 +3950,9 @@ void stream_audioext_entrada(const Stream *s, AudioExtEntrada *e) {
   if (!s) return;
   e->temUrl = s->url[0] != 0 && !s->notWebReady;
   e->hls = s->tsContinuo || strstr(s->url, ".m3u8") != NULL;
-  // The converter opens MKV, WebM and MP4 only: a file name that says AVI, TS
-  // or WMV is left out instead of failing after the choice.
-  { static const char *const fora[] = { ".avi", ".ts", ".m2ts", ".wmv", ".flv", ".mpg", ".vob" };
+  // The converter opens MKV, WebM, MP4, AVI and TS: a file name that says WMV,
+  // FLV, MPG or VOB is left out instead of failing after the choice.
+  { static const char *const fora[] = { ".wmv", ".flv", ".mpg", ".vob" };
     const char *nome = s->arquivo[0] ? s->arquivo : s->url;
     size_t ln = strlen(nome);
     for (size_t k = 0; k < sizeof fora / sizeof *fora; k++) {
@@ -3999,6 +3999,42 @@ void stream_audioext_entrada(const Stream *s, AudioExtEntrada *e) {
   e->bytes = s->tamanhoBytes ? s->tamanhoBytes : s->tamanhoMB > 0 ? (uint64_t)s->tamanhoMB * 1000000u : 0;
 }
 // The release label of this source for the audio menu ("WEB-DL 1080p").
+// THE CUT OF A VERSION, from its name (owner, 07/11: an Extended picture
+// with Theatrical audio cannot be matched). Words joined by space, dot,
+// underscore or dash ("Directors.Cut").
+static int temFrase(const Stream *s, const char *a, const char *b) {
+  static const char sep[] = " ._-";
+  char f[48];
+  if (!b) return temNoTexto(s, a);
+  for (int i = 0; sep[i]; i++) {
+    snprintf(f, sizeof f, "%s%c%s", a, sep[i], b);
+    if (temNoTexto(s, f)) return 1;
+  }
+  return 0;
+}
+static const struct { const char *a, *b, *nome; int corte; } EDICOES[] = {
+  { "extended", NULL, "Extended", 1 }, { "theatrical", NULL, "Theatrical", 1 },
+  { "director's", "cut", "Director's Cut", 1 }, { "directors", "cut", "Director's Cut", 1 },
+  { "director", "cut", "Director's Cut", 1 }, { "final", "cut", "Final Cut", 1 },
+  { "ultimate", "cut", "Ultimate Cut", 1 }, { "unrated", NULL, "Unrated", 1 }, { "uncut", NULL, "Uncut", 1 },
+  { "imax", NULL, "IMAX", 0 }, { "remastered", NULL, "Remastered", 0 },
+};
+static int edicaoDe(const Stream *s) {
+  if (!s) return -1;
+  for (int i = 0; i < (int)(sizeof EDICOES / sizeof *EDICOES); i++)
+    if (temFrase(s, EDICOES[i].a, EDICOES[i].b)) return i;
+  return -1;
+}
+const char *stream_edicao(const Stream *s) { int i = edicaoDe(s); return i >= 0 ? EDICOES[i].nome : NULL; }
+// 1 when the two are likely different cuts: a cut name on one side that the
+// other does not share (no name at all reads as the theatrical cut).
+int stream_outro_corte(const Stream *a, const Stream *b) {
+  int ea = edicaoDe(a), eb = edicaoDe(b);
+  if (!a || !b) return 0;
+  const char *na = ea >= 0 && EDICOES[ea].corte ? EDICOES[ea].nome : "Theatrical";
+  const char *nb = eb >= 0 && EDICOES[eb].corte ? EDICOES[eb].nome : "Theatrical";
+  return strcmp(na, nb) != 0;
+}
 void stream_audioext_versao(const Stream *s, char *out, unsigned tam) {
   const char *q = "";
   if (!out || !tam) return;
@@ -4011,6 +4047,9 @@ void stream_audioext_versao(const Stream *s, char *out, unsigned tam) {
   if (q[0] && s->altura > 0) snprintf(out, tam, "%s %dp", q, s->altura);
   else if (q[0]) snprintf(out, tam, "%s", q);
   else if (s->altura > 0) snprintf(out, tam, "%dp", s->altura);
+  { const char *ed = stream_edicao(s);
+    size_t n = strlen(out);
+    if (ed && n + 4 < tam) snprintf(out + n, tam - n, "%s%s", n ? " \xc2\xb7 " : "", ed); }
 }
 static int audioDeclaradoEm(const Stream *s,const char *pref) {
   return audioListaEm(s->audioIdiomas,sizeof s->audioIdiomas,pref);
@@ -5203,6 +5242,7 @@ int stream_partes_escolheu(int *fonte, PartesLista *l, int *k) {
 // files list exactly as before.
 enum { FM_AUDIO = 0, FM_FAIXAS, FM_ARQUIVOS };
 static int fmAberto, fmN, fmFoco, fmAcoes[3], fmMarcada;   // labels frozen at open (they fade out unchanged)
+static int fmIndice = -1;   // the source the menu is for
 // "Choose audio track…": the version's header is read on a thread
 // (audioext_sondar); its tracks become the menu's rows.
 static int fmModoFaixas, fmSondaN = -2;
@@ -5270,6 +5310,7 @@ static void fonteMenuAbrir(int i) {
   fmAberto = 1; fmFoco = 0; fmN = 0; fmAnim = 0;
   snprintf(fmUrl, sizeof fmUrl, "%s", lista[i].url);
   fmMarcada = audioext_marcada(lista[i].url);
+  fmIndice = i;
   fmModoFaixas = 0; fmSondaN = -2;
   fmAcoes[fmN++] = FM_AUDIO;
   if (audioext_sonda_disponivel()) fmAcoes[fmN++] = FM_FAIXAS;
@@ -5366,6 +5407,18 @@ static const char *fonteMenuRotulo(int r, const char **icone) {
   if (fmAcoes[r] == FM_ARQUIVOS) { *icone = "aj_folders"; return "Files of this version"; }
   if (fmMarcada) { *icone = "pl_eye-off"; return "Stop using as audio"; }
   *icone = "pl_audio-lines";
+  // Another cut than the source playing: said before it is picked.
+  { const Stream *v = fmIndice >= 0 && fmIndice < n ? &lista[fmIndice] : NULL;
+    const Stream *at = atual >= 0 && atual < n ? &lista[atual] : NULL;
+    static char rot[160];
+    if (v && at && v != at && stream_outro_corte(v, at)) {
+      const char *ed = stream_edicao(v);
+      char c[96];
+      snprintf(c, sizeof c, i18n("%s: another cut"), ed ? ed : i18n("Theatrical"));
+      snprintf(rot, sizeof rot, "%s \xc2\xb7 %s", i18n("Use as audio"), c);
+      *icone = "aj_triangle-alert";
+      return rot;
+    } }
   return "Use as audio";
 }
 static int fonteMenuEvento(const SDL_Event *e) {

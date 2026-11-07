@@ -90,5 +90,67 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=64x64:rate=25:durati
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a ac3 -shortest "$TMP/match_main.mkv"
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=64x64:rate=25:duration=45' -i "$TMP/d.wav" \
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a eac3 -metadata:s:a:0 language=pol -shortest "$TMP/match_dub.mkv"
+# AVI and MPEG-TS: an H.264 AVI picture source (as a DivX-era release with an
+# H.264 stream), an AVI version with MP3 audio, a TS version with AC-3, and an
+# old MPEG-4 Part 2 (XviD) AVI.
+ffmpeg -hide_banner -loglevel error \
+  -f lavfi -i 'color=size=64x64:rate=25:duration=4' \
+  -f lavfi -i 'sine=frequency=300:sample_rate=48000:duration=4' \
+  -map 0:v -map 1:a -c:v libx264 -bf 2 -g 25 -c:a ac3 "$TMP/main.avi"
+ffmpeg -hide_banner -loglevel error \
+  -f lavfi -i 'color=c=red:size=64x64:rate=25:duration=4' \
+  -f lavfi -i 'sine=frequency=500:sample_rate=48000:duration=4' \
+  -map 0:v -map 1:a -c:v mpeg4 -g 25 -c:a libmp3lame -ac 2 "$TMP/other.avi"
+ffmpeg -hide_banner -loglevel error \
+  -f lavfi -i 'color=c=red:size=64x64:rate=25:duration=4' \
+  -f lavfi -i 'sine=frequency=500:sample_rate=48000:duration=4' \
+  -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a ac3 -metadata:s:a:0 language=pol "$TMP/other.ts"
+ffmpeg -hide_banner -loglevel error \
+  -f lavfi -i 'color=size=64x64:rate=25:duration=4' \
+  -f lavfi -i 'sine=frequency=300:sample_rate=48000:duration=4' \
+  -map 0:v -map 1:a -c:v mpeg4 -g 25 -c:a ac3 "$TMP/xvid.avi"
+# An 11-minute "film" (1 fps picture): the version a placeholder clip stands for.
+ffmpeg -hide_banner -loglevel error \
+  -f lavfi -i 'color=size=16x16:rate=1:duration=660' \
+  -f lavfi -i 'sine=frequency=300:sample_rate=48000:duration=660' \
+  -map 0:v -map 1:a -c:v libx264 -g 10 -c:a ac3 -b:a 64k -metadata:s:a:0 language=pol "$TMP/film.mkv"
+# Another cut and a PAL version of a 120 s film (8 kHz beds, AC-3 at 48 kHz):
+# the cut's bed starts 40 s later; the PAL one runs 25/23.976 faster.
+python3 - "$TMP" <<'PY'
+import array, random, sys, wave
+R = 8000
+def bursts(seed, seconds, count, amp):
+    rnd = random.Random(seed); ev = []
+    for _ in range(count):
+        ev.append((rnd.random() * seconds, amp * (0.3 + rnd.random()), rnd.uniform(0.05, 0.25), rnd.random()))
+    return ev
+def render(path, seconds, layers):
+    n = int(seconds * R); x = [0.0] * n
+    for ev, warp in layers:
+        for at, a, ln, ph in ev:
+            t0 = warp(at)
+            if t0 is None or t0 < 0 or t0 >= seconds: continue
+            i0 = int(t0 * R); m = int(ln * R)
+            rnd = random.Random(int(ph * 1e9))
+            for i in range(i0, min(n, i0 + m)):
+                x[i] += a * (rnd.random() * 2 - 1) * (1 - (i - i0) / m)
+    a = array.array('h', (max(-32767, min(32767, int(v * 9000))) for v in x))
+    with wave.open(path, 'wb') as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(R); w.writeframes(a.tobytes())
+K = 25 / (24000 / 1001)
+bed = bursts(11, 200, 1400, 1.0)
+render(sys.argv[1] + '/c_main.wav', 120, [(bed, lambda t: t), (bursts(12, 120, 500, 0.5), lambda t: t)])
+render(sys.argv[1] + '/c_dub.wav', 160, [(bed, lambda t: t + 40), (bursts(13, 160, 650, 0.5), lambda t: t),
+                                         (bursts(14, 40, 160, 1.0), lambda t: t)])
+render(sys.argv[1] + '/c_pal.wav', 120 / K, [(bed, lambda t: t / K), (bursts(15, 120, 500, 0.5), lambda t: t)])
+PY
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=32x32:rate=24000/1001:duration=120' -i "$TMP/c_main.wav" \
+  -map 0:v -map 1:a -c:v libx264 -bf 0 -g 24 -c:a ac3 -ar 48000 -b:a 96k -shortest "$TMP/cut_main.mkv"
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=32x32:rate=24000/1001:duration=160' -i "$TMP/c_dub.wav" \
+  -map 0:v -map 1:a -c:v libx264 -bf 0 -g 24 -c:a eac3 -ar 48000 -b:a 96k -metadata:s:a:0 language=pol -shortest "$TMP/cut_dub.mkv"
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=blue:size=32x32:rate=25:duration=116' -i "$TMP/c_pal.wav" \
+  -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a ac3 -ar 48000 -b:a 96k -metadata:s:a:0 language=pol -shortest "$TMP/pal_dub.mkv"
 "$TMP/ext" "$TMP/main.mkv" "$TMP/other.mkv" "$TMP/dts.mkv" "$TMP/short.mkv" "$TMP/other.mp4" "$TMP/aac44.mkv" \
-  "$TMP/main60.mkv" "$TMP/long.mkv" "$TMP/long_nocues.mkv" "$TMP/match_main.mkv" "$TMP/match_dub.mkv"
+  "$TMP/main60.mkv" "$TMP/long.mkv" "$TMP/long_nocues.mkv" "$TMP/match_main.mkv" "$TMP/match_dub.mkv" \
+  "$TMP/main.avi" "$TMP/other.avi" "$TMP/other.ts" "$TMP/xvid.avi" "$TMP/film.mkv" \
+  "$TMP/cut_main.mkv" "$TMP/cut_dub.mkv" "$TMP/pal_dub.mkv"

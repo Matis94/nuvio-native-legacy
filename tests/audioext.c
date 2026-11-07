@@ -128,6 +128,52 @@ int main(void) {
     assert(audioext_faixa() == 3 && audioext_pedido_geracao() == g);
     audioext_inicio_reproducao("https://e/main.mkv");
     assert(audioext_tem_marca() && !audioext_voltou_padrao_consumir()); }
-  puts("audioext: marks, menu requests, offsets and series memory passed");
+  // "Match automatically" (test 5): +-10 min offsets, the speed that goes with
+  // a find, the lengths' hint, and a second look arriving on its own.
+  {
+    AudioExtDopasuj r = { 0 }, got;
+    char v[48];
+    audioext_alvo("tt9");
+    audioext_escolher("https://a/cut.mkv", "", "Extended", "pl");
+    assert(audioext_offset_definir(700000) == AUDIOEXT_OFFSET_MAX);
+    assert(audioext_offset_somar(-1300000) == -AUDIOEXT_OFFSET_MAX);
+    audioext_offset_definir(0);
+    audioext_diferenca(100, 0);
+    assert(audioext_dica_ms() == -100000);
+    audioext_diferenca(-4, 0);
+    assert(audioext_dica_ms() == 0);
+    audioext_tocando_definir(1);
+    audioext_dopasuj_pedir();
+    assert(audioext_dopasuj_ativo() && audioext_dopasuj_pedido_consumir());
+    unsigned g = audioext_pedido_geracao();
+    r.ms = -40000; r.como = 2;
+    audioext_dopasuj_resultado(1, &r);
+    assert(!audioext_dopasuj_ativo() && audioext_offset_ms() == -40000 && audioext_velocidade() == 0);
+    assert(audioext_pedido_geracao() == g);            // same speed: applied live, no swap
+    assert(audioext_dopasuj_aviso_consumir(&got) == 1 && got.ms == -40000 && got.como == 2);
+    // The second look: another speed, the other version is reopened at it.
+    r.ms = -39500; r.ppm = 250; r.como = 5;
+    audioext_dopasuj_resultado(1, &r);
+    assert(audioext_velocidade() == 250 && audioext_offset_ms() == -39500 && audioext_pedido_geracao() == g + 1);
+    // A late not-asked result (not a second look) is ignored.
+    r.como = 3; r.ms = 1;
+    audioext_dopasuj_resultado(1, &r);
+    assert(audioext_offset_ms() == -39500);
+    // Not found, with the lengths' hint, for the toast.
+    audioext_dopasuj_pedir();
+    AudioExtDopasuj f = { 0, 0, 0, -100000, 0 };
+    audioext_dopasuj_resultado(0, &f);
+    assert(audioext_dopasuj_aviso_consumir(&got) == -1 && got.dica_ms == -100000 && audioext_offset_ms() == -39500);
+    // Held keys: 100 ms, 1 s, 10 s.
+    assert(audioext_passo(50, 0) == 50 && audioext_passo(50, 3) == 100 && audioext_passo(50, 12) == 1000 && audioext_passo(50, 40) == 10000);
+    audioext_formatar_offset(690, v, sizeof v, "%c%u.%03u s", "%c%u min %u.%03u s"); assert(!strcmp(v, "+690 ms"));
+    audioext_formatar_offset(-40250, v, sizeof v, "%c%u.%03u s", "%c%u min %u.%03u s"); assert(!strcmp(v, "-40.250 s"));
+    audioext_formatar_offset(100005, v, sizeof v, "%c%u,%03u s", "%c%u min %u,%03u s"); assert(!strcmp(v, "+1 min 40,005 s"));
+    // A new mark starts at the same speed again.
+    audioext_escolher("https://a/other.mkv", "", "Other", "pl");
+    assert(audioext_velocidade() == 0 && audioext_offset_ms() == 0);
+    audioext_limpar();
+  }
+  puts("audioext: marks, menu requests, offsets, series memory and matching passed");
   return 0;
 }

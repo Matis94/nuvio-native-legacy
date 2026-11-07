@@ -102,7 +102,9 @@ static int ext_track=-2;
 void dts_engine_external_track(DtsEngine *e,int t) { (void)e;pthread_mutex_lock(&fixture);ext_track=t;pthread_mutex_unlock(&fixture); }
 void dts_engine_external_mismatch(DtsEngine *e,int *c,int *s) { (void)e; *c=26; *s=0; }
 int dts_engine_external_match_arm(DtsEngine *e) { (void)e; return 0; }
-int dts_engine_external_match_poll(DtsEngine *e,int *o,int *c) { (void)e; *o=0; *c=0; return 0; }
+int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) { (void)e; memset(o,0,sizeof *o); return 0; }
+static int ext_speed_set;
+void dts_engine_external_speed(DtsEngine *e,int p) { (void)e; pthread_mutex_lock(&fixture); ext_speed_set=p; pthread_mutex_unlock(&fixture); }
 static int ext_shifts, ext_shift_fail;
 int dts_engine_external_shift(DtsEngine *e,int o) { (void)e; pthread_mutex_lock(&fixture); ext_shifts++; ext_offset=o; int f=ext_shift_fail; pthread_mutex_unlock(&fixture); return f?-1:0; }
 static int ext_replaces, ext_replace_track;static double ext_replace_target;static char ext_replace_url[64];
@@ -420,8 +422,9 @@ int main(int argc,char **argv) {
   dts_playback_next_external_audio("fixture://other","X-Other: 1","pl,en",120);
   dts_playback_next_external_audio_only(1);
   dts_playback_next_external_track(3);
+  dts_playback_next_external_speed(42708);
   p=start(0,-1,&track,7,9);s=wait_status(p,0,0);
-  pthread_mutex_lock(&fixture);assert(ext_only==1 && ext_track==3);pthread_mutex_unlock(&fixture);
+  pthread_mutex_lock(&fixture);assert(ext_only==1 && ext_track==3 && ext_speed_set==42708);pthread_mutex_unlock(&fixture);
   assert(dts_playback_external(p));
   assert(!s.failed && s.info.audio_stream==DTS_ENGINE_EXTERNAL_STREAM && !strcmp(s.info.audio_codec,"eac3"));
   pthread_mutex_lock(&fixture);
@@ -440,11 +443,13 @@ int main(int argc,char **argv) {
   // Another version picked while this one plays: swapped in the engine, the
   // main source is not opened again, the TV gets a new Load (revision).
   { int rev=s.revision;
+    dts_playback_external_speed(p,-250);   // a match's speed goes with the swap
     assert(dts_playback_external_swap(p,"fixture://third","","pl",0,2,0,7.5));
     for(int i=0;i<400 && count(&ext_replaces)==0;i++) nap();
     for(int i=0;i<400;i++){ s=wait_status(p,0,0); if(s.revision!=rev) break; nap(); }
     pthread_mutex_lock(&fixture);
     assert(ext_replaces==1 && ext_replace_track==2 && ext_replace_target==7.5 && !strcmp(ext_replace_url,"fixture://third"));
+    assert(ext_speed_set==-250);
     pthread_mutex_unlock(&fixture);
     assert(!s.failed && s.revision!=rev && count(&opens)==1); }
   // Live offset: the other file moves, no seek of this source.

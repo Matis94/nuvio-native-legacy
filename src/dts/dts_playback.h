@@ -52,11 +52,16 @@ void dts_playback_external_offset(DtsPlayback *p, int offset_ms);
 /* Main thread: a new offset applied at once without a seek or reload (only the
  * other file moves); falls back to a seek if that fails. */
 void dts_playback_external_offset_live(DtsPlayback *p, int offset_ms);
-/* Main thread: "Match automatically" (about 30 s of playback). The result,
- * once: 0 still working, 1 found (offset in ms, the app's sign), -1 not trusted
- * or failed. */
+/* Main thread: "Match automatically" (about 30 s of playback, longer when it
+ * searches further). The result, once: 0 still working, 1 found, -1 not
+ * trusted or failed (details in DtsMatchInfo, dts_engine.h). A find can also
+ * come later on its own: the second look (how 5) measured another speed. */
 void dts_playback_external_match(DtsPlayback *p);
-int dts_playback_external_match_result(DtsPlayback *p, int *offset_ms, int *score);
+int dts_playback_external_match_result(DtsPlayback *p, DtsMatchInfo *out);
+/* Main thread: the other version's speed for the next swap (a match's
+ * ratio_ppm; 0 the same speed). And before a start, consumed by it. */
+void dts_playback_external_speed(DtsPlayback *p, int ratio_ppm);
+void dts_playback_next_external_speed(int ratio_ppm);
 /* Before start, with the call above: fetch only the audio of that file where
  * it allows it (dts_engine_external_audio_only). Consumed by start. */
 void dts_playback_next_external_audio_only(int on);

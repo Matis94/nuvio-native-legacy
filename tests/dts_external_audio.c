@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <unistd.h>
 
 static const char *HEADERS = "X-Fixture: yes";
 static unsigned streams_opened;
@@ -166,10 +167,12 @@ static Run play(DtsEngine *e, int64_t offset_ns, int limit) {
 }
 
 int main(int argc, char **argv) {
-  assert(argc == 12);
+  assert(argc == 20);
   const char *main_file = argv[1], *other = argv[2], *dts_only = argv[3], *short_clip = argv[4], *mp4 = argv[5];
   const char *aac44 = argv[6], *main60 = argv[7], *long_idx = argv[8], *long_noidx = argv[9];
   const char *match_main = argv[10], *match_dub = argv[11];
+  const char *main_avi = argv[12], *other_avi = argv[13], *other_ts = argv[14], *main_xvid = argv[15], *film = argv[16];
+  const char *cut_main = argv[17], *cut_dub = argv[18], *pal_dub = argv[19];
   dts_engine_set_lang_match(lang_match);
   load_refs(other, "pol");
 
@@ -414,17 +417,104 @@ int main(int argc, char **argv) {
   e = dts_engine_create();
   dts_engine_external_audio(e, match_dub, HEADERS, "pl", 0);
   if (dts_engine_open(e, match_main, HEADERS, -1, 0, 0) < 0) { fprintf(stderr, "open: %s\n", dts_engine_error(e)); return 1; }
-  { int mo = 0, ms = 0;
-    assert(dts_engine_external_match_poll(e, &mo, &ms) == 0);
+  { DtsMatchInfo mi;
+    assert(dts_engine_external_match_poll(e, &mi) == 0);
     assert(dts_engine_external_match_arm(e) == 0);
     checkBytes = 0;
     r = play(e, 0, 0);
     checkBytes = 1;
-    int res = dts_engine_external_match_poll(e, &mo, &ms);
-    fprintf(stderr, "match: result %d offset %d ms score %d\n", res, mo, ms);
-    assert(res == 1 && mo > -740 && mo < -660);
-    assert(dts_engine_external_match_poll(e, &mo, &ms) == 0);   /* reported once */ }
+    int res = dts_engine_external_match_poll(e, &mi);
+    fprintf(stderr, "match: result %d offset %d ms score %d how %d\n", res, mi.offset_ms, mi.score, mi.how);
+    assert(res == 1 && mi.offset_ms > -740 && mi.offset_ms < -660 && mi.how == 1 && mi.ratio_ppm == 0);
+    assert(dts_engine_external_match_poll(e, &mi) == 0);   /* reported once */ }
   dts_engine_destroy(e);
+  /* AVI and MPEG-TS (owner's log 07/11: a 4.3 GB AVI picture source; small
+   * AVI/TS versions with other audio). The picture from an H.264 AVI, the
+   * audio from an AVI (MP3) and a TS (AC-3) version; seek in both. */
+  checkBytes = 0;
+  const char *donors[] = { other_avi, other_ts };
+  for (int d = 0; d < 2; d++) {
+    e = dts_engine_create();
+    dts_engine_external_audio(e, donors[d], HEADERS, "pl", 0);
+    if (dts_engine_open(e, d ? main_file : main_avi, HEADERS, -1, 0, 0) < 0) {
+      fprintf(stderr, "open %s: %s\n", d ? "ts" : "avi", dts_engine_error(e)); return 1;
+    }
+    r = play(e, 0, 0);
+    assert(r.video == 100 && r.audio > 50);
+    assert(r.first_audio >= 0 && r.first_audio < 200000000LL && r.last_audio > 3700000000LL);
+    assert(dts_engine_seek(e, 2.0) == 0);
+    r = play(e, 0, 0);
+    assert(r.audio > 20 && r.first_audio >= 1900000000LL && r.first_audio < 2200000000LL);
+    printf("%s: picture %s, audio %s, seek 2.0 s first audio at %.3f s\n", d ? "TS donor" : "AVI main + AVI donor",
+           d ? "MKV" : "AVI", dts_engine_info(e)->audio_codec, r.first_audio / 1e9);
+    dts_engine_destroy(e);
+  }
+  /* An old XviD picture: a clear refusal, not "codec unsupported". */
+  e = dts_engine_create();
+  dts_engine_external_audio(e, other, HEADERS, "pl", 0);
+  assert(dts_engine_open(e, main_xvid, HEADERS, -1, 0, 0) < 0);
+  assert(strstr(dts_engine_error(e), "XviD"));
+  dts_engine_destroy(e);
+  /* A placeholder clip as the picture source, a full version for the audio. */
+  e = dts_engine_create();
+  dts_engine_external_audio(e, film, HEADERS, "pl", 0);
+  assert(dts_engine_open(e, short_clip, HEADERS, -1, 0, 0) < 0);
+  assert(strstr(dts_engine_error(e), "placeholder"));
+  dts_engine_destroy(e);
+  checkBytes = 1;
+  /* Another cut: the other version has 40 s more at the start. Not near
+   * the current offset: a reader of its own tries what the lengths say. */
+  checkBytes = 0;
+  e = dts_engine_create();
+  dts_engine_external_audio(e, cut_dub, HEADERS, "pl", 0);
+  if (dts_engine_open(e, cut_main, HEADERS, -1, 0, 0) < 0) { fprintf(stderr, "open: %s\n", dts_engine_error(e)); return 1; }
+  { DtsMatchInfo mi; int res = 0;
+    assert(dts_engine_external_match_arm(e) == 0);
+    r = play(e, 0, 0);
+    for (int i = 0; i < 600 && !(res = dts_engine_external_match_poll(e, &mi)); i++) usleep(50000);
+    fprintf(stderr, "another cut: result %d offset %d ms how %d score %d\n", res, mi.offset_ms, mi.how, mi.score);
+    assert(res == 1 && mi.how == 2 && mi.offset_ms > -40080 && mi.offset_ms < -39920 && mi.ratio_ppm == 0); }
+  dts_engine_destroy(e);
+  /* Interrupted: the session closes while the reader works. */
+  e = dts_engine_create();
+  dts_engine_external_audio(e, cut_dub, HEADERS, "pl", 0);
+  assert(dts_engine_open(e, cut_main, HEADERS, -1, 0, 0) == 0);
+  assert(dts_engine_external_match_arm(e) == 0);
+  r = play(e, 0, 0);
+  dts_engine_destroy(e);
+  /* A PAL version (25 fps, sped up 25/23.976): found at the frame rates'
+   * ratio, then played at that speed (decoded, stretched, re-encoded). */
+  e = dts_engine_create();
+  dts_engine_external_audio(e, pal_dub, HEADERS, "pl", 0);
+  assert(dts_engine_open(e, cut_main, HEADERS, -1, 0, 0) == 0);
+  { DtsMatchInfo mi; int res = 0;
+    assert(dts_engine_external_match_arm(e) == 0);
+    r = play(e, 0, 0);
+    for (int i = 0; i < 100 && !(res = dts_engine_external_match_poll(e, &mi)); i++) usleep(50000);
+    fprintf(stderr, "PAL version: result %d offset %d ms ratio %d ppm how %d score %d\n", res, mi.offset_ms, mi.ratio_ppm, mi.how, mi.score);
+    assert(res == 1 && mi.how == 1 && abs(mi.ratio_ppm - 42708) < 30 && abs(mi.offset_ms) < 60);
+    dts_engine_destroy(e);
+    e = dts_engine_create();
+    dts_engine_external_audio(e, pal_dub, HEADERS, "pl", mi.offset_ms);
+    dts_engine_external_speed(e, mi.ratio_ppm);
+    assert(dts_engine_open(e, cut_main, HEADERS, -1, 0, 0) == 0);
+    assert(!strcmp(dts_engine_info(e)->audio_codec, "aac"));
+    r = play(e, 0, 0);
+    fprintf(stderr, "PAL at speed: first audio %.3f s last %.3f s\n", r.first_audio / 1e9, r.last_audio / 1e9);
+    assert(r.first_audio < 150000000LL && r.last_audio > 119000000000LL && r.last_audio < 121000000000LL);
+    assert(dts_engine_seek(e, 60.0) == 0);
+    r = play(e, 0, 200);
+    assert(r.first_audio > 59800000000LL && r.first_audio < 60300000000LL);
+    /* and matched again at that speed: the same audio, offset ~0 */
+    assert(dts_engine_seek(e, 20.0) == 0);
+    assert(dts_engine_external_match_arm(e) == 0);
+    r = play(e, 0, 0);
+    res = 0;
+    for (int i = 0; i < 100 && !(res = dts_engine_external_match_poll(e, &mi)); i++) usleep(50000);
+    fprintf(stderr, "PAL at speed, matched again: result %d offset %d ms ratio %d\n", res, mi.offset_ms, mi.ratio_ppm);
+    assert(res == 1 && abs(mi.offset_ms) < 60 && abs(mi.ratio_ppm - 42708) < 30); }
+  dts_engine_destroy(e);
+  checkBytes = 1;
   printf("External audio engine checks passed.\n");
   return 0;
 }

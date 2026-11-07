@@ -476,6 +476,11 @@ static int linhaDaLeg(int i);
 // where the backend has the gain (cacheboost_suportado: Android); elsewhere
 // it is drawn dimmed with "Não disponível nesta TV".
 static int volFoco;
+// THE PRECISE SYNC EDITOR (owner, 07/11: "set it exactly"): OK on the Audio
+// sync row of another version replaces the list with min : s : ms fields
+// (LEFT/RIGHT pick, UP/DOWN change, digits type) and three buttons. Live.
+enum { SED_SINAL, SED_MIN, SED_SEG, SED_MS, SED_ZERAR, SED_DICA, SED_AQUI, SED_N };
+static int sincEd, sincFoco = SED_SEG, sincDig, sincDigN, sincRep;
 static int volFocavel(void) { return cacheboost_suportado(); }
 
 // #202: SPEED ROW right below the volume, same anatomy and gesture (LEFT/RIGHT
@@ -504,7 +509,7 @@ void faixas_abrir_em(int col) {
   modo = (col == 1) ? 1 : 0;
   coluna = modo;                 // audio -> col 0; legenda -> col 1
   ctl = -1;
-  volFoco = 0; velFoco = 0;
+  volFoco = 0; velFoco = 0; sincEd = 0;
   foco[0] = video_audio_atual();
   if (!modo) extMontar(1);
   // A legenda pode estar desligada (-1); a primeira linha da coluna e sempre
@@ -1328,6 +1333,68 @@ static int estiloTecla(SDL_Keycode k, int rep) {
   return 1;
 }
 
+static void sincPartes(int ms, int *neg, int *mi, int *se, int *mss) {
+  unsigned a = ms < 0 ? (unsigned)(-(long)ms) : (unsigned)ms;
+  *neg = ms < 0; *mi = (int)(a / 60000); *se = (int)(a / 1000 % 60); *mss = (int)(a % 1000);
+}
+static void sincDefinir(int neg, int mi, int se, int mss) {
+  long a = (long)mi * 60000 + se * 1000L + mss;
+  if (a > AUDIOEXT_OFFSET_MAX) a = AUDIOEXT_OFFSET_MAX;
+  audioext_offset_definir((int)(neg ? -a : a));
+}
+static int sincFocavel(int f) { return f != SED_DICA || audioext_dica_ms() != 0; }
+static void sincTecla(SDL_Keycode k, int repeat) {
+  int neg, mi, se, mss, d = -1;
+  sincPartes(audioext_offset_ms(), &neg, &mi, &se, &mss);
+  if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE) { sincEd = 0; return; }
+  if (k == SDLK_LEFT || k == SDLK_RIGHT) {
+    int f = sincFoco, step = k == SDLK_RIGHT ? 1 : -1;
+    do { f += step; } while (f >= 0 && f < SED_N && !sincFocavel(f));
+    if (f >= 0 && f < SED_N) sincFoco = f;
+    sincDigN = 0; return;
+  }
+  if (k == SDLK_UP || k == SDLK_DOWN) {
+    int up = k == SDLK_UP;
+    sincRep = repeat ? sincRep + 1 : 0;
+    sincDigN = 0;
+    if (sincFoco == SED_SINAL) { if (neg == up) sincDefinir(!neg, mi, se, mss); return; }
+    if (sincFoco > SED_MS) return;
+    // UP = later (+), DOWN = earlier (-), through zero; held, 10 units a step.
+    int unit = sincFoco == SED_MIN ? 60000 : sincFoco == SED_SEG ? 1000 : 10;
+    if (sincRep >= 10) unit *= 10;
+    audioext_offset_somar(up ? unit : -unit);
+    return;
+  }
+  if (k >= SDLK_0 && k <= SDLK_9) d = (int)(k - SDLK_0);
+  else if (k >= SDLK_KP_1 && k <= SDLK_KP_9) d = (int)(k - SDLK_KP_1) + 1;
+  else if (k == SDLK_KP_0) d = 0;
+  if (d >= 0) {
+    // Digits fill the focused field, then move on (min -> s -> ms).
+    if (sincFoco == SED_SINAL || sincFoco > SED_MS) { sincFoco = SED_MIN; sincDigN = 0; }
+    int max = sincFoco == SED_MS ? 3 : 2;
+    sincDig = sincDigN ? sincDig * 10 + d : d;
+    sincDigN++;
+    if (sincFoco == SED_MIN) mi = sincDig > 10 ? 10 : sincDig;
+    else if (sincFoco == SED_SEG) se = sincDig > 59 ? 59 : sincDig;
+    else mss = sincDig;
+    sincDefinir(neg, mi, se, mss);
+    if (sincDigN >= max && sincFoco < SED_MS) { sincFoco++; sincDigN = 0; }
+    return;
+  }
+  if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+    if (sincFoco == SED_ZERAR) audioext_offset_definir(0);
+    else if (sincFoco == SED_DICA) audioext_offset_definir(audioext_dica_ms());
+    else if (sincFoco == SED_AQUI) {
+      if (!audioext_dopasuj_ativo()) {
+        audioext_dopasuj_pedir();
+        player_toast(i18n("Matching the audio automatically… (about 30 s)"), 4000);
+      }
+      sincEd = 0; aberta = 0;
+    } else sincEd = 0;
+    return;
+  }
+}
+
 void faixas_evento(const SDL_Event *e) {
 #ifdef NV_TOUCH_UI
   if (telefoneui_ativo() && toquerol_navegacao(e)) {
@@ -1349,6 +1416,7 @@ void faixas_evento(const SDL_Event *e) {
   k = e->key.keysym.sym;
   // ESTILO: Voltar fecha antes o controle aberto (slider, paleta, fontes).
   if (coluna == FX_COL_ESTILO && estiloTecla(k, e->key.repeat)) return;
+  if (sincEd) { sincTecla(k, e->key.repeat); return; }
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE) { aberta = 0; return; }
   // F07: the volume row of the audio sheet. The change is live (no OK needed);
   // OK just closes, like Back.
@@ -1379,8 +1447,9 @@ void faixas_evento(const SDL_Event *e) {
   // legenda, que e justamente o que fazia os dois botoes do player parecerem o
   // mesmo botao.
   if ((k == SDLK_LEFT || k == SDLK_RIGHT) && !modo && coluna == 0 && tipoLinha(foco[0], NULL) == FXA_SINC) {
-    int passo = ajustes_audio_externo_passo();
-    if (e->key.repeat) passo = passo < 50 ? 50 : passo * 2;   // holding speeds up
+    static int rep;
+    rep = e->key.repeat ? rep + 1 : 0;   // held: 100 ms, 1 s, then 10 s
+    int passo = audioext_passo(ajustes_audio_externo_passo(), rep);
     audioext_offset_somar(k == SDLK_RIGHT ? passo : -passo);
     return;
   }
@@ -1389,8 +1458,10 @@ void faixas_evento(const SDL_Event *e) {
   if (k == SDLK_DOWN)  { if (foco[coluna] < nLinhas(coluna) - 1) foco[coluna]++;
                          ajustarRolagem(); return; }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
-    // The sync row is live (LEFT/RIGHT); its OK only closes, like Volume.
-    if (!modo && coluna == 0 && tipoLinha(foco[0], NULL) == FXA_SINC) { aberta = 0; return; }
+    // The sync row is live (LEFT/RIGHT); its OK opens the precise editor.
+    if (!modo && coluna == 0 && tipoLinha(foco[0], NULL) == FXA_SINC) {
+      sincEd = 1; sincFoco = SED_SEG; sincDigN = 0; sincRep = 0; return;
+    }
     // "Match automatically": starts it and closes; the result comes as a toast.
     if (!modo && coluna == 0 && tipoLinha(foco[0], NULL) == FXA_DOPASUJ) {
       if (!audioext_dopasuj_ativo()) {
@@ -1680,7 +1751,7 @@ static void linhaExterna(int i, float x, float y, float w, int sel, float a) {
     int o = audioext_offset_ms();
     snprintf(nome, sizeof nome, "%s", i18n("Audio sync"));
     snprintf(sub, sizeof sub, "%s", i18n(o > 0 ? "Audio later" : o < 0 ? "Audio earlier" : "In sync with the file"));
-    snprintf(val, sizeof val, "%+d ms", o);
+    audioext_formatar_offset(o, val, sizeof val, i18n("%c%u.%03u s"), i18n("%c%u min %u.%03u s"));
     icone = "pl_audio-lines";
   } else if (tipo == FXA_DOPASUJ) {
     int ativa = audioext_dopasuj_ativo();
@@ -1703,6 +1774,11 @@ static void linhaExterna(int i, float x, float y, float w, int sel, float a) {
     snprintf(nome, sizeof nome, "%s%s%s", idioma && idioma[0] ? i18n(ling_nome(idioma)) : i18n("Faixa"),
              codec[0] ? " · " : "", codec);
     snprintf(sub, sizeof sub, "%s", i18n("From another version"));
+    // Another cut than the picture playing: its audio will not stay in sync
+    // (said first, before the details that may be cut off).
+    if (st && stream_outro_corte(st, stream_item(stream_atual()))) {
+      strncat(sub, " · ", sizeof sub - strlen(sub) - 1); strncat(sub, i18n("Another cut"), sizeof sub - strlen(sub) - 1);
+    }
     // DTS, TrueHD and the others reach the TV as AC-3 5.1 or AAC stereo.
     if (en && audioext_converte(en->codec)) {
       strncat(sub, " · ", sizeof sub - strlen(sub) - 1);
@@ -1730,7 +1806,8 @@ static void linhaExterna(int i, float x, float y, float w, int sel, float a) {
       gfx_icone((GfxRect){ d.x + 7.0f, d.y + 7.0f, 20.0f, 20.0f }, "pl_chevron-right", 1, 1, 1, a);
       dir -= 34.0f + 10.0f;
     }
-    { float slot = (float)txt_largura(TXT_ILHA_FORTE, "+10000 ms");
+    { float slot = (float)txt_largura(TXT_ILHA_FORTE, "+0000 ms");
+      if (slot < (float)lv.w) slot = (float)lv.w;
       txt_desenhar_alpha(lv, dir - slot + (slot - (float)lv.w) * 0.5f, yc - (float)lv.h * 0.5f, a);
       dir -= slot + 10.0f; }
     if (sel) {
@@ -2054,8 +2131,8 @@ static void corpoLista(GfxRect c, float a) {
       const char *k[2] = { "\xe2\x86\x90 \xe2\x86\x92", "Voltar" }, *rt[2] = { "Ajustar", "Fechar" };
       plrui_dicas(k, rt, 2, x0 + w - 10.0f, yc, 1, a);
     } else if (!modo && tipoLinha(foco[0], NULL) == FXA_SINC) {
-      const char *k[2] = { "\xe2\x86\x90 \xe2\x86\x92", "Voltar" }, *rt[2] = { "Ajustar", "Fechar" };
-      plrui_dicas(k, rt, 2, x0 + w - 10.0f, yc, 1, a);
+      const char *k[3] = { "\xe2\x86\x90 \xe2\x86\x92", "OK", "Voltar" }, *rt[3] = { "Ajustar", "Set exactly", "Fechar" };
+      plrui_dicas(k, rt, 3, x0 + w - 10.0f, yc, 1, a);
     } else if (!modo) {
       const char *k[2] = { "OK", "Voltar" }, *rt[2] = { "Usar esta faixa", "Fechar" };
       plrui_dicas(k, rt, 2, x0 + w - 10.0f, yc, 1, a);
@@ -2348,10 +2425,76 @@ static void corpoEstilo(GfxRect c, float a) {
   }
 }
 
+#define SED_CAMPO_H 96.0f
+static float alturaSinc(void) {
+  return IL_PAD_Y + IL_TIT_H + 26.0f + SED_CAMPO_H + 58.0f + 60.0f + 22.0f + IL_PE_H + IL_PAD_Y;
+}
+// One field of the editor: a rounded box with its number, the unit after it.
+static float sincCampo(float x, float y, float w, const char *txt, const char *unid, int foco, float a) {
+  GfxRect r = { x, y, w, SED_CAMPO_H };
+  if (foco) plrui_linha_foco(r, 20.0f, a);
+  else plrui_botao_repouso(r, a);
+  if (foco && sincDigN) {   // typing: the accent underline
+    float ar, ag, ab;
+    ajustes_acento(&ar, &ag, &ab);
+    gfx_cor((GfxRect){ x + 18.0f, y + SED_CAMPO_H - 14.0f, w - 36.0f, 4.0f }, 2.0f, ar, ag, ab, a);
+  }
+  { int c = foco ? 255 : 219;
+    TxtLinha l = txt_linha(TXT_ILHA_PERGUNTA, txt, c, c, c - 2, 255);
+    txt_desenhar_alpha(l, x + (w - (float)l.w) * 0.5f, y + (SED_CAMPO_H - (float)l.h) * 0.5f, a); }
+  x += w;
+  if (unid) {
+    TxtLinha u = txt_linha(TXT_G18R, unid, 243, 242, 239, 140);
+    txt_desenhar_alpha(u, x + 10.0f, y + (SED_CAMPO_H - (float)u.h) * 0.5f + 8.0f, a);
+    x += 10.0f + (float)u.w + 22.0f;
+  } else x += 22.0f;
+  return x;
+}
+static void corpoSinc(GfxRect c, float a) {
+  float x0 = c.x + IL_PAD_X, w = c.w - IL_PAD_X * 2.0f, y = c.y + IL_PAD_Y;
+  int o = audioext_offset_ms(), neg, mi, se, mss, dica = audioext_dica_ms();
+  char b[16], v[48];
+  sincPartes(o, &neg, &mi, &se, &mss);
+  { TxtLinha t = txt_linha(TXT_ILHA_PERGUNTA, i18n("Audio sync"), 243, 242, 239, 255);
+    txt_desenhar_alpha(t, x0 + 10.0f, y, a);
+    TxtLinha l = txt_linha(TXT_G18R, i18n(o > 0 ? "Audio later" : o < 0 ? "Audio earlier" : "In sync with the file"),
+                           243, 242, 239, 115);
+    txt_desenhar_alpha(l, x0 + w - 10.0f - l.w, y + (float)t.h - (float)l.h - 8.0f, a); }
+  y += IL_TIT_H + 26.0f;
+  { float x = x0 + 10.0f;
+    x = sincCampo(x, y, 70.0f, neg ? "\xe2\x88\x92" : "+", NULL, sincFoco == SED_SINAL, a);
+    snprintf(b, sizeof b, "%d", mi);   x = sincCampo(x, y, 96.0f, b, "min", sincFoco == SED_MIN, a);
+    snprintf(b, sizeof b, "%02d", se); x = sincCampo(x, y, 96.0f, b, "s", sincFoco == SED_SEG, a);
+    snprintf(b, sizeof b, "%03d", mss); sincCampo(x, y, 128.0f, b, "ms", sincFoco == SED_MS, a); }
+  y += SED_CAMPO_H + 16.0f;
+  if (dica) {
+    char t[160];
+    audioext_formatar_offset(dica, v, sizeof v, i18n("%c%u.%03u s"), i18n("%c%u min %u.%03u s"));
+    snprintf(t, sizeof t, i18n("The lengths of the versions suggest about %s"), v);
+    TxtLinha l = txt_linha(TXT_G18R, t, 243, 242, 239, 150);
+    txt_desenhar_alpha(l, x0 + 10.0f, y, a);
+  }
+  y += 42.0f;
+  { float x = x0 + 10.0f;
+    const char *r1 = i18n("Reset"), *r2 = i18n("Use the suggestion"), *r3 = i18n("Match here");
+    const char *i1 = "pl_rotate-ccw", *i2 = "aj_wand", *i3 = "aj_zap";
+    /* Long translations: the icons go before the buttons leave the island. */
+    if (plrui_botao_largura(r1, i1) + (dica ? plrui_botao_largura(r2, i2) + 12.0f : 0) +
+        plrui_botao_largura(r3, i3) + 12.0f > w - 20.0f) i1 = i2 = i3 = NULL;
+    x += plrui_botao(x, y, r1, i1, sincFoco == SED_ZERAR, a) + 12.0f;
+    if (dica) x += plrui_botao(x, y, r2, i2, sincFoco == SED_DICA, a) + 12.0f;
+    plrui_botao(x, y, r3, i3, sincFoco == SED_AQUI, a); }
+  { float yc = c.y + c.h - IL_PAD_Y - IL_PE_H * 0.5f;
+    /* Digits (0-9) need no hint: typing on a field just works. */
+    const char *k[3] = { "\xe2\x86\x91 \xe2\x86\x93", "\xe2\x86\x90 \xe2\x86\x92", "Voltar" };
+    const char *rt[3] = { "Ajustar", "Pick a field", "Fechar" };
+    plrui_dicas(k, rt, 3, x0 + w - 10.0f, yc, 1, a); }
+}
 static void corpoIlha(GfxRect c, float a, void *u) {
   (void)u;
   if (faixas_estilo_topo() || (!aberta && animTopo > 0.5f)) corpoEstilo(c, a);
   else if (modo) legendasui_corpo(c, a);
+  else if (sincEd) corpoSinc(c, a);
   else corpoLista(c, a);
 }
 
@@ -2375,7 +2518,7 @@ static void faixas_desenharCorpo_(Uint32 agora) {
     { PlrIlhaPedido p;
       memset(&p, 0, sizeof p);
       p.w = est ? NV_TELA_W - 192.0f : IL_W;
-      p.h = est ? alturaEstilo() : modo ? legendasui_altura() : alturaLista(0);
+      p.h = est ? alturaEstilo() : modo ? legendasui_altura() : sincEd ? alturaSinc() : alturaLista(0);
       p.corpo = corpoIlha;
       plrilha_pedir(&p); } }
 }

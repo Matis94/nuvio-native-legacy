@@ -74,8 +74,10 @@ const char *audioext_cabecalhos(void);
 const char *audioext_nome(void);
 // Offset of the external audio in ms (positive = later), kept with the mark.
 int audioext_offset_ms(void);
-// Adds `ms`, bounded to +-10 s; returns the new offset.
+// Adds `ms` / sets it, bounded to +-10 min; returns the new offset.
+#define AUDIOEXT_OFFSET_MAX 600000
 int audioext_offset_somar(int ms);
+int audioext_offset_definir(int ms);
 // Bumped by every offset change; the webOS player applies the latest one.
 unsigned audioext_offset_geracao(void);
 // The webOS player says whether the session on screen plays the external
@@ -91,9 +93,26 @@ int audioext_carregando(void);
 void audioext_dopasuj_pedir(void);
 int audioext_dopasuj_pedido_consumir(void);
 int audioext_dopasuj_ativo(void);
-void audioext_dopasuj_resultado(int ok, int ms);
-// Once, for a toast: 1 found (offset in *ms), -1 not trusted, 0 nothing.
-int audioext_dopasuj_aviso_consumir(int *ms);
+// The outcome (dts_engine.h DtsMatchInfo, in the app's words): ms the offset
+// (found), ppm the other version's speed, como how it was found (1 near,
+// 2 length hint, 3 +-60 s, 4 +-5 min, 5 speed, measured later on its own),
+// dica_ms the offset the lengths suggest and pesado the wide search skipped
+// for its download (not found).
+typedef struct { int ms, ppm, como, dica_ms, pesado; } AudioExtDopasuj;
+void audioext_dopasuj_resultado(int ok, const AudioExtDopasuj *r);
+// Once, for a toast: 1 found, -1 not trusted, 0 nothing.
+int audioext_dopasuj_aviso_consumir(AudioExtDopasuj *out);
+// The other version's speed from a match (ppm; 0 the same): the webOS player
+// opens that version at it.
+int audioext_velocidade(void);
+// The offset the two lengths suggest (another cut), 0 when they are close.
+int audioext_dica_ms(void);
+// The step of a sync key: `base` (Settings) for a tap; held (repeticoes =
+// key repeats so far) 100 ms, then 1 s, then 10 s.
+int audioext_passo(int base, int repeticoes);
+// "+690 ms", or with the (translated) formats for seconds ("%c%u.%03u s":
+// sign, s, ms) and minutes ("%c%u min %u.%03u s": sign, min, s, ms).
+void audioext_formatar_offset(int ms, char *dst, unsigned tam, const char *fmtSeg, const char *fmtMin);
 int audioext_tocando(void);
 void audioext_falhou(const char *motivo);
 // Once: the last failure ("" none), for a toast on the player screen.

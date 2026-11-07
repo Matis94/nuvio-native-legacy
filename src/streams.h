@@ -455,6 +455,10 @@ int  stream_canal_prazo_longo(int idx);
 struct AudioExtEntradaS;
 void stream_audioext_entrada(const Stream *s, struct AudioExtEntradaS *e);
 void stream_audioext_versao(const Stream *s, char *out, unsigned tam);
+// The cut named in a version ("Extended", "Director's Cut", "IMAX"...), or NULL.
+const char *stream_edicao(const Stream *s);
+// 1 when two versions are likely different cuts (no name = theatrical).
+int stream_outro_corte(const Stream *a, const Stream *b);
 // 1 when the list on hand belongs to the title/episode last asked for.
 int stream_lista_do_alvo_atual(void);
 // --- folha de fontes (a lista que sobe por cima do player/detalhe) ---

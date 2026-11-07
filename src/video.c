@@ -2706,6 +2706,7 @@ static void extReabrir(void) {
       // only the other file is swapped; this source stays open (owner, 07/11).
       char langs[64];
       extIdiomas(langs, sizeof langs);
+      dts_playback_external_speed(dtsSessao, audioext_velocidade());
       if (dts_playback_external_swap(dtsSessao, audioext_url(), audioext_cabecalhos(), langs,
                                      audioext_offset_ms(), audioext_faixa(), audioext_so_audio(), posSeg)) {
         extGenAplicada = extGenVista = audioext_offset_geracao(); extGenEm = 0;
@@ -2749,12 +2750,20 @@ void video_bombear(void) {
   // the offset (applied live below).
   if (audioext_dopasuj_pedido_consumir()) {
     if (dtsSessao && extAtivo) dts_playback_external_match(dtsSessao);
-    else audioext_dopasuj_resultado(0, 0);
+    else audioext_dopasuj_resultado(0, NULL);
   }
-  if (dtsSessao && extAtivo && audioext_dopasuj_ativo()) {
-    int mo = 0, ms = 0, mr = dts_playback_external_match_result(dtsSessao, &mo, &ms);
-    if (mr) audioext_dopasuj_resultado(mr > 0, mo);
-  } else if (audioext_dopasuj_ativo() && !(dtsSessao && extAtivo)) audioext_dopasuj_resultado(0, 0);
+  // Polled all along: a second look (another speed) reports on its own.
+  if (dtsSessao && extAtivo) {
+    DtsMatchInfo mi;
+    int mr = dts_playback_external_match_result(dtsSessao, &mi);
+    if (mr) {
+      AudioExtDopasuj r = { mi.offset_ms, mi.ratio_ppm, mi.how, mi.hint_ms, mi.too_heavy };
+      printf("[ext-audio] match result %d: offset %d ms speed %d ppm how %d hint %d ms heavy %d\n",
+             mr, mi.offset_ms, mi.ratio_ppm, mi.how, mi.hint_ms, mi.too_heavy);
+      fflush(stdout);
+      audioext_dopasuj_resultado(mr > 0, &r);
+    }
+  } else if (audioext_dopasuj_ativo()) audioext_dopasuj_resultado(0, NULL);
   if (dtsSessao && extAtivo) {
     unsigned g = audioext_offset_geracao();
     if (g != extGenVista) { extGenVista = g; extGenEm = SDL_GetTicks(); }
@@ -3637,6 +3646,7 @@ static int iniciarDts(int stream) {
     dts_playback_next_external_audio(audioext_url(), audioext_cabecalhos(), langs, audioext_offset_ms());
     dts_playback_next_external_audio_only(audioext_so_audio());
     dts_playback_next_external_track(audioext_faixa());
+    dts_playback_next_external_speed(audioext_velocidade());
     extGenAplicada = extGenVista = audioext_offset_geracao(); extGenEm = 0;
     audioext_carregando_definir(1);
     printf("[ext-audio] start: picture from this source, audio from \"%.60s\" offsetMs=%d dv=%d langs=%s\n",

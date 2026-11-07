@@ -4408,16 +4408,18 @@ void player_evento(const SDL_Event *e) {
   }
 
   // TEST BUILD, AUDIO FROM ANOTHER SOURCE (audioext.h): while it plays, CH+/CH-
-  // (PgUp/PgDn) move that audio 50 ms later/earlier. The converter applies the
-  // latest offset shortly after the last press (video.c), with a short reload.
+  // (PgUp/PgDn) move that audio later/earlier (faster while held). The
+  // converter applies the latest offset shortly after the last press (video.c), live.
   if (!ehCanal() && audioext_tocando()) {
+    static int chRep;
     int sc = e->key.keysym.scancode, d = 0;
-    if (sc == NV_SCANCODE_CH_UP || k == SDLK_PAGEUP) d = ajustes_audio_externo_passo();
-    else if (sc == NV_SCANCODE_CH_DOWN || k == SDLK_PAGEDOWN) d = -ajustes_audio_externo_passo();
+    chRep = e->key.repeat ? chRep + 1 : 0;   // held: the step grows (100 ms, 1 s, 10 s)
+    if (sc == NV_SCANCODE_CH_UP || k == SDLK_PAGEUP) d = audioext_passo(ajustes_audio_externo_passo(), chRep);
+    else if (sc == NV_SCANCODE_CH_DOWN || k == SDLK_PAGEDOWN) d = -audioext_passo(ajustes_audio_externo_passo(), chRep);
     if (d) {
       char t[64];
       char v[24];
-      snprintf(v, sizeof v, "%+d ms", audioext_offset_somar(d));
+      audioext_formatar_offset(audioext_offset_somar(d), v, sizeof v, i18n("%c%u.%03u s"), i18n("%c%u min %u.%03u s"));
       snprintf(t, sizeof t, i18n("Audio sync: %s"), v);
       player_toast(t, 1800);
       return;
@@ -4638,8 +4640,22 @@ void player_atualizar(float dt, Uint32 agora) {
       snprintf(t, sizeof t, i18n("Audio from the other version failed: %s"), falha);
       player_toast(t, 5000);
     }
-    { int ms, a = audioext_dopasuj_aviso_consumir(&ms);
-      if (a > 0) { snprintf(t, sizeof t, i18n("Matched automatically: %+d ms"), ms); player_toast(t, 4000); }
+    { AudioExtDopasuj d;
+      int a = audioext_dopasuj_aviso_consumir(&d);
+      char v[48];
+      audioext_formatar_offset(a > 0 ? d.ms : d.dica_ms, v, sizeof v, i18n("%c%u.%03u s"), i18n("%c%u min %u.%03u s"));
+      if (a > 0 && d.ppm) {
+        unsigned p = d.ppm < 0 ? (unsigned)-d.ppm : (unsigned)d.ppm;
+        char pc[24];
+        snprintf(pc, sizeof pc, i18n("%c%u.%03u%%"), d.ppm < 0 ? '-' : '+', p / 10000, p / 10 % 1000);
+        snprintf(t, sizeof t, i18n("The other version plays at another speed (%s): corrected. Sync: %s"), pc, v);
+        player_toast(t, 6000);
+      } else if (a > 0) { snprintf(t, sizeof t, i18n("Matched automatically: %s"), v); player_toast(t, 4000); }
+      else if (a < 0 && d.dica_ms) {
+        snprintf(t, sizeof t, i18n("Could not match automatically. The lengths of the versions suggest about %s: set it in the audio menu (Sync), then Match here."), v);
+        player_toast_ex(t, 7000, "aj_triangle-alert", 1);
+      } else if (a < 0 && d.pesado)
+        player_toast_ex(i18n("Could not match automatically: a wider search would download too much of the other version. Set the sync by hand in the audio menu."), 7000, "aj_triangle-alert", 1);
       else if (a < 0) player_toast_ex(i18n("Could not match automatically: use the manual sync (CH+/CH-)."), 5000, "aj_triangle-alert", 1); }
     if (audioext_voltou_padrao_consumir())
       player_toast(i18n("The other version's audio did not start last time. Playing this file's own audio."), 5000);
@@ -4649,7 +4665,7 @@ void player_atualizar(float dt, Uint32 agora) {
     }
     { int corte, vel;
       if (audioext_diferenca_consumir(&corte, &vel)) {
-        if (vel) snprintf(t, sizeof t, "%s", i18n("This version plays at another speed: the audio will drift. Pick another version."));
+        if (vel) snprintf(t, sizeof t, "%s", i18n("This version plays at another speed: Match automatically (audio menu) corrects it."));
         else snprintf(t, sizeof t, i18n(corte > 0 ? "This version is %d s longer (another cut): the sync may drift."
                                                   : "This version is %d s shorter (another cut): the sync may drift."),
                       corte > 0 ? corte : -corte);

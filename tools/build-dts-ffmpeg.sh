@@ -53,6 +53,8 @@ else
     # is often AAC at 44.1 kHz, Opus, FLAC, Vorbis or MP3, converted like DTS.
     DECODERS=$DECODERS,aac,opus,flac,mlp,vorbis,mp3
     PARSERS=$PARSERS,opus,flac,vorbis,mpegaudio
+    # Small AVI and TS releases also carry dubs and voice-overs (owner, 07/11).
+    DEMUXERS=matroska,mov,avi,mpegts
   fi
   CC=${CC:-arm-webos-linux-gnueabi-gcc}
   archive="$BUILD/ffmpeg-$VERSION.tar.xz"
@@ -78,7 +80,7 @@ fi
   --disable-avdevice --disable-avfilter --disable-swscale --disable-postproc \
   --enable-avcodec --enable-avformat --enable-avutil --enable-swresample \
   --enable-decoder="$DECODERS" --enable-encoder=aac,ac3 \
-  --enable-demuxer=matroska,mov --enable-parser="$PARSERS" \
+  --enable-demuxer="${DEMUXERS:-matroska,mov}" --enable-parser="$PARSERS" \
   --enable-bsf="$BSFS" \
   --extra-cflags="${CFLAGS:--O2}"
 make -j"${NUVIO_DTS_JOBS:-2}"

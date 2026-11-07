@@ -122,11 +122,28 @@ int dts_engine_external_shift(DtsEngine *, int offset_ms);
  * convert, read from its container header only. Count, or -1. */
 int dts_engine_probe_audio(const char *url, const char *headers, DtsTrack *out, int max);
 /* Worker only, while another version plays: "Match automatically" captures
- * both audios for DTS_MATCH_SECONDS of playback (dts_match.h). poll: 0 still
- * capturing (or idle), 1 found (offset in ms, the app's sign), -1 not trusted,
- * failed or interrupted; a result is reported once. */
+ * both audios for DTS_MATCH_SECONDS of playback (dts_match.h) and searches
+ * +-10 s around the current offset, at the same speed and at the speed of
+ * the frame rates. Not found: a background reader of the other version tries
+ * the offsets its length suggests (another cut), then +-60 s and +-5 min when
+ * that download stays reasonable. After a find at the same speed, a second
+ * look 5 minutes later measures a slow drift (another speed).
+ * poll: 0 still working (or idle), 1 found, -1 not trusted, failed or
+ * interrupted; a result is reported once. */
+typedef struct {
+  int offset_ms;    /* the app's sign: positive = audio later */
+  int ratio_ppm;    /* speed of the other version: 0 the same, else (ratio - 1) * 1e6 */
+  int score;        /* correlation * 100 */
+  int how;          /* found: 1 near, 2 length hint, 3 +-60 s, 4 +-5 min, 5 speed (second look) */
+  int hint_ms;      /* not found: offset the lengths suggest (0: none) */
+  int too_heavy;    /* not found: the wide search was skipped (too much to download) */
+} DtsMatchInfo;
 int dts_engine_external_match_arm(DtsEngine *);
-int dts_engine_external_match_poll(DtsEngine *, int *offset_ms, int *score);
+int dts_engine_external_match_poll(DtsEngine *, DtsMatchInfo *out);
+/* Before open (or replace): play the other version at this speed
+ * (ratio_ppm from a match). Not 0: its audio is decoded, resampled to the
+ * speed and re-encoded. */
+void dts_engine_external_speed(DtsEngine *, int ratio_ppm);
 /* Worker only, on an open external session: replace the other version (new
  * file, track, offset, audio-only mode) at `target` seconds without reopening
  * this source. The track list is rebuilt. 0 on success; on failure the session
