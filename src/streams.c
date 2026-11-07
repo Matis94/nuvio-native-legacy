@@ -696,6 +696,35 @@ void stream_definir_lista(const Stream *l, int qtd) {
   stream_definir_lista_idade(l, qtd, 0);
 }
 
+// SERIES MEMORY OF THE AUDIO FROM ANOTHER VERSION (audioext.h): the list of a
+// later episode arrives (whole or add-on by add-on); the remembered version
+// is looked for in it. Same binge group and language first; without a group,
+// the same add-on, language, resolution and audio codec.
+static void audioextSerie(void) {
+  AudioExtIdent id;
+#if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
+  if (!ajustes_audio_externo() || !alvoLista[0] || strcmp(alvoLista, alvoPedido)) return;
+  if (!audioext_serie_procura(alvoPedido, &id)) return;
+  int achou = -1, nivel = 0;
+  for (int i = 0; i < n; i++) {
+    AudioExtEntrada e;
+    int lingua = 0, k;
+    stream_audioext_entrada(&lista[i], &e);
+    if (!e.temUrl || e.hls || e.naoVideo) continue;
+    for (int j = 0; j < e.nIdiomas; j++) if (ling_casa(e.idiomas[j], id.idioma)) lingua = 1;
+    if (!lingua) continue;
+    if (id.grupo[0] && !strcmp(lista[i].bingeGroup, id.grupo)) k = 3;
+    else if (!strcmp(lista[i].provedor, id.addon) && lista[i].altura == id.altura && e.codec == id.codec) k = 2;
+    else continue;
+    if (e.cache > 0) k += 4;   // the cached copy of the same release wins
+    if (k > nivel) { nivel = k; achou = i; }
+  }
+  if (achou >= 0) audioext_serie_achou(lista[achou].url, lista[achou].cabecalhos, lista[achou].rotulo);
+#else
+  (void)id;
+#endif
+}
+
 static int selosPacoteDa(Stream *s);
 static void selosAgendar(int ini, int qtd);
 static void selosVistaLimpar(void);
@@ -755,6 +784,7 @@ void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
   // a qualquer consumidor perguntar "esta lista e do episodio que eu quero?".
   snprintf(alvoLista, sizeof alvoLista, "%s", alvoPedido);
   if (!n) audioFiltroDescartar();
+  audioextSerie();
 }
 
 void stream_invalidar(const char *porque) {
@@ -865,6 +895,7 @@ void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
   uint64_t perf = sourceperf_begin();
   listaAcrescentarInterna(l, qtd, ordemAddon);
   sourceperf_end(NV_SRC_APPEND, perf);
+  audioextSerie();
 }
 
 int stream_ordem_addon(int i) {

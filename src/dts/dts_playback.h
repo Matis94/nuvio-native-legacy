@@ -48,6 +48,9 @@ void dts_playback_next_external_audio(const char *url, const char *headers,
 /* New offset; it takes effect with the next seek (the caller seeks to the
  * current position right after, so the native timeline restarts cleanly). */
 void dts_playback_external_offset(DtsPlayback *p, int offset_ms);
+/* Before start, with the call above: fetch only the audio of that file where
+ * it allows it (dts_engine_external_audio_only). Consumed by start. */
+void dts_playback_next_external_audio_only(int on);
 int dts_playback_external(DtsPlayback *p);
 DtsPlayback *dts_playback_start(const char *url, const char *headers,
                                int audio_stream, double position,

@@ -37,4 +37,19 @@ ffmpeg -hide_banner -loglevel error \
   -f lavfi -i 'color=size=64x64:rate=25:duration=1' \
   -f lavfi -i 'sine=frequency=300:sample_rate=48000:duration=1' \
   -map 0:v -map 1:a -c:v libx264 -c:a ac3 "$TMP/short.mkv"
-"$TMP/ext" "$TMP/main.mkv" "$TMP/other.mkv" "$TMP/dts.mkv" "$TMP/short.mkv"
+# An MP4 version, Polish AC-3, whose picture is one large keyframe a second
+# and tiny frames between: its audio samples gather into about one chunk per
+# second, as in a coarsely interleaved WEB-DL, and audio only skips the
+# keyframes.
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'nullsrc=s=640x360:d=0.04,geq=random(1)*255:128:128' \
+  -frames:v 1 "$TMP/noise.png"
+ffmpeg -hide_banner -loglevel error -loop 1 -framerate 25 -t 20 -i "$TMP/noise.png" \
+  -f lavfi -i 'sine=frequency=600:sample_rate=48000:duration=20' \
+  -map 0:v -map 1:a -c:v libx264 -preset ultrafast -qp 10 -g 25 -bf 0 -pix_fmt yuv420p \
+  -c:a ac3 -ac 2 -metadata:s:a:0 language=pol -movflags +faststart "$TMP/other.mp4"
+# A Polish dub in AAC at 44.1 kHz, the format of the WEB-DLs in the owner's log.
+ffmpeg -hide_banner -loglevel error \
+  -f lavfi -i 'color=size=64x64:rate=24000/1001:duration=4' \
+  -f lavfi -i 'sine=frequency=400:sample_rate=44100:duration=4' \
+  -map 0:v -map 1:a -c:v libx264 -c:a aac -ac 2 -ar 44100 -metadata:s:a:0 language=pol "$TMP/aac44.mkv"
+"$TMP/ext" "$TMP/main.mkv" "$TMP/other.mkv" "$TMP/dts.mkv" "$TMP/short.mkv" "$TMP/other.mp4" "$TMP/aac44.mkv"

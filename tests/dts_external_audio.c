@@ -166,8 +166,9 @@ static Run play(DtsEngine *e, int64_t offset_ns, int limit) {
 }
 
 int main(int argc, char **argv) {
-  assert(argc == 5);
-  const char *main_file = argv[1], *other = argv[2], *dts_only = argv[3], *short_clip = argv[4];
+  assert(argc == 7);
+  const char *main_file = argv[1], *other = argv[2], *dts_only = argv[3], *short_clip = argv[4], *mp4 = argv[5];
+  const char *aac44 = argv[6];
   dts_engine_set_lang_match(lang_match);
   load_refs(other, "pol");
 
@@ -272,7 +273,55 @@ int main(int argc, char **argv) {
   assert(strstr(dts_engine_error(e), "not cached"));
   dts_engine_destroy(e);
 
-  /* 8. Turning it off restores the main file's own track selection. */
+  /* 8. Audio only: an MP4 donor fetches its audio chunks, not its video. */
+  {
+    int64_t total = 0, bytes;
+    load_refs(mp4, "pol");
+    for (int only = 0; only < 2; only++) {
+      e = dts_engine_create();
+      dts_engine_external_audio(e, mp4, HEADERS, "pl", 0);
+      dts_engine_external_audio_only(e, only);
+      if (dts_engine_open(e, main_file, HEADERS, -1, 0, 0) < 0) { fprintf(stderr, "open: %s\n", dts_engine_error(e)); return 1; }
+      r = play(e, 0, 0);
+      assert(r.video == 100 && r.audio > 100 && r.last_audio > 3800000000LL);
+      bytes = dts_engine_external_bytes(e, &total);
+      printf("MP4 donor %s: %lld of %lld bytes downloaded\n", only ? "audio only" : "whole file", (long long)bytes, (long long)total);
+      /* The header read at open costs up to the stream's 2 MiB read-ahead. */
+      if (only) assert(bytes < total / 2);
+      else assert(bytes >= total * 9 / 10);
+      /* A seek back reads the earlier chunks again. */
+      assert(dts_engine_seek(e, 1.0) == 0);
+      r = play(e, 0, 0);
+      assert(r.first_audio >= 950000000LL && r.first_audio < 1100000000LL);
+      dts_engine_destroy(e);
+    }
+    /* Matroska has no audio index: audio only reads the whole file. */
+    load_refs(other, "pol");
+    e = dts_engine_create();
+    dts_engine_external_audio(e, other, HEADERS, "pl", 0);
+    dts_engine_external_audio_only(e, 1);
+    assert(dts_engine_open(e, main_file, HEADERS, -1, 0, 0) == 0);
+    r = play(e, 0, 0);
+    assert(r.audio > 100);
+    dts_engine_destroy(e);
+  }
+
+  /* 9. AAC at 44.1 kHz (a common WEB-DL dub) is converted, where the build
+   * has the AAC decoder (the TV and CI builds do). */
+  if (avcodec_find_decoder(AV_CODEC_ID_AAC)) {
+    checkBytes = 0;
+    e = dts_engine_create();
+    dts_engine_external_audio(e, aac44, HEADERS, "pl", 0);
+    if (dts_engine_open(e, main_file, HEADERS, -1, 0, 0) < 0) { fprintf(stderr, "open: %s\n", dts_engine_error(e)); return 1; }
+    assert(!strcmp(dts_engine_info(e)->audio_codec, "aac") && dts_engine_info(e)->sample_rate == 48000);
+    r = play(e, 0, 0);
+    assert(r.audio > 100 && r.last_audio > 3800000000LL);
+    printf("AAC 44.1 kHz donor converted: %d packets\n", r.audio);
+    dts_engine_destroy(e);
+    checkBytes = 1;
+  } else printf("AAC decoder not in this FFmpeg build: 44.1 kHz case skipped\n");
+
+  /* 10. Turning it off restores the main file's own track selection. */
   e = dts_engine_create();
   dts_engine_external_audio(e, other, HEADERS, "pl", 0);
   dts_engine_external_audio(e, NULL, NULL, NULL, 0);

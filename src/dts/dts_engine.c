@@ -84,6 +84,8 @@ int64_t dts_engine_size(DtsEngine *e) { (void)e; return -1; }
 void dts_engine_interrupt(DtsEngine *e,int on) { (void)e; (void)on; }
 void dts_engine_external_audio(DtsEngine *e,const char *u,const char *h,const char *l,int o) { (void)e;(void)u;(void)h;(void)l;(void)o; }
 void dts_engine_external_offset(DtsEngine *e,int o) { (void)e;(void)o; }
+void dts_engine_external_audio_only(DtsEngine *e,int on) { (void)e;(void)on; }
+int64_t dts_engine_external_bytes(DtsEngine *e,int64_t *t) { (void)e; if(t) *t=-1; return 0; }
 int dts_engine_external_active(DtsEngine *e) { (void)e; return 0; }
 #else
 #include "../rede.h"
@@ -230,6 +232,14 @@ struct DtsEngine {
    * idle while external audio is on; ext_in holds the donor's packets. */
   int ext_conv, ext_demux_eof, ext_dec_eof, ext_swr_eof, ext_enc_eof;
   int dv_strip;              /* external audio over an unsupported DV layer: base layer only */
+  int ext_audio_only;        /* Settings: fetch only the donor's audio where the file allows it */
+  /* AUDIO-ONLY READER of a donor MP4 (on the donor's own engine): the byte
+   * ranges of its audio chunks, read from the index, fetched ahead by one
+   * thread into a few slots; the video between them is never downloaded. */
+  int64_t *sp_pos; int *sp_size; int sp_n, sp_want, sp_err, sp_stop, sp_thread_ok;
+  struct { int idx, state; char *data; } sp_slot[12];   /* state 0 free, 1 fetching, 2 ready */
+  pthread_t sp_thread;
+  int64_t sp_bytes;
   AVPacket *ext_pkt, *ext_in;
   int64_t ext_pts, ext_clock_ns; /* pending packet time; newest video handed out */
   DtsEngineMetrics metrics;
@@ -745,9 +755,124 @@ static void *fx_worker(void *opaque) {
   pthread_mutex_unlock(&e->range_lock);
   return NULL;
 }
+#define SP_SLOTS 12
+#define SP_BUDGET (8LL * 1024 * 1024)
+static int sp_find(const DtsEngine *e,int64_t pos) {
+  int lo=0, hi=e->sp_n-1;
+  while(lo<=hi) {
+    int mid=(lo+hi)/2;
+    if(pos<e->sp_pos[mid]) hi=mid-1;
+    else if(pos>=e->sp_pos[mid]+e->sp_size[mid]) lo=mid+1;
+    else return mid;
+  }
+  return -1;
+}
+/* One HTTP range of the donor, the final address once known (as the stream
+ * reader does). NULL on failure; *got = bytes. */
+static char *sp_fetch(DtsEngine *e,int64_t start,int64_t end,long *got) {
+  char fin[8192]; int status=0, cross=0, direct; int64_t total=-1;
+  char target[8192];
+  pthread_mutex_lock(&e->range_lock);
+  direct=e->final_url[0]!=0;
+  snprintf(target,sizeof target,"%s",direct?e->final_url:e->url);
+  int strip=direct && e->final_cross;
+  pthread_mutex_unlock(&e->range_lock);
+  *got=0;
+  char *d=rede_baixar_trecho64_final(target,strip?"":e->headers,start,end,got,&total,&status,&e->cancelled,fin,&cross);
+  pthread_mutex_lock(&e->range_lock);
+  e->metrics.range_requests++;
+  if(d) { e->metrics.range_bytes+=(uint64_t)*got; e->sp_bytes+=*got; }
+  if(!direct && d && fin[0]) { snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross; }
+  pthread_mutex_unlock(&e->range_lock);
+  return d;
+}
+static void *sp_worker(void *opaque) {
+  DtsEngine *e=opaque;
+  pthread_mutex_lock(&e->range_lock);
+  while(!e->sp_stop && !cancelled(e)) {
+    int64_t held=0; int target=-1, slot=-1;
+    for(int s=0;s<SP_SLOTS;s++) {
+      int i=e->sp_slot[s].idx;
+      if(e->sp_slot[s].state==2 && (i<e->sp_want || i>=e->sp_want+SP_SLOTS)) {
+        free(e->sp_slot[s].data); e->sp_slot[s].data=NULL; e->sp_slot[s].state=0;
+      }
+      if(e->sp_slot[s].state) held+=e->sp_size[e->sp_slot[s].idx];
+      else if(slot<0) slot=s;
+    }
+    for(int i=e->sp_want;i<e->sp_n && i<e->sp_want+SP_SLOTS && target<0;i++) {
+      int have=0;
+      for(int s=0;s<SP_SLOTS;s++) if(e->sp_slot[s].state && e->sp_slot[s].idx==i) have=1;
+      if(!have) target=i;
+    }
+    if(target<0 || slot<0 || e->sp_err || (held && held+e->sp_size[target]>SP_BUDGET)) {
+      pthread_cond_wait(&e->range_wake,&e->range_lock); continue;
+    }
+    e->sp_slot[slot].idx=target; e->sp_slot[slot].state=1;
+    int64_t start=e->sp_pos[target], end=start+e->sp_size[target]-1;
+    char *d=NULL; long got=0;
+    for(int t=0;t<3 && !d && !e->sp_stop && !cancelled(e);t++) {
+      pthread_mutex_unlock(&e->range_lock);
+      d=sp_fetch(e,start,end,&got);
+      if(d && got!=end-start+1) { free(d); d=NULL; }
+      pthread_mutex_lock(&e->range_lock);
+    }
+    if(d) { e->sp_slot[slot].data=d; e->sp_slot[slot].state=2; }
+    else { e->sp_slot[slot].state=0; if(!e->sp_stop && !cancelled(e)) e->sp_err=1; }
+    pthread_cond_broadcast(&e->range_wake);
+  }
+  pthread_cond_broadcast(&e->range_wake);
+  pthread_mutex_unlock(&e->range_lock);
+  return NULL;
+}
+static void sp_close(DtsEngine *e) {
+  pthread_mutex_lock(&e->range_lock);
+  e->sp_stop=1; pthread_cond_broadcast(&e->range_wake);
+  pthread_mutex_unlock(&e->range_lock);
+  if(e->sp_thread_ok) pthread_join(e->sp_thread,NULL);
+  for(int s=0;s<SP_SLOTS;s++) { free(e->sp_slot[s].data); e->sp_slot[s].data=NULL; e->sp_slot[s].state=0; }
+  free(e->sp_pos); free(e->sp_size); e->sp_pos=NULL; e->sp_size=NULL;
+  e->sp_n=e->sp_want=e->sp_err=e->sp_stop=e->sp_thread_ok=0;
+}
+/* AVIO read in audio-only mode: an audio chunk from its slot; anything else
+ * (headers, the index, a probe) as a small direct range. */
+static int read_sparse(DtsEngine *e,uint8_t *dst,int n) {
+  pthread_mutex_lock(&e->range_lock);
+  if(e->total>=0 && e->pos>=e->total) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EOF; }
+  int idx=sp_find(e,e->pos);
+  if(idx<0) {
+    int64_t at=e->pos, k=n>65536?65536:n;
+    if(e->total>=0 && at+k>e->total) k=e->total-at;
+    pthread_mutex_unlock(&e->range_lock);
+    long got=0; char *d=sp_fetch(e,at,at+k-1,&got);
+    if(!d || got<=0) { free(d); return cancelled(e)?AVERROR_EXIT:AVERROR(EIO); }
+    memcpy(dst,d,(size_t)got); free(d);
+    pthread_mutex_lock(&e->range_lock); e->pos=at+got; pthread_mutex_unlock(&e->range_lock);
+    return (int)got;
+  }
+  if(!e->sp_thread_ok && !e->sp_stop) {
+    if(pthread_create(&e->sp_thread,NULL,sp_worker,e)) { pthread_mutex_unlock(&e->range_lock); return AVERROR(ENOMEM); }
+    e->sp_thread_ok=1;
+  }
+  if(e->sp_want!=idx) { e->sp_want=idx; pthread_cond_broadcast(&e->range_wake); }
+  for(;;) {
+    if(cancelled(e) || __atomic_load_n(&e->interrupt,__ATOMIC_RELAXED)) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EXIT; }
+    for(int s=0;s<SP_SLOTS;s++)
+      if(e->sp_slot[s].state==2 && e->sp_slot[s].idx==idx) {
+        int64_t off=e->pos-e->sp_pos[idx], k=e->sp_size[idx]-off;
+        if(k>n) k=n;
+        memcpy(dst,e->sp_slot[s].data+off,(size_t)k); e->pos+=k;
+        pthread_mutex_unlock(&e->range_lock);
+        return (int)k;
+      }
+    if(e->sp_err) { pthread_mutex_unlock(&e->range_lock); return AVERROR(EIO); }
+    struct timespec ts; clock_gettime(CLOCK_REALTIME,&ts); ts.tv_sec+=1;
+    pthread_cond_timedwait(&e->range_wake,&e->range_lock,&ts);
+  }
+}
 static int read_fluxo_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
   DtsEngine *e=opaque;
   uint64_t wait_started=0;
+  if(e->sp_n) return read_sparse(e,dst,n);
   pthread_mutex_lock(&e->range_lock);
   if(!e->fx_thread_ok && !e->fx_stop) {
     if(!e->fx_buf) { if(!fx_long(e))e->fx_cap=(int64_t)(e->fx_mib>0?e->fx_mib:g_fx_cap_mib)*1024*1024; e->fx_buf=malloc((size_t)e->fx_cap); if(e->fx_buf) rings_add(e->fx_cap); }
@@ -1056,6 +1181,7 @@ static void close_media(DtsEngine *e) {
   uint64_t httpCloseBeg=clock_ns(CLOCK_MONOTONIC);
   http_session_diag(e,"media-close-start",0);
 #endif
+  sp_close(e);
   fx_close(e);
   pthread_mutex_lock(&e->range_lock);
   DtsEngine *ext=e->ext; e->ext=NULL;
@@ -1268,6 +1394,12 @@ void dts_engine_external_offset(DtsEngine *e,int offset_ms) {
   e->ext_offset_ns=(int64_t)offset_ms*1000000;
 }
 int dts_engine_external_active(DtsEngine *e) { return e && e->ext_url && e->ext_headers; }
+void dts_engine_external_audio_only(DtsEngine *e,int on) { if(e) e->ext_audio_only=!!on; }
+int64_t dts_engine_external_bytes(DtsEngine *e,int64_t *total) {
+  DtsEngine *x=e?e->ext:NULL;
+  if(total) *total=x?x->total:-1;
+  return x?(int64_t)x->metrics.range_bytes:0;
+}
 static int reset_encoder(DtsEngine *e) {
   /* Encoders are reopened after seek; encoder flush is not supported by AAC. */
   enum AVCodecID id=e->enc->codec_id;
@@ -1422,6 +1554,45 @@ static int ext_configure_conv(DtsEngine *e,AVStream *as) {
   e->ext_demux_eof=e->ext_dec_eof=e->ext_swr_eof=e->ext_enc_eof=0;
   return 0;
 }
+/* Settings > "Audio only": an MP4 donor's index says where every audio
+ * sample is, so only those chunks are fetched. Matroska has no such index
+ * (its blocks are found by reading the clusters): the whole file, as before.
+ * Too many small chunks (more than 4 per second) would mean as many HTTP
+ * requests: the whole file too. */
+static void ext_audio_only_start(DtsEngine *x,AVStream *as) {
+  const char *name=x->fmt->iformat?x->fmt->iformat->name:"";
+  int n=avformat_index_get_entries_count(as), m=0;
+  double seconds=x->fmt->duration>0?x->fmt->duration/1e6:0;
+  int64_t audio=0;
+  if(!strstr(name,"mp4") && !strstr(name,"mov")) {
+    printf("[ext-audio] audio only: %s file, reading the whole file\n",name); fflush(stdout); return;
+  }
+  if(n<=0 || seconds<=0) { printf("[ext-audio] audio only: no index, reading the whole file\n"); fflush(stdout); return; }
+  int64_t *pos=malloc((size_t)n*sizeof *pos); int *size=malloc((size_t)n*sizeof *size);
+  if(!pos || !size) { free(pos); free(size); return; }
+  for(int i=0;i<n;i++) {
+    const AVIndexEntry *ie=avformat_index_get_entry(as,i);
+    if(!ie || ie->size<=0) continue;
+    /* Contiguous samples are one chunk; a gap under 64 KiB is fetched with
+     * them, cheaper than one more request. */
+    if(m && ie->pos>=pos[m-1]+size[m-1] && ie->pos-(pos[m-1]+size[m-1])<=65536 &&
+       ie->pos+ie->size-pos[m-1]<16*1024*1024) size[m-1]=(int)(ie->pos+ie->size-pos[m-1]);
+    else { pos[m]=ie->pos; size[m]=ie->size; m++; }
+    audio+=ie->size;
+  }
+  for(int i=1;i<m;i++) if(pos[i]<pos[i-1]) { m=0; break; }   /* chunks out of file order */
+  if(m<=0 || m>seconds*4) {
+    printf("[ext-audio] audio only: %d chunks in %.0f s, reading the whole file\n",m,seconds); fflush(stdout);
+    free(pos); free(size); return;
+  }
+  fx_close(x);   /* stop the stream that read the header */
+  pthread_mutex_lock(&x->range_lock);
+  x->sp_pos=pos; x->sp_size=size; x->sp_n=m; x->sp_want=0; x->sp_err=0;
+  pthread_mutex_unlock(&x->range_lock);
+  printf("[ext-audio] audio only: %d chunks, %.1f MiB of audio in a %.1f MiB file\n",m,audio/1048576.0,
+    x->total>0?x->total/1048576.0:0);
+  fflush(stdout);
+}
 static double ext_fps(const AVStream *s) {
   AVRational r=s->avg_frame_rate.num>0?s->avg_frame_rate:s->r_frame_rate;
   return r.num>0 && r.den>0?(double)r.num/r.den:0;
@@ -1453,6 +1624,7 @@ static int configure_external(DtsEngine *e,double start) {
   }
   fflush(stdout);
   if(k<0) return fail(e,"External audio: no audio track this TV can play or convert",0);
+  if(e->ext_audio_only) ext_audio_only_start(x,x->fmt->streams[k]);
   { /* A different frame rate (25 vs 23.976) means a sped-up version: the
      * audio would drift away; log it, the TV test decides what to refuse. */
     double fa=e->info.fps_den?(double)e->info.fps_num/e->info.fps_den:0, fb=0;

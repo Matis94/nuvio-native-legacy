@@ -1034,6 +1034,13 @@ static void aplicarExterno(int tipo, int k) {
     if (!st) return;
     legsync_audio_trocou();
     audioext_escolher(st->url, st->cabecalhos, st->rotulo, extCand[k].idioma);
+    { AudioExtIdent id;
+      memset(&id, 0, sizeof id);
+      snprintf(id.grupo, sizeof id.grupo, "%s", st->bingeGroup);
+      snprintf(id.addon, sizeof id.addon, "%s", st->provedor);
+      snprintf(id.idioma, sizeof id.idioma, "%s", extCand[k].idioma);
+      id.altura = st->altura; id.codec = extEnt[k].codec;
+      audioext_lembrar_serie(&id); }
     if (extGrande(k) && ajustes_audio_externo_avisar_grande()) {
       char tam[24];
       audioext_tamanho_texto(extEnt[k].bytes, tam, sizeof tam);

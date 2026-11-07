@@ -10,6 +10,13 @@ static int offsetMs, tocando;
 static unsigned offsetGeracao;
 static char falha[160], idiomaMarca[8];
 static unsigned pedidoGeracao;
+static int prefSoAudio, prefSerie = 1;
+// One remembered series at a time (test build, not saved).
+static struct { char serie[64], episodio[64]; AudioExtIdent id; int offset, ativo; } memo;
+static void serieDe(const char *alvo, char *out, size_t tam) {
+  const char *c = alvo ? strchr(alvo, ':') : NULL;
+  snprintf(out, tam, "%.*s", c ? (int)(c - alvo) : 0, c ? alvo : "");
+}
 
 void audioext_limpar(void) {
   urlMarca[0] = cabMarca[0] = nomeMarca[0] = alvoMarca[0] = idiomaMarca[0] = 0;
@@ -66,6 +73,7 @@ void audioext_escolher(const char *url, const char *cabecalhos, const char *nome
 }
 void audioext_original(void) {
   audioext_limpar();
+  audioext_serie_esquecer();
   pedidoGeracao++;
   printf("[ext-audio] back to this file's own audio\n"); fflush(stdout);
 }
@@ -88,6 +96,8 @@ int audioext_offset_somar(int ms) {
   if (offsetMs > 10000) offsetMs = 10000;
   if (offsetMs < -10000) offsetMs = -10000;
   offsetGeracao++;
+  { char sr[64]; serieDe(alvoMarca, sr, sizeof sr);
+    if (memo.ativo && sr[0] && !strcmp(sr, memo.serie)) memo.offset = offsetMs; }
   return offsetMs;
 }
 unsigned audioext_offset_geracao(void) { return offsetGeracao; }
@@ -102,3 +112,44 @@ int audioext_falha_consumir(char *dst, unsigned tam) {
   falha[0] = 0;
   return 1;
 }
+
+void audioext_preferencias(int soAudio, int serie) {
+  prefSoAudio = soAudio != 0; prefSerie = serie != 0;
+  if (!prefSerie) memo.ativo = 0;
+}
+int audioext_so_audio(void) { return prefSoAudio; }
+void audioext_lembrar_serie(const AudioExtIdent *id) {
+  char sr[64];
+  serieDe(alvoMarca, sr, sizeof sr);
+  if (!prefSerie || !id || !sr[0]) return;
+  memset(&memo, 0, sizeof memo);
+  snprintf(memo.serie, sizeof memo.serie, "%s", sr);
+  snprintf(memo.episodio, sizeof memo.episodio, "%s", alvoMarca);
+  memo.id = *id; memo.offset = offsetMs; memo.ativo = 1;
+  printf("[ext-audio] series memory: group=%s addon=%.40s lang=%s %dp codec=%d\n", memo.id.grupo[0] ? memo.id.grupo : "-",
+         memo.id.addon, memo.id.idioma, memo.id.altura, memo.id.codec);
+  fflush(stdout);
+}
+int audioext_serie_procura(const char *alvo, AudioExtIdent *id) {
+  char sr[64];
+  if (!prefSerie || !memo.ativo || !alvo || !*alvo) return 0;
+  serieDe(alvo, sr, sizeof sr);
+  if (!sr[0] || strcmp(sr, memo.serie) || !strcmp(alvo, memo.episodio)) return 0;
+  if (urlMarca[0] && mesmoAlvo(alvo, alvoMarca)) return 0;   /* already chosen here */
+  if (id) *id = memo.id;
+  return 1;
+}
+void audioext_serie_achou(const char *url, const char *cabecalhos, const char *nome) {
+  if (!url || !*url) return;
+  snprintf(urlMarca, sizeof urlMarca, "%s", url);
+  snprintf(cabMarca, sizeof cabMarca, "%s", cabecalhos ? cabecalhos : "");
+  snprintf(nomeMarca, sizeof nomeMarca, "%s", nome ? nome : "");
+  snprintf(alvoMarca, sizeof alvoMarca, "%s", alvoAtual);
+  snprintf(idiomaMarca, sizeof idiomaMarca, "%s", memo.id.idioma);
+  snprintf(memo.episodio, sizeof memo.episodio, "%s", alvoAtual);
+  offsetMs = memo.offset; offsetGeracao++;
+  pedidoGeracao++;
+  printf("[ext-audio] series memory: this episode uses %.80s, offset %d ms\n", nomeMarca, offsetMs);
+  fflush(stdout);
+}
+void audioext_serie_esquecer(void) { memo.ativo = 0; }

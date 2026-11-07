@@ -3591,6 +3591,7 @@ static int iniciarDts(int stream) {
              lem && lem->idioma[0] ? lem->idioma : "", ling_audio(), ling_audio2());
     dts_engine_set_lang_match(ling_casa);
     dts_playback_next_external_audio(audioext_url(), audioext_cabecalhos(), langs, audioext_offset_ms());
+    dts_playback_next_external_audio_only(audioext_so_audio());
     extGenAplicada = extGenVista = audioext_offset_geracao(); extGenEm = 0;
     printf("[ext-audio] start: picture from this source, audio from \"%.60s\" offsetMs=%d dv=%d langs=%s\n",
            audioext_nome(), audioext_offset_ms(), dtsModoDv, langs);

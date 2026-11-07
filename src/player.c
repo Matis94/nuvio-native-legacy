@@ -4633,6 +4633,7 @@ void player_atualizar(float dt, Uint32 agora) {
     char falha[160], t[224];
     // Settings > Audio from another version turned off: no mark survives.
     if (!ajustes_audio_externo() && audioext_tem_marca()) audioext_limpar();
+    audioext_preferencias(ajustes_audio_externo_so_audio(), ajustes_audio_externo_serie());
     if (audioext_falha_consumir(falha, sizeof falha)) {
       snprintf(t, sizeof t, i18n("Audio from the other version failed: %s"), falha);
       player_toast(t, 5000);

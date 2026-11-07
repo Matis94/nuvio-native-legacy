@@ -96,6 +96,8 @@ void dts_engine_external_audio(DtsEngine *e,const char *url,const char *headers,
 }
 void dts_engine_external_offset(DtsEngine *e,int offset_ms) { (void)e;pthread_mutex_lock(&fixture);ext_offset=offset_ms;pthread_mutex_unlock(&fixture); }
 int dts_engine_external_active(DtsEngine *e) { return e->external; }
+static int ext_only;
+void dts_engine_external_audio_only(DtsEngine *e,int on) { (void)e;pthread_mutex_lock(&fixture);ext_only=on;pthread_mutex_unlock(&fixture); }
 int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,int core,double target) {
  (void)headers;assert(!strcmp(url,expected_url));
  pthread_mutex_lock(&fixture);opens++;last_stream=stream;last_open_target=target;if(core)core_opens++;pthread_mutex_unlock(&fixture);
@@ -404,7 +406,9 @@ int main(int argc,char **argv) {
   // main file's track matching entirely.
   DtsTrack track={.kind=DTS_AUDIO,.channels=6};strcpy(track.codec,"dts");strcpy(track.language,"xx");
   dts_playback_next_external_audio("fixture://other","X-Other: 1","pl,en",120);
+  dts_playback_next_external_audio_only(1);
   p=start(0,-1,&track,7,9);s=wait_status(p,0,0);
+  pthread_mutex_lock(&fixture);assert(ext_only==1);pthread_mutex_unlock(&fixture);
   assert(dts_playback_external(p));
   assert(!s.failed && s.info.audio_stream==DTS_ENGINE_EXTERNAL_STREAM && !strcmp(s.info.audio_codec,"eac3"));
   pthread_mutex_lock(&fixture);

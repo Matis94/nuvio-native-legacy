@@ -373,3 +373,5 @@
   0, /* Versions not in cache: Show dimmed */
   1, /* Audio sync step: 50 ms */
   0, /* Warn about large files: On */
+  0, /* Download of the audio file: Whole file */
+  0, /* Remember for the next episodes: On */

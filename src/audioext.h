@@ -23,6 +23,26 @@ void audioext_limpar(void);
 // the language it was listed under, tried first in that file). The webOS
 // player reopens the converter at the current position (audioext_pedido_geracao).
 void audioext_escolher(const char *url, const char *cabecalhos, const char *nome, const char *idioma);
+// SERIES MEMORY (Settings > Remember for the next episodes): what identifies
+// the chosen version across episodes. The add-on's binge group when it sends
+// one ("the same release"), else add-on + language + resolution + codec.
+typedef struct {
+  char grupo[128], addon[96], idioma[8];
+  int altura, codec;
+} AudioExtIdent;
+// Called with the identity right after audioext_escolher, in a series
+// episode ("tt123:1:2"): the next episodes look for that version.
+void audioext_lembrar_serie(const AudioExtIdent *id);
+// The episode on screen ("tt123:1:3") belongs to the remembered series and
+// has no audio chosen yet: the source list may pick the version (streams.c).
+int audioext_serie_procura(const char *alvo, AudioExtIdent *id);
+// streams.c found the remembered version in this episode's list: mark it with
+// the remembered sync, as if chosen in the menu.
+void audioext_serie_achou(const char *url, const char *cabecalhos, const char *nome);
+void audioext_serie_esquecer(void);
+// Preferences the UI copies here every frame (the player has no settings).
+void audioext_preferencias(int soAudio, int serie);
+int audioext_so_audio(void);
 // From the audio menu: back to this file's own audio, reopened the same way.
 void audioext_original(void);
 unsigned audioext_pedido_geracao(void);

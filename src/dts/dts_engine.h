@@ -103,6 +103,11 @@ void dts_engine_external_audio(DtsEngine *, const char *url, const char *headers
 /* Worker only: new offset for the next seek (applied by dts_engine_seek). */
 void dts_engine_external_offset(DtsEngine *, int offset_ms);
 int dts_engine_external_active(DtsEngine *);
+/* Before open: fetch only the donor's audio chunks when the file has an index
+ * of them (MP4); Matroska and very fragmented files read the whole file. */
+void dts_engine_external_audio_only(DtsEngine *, int on);
+/* Worker only: bytes the donor's reader has downloaded, and its size. */
+int64_t dts_engine_external_bytes(DtsEngine *, int64_t *total);
 /* Language comparison for the external track choice (the app passes
  * ling_casa); NULL or unset compares case-insensitively. Set once. */
 void dts_engine_set_lang_match(int (*match)(const char *code, const char *pref));
