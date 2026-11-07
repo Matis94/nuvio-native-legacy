@@ -21,6 +21,9 @@ jobs:
       NUVIO_BUILD_PLATFORM: linux/amd64
       NUVIO_CONTAINER_RUNTIME: docker
       NUVIO_BUILD_JOBS: '3'
+      # Test build number (owner, 07/11): bumped with every new test build so
+      # the IPK name and the title on the TV tell the versions apart.
+      NUVIO_EXT_TEST: '2'
       NUVIO_DTS_FFMPEG: '1'
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'
@@ -377,8 +380,11 @@ jobs:
           assert data["id"] == "space.nuvio.native.legacy"
           # webOS requires a three-component technical version. Keep 2.0.8
           # and expose the custom release revision in the install label.
-          data["title"] = "Nuvio Legacy 2.0.8.7 (external audio test)"
-          data["appDescription"] = "Nuvio webOS 2.0.8.7 (external audio test)"
+          import os
+          n = os.environ["NUVIO_EXT_TEST"]
+          sha = os.environ["GITHUB_SHA"][:7]
+          data["title"] = "Nuvio Legacy 2.0.8.7 (external audio test %s)" % n
+          data["appDescription"] = "Nuvio webOS 2.0.8.7 (external audio test %s, %s)" % (n, sha)
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -391,7 +397,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8.7_arm-external-audio-test.ipk
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk "output/space.nuvio.native.legacy_2.0.8.7_arm-external-audio-test${NUVIO_EXT_TEST}-${GITHUB_SHA::7}.ipk"
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -407,7 +413,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: nuvio-webos-2.0.8.7-external-audio-test-arm-ipk
+          name: nuvio-webos-2.0.8.7-external-audio-test${{ env.NUVIO_EXT_TEST }}-arm-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14
