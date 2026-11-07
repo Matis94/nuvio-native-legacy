@@ -138,6 +138,7 @@ static const Ref *ref_at(int64_t pts_ns) {
 
 typedef struct { int audio, video, subs; int64_t first_audio, last_audio, max_video, worst_lead; } Run;
 /* Reads to the end; every external packet must match the other file. */
+static int checkBytes = 1;
 static Run play(DtsEngine *e, int64_t offset_ns, int limit) {
   Run r = {0, 0, 0, INT64_MIN, INT64_MIN, INT64_MIN, INT64_MIN};
   DtsFrame f;
@@ -152,8 +153,10 @@ static Run play(DtsEngine *e, int64_t offset_ns, int limit) {
       int64_t lead = f.pts_ns - r.max_video;
       if (lead > r.worst_lead) r.worst_lead = lead;
       assert(r.last_audio == INT64_MIN || f.pts_ns > r.last_audio);
-      const Ref *ref = ref_at(f.pts_ns - offset_ns);
-      assert(ref && ref->size == (int)f.size && ref->sum == checksum(f.data, f.size));
+      if (checkBytes) {
+        const Ref *ref = ref_at(f.pts_ns - offset_ns);
+        assert(ref && ref->size == (int)f.size && ref->sum == checksum(f.data, f.size));
+      }
       if (r.first_audio == INT64_MIN) r.first_audio = f.pts_ns;
       r.last_audio = f.pts_ns; r.audio++;
     } else r.subs++;
@@ -227,12 +230,40 @@ int main(int argc, char **argv) {
   assert(!strcmp(dts_engine_info(e)->audio_codec, "eac3"));
   dts_engine_destroy(e);
 
-  /* 6. Only DTS in the other file: refused (conversion comes later). */
+  /* 6. Only DTS in the other file: decoded and re-encoded, stereo AAC by
+   * default and AC-3 with the 5.1 setting; seek and offset still apply. */
+  checkBytes = 0;
+  for (int ac3 = 0; ac3 < 2; ac3++) {
+    dts_engine_set_ac3(ac3);
+    e = dts_engine_create();
+    dts_engine_external_audio(e, dts_only, HEADERS, "", 250);
+    if (dts_engine_open(e, main_file, HEADERS, -1, 0, 0) < 0) { fprintf(stderr, "open: %s\n", dts_engine_error(e)); return 1; }
+    assert(!strcmp(dts_engine_info(e)->audio_codec, ac3 ? "ac3" : "aac"));
+    assert(dts_engine_info(e)->sample_rate == 48000);
+    int dtsTrack = 0;
+    for (int i = 0; i < dts_engine_info(e)->n_tracks; i++)
+      if (dts_engine_info(e)->tracks[i].kind == DTS_AUDIO) { dtsTrack = !strcmp(dts_engine_info(e)->tracks[i].codec, "dts"); }
+    assert(dtsTrack);   /* the menu shows the source codec */
+    r = play(e, 250000000LL, 0);
+    assert(r.video == 100 && r.audio > 100);
+    assert(r.first_audio >= 200000000LL && r.first_audio < 330000000LL);
+    assert(r.last_audio > 3800000000LL && r.worst_lead <= 500000000LL);
+    assert(dts_engine_seek(e, 2.0) == 0);
+    r = play(e, 250000000LL, 0);
+    assert(r.first_audio >= 1950000000LL && r.first_audio < 2100000000LL);
+    printf("DTS donor -> %s: %d audio packets, seek 2.0 s first at %.3f s\n", ac3 ? "AC-3" : "AAC", r.audio, r.first_audio / 1e9);
+    dts_engine_destroy(e);
+  }
+  dts_engine_set_ac3(0);
+  /* DTS conversion off in Settings: the DTS donor is refused. */
+  dts_engine_set_dts_off(1);
   e = dts_engine_create();
   dts_engine_external_audio(e, dts_only, HEADERS, "", 0);
   assert(dts_engine_open(e, main_file, HEADERS, -1, 0, 0) < 0);
-  assert(strstr(dts_engine_error(e), "External audio: no AC-3"));
+  assert(strstr(dts_engine_error(e), "External audio: no audio track"));
   dts_engine_destroy(e);
+  dts_engine_set_dts_off(0);
+  checkBytes = 1;
 
   /* 7. A much shorter other file (a debrid "not cached" clip) is refused. */
   e = dts_engine_create();

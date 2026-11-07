@@ -30,7 +30,7 @@ int main(void) {
   e[n++] = fonte("pl", AEXT_DD, 6, 1, 3);             // 1 Polish DD, cached, small
   e[n++] = fonte("pol", AEXT_DDP, 6, 1, 6);           // 2 Polish DD+, cached
   e[n++] = fonte("pl", AEXT_DDP, 6, -1, 2);           // 3 Polish DD+, not cached
-  e[n++] = fonte("pl", AEXT_DTS, 6, 1, 4);            // 4 Polish DTS: waits for conversion
+  e[n++] = fonte("pl", AEXT_DTS, 6, 1, 4);            // 4 Polish DTS: converted (hidden with DTS off)
   e[n++] = fonte("pl", AEXT_DDP, 6, 0, 0);            // 5 Polish DD+, cache and size unknown
   e[n++] = fonte("cs,en", AEXT_DDP, 6, 1, 5);         // 6 Czech + English
   e[n++] = fonte("de", AEXT_AAC, 2, 1, 1);            // 7 German AAC
@@ -40,7 +40,7 @@ int main(void) {
   e[n++] = fonte("pl", AEXT_DDP, 6, 1, 1); e[n - 1].temUrl = 0;   // 11 torrent only
   e[n++] = fonte("pl", AEXT_DESCONHECIDO, 0, 1, 7);  // 12 Polish, codec not declared
 
-  k = audioext_candidatos(e, n, "pl", "en", 0, casa, c, 16);
+  k = audioext_candidatos(e, n, "pl", "en", 0, 1, casa, c, 16);
   // Polish first (3 at most): cached DD+ 6 GB, cached DD 3 GB, cached undeclared 7 GB.
   assert(k >= 3);
   assert(c[0].indice == 2 && c[0].grupo == 0);
@@ -57,22 +57,31 @@ int main(void) {
 
   // Bucket of 3: drop the cached ones and the unknown/uncached take their place.
   e[1].temUrl = e[2].temUrl = e[12].temUrl = 0;
-  k = audioext_candidatos(e, n, "pl", "en", 0, casa, c, 16);
+  k = audioext_candidatos(e, n, "pl", "en", 0, 1, casa, c, 16);
   assert(c[0].indice == 5 && c[1].indice == 3);                 // unknown cache before not cached
-  k = audioext_candidatos(e, n, "pl", "en", 1, casa, c, 16);   // hide not cached
+  k = audioext_candidatos(e, n, "pl", "en", 1, 1, casa, c, 16);   // hide not cached
   assert(c[0].indice == 5 && c[1].grupo == 1);
 
   // No preference: everything groups by code, alphabetically.
   e[1].temUrl = e[2].temUrl = e[12].temUrl = 1;
-  k = audioext_candidatos(e, n, "", "", 0, NULL, c, 16);
+  k = audioext_candidatos(e, n, "", "", 0, 1, NULL, c, 16);
   assert(!strcmp(c[0].idioma, "cs") && !strcmp(c[1].idioma, "de"));
   // Total limit.
-  assert(audioext_candidatos(e, n, "pl", "en", 0, casa, c, 2) == 2);
+  assert(audioext_candidatos(e, n, "pl", "en", 0, 1, casa, c, 2) == 2);
 
+  // DTS conversion on: the Polish DTS joins, after the ones that play as they
+  // are, inside the cached group (3 per language: DD+, DD, undeclared, DTS
+  // would be the 4th, so it shows once one of them goes).
+  e[12].temUrl = 0;
+  k = audioext_candidatos(e, n, "pl", "en", 0, 0, casa, c, 16);
+  assert(c[0].indice == 2 && c[1].indice == 1 && c[2].indice == 4);
+  e[12].temUrl = 1;
+  assert(audioext_converte(AEXT_DTS) && audioext_converte(AEXT_TRUEHD) && !audioext_converte(AEXT_DDP));
   char t[32];
   audioext_codec_texto(AEXT_DDP, 6, t, sizeof t); assert(!strcmp(t, "DD+ 5.1"));
   audioext_codec_texto(AEXT_AAC, 2, t, sizeof t); assert(!strcmp(t, "AAC 2.0"));
   audioext_codec_texto(AEXT_DESCONHECIDO, 6, t, sizeof t); assert(!t[0]);
+  audioext_codec_texto(AEXT_TRUEHD, 8, t, sizeof t); assert(!strcmp(t, "TrueHD 7.1"));
   audioext_tamanho_texto(6100000000ULL, t, sizeof t); assert(!strcmp(t, "6.1 GB"));
   audioext_tamanho_texto(850000000ULL, t, sizeof t); assert(!strcmp(t, "850 MB"));
   audioext_tamanho_texto(0, t, sizeof t); assert(!t[0]);

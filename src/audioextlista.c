@@ -10,7 +10,9 @@ static int casa(const char *a, const char *b) {
   if (!a || !*a || !b || !*b) return 0;
   return casaFn ? casaFn(a, b) : !strcasecmp(a, b);
 }
-static int codecUsavel(int c) { return c == AEXT_DDP || c == AEXT_DD || c == AEXT_AAC || c == AEXT_DESCONHECIDO; }
+// Every declared codec plays: DD/DD+/AAC as they are, the rest converted
+// (DTS only while DTS conversion is on).
+static int codecUsavel(int c, int semDts) { return !(semDts && c == AEXT_DTS); }
 
 typedef struct { AudioExtCand c; int cache, codec; uint64_t bytes; } Item;
 
@@ -29,7 +31,7 @@ static int cmpItem(const void *pa, const void *pb) {
 }
 
 int audioext_candidatos(const AudioExtEntrada *e, int n, const char *pref1, const char *pref2,
-                        int ocultarForaCache, int (*fn)(const char *, const char *),
+                        int ocultarForaCache, int semDts, int (*fn)(const char *, const char *),
                         AudioExtCand *out, int max) {
   Item *it;
   int m = 0, k = 0;
@@ -41,7 +43,7 @@ int audioext_candidatos(const AudioExtEntrada *e, int n, const char *pref1, cons
     const AudioExtEntrada *s = &e[i];
     int g = 2, l = 0;
     if (!s->temUrl || s->hls || s->naoVideo || s->atual || s->nIdiomas <= 0) continue;
-    if (!codecUsavel(s->codec) || (ocultarForaCache && s->cache < 0)) continue;
+    if (!codecUsavel(s->codec, semDts) || (ocultarForaCache && s->cache < 0)) continue;
     for (int j = 0; j < s->nIdiomas && j < AUDIOEXT_IDIOMAS; j++) {
       if (casa(s->idiomas[j], pref1)) { g = 0; l = j; break; }
       if (g > 1 && casa(s->idiomas[j], pref2)) { g = 1; l = j; }
@@ -67,7 +69,8 @@ int audioext_candidatos(const AudioExtEntrada *e, int n, const char *pref1, cons
 }
 
 void audioext_codec_texto(int codec, int canais, char *out, unsigned tam) {
-  const char *c = codec == AEXT_DDP ? "DD+" : codec == AEXT_DD ? "DD" : codec == AEXT_AAC ? "AAC" : NULL;
+  const char *c = codec == AEXT_DDP ? "DD+" : codec == AEXT_DD ? "DD" : codec == AEXT_AAC ? "AAC" :
+                  codec == AEXT_DTS ? "DTS" : codec == AEXT_TRUEHD ? "TrueHD" : NULL;
   if (!out || !tam) return;
   if (!c) { out[0] = 0; return; }
   if (canais >= 8) snprintf(out, tam, "%s 7.1", c);
@@ -83,3 +86,5 @@ void audioext_tamanho_texto(uint64_t bytes, char *out, unsigned tam) {
   if (bytes >= UINT64_C(1000000000)) snprintf(out, tam, "%.1f GB", (double)bytes / 1e9);
   else snprintf(out, tam, "%u MB", (unsigned)(bytes / 1000000u));
 }
+
+int audioext_converte(int codec) { return codec == AEXT_DTS || codec == AEXT_TRUEHD || codec == AEXT_OUTRO; }

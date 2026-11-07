@@ -11,13 +11,14 @@
 // Rules (owner, 06/11/2026):
 //  - only sources with a direct link, not HLS, not a warning page, not the
 //    one playing, with at least one declared audio language;
-//  - only audio the TV takes as it is (Dolby Digital Plus, Dolby Digital, AAC)
-//    or not declared; DTS/TrueHD/Opus/FLAC wait for the conversion phase;
+//  - any audio: Dolby Digital Plus, Dolby Digital and AAC play as they are,
+//    DTS, TrueHD, Opus and FLAC are converted (AC-3 5.1 or AAC stereo, like
+//    the main file's DTS); DTS only while DTS conversion is not off;
 //  - grouped by language: the preferred audio language first, then the
 //    second one, then the others alphabetically by code;
 //  - inside a language: in the debrid cache first, then unknown, then not
-//    cached (or hidden); DD+ before DD before AAC before undeclared; smaller
-//    files first (size unknown last);
+//    cached (or hidden); DD+, DD, AAC, undeclared, then the converted ones
+//    (DTS, TrueHD, other); smaller files first (size unknown last);
 //  - at most AUDIOEXT_POR_IDIOMA per language and `max` in total.
 #include <stdint.h>
 
@@ -45,10 +46,12 @@ typedef struct {
 // `casa(code, pref)` compares languages (the app passes ling_casa); NULL
 // compares case-insensitively. Empty prefs are skipped. Returns the count.
 int audioext_candidatos(const AudioExtEntrada *e, int n, const char *pref1, const char *pref2,
-                        int ocultarForaCache, int (*casa)(const char *, const char *),
+                        int ocultarForaCache, int semDts, int (*casa)(const char *, const char *),
                         AudioExtCand *out, int max);
+// 1 when this codec is converted on the way to the TV (DTS, TrueHD, other).
+int audioext_converte(int codec);
 
-// "DD+ 5.1", "DD 2.0", "AAC 2.0"; "" for an undeclared codec.
+// "DD+ 5.1", "DD 2.0", "AAC 2.0", "DTS 5.1", "TrueHD 7.1"; "" undeclared/other.
 void audioext_codec_texto(int codec, int canais, char *out, unsigned tam);
 // "6.1 GB", "850 MB"; "" when unknown. The decimal separator is the caller's.
 void audioext_tamanho_texto(uint64_t bytes, char *out, unsigned tam);

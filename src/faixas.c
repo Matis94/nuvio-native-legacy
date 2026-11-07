@@ -623,7 +623,7 @@ static void extMontar(int forcar) {
   if (!pref1[0]) pref1 = idioma_iso(ajustes_idioma());
   pref2 = ling_audio2();
   m = audioext_candidatos(ent, n, pref1, pref2, ajustes_audio_externo_ocultar_fora_cache(),
-                          ling_casa, extCand, FX_EXT_MAX);
+                          ajustes_dts_desligado(), ling_casa, extCand, FX_EXT_MAX);
   for (int k = 0; k < m; k++) {
     extEnt[k] = ent[extCand[k].indice];
     stream_audioext_versao(stream_item(extCand[k].indice), extVersao[k], sizeof extVersao[k]);
@@ -1671,6 +1671,11 @@ static void linhaExterna(int i, float x, float y, float w, int sel, float a) {
     snprintf(nome, sizeof nome, "%s%s%s", idioma && idioma[0] ? i18n(ling_nome(idioma)) : i18n("Faixa"),
              codec[0] ? " · " : "", codec);
     snprintf(sub, sizeof sub, "%s", i18n("From another version"));
+    // DTS, TrueHD and the others reach the TV as AC-3 5.1 or AAC stereo.
+    if (en && audioext_converte(en->codec)) {
+      strncat(sub, " · ", sizeof sub - strlen(sub) - 1);
+      strncat(sub, ajustes_dts_ac3() ? "\xe2\x86\x92 AC-3" : "\xe2\x86\x92 AAC", sizeof sub - strlen(sub) - 1);
+    }
     if (k < extN && extVersao[k][0]) { strncat(sub, " · ", sizeof sub - strlen(sub) - 1); strncat(sub, extVersao[k], sizeof sub - strlen(sub) - 1); }
     if (tam[0]) { strncat(sub, " · ", sizeof sub - strlen(sub) - 1); strncat(sub, tam, sizeof sub - strlen(sub) - 1); }
     if (extGrande(k) && ajustes_audio_externo_avisar_grande()) { strncat(sub, " · ", sizeof sub - strlen(sub) - 1); strncat(sub, i18n("Large file"), sizeof sub - strlen(sub) - 1); }

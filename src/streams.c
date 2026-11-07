@@ -3919,6 +3919,15 @@ void stream_audioext_entrada(const Stream *s, AudioExtEntrada *e) {
   if (!s) return;
   e->temUrl = s->url[0] != 0 && !s->notWebReady;
   e->hls = s->tsContinuo || strstr(s->url, ".m3u8") != NULL;
+  // The converter opens MKV, WebM and MP4 only: a file name that says AVI, TS
+  // or WMV is left out instead of failing after the choice.
+  { static const char *const fora[] = { ".avi", ".ts", ".m2ts", ".wmv", ".flv", ".mpg", ".vob" };
+    const char *nome = s->arquivo[0] ? s->arquivo : s->url;
+    size_t ln = strlen(nome);
+    for (size_t k = 0; k < sizeof fora / sizeof *fora; k++) {
+      size_t le = strlen(fora[k]);
+      if (ln > le && !strcasecmp(nome + ln - le, fora[k])) e->hls = 1;
+    } }
   e->naoVideo = s->naoVideo;
   lista = s->audioIdiomas[0] ? s->audioIdiomas : s->audioRotulos;
   limite = s->audioIdiomas[0] ? sizeof s->audioIdiomas : sizeof s->audioRotulos;

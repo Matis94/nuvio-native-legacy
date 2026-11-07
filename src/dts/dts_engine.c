@@ -225,7 +225,12 @@ struct DtsEngine {
   struct DtsEngine *ext, *parent;
   int fx_mib;                /* ring of this reader in MiB (0: g_fx_cap_mib) */
   int ext_stream, ext_have, ext_eof;
-  AVPacket *ext_pkt;
+  /* ext_conv: the donor's audio is decoded and re-encoded (DTS, TrueHD,
+   * Opus, FLAC, 44.1 kHz AAC...) through this engine's own dec/swr/fifo/enc,
+   * idle while external audio is on; ext_in holds the donor's packets. */
+  int ext_conv, ext_demux_eof, ext_dec_eof, ext_swr_eof, ext_enc_eof;
+  int dv_strip;              /* external audio over an unsupported DV layer: base layer only */
+  AVPacket *ext_pkt, *ext_in;
   int64_t ext_pts, ext_clock_ns; /* pending packet time; newest video handed out */
   DtsEngineMetrics metrics;
 #if defined(NV_DTS_DEBUG) || defined(NV_HTTP_BUFFER_DIAG)
@@ -1056,7 +1061,8 @@ static void close_media(DtsEngine *e) {
   DtsEngine *ext=e->ext; e->ext=NULL;
   pthread_mutex_unlock(&e->range_lock);
   if(ext) { __atomic_store_n(&ext->cancelled,1,__ATOMIC_RELAXED); dts_engine_destroy(ext); }
-  av_packet_free(&e->ext_pkt); e->ext_have=e->ext_eof=0; e->ext_stream=-1;
+  av_packet_free(&e->ext_pkt); av_packet_free(&e->ext_in); e->ext_have=e->ext_eof=0; e->ext_stream=-1;
+  e->ext_conv=e->dv_strip=0;
   pthread_mutex_lock(&e->range_lock);
   e->range_stop=1;
   for(int i=0;i<RANGE_SLOTS_MAX;i++) __atomic_store_n(&e->ranges[i].cancel,1,__ATOMIC_RELAXED);
@@ -1357,19 +1363,64 @@ static int ext_lang_is(const char *code,const char *pref) {
   if(!code || !*code || !pref || !*pref) return 0;
   return g_lang_match?g_lang_match(code,pref):!strcasecmp(code,pref);
 }
-/* First usable track in the first preferred language that has one; else the
- * first usable track. -1 when the file has none. */
+/* Any other audio this build can decode is converted like a DTS track of the
+ * main file (AC-3 5.1 or AAC stereo, Settings > DTS); DTS itself only while
+ * DTS conversion is not off. */
+static int ext_convertible(const DtsEngine *e,const AVCodecParameters *p) {
+  if(p->codec_type!=AVMEDIA_TYPE_AUDIO || !avcodec_find_decoder(p->codec_id)) return 0;
+  if(p->codec_id==AV_CODEC_ID_DTS && e->dts_off) return 0;
+  return 1;
+}
+/* 2 = passes through, 1 = needs conversion, 0 = unusable. */
+static int ext_rank(const DtsEngine *e,const AVCodecParameters *p) {
+  return ext_usable(p)?2:ext_convertible(e,p)?1:0;
+}
+/* In the first preferred language that has one: a track that passes through,
+ * else one to convert; without a language match the same over all tracks.
+ * -1 when the file has none. */
 static int ext_pick(DtsEngine *e,AVFormatContext *fmt) {
   char langs[64], *save=NULL;
   snprintf(langs,sizeof langs,"%s",e->ext_langs);
   for(char *l=strtok_r(langs,",",&save);l;l=strtok_r(NULL,",",&save)) {
-    for(unsigned i=0;i<fmt->nb_streams;i++) {
-      AVDictionaryEntry *t=av_dict_get(fmt->streams[i]->metadata,"language",NULL,0);
-      if(ext_usable(fmt->streams[i]->codecpar) && t && ext_lang_is(t->value,l)) return (int)i;
-    }
+    for(int want=2;want>=1;want--)
+      for(unsigned i=0;i<fmt->nb_streams;i++) {
+        AVDictionaryEntry *t=av_dict_get(fmt->streams[i]->metadata,"language",NULL,0);
+        if(ext_rank(e,fmt->streams[i]->codecpar)==want && t && ext_lang_is(t->value,l)) return (int)i;
+      }
   }
-  for(unsigned i=0;i<fmt->nb_streams;i++) if(ext_usable(fmt->streams[i]->codecpar)) return (int)i;
+  for(int want=2;want>=1;want--)
+    for(unsigned i=0;i<fmt->nb_streams;i++) if(ext_rank(e,fmt->streams[i]->codecpar)==want) return (int)i;
   return -1;
+}
+/* Decoder and encoder for a donor track that needs conversion. */
+static int ext_configure_conv(DtsEngine *e,AVStream *as) {
+  AVCodecParameters *ap=as->codecpar;
+  const AVCodec *decoder=avcodec_find_decoder(ap->codec_id);
+  int r;
+  if(!decoder) return fail(e,"External audio: decoder absent",0);
+  e->dec=avcodec_alloc_context3(decoder);
+  if(!e->dec) return fail(e,"External audio: decoder allocation",0);
+  avcodec_parameters_to_context(e->dec,ap);
+  e->dec->pkt_timebase=as->time_base;
+  /* The core is enough for a lossy output and costs far less CPU on a TV. */
+  if(ap->codec_id==AV_CODEC_ID_DTS) av_opt_set_int(e->dec->priv_data,"core_only",1,0);
+  if((r=avcodec_open2(e->dec,decoder,NULL))<0) return fail(e,"External audio: decoder open",r);
+  const AVCodec *encoder=g_surround_ac3?avcodec_find_encoder(AV_CODEC_ID_AC3):NULL;
+  int out_channels=2;
+  if(encoder) { int in=ap->ch_layout.nb_channels; out_channels=(in==0 || in>2)?6:2; }
+  else encoder=avcodec_find_encoder(AV_CODEC_ID_AAC);
+  if(!encoder) return fail(e,"External audio: encoder absent",0);
+  e->enc=avcodec_alloc_context3(encoder);
+  if(!e->enc) return fail(e,"External audio: encoder allocation",0);
+  e->enc->codec_id=encoder->id;
+  av_channel_layout_default(&e->enc->ch_layout,out_channels);
+  if(reset_encoder(e)<0) return -1;
+  e->fifo=av_audio_fifo_alloc(e->enc->sample_fmt,e->enc->ch_layout.nb_channels,4096);
+  e->decoded=av_frame_alloc(); e->encoded=av_frame_alloc(); e->ext_in=av_packet_alloc();
+  if(!e->fifo || !e->decoded || !e->encoded || !e->ext_in) return fail(e,"Audio queue allocation",0);
+  e->ext_conv=1; e->timeline=0;
+  e->ext_demux_eof=e->ext_dec_eof=e->ext_swr_eof=e->ext_enc_eof=0;
+  return 0;
 }
 static double ext_fps(const AVStream *s) {
   AVRational r=s->avg_frame_rate.num>0?s->avg_frame_rate:s->r_frame_rate;
@@ -1401,7 +1452,7 @@ static int configure_external(DtsEngine *e,double start) {
     if((int)i!=k) st->discard=AVDISCARD_ALL;
   }
   fflush(stdout);
-  if(k<0) return fail(e,"External audio: no AC-3, E-AC-3 or stereo AAC track",0);
+  if(k<0) return fail(e,"External audio: no audio track this TV can play or convert",0);
   { /* A different frame rate (25 vs 23.976) means a sped-up version: the
      * audio would drift away; log it, the TV test decides what to refuse. */
     double fa=e->info.fps_den?(double)e->info.fps_num/e->info.fps_den:0, fb=0;
@@ -1423,17 +1474,26 @@ static int configure_external(DtsEngine *e,double start) {
   e->ext_stream=k; e->ext_have=e->ext_eof=0; e->ext_clock_ns=INT64_MIN;
   e->ext_pkt=av_packet_alloc(); e->in=av_packet_alloc(); e->out=av_packet_alloc();
   if(!e->ext_pkt || !e->in || !e->out) return fail(e,"Audio queue allocation",0);
-  e->passthrough=1;
+  e->passthrough=1;   /* the main file: demux only, its audio unused */
   e->info.audio_stream=DTS_ENGINE_EXTERNAL_STREAM;
-  e->info.channels=ap->ch_layout.nb_channels>0?ap->ch_layout.nb_channels:(ap->codec_id==AV_CODEC_ID_AAC?2:6);
-  e->info.sample_rate=ap->sample_rate>0?ap->sample_rate:48000;
-  snprintf(e->info.audio_codec,sizeof e->info.audio_codec,"%s",avcodec_get_name(ap->codec_id));
+  if(!ext_usable(ap)) {
+    if(ext_configure_conv(e,as)<0) return -1;
+    e->info.channels=e->enc->ch_layout.nb_channels; e->info.sample_rate=48000;
+    snprintf(e->info.audio_codec,sizeof e->info.audio_codec,"%s",avcodec_get_name(e->enc->codec_id));
+    printf("[ext-audio] converting %s %d ch -> %s %d ch\n",avcodec_get_name(ap->codec_id),
+      ap->ch_layout.nb_channels,e->info.audio_codec,e->info.channels);
+    fflush(stdout);
+  } else {
+    e->info.channels=ap->ch_layout.nb_channels>0?ap->ch_layout.nb_channels:(ap->codec_id==AV_CODEC_ID_AAC?2:6);
+    e->info.sample_rate=ap->sample_rate>0?ap->sample_rate:48000;
+    snprintf(e->info.audio_codec,sizeof e->info.audio_codec,"%s",avcodec_get_name(ap->codec_id));
+  }
   if(e->info.n_tracks<DTS_TRACK_MAX) {
     DtsTrack *t=&e->info.tracks[e->info.n_tracks++];
     memset(t,0,sizeof *t);
     t->kind=DTS_AUDIO; t->stream_index=DTS_ENGINE_EXTERNAL_STREAM; t->stream_id=as->id;
-    t->channels=e->info.channels;
-    snprintf(t->codec,sizeof t->codec,"%s",e->info.audio_codec);
+    t->channels=ap->ch_layout.nb_channels>0?ap->ch_layout.nb_channels:e->info.channels;
+    snprintf(t->codec,sizeof t->codec,"%s",avcodec_get_name(ap->codec_id));
     copy_metadata(t->language,sizeof t->language,as->metadata,"language");
     copy_metadata(t->title,sizeof t->title,as->metadata,"title");
   }
@@ -1582,11 +1642,25 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
      * Preserve the input record and every compressed picture/RPU byte. */
     if(e->mp4_p8_compat_verified)e->info.dovi_bl_compatibility_id=1;
 #endif
-    if ((conf->dv_profile == 7 && !e->allow_p7) ||
+    int unsupported=(conf->dv_profile == 7 && !e->allow_p7) ||
         !nv_dv7_profile(conf->dv_profile,conf->el_present_flag,
-                       e->info.dovi_bl_present,conf->rpu_present_flag) || vp->codec_id!=AV_CODEC_ID_HEVC)
+                       e->info.dovi_bl_present,conf->rpu_present_flag) || vp->codec_id!=AV_CODEC_ID_HEVC;
+    int compat=conf->dv_bl_signal_compatibility_id;
+    if (unsupported && external && vp->codec_id==AV_CODEC_ID_HEVC && e->info.dovi_bl_present &&
+        (compat==1 || compat==2 || compat==4 || compat==6)) {
+      /* External audio needs this path, the Dolby Vision layer cannot take it
+       * (P7 with the P7 conversion off): play the HDR10/SDR/HLG base layer,
+       * enhancement layer and RPU dropped from every picture. */
+      printf("[ext-audio] Dolby Vision profile %d not converted here: base layer only (compatibility %d)\n",
+        conf->dv_profile,compat);
+      fflush(stdout);
+      e->dv_strip=1; e->info.dovi_profile=e->info.dovi_level=0;
+      e->info.dovi_rpu_present=e->info.dovi_el_present=e->info.dovi_bl_present=0;
+      e->info.dovi_bl_compatibility_id=0;
+      dv=NULL;
+    } else if (unsupported)
       return fail(e,"Dolby Vision layer/profile unsupported",0);
-    if (conf->dv_profile == 7) {
+    if (dv && conf->dv_profile == 7) {
       e->dv7=1;
       e->info.dovi_profile=8; e->info.dovi_el_present=0;
       e->info.dovi_bl_compatibility_id=1;
@@ -1836,7 +1910,56 @@ static int frame_out(DtsEngine *e,DtsFrame *f,int kind,AVRational tb) {
 #define EXT_LEAD_NS INT64_C(500000000)
 /* Keep one packet of the other file pending, already shifted by the offset
  * and trimmed to the seek target. 0 ok (pending or end), -1 error. */
+/* Conversion: the next encoded packet of the donor's audio, timed like
+ * ext_fill's. Mirrors next_frame's decode loop with the donor's packets. */
+static int ext_fill_conv(DtsEngine *e) {
+  while(!e->ext_have && !e->ext_eof) {
+    int r;
+    if(cancelled(e)) return fail(e,"Cancelled",0);
+    r=avcodec_receive_packet(e->enc,e->ext_pkt);
+    if(r==0) {
+      int64_t pts=ns(e->ext_pkt->pts,e->enc->time_base)+e->ext_offset_ns;
+      int64_t dur=e->ext_pkt->duration>0?ns(e->ext_pkt->duration,e->enc->time_base):0;
+      if(pts<0 || pts+dur<=e->target_ns) { av_packet_unref(e->ext_pkt); continue; }
+      e->ext_pts=pts; e->ext_have=1; break;
+    }
+    if(r==AVERROR_EOF) { e->ext_eof=1; break; }
+    if(r!=AVERROR(EAGAIN)) return fail(e,"External audio encode",r);
+    r=encode_fifo(e,e->ext_swr_eof);
+    if(r<0) return -1;
+    if(r>0) continue;
+    if(!e->ext_dec_eof) {
+      r=avcodec_receive_frame(e->dec,e->decoded);
+      if(r==0) { r=resample(e,e->decoded); av_frame_unref(e->decoded); if(r<0) return -1; continue; }
+      if(r==AVERROR_EOF) e->ext_dec_eof=1;
+      else if(r!=AVERROR(EAGAIN)) return fail(e,"External audio decode",r);
+    }
+    if(e->ext_dec_eof && !e->ext_swr_eof) {
+      r=resample(e,NULL); if(r<0) return -1; if(r==0) e->ext_swr_eof=1; continue;
+    }
+    if(e->ext_swr_eof && !e->ext_enc_eof) {
+      if((r=avcodec_send_frame(e->enc,NULL))<0) return fail(e,"External audio encoder drain",r);
+      e->ext_enc_eof=1; continue;
+    }
+    if(e->ext_demux_eof) { e->ext_eof=1; break; }
+    r=av_read_frame(e->ext->fmt,e->ext_in);
+    if(r==AVERROR_EOF) {
+      e->ext_demux_eof=1;
+      if((r=avcodec_send_packet(e->dec,NULL))<0) return fail(e,"External audio decoder drain",r);
+      continue;
+    }
+    if(r<0) return fail(e,cancelled(e)?"Cancelled":"External audio read",r);
+    if(e->ext_in->stream_index==e->ext_stream) {
+      r=avcodec_send_packet(e->dec,e->ext_in);
+      /* A damaged packet costs a few ms of sound, not the whole playback. */
+      if(r<0 && r!=AVERROR(EAGAIN) && r!=AVERROR_INVALIDDATA) { av_packet_unref(e->ext_in); return fail(e,"External audio decode input",r); }
+    }
+    av_packet_unref(e->ext_in);
+  }
+  return 0;
+}
 static int ext_fill(DtsEngine *e) {
+  if(e->ext_conv) return ext_fill_conv(e);
   while(!e->ext_have && !e->ext_eof) {
     if(cancelled(e)) return fail(e,"Cancelled",0);
     int r=av_read_frame(e->ext->fmt,e->ext_pkt);
@@ -1855,7 +1978,7 @@ static int ext_fill(DtsEngine *e) {
   return 0;
 }
 static int ext_emit(DtsEngine *e,DtsFrame *f) {
-  AVRational tb=e->ext->fmt->streams[e->ext_stream]->time_base;
+  AVRational tb=e->ext_conv?e->enc->time_base:e->ext->fmt->streams[e->ext_stream]->time_base;
   av_packet_unref(e->out);
   av_packet_move_ref(e->out,e->ext_pkt); e->ext_have=0;
   f->kind=DTS_AUDIO; f->stream_index=DTS_ENGINE_EXTERNAL_STREAM;
@@ -1889,6 +2012,13 @@ static int ext_seek(DtsEngine *e,double seconds) {
   int r=avformat_seek_file(e->ext->fmt,-1,INT64_MIN,ts,ts,AVSEEK_FLAG_BACKWARD);
   if(r<0) return fail(e,"External audio seek",r);
   av_packet_unref(e->ext_pkt); e->ext_have=e->ext_eof=0; e->ext_clock_ns=INT64_MIN;
+  if(e->ext_conv) {
+    avcodec_flush_buffers(e->dec);
+    if(reset_encoder(e)<0) return -1;
+    swr_free(&e->swr); av_channel_layout_uninit(&e->input_layout);
+    av_audio_fifo_reset(e->fifo); av_packet_unref(e->ext_in);
+    e->timeline=0; e->ext_demux_eof=e->ext_dec_eof=e->ext_swr_eof=e->ext_enc_eof=0;
+  }
   return 0;
 }
 /* Passthrough: demux only. Video still crosses the Annex-B filter; the selected
@@ -2018,10 +2148,36 @@ static int next_frame(DtsEngine *e,DtsFrame *f) {
     if(r<0) return fail(e,"Compressed video input",r);
   }
 }
+/* Annex-B HEVC picture without its Dolby Vision parts: RPU (type 62), EL
+ * (type 63) and every NAL of a nonzero layer. Returns the bytes written. */
+static size_t dv_strip_packet(const uint8_t *p,size_t n,uint8_t *out) {
+  size_t pre, at=nv_dv7_start(p,n,0,&pre), used=0;
+  while(pre && at<n) {
+    size_t begin=at+pre, nextpre, end=nv_dv7_start(p,n,begin,&nextpre);
+    if(end-begin>=2) {
+      const uint8_t *nal=p+begin;
+      int type=(nal[0]>>1)&63, layer=((nal[0]&1)<<5)|(nal[1]>>3);
+      if(type!=62 && type!=63 && !layer) {
+        memcpy(out+used,"\0\0\0\1",4); used+=4;
+        memcpy(out+used,nal,end-begin); used+=end-begin;
+      }
+    }
+    at=end; pre=nextpre;
+  }
+  return used;
+}
 int dts_engine_next(DtsEngine *e,DtsFrame *f) {
   int result;
   for (;;) {
     result=next_frame(e,f);
+    if(result==1 && e->dv_strip && f->kind==DTS_VIDEO) {
+      if(f->size>INT_MAX-8192) return fail(e,"Video packet too large",0);
+      av_fast_malloc(&e->dv7_buffer,&e->dv7_capacity,(size_t)f->size+8192);
+      if(!e->dv7_buffer) return fail(e,"Base layer buffer",AVERROR(ENOMEM));
+      size_t size=dv_strip_packet(f->data,f->size,e->dv7_buffer);
+      if(!size) continue;   /* an EL-only packet */
+      f->data=e->dv7_buffer; f->size=size;
+    }
     if(result==1 && (f->kind==DTS_AUDIO || f->kind==DTS_VIDEO))
       __atomic_store_n(&e->range_live,1,__ATOMIC_RELAXED);
     if(result!=1 || !e->dv7 || f->kind!=DTS_VIDEO) break;
