@@ -2661,6 +2661,13 @@ static void dtsImagemAtualizar(void) {
     dtsImagemExibida=1;
 }
 #endif
+// Preferred languages for the other file's track: the one chosen by hand for
+// this title, then the account's first and second audio languages.
+static void extIdiomas(char *langs, size_t n) {
+  const AudioLembrada *lem = audioesc_tem_lembrada() ? audioesc_lembrada() : NULL;
+  snprintf(langs, n, "%s,%s,%s,%s", audioext_idioma(),
+           lem && lem->idioma[0] ? lem->idioma : "", ling_audio(), ling_audio2());
+}
 // The audio menu chose another version's audio, or this file's own again
 // (audioext_escolher / audioext_original): reopen where the picture is.
 static void extReabrir(void) {
@@ -2680,6 +2687,19 @@ static void extReabrir(void) {
       if (!recarregarMesmaFonte(posSeg, -1, -1, lu)) falhou = 1;
       ack_publicar();
       return;
+    }
+    if (quer && extAtivo) {
+      // Another version, or another track of it, while one already plays:
+      // only the other file is swapped; this source stays open (owner, 07/11).
+      char langs[64];
+      extIdiomas(langs, sizeof langs);
+      if (dts_playback_external_swap(dtsSessao, audioext_url(), audioext_cabecalhos(), langs,
+                                     audioext_offset_ms(), audioext_faixa(), audioext_so_audio(), posSeg)) {
+        extGenAplicada = extGenVista = audioext_offset_geracao(); extGenEm = 0;
+        audioext_tocando_definir(0);   // the new audio says so when it plays
+        printf("[ext-audio] swapping the other version at %.1fs dv=%d\n", posSeg, dtsModoDv); fflush(stdout);
+        return;
+      }
     }
     if (!quer) {
       // Dolby Vision or DTS keep the converter: its own first usable track.
@@ -3587,10 +3607,8 @@ static int iniciarDts(int stream) {
   if (extAtivo) {
     // Preferred languages for the other file's track: the one chosen by hand
     // for this title, then the account's first and second audio languages.
-    char langs[64] = "";
-    const AudioLembrada *lem = audioesc_tem_lembrada() ? audioesc_lembrada() : NULL;
-    snprintf(langs, sizeof langs, "%s,%s,%s,%s", audioext_idioma(),
-             lem && lem->idioma[0] ? lem->idioma : "", ling_audio(), ling_audio2());
+    char langs[64];
+    extIdiomas(langs, sizeof langs);
     dts_engine_set_lang_match(ling_casa);
     dts_playback_next_external_audio(audioext_url(), audioext_cabecalhos(), langs, audioext_offset_ms());
     dts_playback_next_external_audio_only(audioext_so_audio());

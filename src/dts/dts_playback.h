@@ -54,6 +54,12 @@ void dts_playback_next_external_audio_only(int on);
 /* Main thread, before the start: the donor's audio stream picked in the menu
  * (-1 = by language). Consumed by that start. */
 void dts_playback_next_external_track(int stream);
+/* Main thread, on a session playing another version's audio: switch to another
+ * version (or another track of it) at `seconds` without reopening this source;
+ * only the other file is opened and the TV gets a fresh Load. 1 = queued, 0 =
+ * not an external session (start a new one). */
+int dts_playback_external_swap(DtsPlayback *p, const char *url, const char *headers, const char *langs,
+                               int offset_ms, int track, int audio_only, double seconds);
 int dts_playback_external(DtsPlayback *p);
 DtsPlayback *dts_playback_start(const char *url, const char *headers,
                                int audio_stream, double position,

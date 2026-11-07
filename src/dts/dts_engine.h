@@ -111,6 +111,12 @@ void dts_engine_external_audio_only(DtsEngine *, int on);
  * usable donor audio track: the playing one as DTS_ENGINE_EXTERNAL_STREAM,
  * the others as DTS_ENGINE_EXTERNAL_STREAM + 1 + donor index. */
 void dts_engine_external_track(DtsEngine *, int stream);
+/* Worker only, on an open external session: replace the other version (new
+ * file, track, offset, audio-only mode) at `target` seconds without reopening
+ * this source. The track list is rebuilt. 0 on success; on failure the session
+ * needs a fresh open (the old version is already gone). */
+int dts_engine_external_replace(DtsEngine *, const char *url, const char *headers, const char *langs,
+                                int offset_ms, int track, int audio_only, double target);
 /* Worker only: bytes the donor's reader has downloaded, and its size. */
 int64_t dts_engine_external_bytes(DtsEngine *, int64_t *total);
 /* Language comparison for the external track choice (the app passes

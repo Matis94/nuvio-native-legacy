@@ -100,6 +100,11 @@ static int ext_only;
 void dts_engine_external_audio_only(DtsEngine *e,int on) { (void)e;pthread_mutex_lock(&fixture);ext_only=on;pthread_mutex_unlock(&fixture); }
 static int ext_track=-2;
 void dts_engine_external_track(DtsEngine *e,int t) { (void)e;pthread_mutex_lock(&fixture);ext_track=t;pthread_mutex_unlock(&fixture); }
+static int ext_replaces, ext_replace_track;static double ext_replace_target;static char ext_replace_url[64];
+int dts_engine_external_replace(DtsEngine *e,const char *u,const char *h,const char *l,int o,int t,int a,double target) {
+ (void)h;(void)l;(void)o;(void)a;pthread_mutex_lock(&fixture);ext_replaces++;ext_replace_track=t;ext_replace_target=target;
+ snprintf(ext_replace_url,sizeof ext_replace_url,"%s",u);pthread_mutex_unlock(&fixture);e->base=target;e->serial=0;return 0;
+}
 int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,int core,double target) {
  (void)headers;assert(!strcmp(url,expected_url));
  pthread_mutex_lock(&fixture);opens++;last_stream=stream;last_open_target=target;if(core)core_opens++;pthread_mutex_unlock(&fixture);
@@ -427,6 +432,18 @@ int main(int argc,char **argv) {
   dts_playback_seek(p,3);wait_count(&seeks,1);
   pthread_mutex_lock(&fixture);assert(ext_offset==-80 && last_seek==3);pthread_mutex_unlock(&fixture);
   s=wait_status(p,0,0);assert(!s.failed && count(&opens)==1);
+  // Another version picked while this one plays: swapped in the engine, the
+  // main source is not opened again, the TV gets a new Load (revision).
+  { int rev=s.revision;
+    assert(dts_playback_external_swap(p,"fixture://third","","pl",0,2,0,7.5));
+    for(int i=0;i<400 && count(&ext_replaces)==0;i++) nap();
+    for(int i=0;i<400;i++){ s=wait_status(p,0,0); if(s.revision!=rev) break; nap(); }
+    pthread_mutex_lock(&fixture);
+    assert(ext_replaces==1 && ext_replace_track==2 && ext_replace_target==7.5 && !strcmp(ext_replace_url,"fixture://third"));
+    pthread_mutex_unlock(&fixture);
+    assert(!s.failed && s.revision!=rev && count(&opens)==1); }
+  // The session's own URL is never a swap target.
+  assert(!dts_playback_external_swap(p,"fixture://movie","","",0,-1,0,1));
   dts_playback_close(p);
   // Starting mid-film (resume, or the audio picked while playing): the source
   // and the other version start at the position, not at 0 (owner's log
@@ -444,6 +461,7 @@ int main(int argc,char **argv) {
   dts_playback_next_external_audio("fixture://movie","","",0);
   p=start(0,4,NULL,0,0);s=wait_status(p,0,0);
   assert(!dts_playback_external(p) && s.info.audio_stream==4 && ext_calls==2);
+  assert(!dts_playback_external_swap(p,"fixture://other","","",0,-1,0,1));   // not external
   dts_playback_close(p);assert(count(&creates)==count(&destroys));
   puts("PASS external audio: other source handed to the engine, track changes ignored, offset applied with the seek");return 0;
  }

@@ -88,6 +88,7 @@ void dts_engine_external_audio_only(DtsEngine *e,int on) { (void)e;(void)on; }
 void dts_engine_external_track(DtsEngine *e,int s) { (void)e;(void)s; }
 int64_t dts_engine_external_bytes(DtsEngine *e,int64_t *t) { (void)e; if(t) *t=-1; return 0; }
 int dts_engine_external_active(DtsEngine *e) { (void)e; return 0; }
+int dts_engine_external_replace(DtsEngine *e,const char *u,const char *h,const char *l,int o,int t,int a,double s) { (void)e;(void)u;(void)h;(void)l;(void)o;(void)t;(void)a;(void)s; return -1; }
 #else
 #include "../rede.h"
 #include <limits.h>
@@ -1410,6 +1411,38 @@ void dts_engine_external_offset(DtsEngine *e,int offset_ms) {
 int dts_engine_external_active(DtsEngine *e) { return e && e->ext_url && e->ext_headers; }
 void dts_engine_external_audio_only(DtsEngine *e,int on) { if(e) e->ext_audio_only=!!on; }
 void dts_engine_external_track(DtsEngine *e,int s) { if(e) e->ext_force=s>=0?s+1:0; }
+static int configure_external(DtsEngine *e,double start);
+int dts_engine_external_replace(DtsEngine *e,const char *url,const char *headers,const char *langs,
+                                int offset_ms,int track,int audio_only,double target) {
+  if(!e || !url || !*url) return -1;
+  /* The new version's settings first: a fresh open after a failure uses them. */
+  dts_engine_external_audio(e,url,headers,langs,offset_ms);
+  dts_engine_external_track(e,track);
+  dts_engine_external_audio_only(e,audio_only);
+  if(!e->fmt || !e->ext) return -1;
+  /* The old version goes with everything that read or converted it; this
+   * source's demux, index, read-ahead and video filter stay as they are. */
+  pthread_mutex_lock(&e->range_lock);
+  DtsEngine *old=e->ext; e->ext=NULL;
+  pthread_mutex_unlock(&e->range_lock);
+  __atomic_store_n(&old->cancelled,1,__ATOMIC_RELAXED); dts_engine_destroy(old);
+  av_packet_free(&e->ext_pkt); av_packet_free(&e->ext_in);
+  av_frame_free(&e->decoded); av_frame_free(&e->encoded);
+  avcodec_free_context(&e->dec); avcodec_free_context(&e->enc);
+  swr_free(&e->swr); av_audio_fifo_free(e->fifo); e->fifo=NULL;
+  av_channel_layout_uninit(&e->input_layout);
+  e->ext_have=e->ext_eof=e->ext_conv=0; e->ext_stream=-1; e->timeline=0;
+  e->ext_demux_eof=e->ext_dec_eof=e->ext_swr_eof=e->ext_enc_eof=0;
+  { int n=0;
+    for(int i=0;i<e->info.n_tracks;i++)
+      if(!(e->info.tracks[i].kind==DTS_AUDIO && e->info.tracks[i].stream_index>=DTS_ENGINE_EXTERNAL_STREAM))
+        e->info.tracks[n++]=e->info.tracks[i];
+    e->info.n_tracks=n; }
+  printf("[ext-audio] swapping the other version; this source stays open, at %.1fs\n",target);
+  fflush(stdout);
+  if(configure_external(e,target>0?target:0)<0) return -1;
+  return target>0?0:dts_engine_seek(e,0);
+}
 int64_t dts_engine_external_bytes(DtsEngine *e,int64_t *total) {
   DtsEngine *x=e?e->ext:NULL;
   if(total) *total=x?x->total:-1;
@@ -1671,7 +1704,11 @@ static int configure_external(DtsEngine *e,double start) {
   }
   AVStream *as=x->fmt->streams[k]; AVCodecParameters *ap=as->codecpar;
   e->ext_stream=k; e->ext_have=e->ext_eof=0; e->ext_clock_ns=INT64_MIN;
-  e->ext_pkt=av_packet_alloc(); e->in=av_packet_alloc(); e->out=av_packet_alloc();
+  /* A swap of the other version keeps this source's packets (see
+   * dts_engine_external_replace). */
+  if(!e->ext_pkt) e->ext_pkt=av_packet_alloc();
+  if(!e->in) e->in=av_packet_alloc();
+  if(!e->out) e->out=av_packet_alloc();
   if(!e->ext_pkt || !e->in || !e->out) return fail(e,"Audio queue allocation",0);
   e->passthrough=1;   /* the main file: demux only, its audio unused */
   e->info.audio_stream=DTS_ENGINE_EXTERNAL_STREAM;

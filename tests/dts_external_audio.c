@@ -350,6 +350,29 @@ int main(int argc, char **argv) {
   r = play(e, 0, 0);
   assert(r.video == 100 && r.audio > 100);
   dts_engine_destroy(e);
+  /* Swap of the other version mid-film: this source stays open (no new
+   * open of the main file), the new file's track plays from the position. */
+  e = dts_engine_create();
+  dts_engine_external_audio(e, other, HEADERS, "pl", 0);
+  if (dts_engine_open(e, main_file, HEADERS, -1, 0, 0) < 0) { fprintf(stderr, "open: %s\n", dts_engine_error(e)); return 1; }
+  load_refs(other, "pol");
+  r = play(e, 0, 40);
+  assert(r.video > 10);
+  assert(dts_engine_external_replace(e, other, HEADERS, "pl", 0, 1, 0, 2.0) == 0);
+  info = dts_engine_info(e);
+  assert(!strcmp(info->audio_codec, "eac3") && info->audio_stream == DTS_ENGINE_EXTERNAL_STREAM);
+  { int n_audio = 0;
+    for (int i = 0; i < info->n_tracks; i++) n_audio += info->tracks[i].kind == DTS_AUDIO;
+    assert(n_audio == 2); }   /* rebuilt, not doubled */
+  load_refs(other, "eng");
+  r = play(e, 0, 0);
+  assert(r.audio > 20 && r.first_audio >= 1950000000LL && r.first_audio < 2100000000LL);
+  assert(r.last_audio > 3800000000LL);
+  /* Without an open session the swap refuses (the app starts a new one). */
+  DtsEngine *closed = dts_engine_create();
+  assert(dts_engine_external_replace(closed, other, HEADERS, "pl", 0, -1, 0, 0) < 0);
+  dts_engine_destroy(closed);
+  dts_engine_destroy(e);
   printf("External audio engine checks passed.\n");
   return 0;
 }
