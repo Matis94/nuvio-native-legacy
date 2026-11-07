@@ -325,6 +325,14 @@ static int prepareModePrimed(DtsPlayback *p, int stream, int core, double target
   if(pct_resume && stream>=0 && dts_engine_seek(p->engine,target)<0) {
     fail(p,dts_engine_error(p->engine));return 0;
   }
+  /* External audio has no track to match, so the deferred start seek above
+   * never ran: both files were read from 0 and trimmed up to the position
+   * (owner's log 07/11: a minute of catch-up, the CPU budget tripped by
+   * converting the skipped audio). Seek the source and the other version. */
+  if(p->external && target>0 && (pct_resume || (defer_start && !reused)) &&
+     dts_engine_seek(p->engine,target)<0) {
+    fail(p,dts_engine_error(p->engine));return 0;
+  }
   /* #203: stage lines print only after prepare, so they carry no time of
    * their own. Say how long the source open and the native Load took. */
   opened = clockSeconds(CLOCK_MONOTONIC);

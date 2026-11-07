@@ -425,10 +425,21 @@ int main(int argc,char **argv) {
   pthread_mutex_lock(&fixture);assert(ext_offset==-80 && last_seek==3);pthread_mutex_unlock(&fixture);
   s=wait_status(p,0,0);assert(!s.failed && count(&opens)==1);
   dts_playback_close(p);
+  // Starting mid-film (resume, or the audio picked while playing): the source
+  // and the other version start at the position, not at 0 (owner's log
+  // 07/11: both files were read from the start up to it).
+  dts_playback_next_external_audio("fixture://other","","pl",0);
+  pthread_mutex_lock(&fixture);seeks=0;last_seek=-1;pthread_mutex_unlock(&fixture);
+  p=dts_playback_start("fixture://movie","X-Token: fixture",-1,42.0,0,"window",0,&track,7,9);assert(p);
+  s=wait_status(p,0,0);assert(!s.failed && dts_playback_external(p));
+  pthread_mutex_lock(&fixture);
+  assert(last_open_target==42.0 || (seeks>=1 && last_seek==42.0));
+  pthread_mutex_unlock(&fixture);
+  dts_playback_close(p);
   // The session's own URL is not another source: plain playback.
   dts_playback_next_external_audio("fixture://movie","","",0);
   p=start(0,4,NULL,0,0);s=wait_status(p,0,0);
-  assert(!dts_playback_external(p) && s.info.audio_stream==4 && ext_calls==1);
+  assert(!dts_playback_external(p) && s.info.audio_stream==4 && ext_calls==2);
   dts_playback_close(p);assert(count(&creates)==count(&destroys));
   puts("PASS external audio: other source handed to the engine, track changes ignored, offset applied with the seek");return 0;
  }
