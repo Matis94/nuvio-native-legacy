@@ -92,6 +92,11 @@ int dts_engine_probe_audio(const char *u,const char *h,DtsTrack *t,int m) { (voi
 int dts_engine_external_match_arm(DtsEngine *e) { (void)e; return -1; }
 int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) { (void)e; memset(o,0,sizeof *o); return -1; }
 void dts_engine_external_speed(DtsEngine *e,int p) { (void)e;(void)p; }
+int dts_engine_prefetch(DtsEngine *e,double s) { (void)e;(void)s; return -1; }
+void dts_engine_prefetch_tidy(DtsEngine *e) { (void)e; }
+void dts_engine_reconnect(DtsEngine *e) { (void)e; }
+void dts_engine_external_follow(DtsEngine *e,int on) { (void)e;(void)on; }
+int dts_engine_external_follow_poll(DtsEngine *e,int *s,int *o) { (void)e; *s=0; *o=0; return 0; }
 int64_t dts_engine_external_bytes(DtsEngine *e,int64_t *t) { (void)e; if(t) *t=-1; return 0; }
 int dts_engine_external_active(DtsEngine *e) { (void)e; return 0; }
 int dts_engine_external_replace(DtsEngine *e,const char *u,const char *h,const char *l,int o,int t,int a,double s) { (void)e;(void)u;(void)h;(void)l;(void)o;(void)t;(void)a;(void)s; return -1; }
@@ -202,6 +207,13 @@ struct DtsEngine {
   int64_t fx_from;           /* where the current read started (read-ahead grows from it) */
   uint64_t fx_resolved_ms;   /* last time the final address was dropped for the add-on's */
   char final_url[8192];
+  /* PREFETCH (owner's log 07/11: after an intro skip the slow source starved
+   * the DV path for 20 s): the bytes at a coming jump target, fetched over a
+   * request of their own while playback goes on. A seek landing there is
+   * served from them while the stream restarts after them. */
+  uint8_t *pf_buf; int64_t pf_lo, pf_hi, pf_cap; double pf_seconds;
+  int64_t pf_ts, pf_p0, pf_t0, pf_tend; AVRational pf_tb;   /* where to look when the index has no entry near */
+  pthread_t pf_thread; int pf_thread_ok; volatile int pf_cancel, pf_done; int pf_used; int64_t pf_served;
   AVFormatContext *fmt;
   AVIOContext *io;
   AVCodecContext *dec, *enc;
@@ -253,6 +265,10 @@ struct DtsEngine {
   double mt_t1, mt_o1;   /* first find: this file's time and raw offset, s (mt_t1 < 0: none) */
   int64_t mt_o1_user_ns; /* the offset that find reported (a manual change forgets it) */
   double ext_ratio;      /* other version's speed (0 or 1: the same; dts_engine_external_speed) */
+  /* FOLLOW ANOTHER CUT (Settings, off by default): struct Follow below. */
+  int fw_on, fw_state, fw_autoarm, mt_auto;
+  struct Follow *fw;
+  int fw_event, fw_event_ms;   /* last event for the app: 1 own audio, 2 resumed, 3 gave up */
   double ext_fps_ratio;  /* other version's frame rate / this one's (0: unknown) */
   int64_t fx_live_total;   /* stream size from the response headers (rede_fluxo64) */
   /* ext_conv: the donor's audio is decoded and re-encoded (DTS, TrueHD,
@@ -904,6 +920,119 @@ static int read_sparse(DtsEngine *e,uint8_t *dst,int n) {
     pthread_cond_timedwait(&e->range_wake,&e->range_lock,&ts);
   }
 }
+static int mkv_cluster_in(const uint8_t *b,int n,int64_t at,int64_t *cpos,int64_t *ctc);
+/* No index entry near the target (Matroska Cues not read yet): find a Cluster
+ * at or before it from the file itself, 1 MiB probes placed by
+ * interpolation between known (position, time) points. -1 not found. */
+static int64_t pf_locate(DtsEngine *e) {
+  int64_t lo_p=e->pf_p0, lo_t=e->pf_t0, hi_p=e->total, hi_t=e->pf_tend, best=-1;
+  for(int tries=0;tries<6 && !__atomic_load_n(&e->pf_cancel,__ATOMIC_RELAXED);tries++) {
+    if(hi_t<=lo_t || hi_p<=lo_p) break;
+    int64_t p=lo_p+(int64_t)((double)(hi_p-lo_p)*(double)(e->pf_ts-lo_t)/(double)(hi_t-lo_t));
+    if(p<lo_p) p=lo_p;
+    if(p>hi_p-1024*1024) p=hi_p-1024*1024;
+    long got=0; int64_t total=-1; int status=0, cross=0; char fin[8192];
+    char *d=rede_baixar_trecho64_final(e->url,e->headers,p,p+1024*1024-1,&got,&total,&status,&e->pf_cancel,fin,&cross);
+    int64_t cpos, ctc;
+    int ok=d && got>0 && mkv_cluster_in((const uint8_t *)d,(int)got,p,&cpos,&ctc)==0;
+    free(d);
+    if(!ok) break;
+    int64_t err=av_rescale_q(ctc-e->pf_ts,e->pf_tb,AV_TIME_BASE_Q);
+    if(ctc<=e->pf_ts) { best=cpos; lo_p=cpos; lo_t=ctc; } else { hi_p=cpos; hi_t=ctc; }
+    if(err<=0 && err>-8LL*AV_TIME_BASE) break;   /* a cluster up to 8 s before: start there */
+  }
+  return best;
+}
+static void *pf_worker(void *arg) {
+  DtsEngine *e=arg;
+  if(e->pf_lo<0) {
+    int64_t at0=pf_locate(e);
+    printf("[prefetch] %.1fs: cluster %s\n",e->pf_seconds,at0>=0?"found by position":"not found"); fflush(stdout);
+    pthread_mutex_lock(&e->range_lock);
+    if(at0>=0) e->pf_lo=e->pf_hi=at0;
+    pthread_mutex_unlock(&e->range_lock);
+    if(at0<0) { __atomic_store_n(&e->pf_done,1,__ATOMIC_RELAXED); return NULL; }
+  }
+  int64_t at=e->pf_lo, end=e->pf_lo+e->pf_cap;
+  while(at<end && !__atomic_load_n(&e->pf_cancel,__ATOMIC_RELAXED) && !cancelled(e)) {
+    long got=0; int64_t total=-1; int status=0, cross=0; char fin[8192];
+    int64_t last=at+4*1024*1024-1; if(last>=end) last=end-1;
+    char *d=rede_baixar_trecho64_final(e->url,e->headers,at,last,&got,&total,&status,&e->pf_cancel,fin,&cross);
+    if(!d || got<=0) { free(d); break; }
+    pthread_mutex_lock(&e->range_lock);
+    memcpy(e->pf_buf+(at-e->pf_lo),d,(size_t)got); at+=got; e->pf_hi=at;
+    pthread_mutex_unlock(&e->range_lock);
+    free(d);
+  }
+  printf("[prefetch] %.1fs: %lld KiB ready\n",e->pf_seconds,(long long)((at-e->pf_lo)/1024)); fflush(stdout);
+  __atomic_store_n(&e->pf_done,1,__ATOMIC_RELAXED);
+  return NULL;
+}
+static void pf_stop(DtsEngine *e) {
+  if(e->pf_thread_ok) { __atomic_store_n(&e->pf_cancel,1,__ATOMIC_RELAXED); pthread_join(e->pf_thread,NULL); e->pf_thread_ok=0; }
+  pthread_mutex_lock(&e->range_lock);
+  if(e->pf_buf) { printf("[prefetch] %.1fs: %lld KiB of it read\n",e->pf_seconds,(long long)(e->pf_served/1024)); fflush(stdout); }
+  free(e->pf_buf); e->pf_buf=NULL; e->pf_lo=e->pf_hi=e->pf_cap=0; e->pf_used=0; e->pf_served=0;
+  pthread_mutex_unlock(&e->range_lock);
+}
+/* A fresh connection from where the stream is (a slow one may be a slow
+ * route: owner's log 07/11). Range readers are left as they are. */
+void dts_engine_reconnect(DtsEngine *e) {
+  if(!e || !fx_long(e)) return;
+  pthread_mutex_lock(&e->range_lock);
+  if(e->fx_thread_ok) {
+    e->fx_req=e->fx_hi>e->pos?e->fx_hi:e->pos;   /* keep what already arrived */
+    __atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
+    pthread_cond_broadcast(&e->range_wake);
+  }
+  pthread_mutex_unlock(&e->range_lock);
+}
+/* The prefetched bytes go once used and read past, or once playback itself
+ * went beyond them (the RAM back). */
+void dts_engine_prefetch_tidy(DtsEngine *e) {
+  if(!e || !e->pf_buf || !__atomic_load_n(&e->pf_done,__ATOMIC_RELAXED)) return;
+  int64_t pos; int used;
+  pthread_mutex_lock(&e->range_lock); pos=e->pos; used=e->pf_used; pthread_mutex_unlock(&e->range_lock);
+  if((used && pos>=e->pf_hi) || pos>=e->pf_lo+e->pf_cap) pf_stop(e);
+}
+int dts_engine_prefetch(DtsEngine *e,double seconds) {
+  if(!e || !e->fmt || !fx_long(e) || e->info.video_stream<0 || !e->url || seconds<=0) return -1;
+  if(e->pf_buf && fabs(seconds-e->pf_seconds)<1.0) return 0;
+  AVStream *v=e->fmt->streams[e->info.video_stream];
+  int64_t ts=av_rescale_q((int64_t)(seconds*AV_TIME_BASE),AV_TIME_BASE_Q,v->time_base);
+  int i=av_index_search_timestamp(v,ts,AVSEEK_FLAG_BACKWARD);
+  const AVIndexEntry *ie=i>=0?avformat_index_get_entry(v,i):NULL;
+  /* Only a keyframe of the index near the target (a Matroska file whose Cues
+   * were not read yet has a few early entries only). */
+  int near=ie && ie->pos>0 && av_rescale_q(ts-ie->timestamp,v->time_base,AV_TIME_BASE_Q)<=15*AV_TIME_BASE;
+  int mkv=e->fmt->iformat && strstr(e->fmt->iformat->name,"matroska");
+  if(!near && (!mkv || e->total<=16*1024*1024 || e->fmt->duration<=0)) {
+    printf("[prefetch] %.1fs: no index entry near it (%d entries), skipped\n",seconds,avformat_index_get_entries_count(v));
+    fflush(stdout); return -1;
+  }
+  pf_stop(e);
+  /* About 10 s of the file (8..24 MiB of RAM), from just before that keyframe. */
+  int64_t rate=e->total>0 && e->fmt->duration>0?(int64_t)(e->total/(e->fmt->duration/1e6)):0;
+  int64_t cap=rate*10; if(cap<8*1024*1024) cap=8*1024*1024; if(cap>24*1024*1024) cap=24*1024*1024;
+  uint8_t *b=malloc((size_t)cap);
+  if(!b) return -1;
+  pthread_mutex_lock(&e->range_lock);
+  e->pf_buf=b; e->pf_cap=cap; e->pf_seconds=seconds; e->pf_used=0;
+  if(near) e->pf_lo=ie->pos>65536?ie->pos-65536:0;
+  else {   /* found by the worker (pf_locate); reads skip the buffer until then */
+    const AVIndexEntry *first=avformat_index_get_entry(v,0);
+    e->pf_lo=-1; e->pf_ts=ts; e->pf_tb=v->time_base;
+    e->pf_p0=first && first->pos>0?first->pos:0; e->pf_t0=first?first->timestamp:0;
+    e->pf_tend=av_rescale_q(e->fmt->duration,AV_TIME_BASE_Q,v->time_base);
+  }
+  e->pf_hi=e->pf_lo;
+  pthread_mutex_unlock(&e->range_lock);
+  e->pf_cancel=0; e->pf_done=0;
+  if(pthread_create(&e->pf_thread,NULL,pf_worker,e)==0) e->pf_thread_ok=1;
+  else { pf_stop(e); return -1; }
+  printf("[prefetch] %.1fs: fetching %lld KiB at %lld\n",seconds,(long long)(cap/1024),(long long)e->pf_lo); fflush(stdout);
+  return 0;
+}
 static int read_fluxo_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
   DtsEngine *e=opaque;
   uint64_t wait_started=0;
@@ -929,6 +1058,12 @@ static int read_fluxo_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
     if(cancelled(e) || __atomic_load_n(&e->interrupt,__ATOMIC_RELAXED) ||
        (pending_fd>=0 && poll(&pending,1,0)>0)) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EXIT; }
     if(e->total>=0 && e->pos>=e->total) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EOF; }
+    if(e->pf_buf && e->pos>=e->pf_lo && e->pos<e->pf_hi && !(e->fx_req<0 && e->pos>=e->fx_lo && e->pos<e->fx_hi)) {
+      int64_t k=e->pf_hi-e->pos; if(k>n) k=n;
+      memcpy(dst,e->pf_buf+(e->pos-e->pf_lo),(size_t)k); e->pos+=k; e->pf_served+=k;
+      pthread_mutex_unlock(&e->range_lock);
+      return (int)k;
+    }
     if(e->fx_req<0 && e->pos>=e->fx_lo && e->pos<e->fx_hi) {
       int64_t k=e->fx_hi-e->pos; if(k>n) k=n;
       size_t at=(size_t)(e->pos%FX_CAP); if((int64_t)(FX_CAP-at)<k) k=FX_CAP-at;
@@ -970,7 +1105,11 @@ static int64_t seek_fluxo(void *opaque,int64_t offset,int whence) {
   e->pos=base+offset;
   if(fx_long(e) && e->fx_thread_ok &&
      (e->pos<e->fx_lo || e->pos>e->fx_hi)) {
-    e->fx_req=e->pos;
+    /* A jump into the prefetched bytes: they serve it, the stream starts
+     * again right after them. */
+    int pf=e->pf_buf && e->pos>=e->pf_lo && e->pos<e->pf_hi && e->pf_hi-e->pos>=1024*1024;
+    e->fx_req=pf?e->pf_hi:e->pos;
+    if(pf && !e->pf_used) { e->pf_used=1; printf("[prefetch] jump to %.1fs served from %lld KiB fetched ahead\n",e->pf_seconds,(long long)((e->pf_hi-e->pos)/1024)); fflush(stdout); }
     __atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
   }
   pthread_cond_broadcast(&e->range_wake);
@@ -1222,12 +1361,14 @@ static int packet_read_error(DtsEngine *e,int code) {
 static void match_disarm(DtsEngine *e);
 static void match_cancel(DtsEngine *e);
 static void match_stop(DtsEngine *e);
+static void pf_stop(DtsEngine *e);
 static void close_media(DtsEngine *e) {
 #ifdef NV_HTTP_BUFFER_DIAG
   uint64_t httpCloseBeg=clock_ns(CLOCK_MONOTONIC);
   http_session_diag(e,"media-close-start",0);
 #endif
   sp_close(e);
+  pf_stop(e);
   fx_close(e);
   match_stop(e); e->mt_state=0;
   pthread_mutex_lock(&e->range_lock);
@@ -1436,9 +1577,8 @@ void dts_engine_external_audio(DtsEngine *e,const char *url,const char *headers,
 }
 void dts_engine_external_offset(DtsEngine *e,int offset_ms) {
   if(!e) return;
-  /* +-10 min: another cut can be minutes away (owner, 07/11). */
-  if(offset_ms>600000) offset_ms=600000;
-  if(offset_ms<-600000) offset_ms=-600000;
+  if(offset_ms>DTS_ENGINE_EXTERNAL_OFFSET_MAX_MS) offset_ms=DTS_ENGINE_EXTERNAL_OFFSET_MAX_MS;
+  if(offset_ms<-DTS_ENGINE_EXTERNAL_OFFSET_MAX_MS) offset_ms=-DTS_ENGINE_EXTERNAL_OFFSET_MAX_MS;
   e->ext_offset_ns=(int64_t)offset_ms*1000000;
   /* A manual change (not the offset a match just gave) ends the second look. */
   if(e->mt_t1>=0 && llabs(e->ext_offset_ns-e->mt_o1_user_ns)>20000000) e->mt_t1=-1;
@@ -1795,7 +1935,10 @@ static int configure_external(DtsEngine *e,double start) {
   if(!e->ext_pkt || !e->in || !e->out) return fail(e,"Audio queue allocation",0);
   e->passthrough=1;   /* the main file: demux only, its audio unused */
   e->info.audio_stream=DTS_ENGINE_EXTERNAL_STREAM;
-  if(!ext_usable(ap) || ext_k(e)!=1.0) {
+  /* Following another cut switches the encoder to this file's audio in the
+   * scenes the other lacks: the conversion path. */
+  int follow=e->fw_on && abs(e->ext_cut_s)>10;
+  if(!ext_usable(ap) || ext_k(e)!=1.0 || follow) {
     if(ext_configure_conv(e,as)<0) return -1;
     if(ext_k(e)!=1.0) { printf("[ext-audio] other version's speed corrected: ratio %.6f\n",ext_k(e)); fflush(stdout); }
     e->info.channels=e->enc->ch_layout.nb_channels; e->info.sample_rate=48000;
@@ -1825,8 +1968,9 @@ static int configure_external(DtsEngine *e,double start) {
   e->info.duration_ns=av_rescale_q(e->fmt->duration,AV_TIME_BASE_Q,NS);
   e->info.start_ns=e->fmt->start_time==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->start_time,AV_TIME_BASE_Q,NS);
   e->target_ns=(int64_t)(start*1000000000.0);
-  printf("[ext-audio] ready codec=%s ch=%d rate=%d stream=%d\n",e->info.audio_codec,e->info.channels,
-    e->info.sample_rate,k);
+  printf("[ext-audio] ready codec=%s ch=%d rate=%d stream=%d%s\n",e->info.audio_codec,e->info.channels,
+    e->info.sample_rate,k,follow?" (following another cut)":"");
+  e->fw_autoarm=follow;
   fflush(stdout);
   return start>0?dts_engine_seek(e,start):0;
 }
@@ -2271,6 +2415,9 @@ static int frame_out(DtsEngine *e,DtsFrame *f,int kind,AVRational tb) {
 #include "dts_match.inc"
 #include <ctype.h>
 static int ext_donor_seek(DtsEngine *e,double t,int *how);
+static int ext_reset_chain(DtsEngine *e);
+static void follow_streams(DtsEngine *e,int *mains,int *donor);
+static void follow_start(DtsEngine *e,double score);
 /* "MATCH AUTOMATICALLY" (owner, 07/11, on click only): DTS_MATCH_SECONDS of
  * this file's audio (a track that is read anyway, interleaved with the
  * picture: no extra download) and of the other version's, decoded to band
@@ -2305,7 +2452,8 @@ sort:
 /* Not confident: is one of its candidates confirmed on the two halves? */
 static int match_try_verify(const DtsMatchSig *sm,const DtsMatchSig *sd,double k,DtsMatchResult *r) {
   for(int i=0;i<r->ncand;i++)
-    if(dts_match_verify(sm,sd,k,r->cand_off[i])) {
+    /* Not on a near-zero peak (owner's log 07/11: a 0.05 one was "confirmed"). */
+    if(r->cand_score[i]>=0.10 && dts_match_verify(sm,sd,k,r->cand_off[i])) {
       printf("[ext-audio] match: %.3f s (score %.2f) confirmed on both halves of the capture\n",r->cand_off[i],r->cand_score[i]);
       fflush(stdout);
       r->offset_s=r->cand_off[i]; r->score=r->cand_score[i]; r->confident=1;
@@ -2334,42 +2482,48 @@ static void match_side_sig(const MatchSide *m,DtsMatchSig *s) {
   for(int b=0;b<DTS_MATCH_BANDS;b++) s->env[b]=m->ev.env[b];
   s->n=m->ev.n; s->t0=m->t0_ns!=INT64_MIN?m->t0_ns/1e9:0;
 }
+/* One decoded frame of a side into its envelopes (the frame is unref'd).
+ * -1 broken. */
+static int match_side_frame(MatchSide *m,AVFrame *fr,AVRational tb) {
+  if(!m->swr) {
+    AVChannelLayout mono=AV_CHANNEL_LAYOUT_MONO;
+    if(swr_alloc_set_opts2(&m->swr,&mono,AV_SAMPLE_FMT_FLT,fr->sample_rate,&fr->ch_layout,fr->format,fr->sample_rate,0,NULL)<0 ||
+       swr_init(m->swr)<0) { swr_free(&m->swr); av_frame_unref(fr); return -1; }
+    dts_match_env_init(&m->ev,fr->sample_rate,m->env,m->cap);
+  }
+  if(m->t0_ns==INT64_MIN) {
+    int64_t p=fr->best_effort_timestamp!=AV_NOPTS_VALUE?fr->best_effort_timestamp:fr->pts;
+    if(p==AV_NOPTS_VALUE) { av_frame_unref(fr); return 0; }
+    m->t0_ns=ns(p,tb);
+  }
+  float buf[8192]; uint8_t *out=(uint8_t *)buf;
+  int left=fr->nb_samples; const uint8_t **in=(const uint8_t **)fr->extended_data;
+  while(left>0 || in) {
+    int got=swr_convert(m->swr,&out,8192,in,in?left:0);
+    in=NULL; left=0;
+    if(got<=0) break;
+    dts_match_env_push(&m->ev,buf,got);
+  }
+  av_frame_unref(fr);
+  return 0;
+}
 /* One packet of a side into its envelopes. 1 when full, 0 more, -1 broken. */
 static int match_side_feed(MatchSide *m,AVPacket *pkt,AVRational tb) {
   if(match_side_full(m)) return 1;
   if(!m->dec || avcodec_send_packet(m->dec,pkt)<0) return 0;
-  while(avcodec_receive_frame(m->dec,m->fr)==0) {
-    AVFrame *fr=m->fr;
-    if(!m->swr) {
-      AVChannelLayout mono=AV_CHANNEL_LAYOUT_MONO;
-      if(swr_alloc_set_opts2(&m->swr,&mono,AV_SAMPLE_FMT_FLT,fr->sample_rate,&fr->ch_layout,fr->format,fr->sample_rate,0,NULL)<0 ||
-         swr_init(m->swr)<0) { swr_free(&m->swr); av_frame_unref(fr); return -1; }
-      dts_match_env_init(&m->ev,fr->sample_rate,m->env,m->cap);
-    }
-    if(m->t0_ns==INT64_MIN) {
-      int64_t p=fr->best_effort_timestamp!=AV_NOPTS_VALUE?fr->best_effort_timestamp:fr->pts;
-      if(p==AV_NOPTS_VALUE) { av_frame_unref(fr); continue; }
-      m->t0_ns=ns(p,tb);
-    }
-    float buf[8192]; uint8_t *out=(uint8_t *)buf;
-    int left=fr->nb_samples; const uint8_t **in=(const uint8_t **)fr->extended_data;
-    while(left>0 || in) {
-      int got=swr_convert(m->swr,&out,8192,in,in?left:0);
-      in=NULL; left=0;
-      if(got<=0) break;
-      dts_match_env_push(&m->ev,buf,got);
-    }
-    av_frame_unref(fr);
-  }
+  while(avcodec_receive_frame(m->dec,m->fr)==0)
+    if(match_side_frame(m,m->fr,tb)<0) return -1;
   return match_side_full(m);
 }
 static void match_disarm(DtsEngine *e) {
   struct MatchCap *mc=e->mt;
   if(!mc) return;
-  if(e->fmt && mc->main_stream>=0 && (unsigned)mc->main_stream<e->fmt->nb_streams)
+  int fm=-1, fd=-1;
+  follow_streams(e,&fm,&fd);   /* tracks the follow keeps reading stay on */
+  if(e->fmt && mc->main_stream>=0 && (unsigned)mc->main_stream<e->fmt->nb_streams && mc->main_stream!=fm)
     e->fmt->streams[mc->main_stream]->discard=AVDISCARD_ALL;
   /* The other version's track read only for the comparison goes back off. */
-  if(e->ext && e->ext->fmt && mc->donor_stream!=e->ext_stream && mc->donor_stream>=0 &&
+  if(e->ext && e->ext->fmt && mc->donor_stream!=e->ext_stream && mc->donor_stream>=0 && mc->donor_stream!=fd &&
      (unsigned)mc->donor_stream<e->ext->fmt->nb_streams)
     e->ext->fmt->streams[mc->donor_stream]->discard=AVDISCARD_ALL;
   match_side_free(&mc->s[0]); match_side_free(&mc->s[1]);
@@ -2392,8 +2546,10 @@ static void match_job_stop(DtsEngine *e) {
   match_job_free(j); e->mj=NULL;
 }
 /* Session closed or another version: nothing of the match survives. */
+static void follow_free(DtsEngine *e);
 static void match_stop(DtsEngine *e) {
   match_disarm(e); match_job_stop(e); e->mt_t1=-1;
+  follow_free(e); e->fw_autoarm=0;
 }
 /* A fresh reader of the other version, `seconds` of its chosen track from
  * `from` (its own timeline) into `out`. 0 ok. */
@@ -2454,6 +2610,15 @@ static void *match_job_run(void *arg) {
     double h1=-j->cut_s+j->base, h2=-j->cut_s*(j->main_dur>0?tm/j->main_dur:0)+j->base;
     if(!far) { st[n].c=h1; st[n].r=10; st[n].cap_mb=1e9; st[n++].how=2; }
     if(far || (fabs(h2-h1)>15 && fabs(h2-j->center)>15)) { st[n].c=h2; st[n].r=far?60:10; st[n].cap_mb=300; st[n++].how=2; }
+    /* Another cut far apart: one direction only (a longer picture has the
+     * other version's scene earlier, a shorter one later), around the
+     * proportional place, wider. */
+    if(far) {
+      double c=h2, r=150;
+      if(j->cut_s<0 && c-r<j->base) c=j->base+r;
+      if(j->cut_s>0 && c+r>j->base) c=j->base-r;
+      st[n].c=c; st[n].r=r; st[n].cap_mb=300; st[n++].how=4;
+    }
   }
   st[n].c=j->center; st[n].r=60; st[n].cap_mb=300; st[n++].how=3;
   if(!far) { st[n].c=j->center; st[n].r=300; st[n].cap_mb=300; st[n++].how=4; }
@@ -2499,12 +2664,19 @@ static void *match_job_run(void *arg) {
   pthread_mutex_lock(&j->lock); j->done=1; pthread_mutex_unlock(&j->lock);
   return NULL;
 }
+static void match_fail(DtsEngine *e,int heavy);
 static void match_report(DtsEngine *e,double off_raw,double ratio,double score,int how) {
   int64_t user=llrint((off_raw*1e9-e->ext_base_ns)/1e6);
-  if(user>600000) user=600000;
-  if(user<-600000) user=-600000;
+  /* Beyond the sync's reach: never clipped and applied (owner's log 07/11:
+   * +13.6 min became +10 min). */
+  if(user>DTS_ENGINE_EXTERNAL_OFFSET_MAX_MS || user<-DTS_ENGINE_EXTERNAL_OFFSET_MAX_MS) {
+    printf("[ext-audio] match: %lld ms is beyond the sync's reach, not applied\n",(long long)user); fflush(stdout);
+    match_fail(e,0); return;
+  }
   e->mt_state=2; e->mt_offset_ms=(int)user; e->mt_score=(int)lround(score*100.0);
   e->mt_ratio_ppm=ratio>0?(int)llrint((ratio-1.0)*1e6):0; e->mt_how=how;
+  /* Another cut, with "Follow through the whole film" on: from this find on. */
+  if(how!=5 && e->fw_on && abs(e->ext_cut_s)>10) follow_start(e,score);
 }
 static void match_fail(DtsEngine *e,int heavy) {
   e->mt_state=3; e->mt_how=0; e->mt_heavy=heavy;
@@ -2516,7 +2688,7 @@ static void match_set_cands(DtsEngine *e,int n,const double *off,const double *s
   e->mt_ncand=0;
   for(int i=0;i<n && e->mt_ncand<3;i++) {
     int64_t u=llrint((off[i]*1e9-e->ext_base_ns)/1e6);
-    if(u>600000 || u<-600000) continue;
+    if(u>DTS_ENGINE_EXTERNAL_OFFSET_MAX_MS || u<-DTS_ENGINE_EXTERNAL_OFFSET_MAX_MS) continue;
     e->mt_cand_ms[e->mt_ncand]=(int)u; e->mt_cand_sc[e->mt_ncand++]=(int)lround(sc[i]*100.0);
   }
 }
@@ -2656,7 +2828,9 @@ static void match_pair(DtsEngine *e,int alt,int *mains,int *donor) {
   if(m<0 && alt && def>=0) {
     copy_metadata(lm,sizeof lm,mf->streams[def]->metadata,"language");
     int k=lm[0]?match_track_lang(df,lm):-1;
-    if(k>=0) { m=def; d=k; }
+    /* The lightest track of that language (AC-3 before TrueHD: owner's log
+     * 07/11 decoded the TrueHD, twice the CPU). */
+    if(k>=0) { m=match_track_lang(mf,lm); if(m<0) m=def; d=k; }
   }
   for(unsigned i=0;i<mf->nb_streams && m<0 && alt;i++) {
     char l[16]="";
@@ -2665,7 +2839,12 @@ static void match_pair(DtsEngine *e,int alt,int *mains,int *donor) {
     int k=l[0]?match_track_lang(df,l):-1;
     if(k>=0) { m=(int)i; d=k; }
   }
-  if(m<0) m=def;
+  if(m<0) {   /* no shared language: the lightest track of the default one */
+    char l[16]="";
+    if(def>=0) copy_metadata(l,sizeof l,mf->streams[def]->metadata,"language");
+    m=l[0]?match_track_lang(mf,l):-1;
+    if(m<0) m=def;
+  }
   *mains=m; *donor=d;
 }
 static int match_arm(DtsEngine *e,int check) {
@@ -2729,6 +2908,7 @@ int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) {
   }
   if(e->mt_state==1 && e->mt && !e->mt_check && clock_ns(CLOCK_MONOTONIC)/1000000u-e->mt_started_ms>90000u) match_cancel(e);  /* paused or stuck */
   if(e->mt_state==2 || e->mt_state==3) {
+    o->automatic=e->mt_auto; if(e->mt_state==3 || !e->mt) e->mt_auto=0;
     o->ncand=e->mt_ncand;
     for(int c=0;c<e->mt_ncand;c++) { o->cand_ms[c]=e->mt_cand_ms[c]; o->cand_score[c]=e->mt_cand_sc[c]; }
   }
@@ -2742,9 +2922,258 @@ int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) {
   }
   return 0;
 }
+/* FOLLOW ANOTHER CUT (Settings > Audio from another version > Follow
+ * through the whole film; owner, 07/11). After a trusted find, both audios
+ * keep being compared every 2 s over the last 8 s. When the other version
+ * stops matching (a scene it does not have: an extended picture with the
+ * theatrical audio), this file's own audio plays (FILL) while the other one
+ * waits where it stopped; when the latest 10 s of this file show up in the
+ * other version again (read ahead up to 2.5 min), it resumes from there with
+ * the new offset. Needs the conversion path: the encoder switches source
+ * without a reload. */
+#define FW_MAIN_S 60
+#define FW_LOOK_S 40
+#define FW_LOOK_MAX_S 150
+enum { FW_OFF=0, FW_SYNC=1, FW_FILL=2, FW_GAVEUP=3 };
+struct Follow {
+  int mstream, dstream;
+  MatchSide m, d;          /* this file (rolling 60 s); the other version (rolling, or the lookahead in FILL) */
+  double thr;              /* "in sync" score, from the find that started it */
+  int bad, good_since_seek, checked;
+  double t_good;           /* this file's time of the last check in sync (s) */
+  double d_pause;          /* FILL: the other version's time its content stopped matching (raw, s) */
+  double fill_since;       /* FILL: this file's time it began (s) */
+  int look_s;
+  SwrContext *pcm;         /* this file's audio to the encoder's format */
+};
+static void follow_streams(DtsEngine *e,int *mains,int *donor) {
+  *mains=e->fw?e->fw->mstream:-1; *donor=e->fw?e->fw->dstream:-1;
+}
+static void follow_event(DtsEngine *e,int kind,int ms) {
+  e->fw_event=kind; e->fw_event_ms=ms;
+  printf("[ext-audio] follow: %s%s\n",kind==1?"a scene the other version lacks: this file's own audio":
+         kind==2?"shared scenes again: the other version resumes":"lost it: use Match automatically",
+         kind==2?"":""); fflush(stdout);
+}
+static void follow_side_reset(MatchSide *m) {
+  if(m->dec) avcodec_flush_buffers(m->dec);
+  m->ev.n=0; m->ev.accn=0; for(int b=0;b<DTS_MATCH_BANDS;b++) m->ev.acc[b]=0;
+  m->t0_ns=INT64_MIN;
+}
+/* Keep the last `keep` blocks of a side (a rolling window). */
+static void follow_roll(MatchSide *m,int keep) {
+  if(m->ev.n<=keep) return;
+  int shift=m->ev.n-keep;
+  for(int b=0;b<DTS_MATCH_BANDS;b++) if(m->ev.env[b]) memmove(m->ev.env[b],m->ev.env[b]+shift,sizeof(float)*(size_t)keep);
+  m->ev.n=keep;
+  if(m->t0_ns!=INT64_MIN) m->t0_ns+=(int64_t)shift*(1000000000/DTS_MATCH_HZ);
+}
+static void follow_free(DtsEngine *e) {
+  struct Follow *f=e->fw;
+  if(!f) return;
+  match_side_free(&f->m); match_side_free(&f->d); swr_free(&f->pcm);
+  free(f); e->fw=NULL; e->fw_state=FW_OFF;
+}
+static void follow_start(DtsEngine *e,double score) {
+  if(!e->ext_conv || !e->ext || !e->ext->fmt) { printf("[ext-audio] follow: needs the conversion path, off\n"); fflush(stdout); return; }
+  struct Follow *f=e->fw;
+  if(!f) {
+    int ms=-1, ds=-1;
+    match_pair(e,e->ext->sp_n<=0,&ms,&ds);
+    if(ms<0 || ds<0 || !(f=calloc(1,sizeof *f))) return;
+    f->mstream=ms; f->dstream=ds;
+    if(match_side_open(&f->m,e->fmt->streams[ms],FW_MAIN_S*DTS_MATCH_HZ)<0 ||
+       match_side_open(&f->d,e->ext->fmt->streams[ds],(FW_LOOK_MAX_S+FW_MAIN_S)*DTS_MATCH_HZ)<0) {
+      match_side_free(&f->m); match_side_free(&f->d); free(f); return;
+    }
+    e->fmt->streams[ms]->discard=AVDISCARD_DEFAULT;
+    e->ext->fmt->streams[ds]->discard=AVDISCARD_DEFAULT;
+    e->fw=f;
+  }
+  f->thr=0.5*score; if(f->thr<0.12) f->thr=0.12;
+  f->bad=0; f->good_since_seek=1; f->t_good=-1;
+  if(e->fw_state!=FW_FILL) e->fw_state=FW_SYNC;
+  printf("[ext-audio] follow: on (in sync from score %.2f, this file's track %d, the other's %d)\n",f->thr,f->mstream,f->dstream);
+  fflush(stdout);
+}
+/* This file's decoded frame into the encoder's queue, in FILL: on the
+ * output timeline (holes filled with silence, overlaps cut). */
+static void follow_pcm_out(DtsEngine *e,AVFrame *fr,AVRational tb) {
+  struct Follow *f=e->fw;
+  int64_t p=fr->best_effort_timestamp!=AV_NOPTS_VALUE?fr->best_effort_timestamp:fr->pts;
+  if(p==AV_NOPTS_VALUE || !e->enc || !e->fifo) return;
+  if(!f->pcm && (swr_alloc_set_opts2(&f->pcm,&e->enc->ch_layout,e->enc->sample_fmt,48000,&fr->ch_layout,fr->format,fr->sample_rate,0,NULL)<0 ||
+                 swr_init(f->pcm)<0)) { swr_free(&f->pcm); return; }
+  int64_t t=ns(p,tb);
+  int64_t end=ns(e->sample_pts+av_audio_fifo_size(e->fifo),e->enc->time_base)+e->ext_offset_ns+e->ext_base_ns;
+  int64_t dur=(int64_t)fr->nb_samples*1000000000LL/(fr->sample_rate>0?fr->sample_rate:48000);
+  if(t+dur<=end) return;   /* already given out */
+  int ch=e->enc->ch_layout.nb_channels, bps=av_get_bytes_per_sample(e->enc->sample_fmt), planar=av_sample_fmt_is_planar(e->enc->sample_fmt);
+  if(t>end+20000000LL) {   /* a hole: silence up to this frame */
+    int gap=(int)((t-end)*48/1000000);
+    if(gap>48000*2) gap=48000*2;
+    uint8_t **z=NULL;
+    if(av_samples_alloc_array_and_samples(&z,NULL,ch,gap,e->enc->sample_fmt,0)>=0) {
+      av_samples_set_silence(z,0,gap,ch,e->enc->sample_fmt);
+      av_audio_fifo_write(e->fifo,(void **)z,gap);
+      av_freep(&z[0]); av_freep(&z);
+    }
+    end=ns(e->sample_pts+av_audio_fifo_size(e->fifo),e->enc->time_base)+e->ext_offset_ns+e->ext_base_ns;
+  }
+  int cap=(int)av_rescale_rnd(fr->nb_samples,48000,fr->sample_rate>0?fr->sample_rate:48000,AV_ROUND_UP)+256;
+  uint8_t **data=NULL;
+  if(av_samples_alloc_array_and_samples(&data,NULL,ch,cap,e->enc->sample_fmt,0)<0) return;
+  int got=swr_convert(f->pcm,data,cap,(const uint8_t **)fr->extended_data,fr->nb_samples);
+  int skip=t<end?(int)((end-t)*48/1000000):0;
+  if(got>skip) {
+    uint8_t *ptr[8];
+    for(int c=0;c<(planar?ch:1) && c<8;c++) ptr[c]=data[c]+(size_t)skip*bps*(planar?1:ch);
+    av_audio_fifo_write(e->fifo,(void **)ptr,got-skip);
+  }
+  av_freep(&data[0]); av_freep(&data);
+}
+static void follow_enter_fill(DtsEngine *e,double t_good) {
+  struct Follow *f=e->fw;
+  int64_t out=e->ext_last_end_ns!=INT64_MIN?e->ext_last_end_ns:e->ext_clock_ns;
+  if(out==INT64_MIN || !e->ext_conv) return;
+  double k=ext_k(e), off=(e->ext_offset_ns+e->ext_base_ns)/1e9;
+  f->d_pause=(t_good-off)/k;
+  if(f->d_pause<0) f->d_pause=0;
+  /* The other version waits where it stopped matching: read ahead from there. */
+  int how=0;
+  if(ext_donor_seek(e,f->d_pause>2?f->d_pause-2:0,&how)<0 || ext_reset_chain(e)<0) return;
+  e->timeline=1;
+  e->sample_pts=av_rescale_q(out-e->ext_offset_ns-e->ext_base_ns,NS,e->enc->time_base);
+  e->ext_floor_ns=out;
+  follow_side_reset(&f->d);
+  f->look_s=FW_LOOK_S; f->fill_since=out/1e9; f->bad=0;
+  e->fw_state=FW_FILL;
+  printf("[ext-audio] follow: own audio from %.1fs, the other version waits at %.1fs\n",out/1e9,f->d_pause); fflush(stdout);
+  follow_event(e,1,(int)(e->ext_offset_ns/1000000));
+}
+static void follow_resume(DtsEngine *e,int64_t offset_ns) {
+  struct Follow *f=e->fw;
+  int64_t from=e->ext_last_end_ns!=INT64_MIN?e->ext_last_end_ns:e->ext_clock_ns;
+  if(offset_ns>(int64_t)DTS_ENGINE_EXTERNAL_OFFSET_MAX_MS*1000000) offset_ns=(int64_t)DTS_ENGINE_EXTERNAL_OFFSET_MAX_MS*1000000;
+  if(offset_ns<-(int64_t)DTS_ENGINE_EXTERNAL_OFFSET_MAX_MS*1000000) offset_ns=-(int64_t)DTS_ENGINE_EXTERNAL_OFFSET_MAX_MS*1000000;
+  e->ext_offset_ns=offset_ns;
+  if(from==INT64_MIN) from=e->target_ns;
+  double t=(from-e->ext_offset_ns-e->ext_base_ns)/1e9/ext_k(e)-1.0;
+  int how=0;
+  if(t<0) t=0;
+  if(ext_donor_seek(e,t,&how)<0 || ext_reset_chain(e)<0) return;
+  e->ext_floor_ns=from;
+  if(f) { follow_side_reset(&f->d); f->bad=0; f->good_since_seek=1; }
+  e->fw_state=FW_SYNC;
+  printf("[ext-audio] follow: the other version resumes at %.1fs, offset %lld ms\n",from/1e9,(long long)(offset_ns/1000000)); fflush(stdout);
+  follow_event(e,2,(int)(offset_ns/1000000));
+}
+/* Every 3 s of this file: still in sync? (SYNC) / back in shared scenes? (FILL) */
+static void follow_check(DtsEngine *e) {
+  struct Follow *f=e->fw;
+  DtsMatchSig sm, sd;
+  match_side_sig(&f->m,&sm); match_side_sig(&f->d,&sd);
+  if(sm.n<11*DTS_MATCH_HZ || f->m.t0_ns==INT64_MIN || f->d.t0_ns==INT64_MIN) return;
+  /* In sync: the last 8 s (a quick "lost"); back: the last 10 s (surer). */
+  double win=8.0, pos=(sm.n-4.0*DTS_MATCH_HZ)/sm.n, k=ext_k(e), off=(e->ext_offset_ns+e->ext_base_ns)/1e9;
+  double tend=sm.t0+(double)sm.n/DTS_MATCH_HZ;
+  DtsMatchResult r;
+  if(e->fw_state==FW_SYNC) {
+    if(!dts_match_search_at(&sm,&sd,k,off,1.0,win,pos,&r)) return;   /* not covered (yet) or silent */
+    if(r.score>=f->thr && fabs(r.offset_s-off)<0.25) { f->bad=0; f->good_since_seek=1; f->t_good=tend-8.0; return; }
+    if(r.score>=f->thr*0.7) return;   /* unclear: neither */
+    if(++f->bad<2) return;
+    printf("[ext-audio] follow: no longer in sync (score %.2f, needs %.2f)\n",r.score,f->thr); fflush(stdout);
+    if(!f->good_since_seek || f->t_good<0) {
+      /* Lost right after a jump: the place is unknown, search it all. */
+      follow_enter_fill(e,tend-8.0);
+      if(!e->mt && !e->mj) { e->mt_auto=1; dts_engine_external_match_arm(e); }
+      return;
+    }
+    follow_enter_fill(e,f->t_good);
+    return;
+  }
+  if(e->fw_state!=FW_FILL || sd.n<15*DTS_MATCH_HZ) return;
+  win=10.0; pos=(sm.n-5.0*DTS_MATCH_HZ)/sm.n;
+  double tmid=tend-5.0, dlo=sd.t0, dhi=sd.t0+(double)sd.n/DTS_MATCH_HZ;
+  double omin=tmid-(dhi-7.0)*k, omax=tmid-(dlo+7.0)*k;
+  if(omax>omin && dts_match_search_at(&sm,&sd,k,(omin+omax)/2,(omax-omin)/2,win,pos,&r) &&
+     r.score>=f->thr && r.margin>=0.08) {
+    follow_resume(e,llrint(r.offset_s*1e9)-e->ext_base_ns);
+    return;
+  }
+  if(sd.n>=(f->look_s-2)*DTS_MATCH_HZ && f->look_s<FW_LOOK_MAX_S) f->look_s+=20;   /* not there yet: read further */
+  if(tend-f->fill_since>FW_LOOK_MAX_S+60.0) {
+    e->fw_state=FW_GAVEUP;
+    follow_event(e,3,(int)(e->ext_offset_ns/1000000));
+  }
+}
+/* This file's track the follow compares (from the demux loop). */
+static void follow_feed_main(DtsEngine *e,AVPacket *pkt,AVRational tb) {
+  struct Follow *f=e->fw;
+  MatchSide *m=&f->m;
+  if(m->ev.max && m->ev.n>=m->ev.max-3*DTS_MATCH_HZ) { follow_roll(m,m->ev.max*2/3); f->checked=0; }
+  if(!m->dec || avcodec_send_packet(m->dec,pkt)<0) return;
+  while(avcodec_receive_frame(m->dec,m->fr)==0) {
+    if(e->fw_state==FW_FILL || e->fw_state==FW_GAVEUP) follow_pcm_out(e,m->fr,tb);
+    match_side_frame(m,m->fr,tb);
+  }
+  if(m->ev.n-f->checked>=2*DTS_MATCH_HZ) { f->checked=m->ev.n; follow_check(e); }
+}
+/* The other version's compared track. Rolling in sync; in FILL the lookahead
+ * from where it waits. */
+static void follow_feed_donor(DtsEngine *e,AVPacket *pkt,AVRational tb) {
+  MatchSide *d=&e->fw->d;
+  if(e->fw_state==FW_SYNC && d->ev.max && d->ev.n>=FW_MAIN_S*DTS_MATCH_HZ) follow_roll(d,FW_MAIN_S*DTS_MATCH_HZ*2/3);
+  match_side_feed(d,pkt,tb);
+}
+/* FILL: the other version is read ahead for the comparison only. */
+static void follow_read_ahead(DtsEngine *e) {
+  struct Follow *f=e->fw;
+  for(int i=0;i<16 && !e->ext_demux_eof;i++) {
+    double have=f->d.t0_ns!=INT64_MIN?f->d.t0_ns/1e9+(double)f->d.ev.n/DTS_MATCH_HZ:0;
+    if(f->d.t0_ns!=INT64_MIN && have>=f->d_pause+f->look_s) return;
+    if(match_side_full(&f->d)) return;
+    int r=av_read_frame(e->ext->fmt,e->ext_in);
+    if(r==AVERROR_EOF) { e->ext_demux_eof=1; return; }
+    if(r<0) return;
+    if(e->ext_in->stream_index==f->dstream)
+      follow_feed_donor(e,e->ext_in,e->ext->fmt->streams[f->dstream]->time_base);
+    av_packet_unref(e->ext_in);
+  }
+}
+/* FILL (and after giving up): the encoder's packets from this file's audio. */
+static int follow_fill_conv(DtsEngine *e) {
+  while(!e->ext_have) {
+    int r;
+    if(cancelled(e)) return fail(e,"Cancelled",0);
+    r=avcodec_receive_packet(e->enc,e->ext_pkt);
+    if(r==0) {
+      int64_t pts=ns(e->ext_pkt->pts,e->enc->time_base)+e->ext_offset_ns+e->ext_base_ns;
+      int64_t dur=e->ext_pkt->duration>0?ns(e->ext_pkt->duration,e->enc->time_base):0;
+      if(pts<0 || pts+dur<=e->target_ns || pts<e->ext_floor_ns) { av_packet_unref(e->ext_pkt); continue; }
+      e->ext_pts=pts; e->ext_have=1; break;
+    }
+    if(r!=AVERROR(EAGAIN)) return fail(e,"External audio encode",r);
+    r=encode_fifo(e,0);
+    if(r<0) return -1;
+    if(r>0) continue;
+    if(e->fw_state==FW_FILL) follow_read_ahead(e);
+    break;   /* more of this file's audio comes with its demux */
+  }
+  return 0;
+}
+void dts_engine_external_follow(DtsEngine *e,int on) { if(e) e->fw_on=!!on; }
+int dts_engine_external_follow_poll(DtsEngine *e,int *state,int *offset_ms) {
+  int k=e?e->fw_event:0;
+  *state=e?e->fw_state:0; *offset_ms=e?e->fw_event_ms:0;
+  if(e) e->fw_event=0;
+  return k;
+}
 /* Conversion: the next encoded packet of the donor's audio, timed like
  * ext_fill's. Mirrors next_frame's decode loop with the donor's packets. */
 static int ext_fill_conv(DtsEngine *e) {
+  if(e->fw_state==FW_FILL || e->fw_state==FW_GAVEUP) return follow_fill_conv(e);
   while(!e->ext_have && !e->ext_eof) {
     int r;
     if(cancelled(e)) return fail(e,"Cancelled",0);
@@ -2783,6 +3212,8 @@ static int ext_fill_conv(DtsEngine *e) {
     if(r<0) return fail(e,cancelled(e)?"Cancelled":"External audio read",r);
     if(e->mt && e->ext_in->stream_index==e->mt->donor_stream)
       match_feed(e,1,e->ext_in,e->ext->fmt->streams[e->ext_in->stream_index]->time_base);
+    if(e->fw && e->ext_in->stream_index==e->fw->dstream)
+      follow_feed_donor(e,e->ext_in,e->ext->fmt->streams[e->fw->dstream]->time_base);
     if(e->ext_in->stream_index==e->ext_stream) {
       r=avcodec_send_packet(e->dec,e->ext_in);
       /* A damaged packet costs a few ms of sound, not the whole playback. */
@@ -2966,6 +3397,11 @@ static int ext_seek(DtsEngine *e,double seconds) {
   fflush(stdout);
   if(r<0) return fail(e,"External audio seek",r);
   e->ext_clock_ns=INT64_MIN; e->ext_last_end_ns=e->ext_floor_ns=INT64_MIN;
+  if(e->fw) {   /* a jump: compared again from scratch, in sync until shown otherwise */
+    follow_side_reset(&e->fw->m); follow_side_reset(&e->fw->d);
+    e->fw->bad=0; e->fw->good_since_seek=0; e->fw->checked=0; e->fw->t_good=-1;
+    if(e->fw_state!=FW_OFF) e->fw_state=FW_SYNC;
+  }
   return ext_reset_chain(e);
 }
 /* Live sync change (CH+/CH-, owner 07/11: every change reloaded the TV
@@ -2975,6 +3411,10 @@ static int ext_seek(DtsEngine *e,double seconds) {
  * jumps by the change. Heard once the audio queued in the TV has played. */
 int dts_engine_external_shift(DtsEngine *e,int offset_ms) {
   if(!e || !e->ext || !e->ext->fmt) return -1;
+  /* Own audio playing (a scene the other lacks): a new offset resumes it. */
+  if(e->fw_state==FW_FILL || e->fw_state==FW_GAVEUP) {
+    follow_resume(e,(int64_t)offset_ms*1000000); match_cancel(e); return 0;
+  }
   int64_t old=e->ext_offset_ns;
   dts_engine_external_offset(e,offset_ms);
   if(e->ext_offset_ns==old) return 0;
@@ -3031,6 +3471,8 @@ static int next_frame_passthrough(DtsEngine *e,DtsFrame *f) {
       video_demux_diag(e);
 #endif
       if(e->mt_t1>=0) match_second_look_due(e,ns(e->in->pts!=AV_NOPTS_VALUE?e->in->pts:e->in->dts,tb));
+      /* Follow on, another cut: the first match starts by itself. */
+      if(e->fw_autoarm && !e->mt && !e->mj) { e->fw_autoarm=0; e->mt_auto=1; dts_engine_external_match_arm(e); }
       if(!e->bsf) {
         if(e->hevc_annexb.sets && (r=hevc_annexb_packet(e))<0) { av_packet_unref(e->in); return fail(e,"Compressed video output",r); }
         av_packet_move_ref(e->out,e->in); return ext_video_out(e,f,tb);
@@ -3041,6 +3483,7 @@ static int next_frame_passthrough(DtsEngine *e,DtsFrame *f) {
       continue;
     }
     if(e->mt && e->in->stream_index==e->mt->main_stream) match_feed(e,0,e->in,tb);
+    if(e->fw && e->in->stream_index==e->fw->mstream) follow_feed_main(e,e->in,tb);
     av_packet_unref(e->in);
   }
 }

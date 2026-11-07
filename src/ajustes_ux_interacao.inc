@@ -116,8 +116,11 @@ static int uxLigarRequisitos(int op, int aplicar) {
   uxNotificar("Ajuste salvo nesta TV.");
   return res;
 }
+static void eaAbrir(void);
 static void uxAbrirEditor(int op) {
   if (op < 0 || op >= AJ_N || !ajOpcaoDisponivel(op) || soLeitura(op)) return;
+  // Audio from another version: its sheet with every option of it.
+  if (op == AJ_EXT_AUDIO) { eaAbrir(); return; }
   uxCancelar();
   if(op==AJ_GUIA_CATEGORIAS) {
     guia_preparar_busca();int n=guia_categorias(NULL,0);

@@ -209,7 +209,7 @@ int main(int argc, char **argv) {
   // trusted but left candidates; the other version is 100 s longer.
   audioext_diferenca(100, 0);
   audioext_dopasuj_pedir();
-  { AudioExtDopasuj f = { 0, 0, 0, -100000, 0, 2, { -350, 41900 }, { 13, 12 } };
+  { AudioExtDopasuj f = { 0, 0, 0, -100000, 0, 2, { -350, 41900 }, { 13, 12 }, 0 };
     audioext_dopasuj_resultado(0, &f); }
   tecla(SDLK_RETURN); estado(); quadros(20);
   salvar("audio-sync-editor");

@@ -14,6 +14,9 @@ typedef struct {
   double start_position; /* Position applied by the latest successful Load. */
   unsigned buffering_ms; /* Worker-managed refill; user pause remains separate. */
   int ext_cut_s, ext_speed; /* audio of another version: other cut (s) / other speed */
+  int net_retries;          /* times a slow source was reconnected instead of giving up */
+  int follow_state;         /* another cut followed: 0 off, 1 in sync, 2 own audio (a scene the other lacks), 3 lost */
+  int follow_events, follow_kind, follow_offset_ms;   /* the latest follow event (dts_engine_external_follow_poll) */
 } DtsPlaybackStatus;
 /* All expensive work and native Feed calls are serialized on one worker.
  * Callers own a session; close joins it before freeing callback context. */
@@ -62,6 +65,11 @@ int dts_playback_external_match_result(DtsPlayback *p, DtsMatchInfo *out);
  * ratio_ppm; 0 the same speed). And before a start, consumed by it. */
 void dts_playback_external_speed(DtsPlayback *p, int ratio_ppm);
 void dts_playback_next_external_speed(int ratio_ppm);
+/* Before a start: follow another cut through the whole film (Settings). */
+void dts_playback_next_external_follow(int on);
+/* Main thread: a jump to `seconds` is coming (an intro skip): its bytes are
+ * fetched ahead (dts_engine_prefetch). */
+void dts_playback_prefetch(DtsPlayback *p, double seconds);
 /* Before start, with the call above: fetch only the audio of that file where
  * it allows it (dts_engine_external_audio_only). Consumed by start. */
 void dts_playback_next_external_audio_only(int on);

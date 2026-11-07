@@ -130,6 +130,9 @@ int dts_engine_probe_audio(const char *url, const char *headers, DtsTrack *out, 
  * look 5 minutes later measures a slow drift (another speed).
  * poll: 0 still working (or idle), 1 found, -1 not trusted, failed or
  * interrupted; a result is reported once. */
+/* The reach of the sync: +-60 min (an extended cut against the theatrical
+ * one gathers tens of minutes, owner's log 07/11). */
+#define DTS_ENGINE_EXTERNAL_OFFSET_MAX_MS 3600000
 typedef struct {
   int offset_ms;    /* the app's sign: positive = audio later */
   int ratio_ppm;    /* speed of the other version: 0 the same, else (ratio - 1) * 1e6 */
@@ -137,6 +140,7 @@ typedef struct {
   int how;          /* found: 1 near, 2 length hint, 3 +-60 s, 4 +-5 min, 5 speed (second look) */
   int hint_ms;      /* not found: offset the lengths suggest (0: none) */
   int too_heavy;    /* not found: the wide search was skipped (too much to download) */
+  int automatic;    /* started by the engine (following another cut), not by a click */
   int ncand;        /* the best places found, for the person to try (offset ms, score %) */
   int cand_ms[3], cand_score[3];
 } DtsMatchInfo;
@@ -146,6 +150,20 @@ int dts_engine_external_match_poll(DtsEngine *, DtsMatchInfo *out);
  * (ratio_ppm from a match). Not 0: its audio is decoded, resampled to the
  * speed and re-encoded. */
 void dts_engine_external_speed(DtsEngine *, int ratio_ppm);
+/* Worker only: fetch about 10 s of the file at `seconds` ahead of a jump
+ * there (an intro skip), over a request of its own; a seek landing there is
+ * served from those bytes. Stream reader (one connection) only. 0 started. */
+int dts_engine_prefetch(DtsEngine *, double seconds);
+void dts_engine_prefetch_tidy(DtsEngine *);
+/* Worker only: the stream reader starts a fresh connection after what it has. */
+void dts_engine_reconnect(DtsEngine *);
+/* Before open (or replace): follow another cut through the whole film
+ * (Settings). Only for a version whose length differs by over 10 s; its
+ * audio is converted. poll: an event (1 this file's own audio in a scene the
+ * other lacks, 2 the other resumed at *offset_ms, 3 lost it), 0 none; *state
+ * 0 off, 1 in sync, 2 own audio, 3 lost. */
+void dts_engine_external_follow(DtsEngine *, int on);
+int dts_engine_external_follow_poll(DtsEngine *, int *state, int *offset_ms);
 /* Worker only, on an open external session: replace the other version (new
  * file, track, offset, audio-only mode) at `target` seconds without reopening
  * this source. The track list is rebuilt. 0 on success; on failure the session

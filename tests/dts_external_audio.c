@@ -167,12 +167,13 @@ static Run play(DtsEngine *e, int64_t offset_ns, int limit) {
 }
 
 int main(int argc, char **argv) {
-  assert(argc == 21);
+  assert(argc == 23);
   const char *main_file = argv[1], *other = argv[2], *dts_only = argv[3], *short_clip = argv[4], *mp4 = argv[5];
   const char *aac44 = argv[6], *main60 = argv[7], *long_idx = argv[8], *long_noidx = argv[9];
   const char *match_main = argv[10], *match_dub = argv[11];
   const char *main_avi = argv[12], *other_avi = argv[13], *other_ts = argv[14], *main_xvid = argv[15], *film = argv[16];
   const char *cut_main = argv[17], *cut_dub = argv[18], *pal_dub = argv[19], *pair_dub = argv[20];
+  const char *follow_ext = argv[21], *follow_th = argv[22];
   dts_engine_set_lang_match(lang_match);
   load_refs(other, "pol");
 
@@ -487,6 +488,57 @@ int main(int argc, char **argv) {
     fprintf(stderr, "same language: result %d offset %d ms how %d score %d\n", res, mi.offset_ms, mi.how, mi.score);
     assert(res == 1 && mi.how == 1 && mi.offset_ms > -3240 && mi.offset_ms < -3160 && mi.score >= 60); }
   dts_engine_destroy(e);
+  /* Following another cut: the extended picture has 25 s at 60 s the
+   * theatrical audio lacks. The first match starts by itself; in those 25 s
+   * this file's own audio plays (timestamps continuous), then the other
+   * version resumes 25 s later. */
+  e = dts_engine_create();
+  dts_engine_external_follow(e, 1);
+  dts_engine_external_audio(e, follow_th, HEADERS, "en", 0);
+  assert(dts_engine_open(e, follow_ext, HEADERS, -1, 0, 0) == 0);
+  assert(!strcmp(dts_engine_info(e)->audio_codec, "aac"));   /* converted, to switch source */
+  { DtsFrame f; int got, fill = 0, resumed = 0, resume_ms = 0, state, ms;
+    int64_t last = INT64_MIN, worst_gap = 0, fill_at = 0, resume_at = 0;
+    DtsMatchInfo mi; int automatch = 0;
+    while ((got = dts_engine_next(e, &f)) == 1) {
+      if (f.kind == DTS_AUDIO) {
+        assert(last == INT64_MIN || f.pts_ns > last);
+        if (last != INT64_MIN && f.pts_ns - last > worst_gap) worst_gap = f.pts_ns - last;
+        last = f.pts_ns;
+      }
+      int k = dts_engine_external_follow_poll(e, &state, &ms);
+      if (k == 1 && !fill) { fill = 1; fill_at = last; }
+      if (k == 2 && !resumed) { resumed = 1; resume_ms = ms; resume_at = last; }
+      if (dts_engine_external_match_poll(e, &mi) == 1 && mi.automatic) automatch = 1;
+    }
+    assert(got == 0);
+    fprintf(stderr, "follow: auto match %d, own audio at %.1f s, resumed at %.1f s with %d ms, last audio %.1f s, worst gap %.0f ms\n",
+            automatch, fill_at / 1e9, resume_at / 1e9, resume_ms, last / 1e9, worst_gap / 1e6);
+    assert(automatch && fill && resumed);
+    assert(fill_at > 60e9 && fill_at < 72e9);
+    assert(resume_at > 85e9 && resume_at < 110e9);
+    assert(resume_ms > 24900 && resume_ms < 25100);
+    assert(last > 118e9 && worst_gap < 200000000LL); }
+  dts_engine_destroy(e);
+  /* Prefetch ahead of a jump (an intro skip) on the one-connection stream
+   * reader: the jump lands on the fetched bytes and plays on from there. */
+  dts_engine_set_conversion_stream(1);
+  e = dts_engine_create();
+  dts_engine_external_audio(e, main60, HEADERS, "", 0);
+  assert(dts_engine_open(e, long_idx, HEADERS, -1, 0, 0) == 0);   /* 52 MB, heavy picture */
+  r = play(e, 0, 50);
+  assert(dts_engine_prefetch(e, 40.0) == 0);
+  usleep(300000);
+  dts_engine_prefetch_tidy(e);
+  assert(dts_engine_seek(e, 40.0) == 0);
+  r = play(e, 0, 200);
+  fprintf(stderr, "prefetch: after the jump, first audio %.2f s, last video %.2f s\n", r.first_audio / 1e9, r.max_video / 1e9);
+  assert(r.first_audio > 39500000000LL && r.first_audio < 40600000000LL && r.max_video > 40000000000LL);
+  dts_engine_reconnect(e);                  /* a fresh connection keeps playing */
+  r = play(e, 0, 100);
+  assert(r.video > 10);
+  dts_engine_destroy(e);
+  dts_engine_set_conversion_stream(0);
   /* Interrupted: the session closes while the reader works. */
   e = dts_engine_create();
   dts_engine_external_audio(e, cut_dub, HEADERS, "pl", 0);

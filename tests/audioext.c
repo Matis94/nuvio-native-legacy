@@ -135,8 +135,8 @@ int main(void) {
     char v[48];
     audioext_alvo("tt9");
     audioext_escolher("https://a/cut.mkv", "", "Extended", "pl");
-    assert(audioext_offset_definir(700000) == AUDIOEXT_OFFSET_MAX);
-    assert(audioext_offset_somar(-1300000) == -AUDIOEXT_OFFSET_MAX);
+    assert(audioext_offset_definir(4000000) == AUDIOEXT_OFFSET_MAX && AUDIOEXT_OFFSET_MAX == 3600000);
+    assert(audioext_offset_somar(-8000000) == -AUDIOEXT_OFFSET_MAX);
     audioext_offset_definir(0);
     audioext_diferenca(100, 0);
     assert(audioext_dica_ms() == -100000);
@@ -161,7 +161,7 @@ int main(void) {
     assert(audioext_offset_ms() == -39500);
     // Not found, with the lengths' hint, for the toast.
     audioext_dopasuj_pedir();
-    AudioExtDopasuj f = { 0, 0, 0, -100000, 0, 2, { -350, 41900 }, { 13, 12 } };
+    AudioExtDopasuj f = { 0, 0, 0, -100000, 0, 2, { -350, 41900 }, { 13, 12 }, 0 };
     audioext_dopasuj_resultado(0, &f);
     assert(audioext_dopasuj_aviso_consumir(&got) == -1 && got.dica_ms == -100000 && audioext_offset_ms() == -39500);
     { int km[3], kp[3];   // its candidates stay for the sync editor
@@ -169,6 +169,24 @@ int main(void) {
     audioext_diferenca(2998, 0);   // an extended cut 50 min longer: no hint
     assert(audioext_dica_ms() == 0);
     audioext_diferenca(-100, 0);
+    // The follow's own match (no click) is taken; its events move the offset.
+    { AudioExtDopasuj au = { 0 }; int ms;
+      au.ms = 2500; au.como = 1; au.automatico = 1;
+      audioext_dopasuj_resultado(1, &au);
+      assert(audioext_offset_ms() == 2500 && audioext_dopasuj_aviso_consumir(&got) == 1);
+      audioext_seguir_evento(1, 2500);
+      assert(audioext_seguir_aviso_consumir(&ms) == 1 && audioext_offset_ms() == 2500);
+      unsigned g2 = audioext_offset_geracao();
+      audioext_seguir_evento(2, 27500);
+      assert(audioext_seguir_aviso_consumir(&ms) == 2 && ms == 27500 && audioext_offset_ms() == 27500 &&
+             audioext_offset_geracao() == g2 + 1);
+      assert(audioext_seguir_aviso_consumir(&ms) == 0);
+      audioext_offset_definir(-39500); }
+    // A coming jump and a reconnection: each consumed once.
+    audioext_salto_previsto(825.25);
+    assert(audioext_salto_previsto_consumir() == 825.25 && audioext_salto_previsto_consumir() == 0);
+    audioext_reconexao_marcar();
+    assert(audioext_reconexao_consumir() == 1 && audioext_reconexao_consumir() == 0);
     // Held keys: 100 ms, 1 s, 10 s.
     assert(audioext_passo(50, 0) == 50 && audioext_passo(50, 3) == 100 && audioext_passo(50, 12) == 1000 && audioext_passo(50, 40) == 10000);
     audioext_formatar_offset(690, v, sizeof v, "%c%u.%03u s", "%c%u min %u.%03u s"); assert(!strcmp(v, "+690 ms"));

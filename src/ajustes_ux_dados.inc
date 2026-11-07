@@ -252,6 +252,7 @@ static const char *uxSinonimos(int op) {
     case AJ_EXT_AUDIO_GRANDE: return "audio another version large file warning size gb duzy plik ostrzezenie";
     case AJ_EXT_AUDIO_MODO: return "audio another version download whole file audio only tylko dzwiek caly plik transfer";
     case AJ_EXT_AUDIO_SERIE: return "audio another version series next episodes remember pamietaj serial odcinki";
+    case AJ_EXT_AUDIO_SEGUIR: return "audio another version cut extended theatrical follow track whole film sledzenie montaz kinowa";
     case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: return "proximo episodio automatico autoplay creditos contagem netflix sozinho next episode auto play countdown";
     case AJ_CW_MINIMO: return "minimo continuar assistindo porcentagem percentual entrar fileira retomada progresso quanto assistir comecou piso minimum percent continue watching threshold row";
     case AJ_FONTE_PREPARAR: return "preparar fonte ao abrir titulo antecipar resolver antecipado play instantaneo inicio rapido debrid painel arquivo prepare source ahead instant start";

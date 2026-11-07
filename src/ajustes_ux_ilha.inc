@@ -2187,6 +2187,52 @@ static void desenhaFolhaFiltros(void) {
   }
 }
 
+// --- "AUDIO FROM ANOTHER VERSION": ITS SHEET (frAberta 9, eaAbrir) -------------------
+static void eaPont(int i, int b) { (void)b; if (frAberta == 9 && i >= 0 && i < EA_N) eaFoco = i; }
+static void eaPontMudar(int i, int b) { (void)b; if (frAberta == 9 && i >= 0 && i < EA_N) { eaFoco = i; eaMudar(1); } }
+static void eaPontVoltar(int a, int b) { (void)a; (void)b; if (frAberta == 9) frAberta = 0; }
+static void desenhaFolhaExtAudio(void) {
+  GfxRect m = {460.0f, 90.0f, 1000.0f, 900.0f};
+  const float passo = 84.0f;
+  float topo, base, y;
+  int ligado = ajustes_audio_externo();
+  ponteiro_camada(); ajVeuModal(); ajCentraModal(&m); ajIlha(m, 36.0f, 1.0f, 1.0f);
+  // The focused option says what it does, under the title.
+  topo = ajCabecalhoFolha(m, "Reprodução", rotuloOpcao(AJ_EXT_AUDIO), ajudaOpcao(EA_OPS[eaFoco]), 0, 1);
+  base = m.y + m.h - 96.0f;
+  y = topo;
+  for (int i = 0; i < EA_N; i++, y += passo) {
+    GfxRect r = {m.x + 18.0f, y, m.w - 36.0f, passo - 6.0f};
+    int op = EA_OPS[i], f = i == eaFoco;
+    float apag = (i > 0 && !ligado) ? 0.45f : 1.0f;   /* off: the rest only applies once it is on */
+    if (y + r.h > base) break;
+    ponteiro_alvo_faixa(r.x, r.y, r.w, r.h, topo, base, eaPont, eaPontMudar, i, 0);
+    if (f) ajFocoLinha(r, 22.0f, 1.0f, 1.0f);
+    TxtLinha nome = ajTxtC(TXT_AJ_ROTULO, rotuloOpcao(op), r.w - 360.0f);
+    txt_desenhar_alpha(nome, r.x + 36.0f, y + (r.h - nome.h) * 0.5f, (f ? 1.0f : 0.86f) * apag);
+    TxtLinha v = txt_linha_corta(TXT_ILHA_GENERO, textoValor(op), AJ_TX, 300.0f);
+    float vx = r.x + r.w - 36.0f - v.w;
+    if (f) {   /* the arrows of the focused row: LEFT/RIGHT change it */
+      ajIcone("aj_chevron-right", r.x + r.w - 54.0f, y + (r.h - 24.0f) * 0.5f, 24.0f, apag);
+      vx -= 30.0f;
+    }
+    txt_desenhar_alpha(v, vx, y + (r.h - v.h) * 0.5f, (f ? 1.0f : 0.70f) * apag);
+  }
+  TxtLinha fechar = ajTxt(TXT_V2_SEG, "Fechar");
+  GfxRect botao = {m.x + m.w - fechar.w - 84.0f, m.y + m.h - 76.0f, fechar.w + 40.0f, 48.0f};
+  ajNeutro(botao, 24.0f, 0.10f, AJ_CHIP_SOL, 1.0f);
+  txt_desenhar_alpha(fechar, botao.x + 20.0f, botao.y + (botao.h - fechar.h) * 0.5f, 0.9f);
+  ponteiro_alvo(botao.x, botao.y, botao.w, botao.h, NULL, eaPontVoltar, 0, 0);
+  if (!ajTelaCheia()) {
+    AjDica d[2] = {{"OK", "Ajustar"}, {"Voltar", "Fechar"}};
+    ajDicasLinha(d, 2, m.x + 44.0f, m.y + m.h - 66.0f, 1.0f);
+  }
+  if (uxAviso[0]) {
+    TxtLinha aviso = ajTxtC(TXT_AJ_SUB, uxAviso, NV_VTELA_W - 80.0f);
+    txt_desenhar_alpha(aviso, (NV_VTELA_W - aviso.w) * 0.5f, NV_VTELA_H - 50.0f, 0.8f);
+  }
+}
+
 // --- PLUGINS (pluginsui.c, F09) NO MESMO ARRANJO ----------------------------------
 // Indice com Contas aberta, a folha com o liga/desliga, "Adicionar" e os
 // repositorios (ou os scrapers de um), e o inspetor do item focado. Sem motor

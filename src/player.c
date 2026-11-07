@@ -4656,6 +4656,14 @@ void player_atualizar(float dt, Uint32 agora) {
       else if (a < 0 && d.pesado)
         player_toast_ex(i18n("Could not match automatically: a wider search would download too much of the other version. Set the sync by hand in the audio menu."), 7000, "aj_triangle-alert", 1);
       else if (a < 0) player_toast_ex(i18n("Could not match automatically: use the manual sync (CH+/CH-)."), 5000, "aj_triangle-alert", 1); }
+    { int ms, a = audioext_seguir_aviso_consumir(&ms);
+      char v[48];
+      audioext_formatar_offset(ms, v, sizeof v, i18n("%c%u.%03u s"), i18n("%c%u min %u.%03u s"));
+      if (a == 1) player_toast(i18n("A scene the other version does not have: this file's own audio plays."), 4000);
+      else if (a == 2) { snprintf(t, sizeof t, i18n("The other version's audio is back (%s)."), v); player_toast(t, 3500); }
+      else if (a == 3) player_toast_ex(i18n("Lost the other version: use Match automatically in the audio menu."), 6000, "aj_triangle-alert", 1); }
+    if (audioext_reconexao_consumir())
+      player_toast(i18n("The source slowed down: reconnecting…"), 3500);
     if (audioext_voltou_padrao_consumir())
       player_toast(i18n("The other version's audio did not start last time. Playing this file's own audio."), 5000);
     if (audioext_tocando() && !extVisto) {
@@ -5122,6 +5130,20 @@ void player_atualizar(float dt, Uint32 agora) {
     desc_episodios_pendente(); }
 
   if (comVideo) creditosauto_fonte(&creditosAuto, video_url_atual());
+  // A COMING INTRO/RECAP SKIP: its target is fetched ahead by the webOS
+  // converter (owner's log 07/11: after the jump a slow source starved it).
+  if (!ehCanal() && comVideo && duracaoReal) {
+    static double prefFim = -1.0, prefDur = -1.0;
+    IntroTrecho tr[16];
+    int nt = intro_trechos(tr, 16);
+    for (int i = 0; i < nt; i++)
+      if ((tr[i].tipo == INTRO_ABERTURA || tr[i].tipo == INTRO_RESUMO) && tr[i].fim > tr[i].inicio &&
+          posSeg >= tr[i].inicio - 25.0 && posSeg < tr[i].fim - 8.0 &&
+          (fabs(tr[i].fim - prefFim) > 1.0 || fabs(duracaoSeg - prefDur) > 1.0)) {
+        prefFim = tr[i].fim; prefDur = duracaoSeg;
+        audioext_salto_previsto(puloDestino(tr[i].fim));
+      }
+  }
   // PULAR SOZINHO (#329/#331): abertura/resumo/creditos com marcador e ajuste ligado. Uma vez por
   // trecho (voltar de proposito para dentro dele nao pula de novo), so tocando de verdade.
   if (!ehCanal() && comVideo && tocando && video_ativo() && video_pronto() && !partesAtiva() &&

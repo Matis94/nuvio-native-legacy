@@ -86,8 +86,8 @@ static int dts_match_search_at(const DtsMatchSig *m, const DtsMatchSig *d, doubl
   float *ym[DTS_MATCH_BANDS] = { 0 }, *yd[DTS_MATCH_BANDS] = { 0 };
   double *a[DTS_MATCH_BANDS] = { 0 }, saa[DTS_MATCH_BANDS] = { 0 }, *c = NULL;
   memset(out, 0, sizeof *out);
-  if (m->n < w + 2) w = m->n - 2;           /* a shorter capture: what there is (10 s at least) */
-  if (w < 10 * DTS_MATCH_HZ || d->n < w / 2 || lags < 1 || ratio <= 0.5 || ratio >= 2.0) return 0;
+  if (m->n < w + 2) w = m->n - 2;           /* a shorter capture: what there is (5 s at least) */
+  if (w < 5 * DTS_MATCH_HZ || d->n < w / 2 || lags < 1 || ratio <= 0.5 || ratio >= 2.0) return 0;
   int m0 = (int)(pos * m->n) - w / 2;
   if (m0 < 0) m0 = 0;
   if (m0 > m->n - w) m0 = m->n - w;
@@ -187,7 +187,7 @@ static int dts_match_verify(const DtsMatchSig *m, const DtsMatchSig *d, double r
   DtsMatchResult a, b;
   if (!dts_match_search_at(m, d, ratio, at_s, 3.0, 15.0, 0.25, &a) ||
       !dts_match_search_at(m, d, ratio, at_s, 3.0, 15.0, 0.75, &b)) return 0;
-  return fabs(a.offset_s - at_s) < 0.06 && fabs(b.offset_s - at_s) < 0.06 && a.score > 0.05 && b.score > 0.05;
+  return fabs(a.offset_s - at_s) < 0.06 && fabs(b.offset_s - at_s) < 0.06 && a.score >= 0.10 && b.score >= 0.10;
 }
 #if defined(__GNUC__)
 __attribute__((unused))

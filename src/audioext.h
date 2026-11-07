@@ -74,8 +74,10 @@ const char *audioext_cabecalhos(void);
 const char *audioext_nome(void);
 // Offset of the external audio in ms (positive = later), kept with the mark.
 int audioext_offset_ms(void);
-// Adds `ms` / sets it, bounded to +-10 min; returns the new offset.
-#define AUDIOEXT_OFFSET_MAX 600000
+// Adds `ms` / sets it, bounded to +-60 min (an extended cut against the
+// theatrical one); returns the new offset.
+#define AUDIOEXT_OFFSET_MAX 3600000
+#define AUDIOEXT_DICA_MAX 600000   /* the lengths' hint: within 10 min only */
 int audioext_offset_somar(int ms);
 int audioext_offset_definir(int ms);
 // Bumped by every offset change; the webOS player applies the latest one.
@@ -98,7 +100,7 @@ int audioext_dopasuj_ativo(void);
 // 2 length hint, 3 +-60 s, 4 +-5 min, 5 speed, measured later on its own),
 // dica_ms the offset the lengths suggest and pesado the wide search skipped
 // for its download (not found).
-typedef struct { int ms, ppm, como, dica_ms, pesado, nkand, kand_ms[3], kand_pct[3]; } AudioExtDopasuj;
+typedef struct { int ms, ppm, como, dica_ms, pesado, nkand, kand_ms[3], kand_pct[3], automatico; } AudioExtDopasuj;
 void audioext_dopasuj_resultado(int ok, const AudioExtDopasuj *r);
 // Once, for a toast: 1 found, -1 not trusted, 0 nothing.
 int audioext_dopasuj_aviso_consumir(AudioExtDopasuj *out);
@@ -115,6 +117,18 @@ int audioext_kandydatos(int *ms, int *pct, int max);
 // version plays: a version that also has it matches surely (the same language
 // is compared, owner's log 07/11).
 void audioext_idioma_principal_definir(const char *idioma);
+// A jump the player is about to make (an intro skip, seconds): the webOS
+// converter fetches its bytes ahead. Consumed once.
+void audioext_salto_previsto(double segundos);
+double audioext_salto_previsto_consumir(void);
+// The converter reconnected a slow source instead of giving up (once, for a toast).
+void audioext_reconexao_marcar(void);
+int audioext_reconexao_consumir(void);
+// Following another cut (Settings): an event of the webOS converter. tipo 1
+// this file's own audio (a scene the other lacks), 2 the other resumed at
+// `ms` (the offset is taken), 3 lost it. Once, for a toast.
+void audioext_seguir_evento(int tipo, int ms);
+int audioext_seguir_aviso_consumir(int *ms);
 const char *audioext_idioma_principal(void);
 // The step of a sync key: `base` (Settings) for a tap; held (repeticoes =
 // key repeats so far) 100 ms, then 1 s, then 10 s.

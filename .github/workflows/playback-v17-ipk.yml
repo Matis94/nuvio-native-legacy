@@ -23,7 +23,7 @@ jobs:
       NUVIO_BUILD_JOBS: '3'
       # Test build number (owner, 07/11): bumped with every new test build so
       # the IPK name and the title on the TV tell the versions apart.
-      NUVIO_EXT_TEST: '6'
+      NUVIO_EXT_TEST: '7'
       NUVIO_DTS_FFMPEG: '1'
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'

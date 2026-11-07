@@ -483,7 +483,7 @@ static int volFoco;
 enum { SED_OFFSET, SED_PASSO, SED_KAND, SED_DICA, SED_AQUI, SED_ZERAR };
 #define SED_MAXL 8
 static int sincEd, sincFoco, sincRep, sincPasso = 1, sincOrig;
-static const int SED_PASSOS[] = { 10, 100, 1000, 10000, 60000 };
+static const int SED_PASSOS[] = { 10, 100, 1000, 10000, 60000, 600000 };
 static int volFocavel(void) { return cacheboost_suportado(); }
 
 // #202: SPEED ROW right below the volume, same anatomy and gesture (LEFT/RIGHT
@@ -2496,7 +2496,7 @@ static void corpoSinc(GfxRect c, float a) {
         snprintf(nome, sizeof nome, "%s", i18n("Step"));
         if (p < 1000) snprintf(val, sizeof val, "%d ms", p);
         else if (p < 60000) snprintf(val, sizeof val, "%d s", p / 1000);
-        else snprintf(val, sizeof val, "1 min");
+        else snprintf(val, sizeof val, "%d min", p / 60000);
         icone = "aj_move-horizontal"; setas = 1; break; }
       case SED_KAND: {
         char v[48];

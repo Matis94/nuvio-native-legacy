@@ -143,6 +143,13 @@ render(sys.argv[1] + '/c_main.wav', 120, [(bed, lambda t: t), (bursts(12, 120, 5
 render(sys.argv[1] + '/c_dub.wav', 160, [(bed, lambda t: t + 40), (bursts(13, 160, 650, 0.5), lambda t: t),
                                          (bursts(14, 40, 160, 1.0), lambda t: t)])
 render(sys.argv[1] + '/c_pal.wav', 120 / K, [(bed, lambda t: t / K), (bursts(15, 120, 500, 0.5), lambda t: t)])
+# Another cut to follow: the "extended" picture has 25 s at 60 s that the
+# "theatrical" version lacks (there, its own unrelated sound).
+ext = bursts(21, 200, 1400, 1.0)
+def warp_ext(at):   # the bed's event at `at` (theatrical time) in the extended timeline
+    return at if at < 60 else at + 25
+render(sys.argv[1] + '/f_ext.wav', 120, [(ext, warp_ext), (bursts(22, 25, 160, 1.0), lambda t: t + 60)])
+render(sys.argv[1] + '/f_th.wav', 95, [(ext, lambda t: t), (bursts(23, 95, 100, 0.25), lambda t: t)])
 PY
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=32x32:rate=24000/1001:duration=120' -i "$TMP/c_main.wav" \
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 24 -c:a ac3 -ar 48000 -b:a 96k -metadata:s:a:0 language=eng -shortest "$TMP/cut_main.mkv"
@@ -157,7 +164,12 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=32x32:rate=240
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 24 -c:a eac3 -ar 48000 -b:a 96k -metadata:s:a:0 language=pol -shortest "$TMP/cut_dub.mkv"
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=blue:size=32x32:rate=25:duration=116' -i "$TMP/c_pal.wav" \
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a ac3 -ar 48000 -b:a 96k -metadata:s:a:0 language=pol -shortest "$TMP/pal_dub.mkv"
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=32x32:rate=25:duration=120' -i "$TMP/f_ext.wav" \
+  -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a ac3 -ar 48000 -b:a 96k -metadata:s:a:0 language=eng -shortest "$TMP/follow_ext.mkv"
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=32x32:rate=25:duration=95' -i "$TMP/f_th.wav" \
+  -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a eac3 -ar 48000 -b:a 96k -metadata:s:a:0 language=eng -shortest "$TMP/follow_th.mkv"
 "$TMP/ext" "$TMP/main.mkv" "$TMP/other.mkv" "$TMP/dts.mkv" "$TMP/short.mkv" "$TMP/other.mp4" "$TMP/aac44.mkv" \
   "$TMP/main60.mkv" "$TMP/long.mkv" "$TMP/long_nocues.mkv" "$TMP/match_main.mkv" "$TMP/match_dub.mkv" \
   "$TMP/main.avi" "$TMP/other.avi" "$TMP/other.ts" "$TMP/xvid.avi" "$TMP/film.mkv" \
-  "$TMP/cut_main.mkv" "$TMP/cut_dub.mkv" "$TMP/pal_dub.mkv" "$TMP/pair_dub.mkv"
+  "$TMP/cut_main.mkv" "$TMP/cut_dub.mkv" "$TMP/pal_dub.mkv" "$TMP/pair_dub.mkv" \
+  "$TMP/follow_ext.mkv" "$TMP/follow_th.mkv"

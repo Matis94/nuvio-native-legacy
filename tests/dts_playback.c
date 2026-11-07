@@ -103,7 +103,12 @@ void dts_engine_external_track(DtsEngine *e,int t) { (void)e;pthread_mutex_lock(
 void dts_engine_external_mismatch(DtsEngine *e,int *c,int *s) { (void)e; *c=26; *s=0; }
 int dts_engine_external_match_arm(DtsEngine *e) { (void)e; return 0; }
 int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) { (void)e; memset(o,0,sizeof *o); return 0; }
-static int ext_speed_set;
+static int ext_speed_set, prefetches;
+int dts_engine_prefetch(DtsEngine *e,double s) { (void)e; (void)s; pthread_mutex_lock(&fixture); prefetches++; pthread_mutex_unlock(&fixture); return 0; }
+void dts_engine_prefetch_tidy(DtsEngine *e) { (void)e; }
+void dts_engine_reconnect(DtsEngine *e) { (void)e; }
+void dts_engine_external_follow(DtsEngine *e,int on) { (void)e; (void)on; }
+int dts_engine_external_follow_poll(DtsEngine *e,int *s,int *o) { (void)e; *s=0; *o=0; return 0; }
 void dts_engine_external_speed(DtsEngine *e,int p) { (void)e; pthread_mutex_lock(&fixture); ext_speed_set=p; pthread_mutex_unlock(&fixture); }
 static int ext_shifts, ext_shift_fail;
 int dts_engine_external_shift(DtsEngine *e,int o) { (void)e; pthread_mutex_lock(&fixture); ext_shifts++; ext_offset=o; int f=ext_shift_fail; pthread_mutex_unlock(&fixture); return f?-1:0; }

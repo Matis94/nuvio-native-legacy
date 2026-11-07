@@ -64,9 +64,8 @@ static const Item TELA[] = {
 #endif
 #ifndef __EMSCRIPTEN__
       // Audio from another version (owner, 07/11): right under the Dolby
-      // Vision audio output, inside this group (the webOS converter plays it).
-      OPC(AJ_EXT_AUDIO), OPC(AJ_EXT_AUDIO_MODO), OPC(AJ_EXT_AUDIO_SERIE), OPC(AJ_EXT_AUDIO_CACHE),
-      OPC(AJ_EXT_AUDIO_PASSO), OPC(AJ_EXT_AUDIO_GRANDE),
+      // Vision audio output; one row, its options in its sheet (eaAbrir).
+      OPC(AJ_EXT_AUDIO),
 #endif
 #endif
       OPC(AJ_CACHE_SEEK), OPC(AJ_MANTER_VIDEO), OPC(AJ_RETOMADA_MORNA), OPC(AJ_MANTER_PRAZO), OPC(AJ_SEEKR_AJUSTE),

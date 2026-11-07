@@ -2753,11 +2753,17 @@ void video_bombear(void) {
     else audioext_dopasuj_resultado(0, NULL);
   }
   // Polled all along: a second look (another speed) reports on its own.
+  // A jump the player is about to make (intro skip): its bytes ahead.
+  { double salto = audioext_salto_previsto_consumir();
+    if (salto > 0 && dtsSessao) {
+      printf("[prefetch] intro skip to %.1fs coming at %.1fs\n", salto, posSeg); fflush(stdout);
+      dts_playback_prefetch(dtsSessao, salto);
+    } }
   if (dtsSessao && extAtivo) {
     DtsMatchInfo mi;
     int mr = dts_playback_external_match_result(dtsSessao, &mi);
     if (mr) {
-      AudioExtDopasuj r = { mi.offset_ms, mi.ratio_ppm, mi.how, mi.hint_ms, mi.too_heavy, mi.ncand, { 0 }, { 0 } };
+      AudioExtDopasuj r = { mi.offset_ms, mi.ratio_ppm, mi.how, mi.hint_ms, mi.too_heavy, mi.ncand, { 0 }, { 0 }, mi.automatic };
       for (int c = 0; c < mi.ncand && c < 3; c++) { r.kand_ms[c] = mi.cand_ms[c]; r.kand_pct[c] = mi.cand_score[c]; }
       printf("[ext-audio] match result %d: offset %d ms speed %d ppm how %d hint %d ms heavy %d\n",
              mr, mi.offset_ms, mi.ratio_ppm, mi.how, mi.hint_ms, mi.too_heavy);
@@ -3648,6 +3654,7 @@ static int iniciarDts(int stream) {
     dts_playback_next_external_audio_only(audioext_so_audio());
     dts_playback_next_external_track(audioext_faixa());
     dts_playback_next_external_speed(audioext_velocidade());
+    dts_playback_next_external_follow(ajustes_audio_externo_seguir());
     extGenAplicada = extGenVista = audioext_offset_geracao(); extGenEm = 0;
     audioext_carregando_definir(1);
     printf("[ext-audio] start: picture from this source, audio from \"%.60s\" offsetMs=%d dv=%d langs=%s\n",
@@ -3725,6 +3732,18 @@ static void bombearDts(void) {
   int i;
   memset(&st, 0, sizeof st);
   dts_playback_status(dtsSessao, &st);
+  // Following another cut: its events (own audio / resumed / lost).
+  { static int events;
+    if (extAtivo && st.follow_events != events && st.follow_kind) {
+      printf("[ext-audio] follow event %d offset %d ms\n", st.follow_kind, st.follow_offset_ms); fflush(stdout);
+      audioext_seguir_evento(st.follow_kind, st.follow_offset_ms);
+      if (st.follow_kind == 2) extGenAplicada = extGenVista = audioext_offset_geracao();
+    }
+    events = st.follow_events; }
+  // A slow source reconnected (another version's audio kept): said once.
+  { static int retries;
+    if (extAtivo && st.net_retries > retries) audioext_reconexao_marcar();
+    retries = st.net_retries; }
   /* A seek/track reconfiguration can clear refill before metadata is ready.
    * Update even during preroll, before draining any fresh native starvation
    * events, so ending an old refill cannot erase a new bufferingStart. */
@@ -3743,7 +3762,8 @@ static void bombearDts(void) {
       // The other source's audio could not play: back to this source alone,
       // without a DTS or Dolby Vision failure note (those paths were not tried).
       printf("[ext-audio] failed: %.159s\n", st.error); fflush(stdout);
-      audioext_falhou(st.error);
+      audioext_falhou(!strcmp(st.error, DTS_PLAYBACK_STARVED)
+                      ? i18n("the source stayed too slow, even after reconnecting") : st.error);
       extAtivo = 0; audioext_tocando_definir(0); audioext_carregando_definir(0);
       dtsModoDv = 0; dvHabilitado = 0;
       dtsVoltarNativo("external audio");

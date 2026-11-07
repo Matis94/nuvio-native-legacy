@@ -205,8 +205,8 @@ int audioext_dopasuj_ativo(void) { return dopasujAtivo; }
 void audioext_dopasuj_resultado(int ok, const AudioExtDopasuj *r) {
   AudioExtDopasuj z = { 0 };
   if (!r) r = &z;
-  // A second look (como 5) arrives on its own, after the click's result.
-  if (!dopasujAtivo && !(ok && r->como == 5)) return;
+  // A second look (como 5) or the follow's own match arrive without a click.
+  if (!dopasujAtivo && !(ok && r->como == 5) && !r->automatico) return;
   dopasujAtivo = 0; dopasujPedido = 0;
   dopasujInfo = *r;
   if (r->como != 5) {   // a second look keeps the click's candidates
@@ -252,10 +252,26 @@ int audioext_dica_ms(void) {
   if (!urlMarca[0] || (avisoCorte <= 10 && avisoCorte >= -10)) return 0;
   // Beyond the sync's reach (an extended against a theatrical cut, owner's
   // log 07/11 showed it clipped to +10 min): no hint at all.
-  if (avisoCorte > AUDIOEXT_OFFSET_MAX / 1000 || avisoCorte < -AUDIOEXT_OFFSET_MAX / 1000) return 0;
+  if (avisoCorte > AUDIOEXT_DICA_MAX / 1000 || avisoCorte < -AUDIOEXT_DICA_MAX / 1000) return 0;
   return -avisoCorte * 1000;
 }
 static char idiomaPrincipal[8];
+static double saltoPrevisto;
+static int reconexao;
+void audioext_salto_previsto(double segundos) { saltoPrevisto = segundos; }
+double audioext_salto_previsto_consumir(void) { double s = saltoPrevisto; saltoPrevisto = 0; return s; }
+void audioext_reconexao_marcar(void) { reconexao = 1; }
+static int seguirAviso, seguirMs;
+void audioext_seguir_evento(int tipo, int ms) {
+  if (!urlMarca[0]) return;
+  if (tipo == 2) {
+    offsetMs = ms > AUDIOEXT_OFFSET_MAX ? AUDIOEXT_OFFSET_MAX : ms < -AUDIOEXT_OFFSET_MAX ? -AUDIOEXT_OFFSET_MAX : ms;
+    offsetGeracao++;   // the converter already moved: the live apply finds it equal
+  }
+  seguirAviso = tipo; seguirMs = offsetMs;
+}
+int audioext_seguir_aviso_consumir(int *ms) { int a = seguirAviso; seguirAviso = 0; *ms = seguirMs; return a; }
+int audioext_reconexao_consumir(void) { int r = reconexao; reconexao = 0; return r; }
 void audioext_idioma_principal_definir(const char *idioma) {
   snprintf(idiomaPrincipal, sizeof idiomaPrincipal, "%s", idioma ? idioma : "");
 }
