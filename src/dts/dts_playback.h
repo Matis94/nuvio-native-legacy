@@ -51,6 +51,9 @@ void dts_playback_external_offset(DtsPlayback *p, int offset_ms);
 /* Before start, with the call above: fetch only the audio of that file where
  * it allows it (dts_engine_external_audio_only). Consumed by start. */
 void dts_playback_next_external_audio_only(int on);
+/* Main thread, before the start: the donor's audio stream picked in the menu
+ * (-1 = by language). Consumed by that start. */
+void dts_playback_next_external_track(int stream);
 int dts_playback_external(DtsPlayback *p);
 DtsPlayback *dts_playback_start(const char *url, const char *headers,
                                int audio_stream, double position,

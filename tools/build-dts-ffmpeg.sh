@@ -50,9 +50,9 @@ else
     DECODERS=$DECODERS,truehd,ac3,eac3
     PARSERS=$PARSERS,mlp,ac3
     # Audio from another version (external audio test): the dub of a WEB-DL
-    # is often AAC at 44.1 kHz, Opus or FLAC, converted like DTS.
-    DECODERS=$DECODERS,aac,opus,flac,mlp
-    PARSERS=$PARSERS,opus,flac
+    # is often AAC at 44.1 kHz, Opus, FLAC, Vorbis or MP3, converted like DTS.
+    DECODERS=$DECODERS,aac,opus,flac,mlp,vorbis,mp3
+    PARSERS=$PARSERS,opus,flac,vorbis,mpegaudio
   fi
   CC=${CC:-arm-webos-linux-gnueabi-gcc}
   archive="$BUILD/ffmpeg-$VERSION.tar.xz"

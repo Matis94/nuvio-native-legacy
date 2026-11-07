@@ -3594,6 +3594,7 @@ static int iniciarDts(int stream) {
     dts_engine_set_lang_match(ling_casa);
     dts_playback_next_external_audio(audioext_url(), audioext_cabecalhos(), langs, audioext_offset_ms());
     dts_playback_next_external_audio_only(audioext_so_audio());
+    dts_playback_next_external_track(audioext_faixa());
     extGenAplicada = extGenVista = audioext_offset_geracao(); extGenEm = 0;
     printf("[ext-audio] start: picture from this source, audio from \"%.60s\" offsetMs=%d dv=%d langs=%s\n",
            audioext_nome(), audioext_offset_ms(), dtsModoDv, langs);
@@ -3747,6 +3748,9 @@ static void bombearDts(void) {
     for (i = 0; i < st.info.n_tracks; i++) {
       const DtsTrack *t = &st.info.tracks[i];
       VideoFaixa *f;
+      /* Audio of another version: the menu lists that file's audio tracks
+       * (DTS_ENGINE_EXTERNAL_STREAM and above), not this file's own. */
+      if (t->kind == DTS_AUDIO && extAtivo && t->stream_index < DTS_ENGINE_EXTERNAL_STREAM) continue;
       if (t->kind == DTS_AUDIO && nAudio < NV_FAIXA_MAX) {
         f = &faixaAudio[nAudio];
         if (t->stream_index == st.info.audio_stream) audioAtual = nAudio;
@@ -3769,7 +3773,12 @@ static void bombearDts(void) {
         char sub[40];
         if (!audioinfo_texto(t->codec, t->channels, 0, sub, sizeof sub)) snprintf(sub, sizeof sub, "%.12s", t->codec);
         snprintf(f->nome, sizeof f->nome, "%s", t->title);
-        if (strcmp(audioinfo_codec(t->codec), "FLAC")) idiomaRotulo(f->rotulo, sizeof f->rotulo, t->language, sub);
+        /* The other version's tracks keep their names ("Dubbing", "Lektor"):
+         * two Polish tracks are told apart only by them. */
+        if (t->stream_index >= DTS_ENGINE_EXTERNAL_STREAM)
+          nv_rotulo_faixa(f->rotulo, sizeof f->rotulo, t->title,
+                          t->language[0] ? i18n(ling_nome(t->language)) : i18n("Faixa"), sub);
+        else if (strcmp(audioinfo_codec(t->codec), "FLAC")) idiomaRotulo(f->rotulo, sizeof f->rotulo, t->language, sub);
         else nv_rotulo_faixa(f->rotulo, sizeof f->rotulo, t->title,
                              t->language[0] ? i18n(ling_nome(t->language)) : i18n("Faixa"), sub);
       } else
@@ -4372,9 +4381,13 @@ void video_definir_dv(int dv) { dvPedido = dv ? 1 : 0; }
 void video_escolher_audio(int i) {
   char b[192];
   const VideoFaixa *f = video_audio(i);
-  // The audio of another version: its one track is already playing. Another
-  // audio is chosen in the sheet's own rows (audioext.h), never here.
-  if (dtsSessao && extAtivo) return;
+  // The audio of another version: the rows are that file's tracks. Another one
+  // reopens with it (audioext_escolher_faixa); the playing one does nothing.
+  if (dtsSessao && extAtivo) {
+    if (f && f->stream_index > DTS_ENGINE_EXTERNAL_STREAM)
+      audioext_escolher_faixa(f->stream_index - DTS_ENGINE_EXTERNAL_STREAM - 1);
+    return;
+  }
   if (dtsSessao && f) {
     if (f->stream_index < 0) return;
     if (nv_dts_audio_feeds_off(f->codec,dtsModoDv,dtsDesligado)) {

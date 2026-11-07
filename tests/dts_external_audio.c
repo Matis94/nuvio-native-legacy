@@ -183,14 +183,18 @@ int main(int argc, char **argv) {
   const DtsMediaInfo *info = dts_engine_info(e);
   assert(info->audio_stream == DTS_ENGINE_EXTERNAL_STREAM);
   assert(!strcmp(info->audio_codec, "ac3") && info->channels == 6 && info->sample_rate == 48000);
-  int audio_tracks = 0;
+  /* Every audio track of the other version is listed for the menu: the one
+   * playing as DTS_ENGINE_EXTERNAL_STREAM, the English one as + 1 + index. */
+  int audio_tracks = 0, playing = 0, other_eng = 0;
   for (int i = 0; i < info->n_tracks; i++)
     if (info->tracks[i].kind == DTS_AUDIO) {
       audio_tracks++;
-      assert(info->tracks[i].stream_index == DTS_ENGINE_EXTERNAL_STREAM);
-      assert(!strcmp(info->tracks[i].language, "pol"));
+      if (info->tracks[i].stream_index == DTS_ENGINE_EXTERNAL_STREAM)
+        playing += !strcmp(info->tracks[i].language, "pol");
+      else other_eng += info->tracks[i].stream_index == DTS_ENGINE_EXTERNAL_STREAM + 1 + 1 &&
+                        !strcmp(info->tracks[i].language, "eng") && !strcmp(info->tracks[i].codec, "eac3");
     }
-  assert(audio_tracks == 1);
+  assert(audio_tracks == 2 && playing == 1 && other_eng == 1);
   Run r = play(e, 0, 0);
   assert(r.video == 100 && r.subs >= 1);
   assert(r.first_audio >= 0 && r.first_audio < 40000000);
@@ -334,6 +338,18 @@ int main(int argc, char **argv) {
   dts_engine_rings(&rings, 0);
   assert(rings.alive == 0 && rings.bytes == 0);
   assert(streams_opened >= 4);
+  /* Track picked in the menu: the English E-AC-3 (stream 1) over the
+   * preferred Polish one. */
+  e = dts_engine_create();
+  dts_engine_external_audio(e, other, HEADERS, "pl", 0);
+  dts_engine_external_track(e, 1);
+  if (dts_engine_open(e, main_file, HEADERS, -1, 0, 0) < 0) { fprintf(stderr, "open: %s\n", dts_engine_error(e)); return 1; }
+  info = dts_engine_info(e);
+  assert(!strcmp(info->audio_codec, "eac3") && info->channels == 2);
+  load_refs(other, "eng");   /* the packets are the English track's, byte for byte */
+  r = play(e, 0, 0);
+  assert(r.video == 100 && r.audio > 100);
+  dts_engine_destroy(e);
   printf("External audio engine checks passed.\n");
   return 0;
 }

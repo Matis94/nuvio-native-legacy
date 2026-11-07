@@ -46,6 +46,11 @@ int audioext_so_audio(void);
 // From the audio menu: back to this file's own audio, reopened the same way.
 void audioext_original(void);
 unsigned audioext_pedido_geracao(void);
+// From the audio menu while the other version plays: its audio stream
+// `stream` (demux index in that file) instead of the language pick; the webOS
+// player reopens with it. Forgotten with the mark. -1 = by language.
+void audioext_escolher_faixa(int stream);
+int audioext_faixa(void);
 int audioext_tem_marca(void);
 const char *audioext_idioma(void);
 // The source with this URL is the marked one (for the sheet's label).

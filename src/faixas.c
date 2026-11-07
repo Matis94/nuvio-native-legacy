@@ -1057,9 +1057,17 @@ static void aplicar(void) {
     aplicarExterno(tipo, k);
     return;
   }
-  // The track listed while another version's audio plays is that audio:
-  // nothing to switch, and nothing to remember for this title.
-  if (coluna == 0 && extMenu() && audioext_tocando()) return;
+  // While another version's audio plays the rows are that file's tracks: one
+  // of them reopens with it (video_escolher_audio), nothing is remembered for
+  // this title's own tracks.
+  if (coluna == 0 && extMenu() && audioext_tocando()) {
+    if (foco[0] != video_audio_atual()) {
+      legsync_audio_trocou();
+      video_escolher_audio(foco[0]);
+      player_toast(i18n("Loading the audio of the other version…"), 2500);
+    }
+    return;
+  }
   if (coluna == 0) {
     // F06: outra faixa de audio = outras falas; a escuta em curso nao vale mais.
     if (video_audio_atual() != foco[0]) legsync_audio_trocou();

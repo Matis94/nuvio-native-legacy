@@ -84,6 +84,21 @@ int main(void) {
   audioext_falhou("no audio");
   assert(!audioext_tem_marca());
   { char f[32]; assert(audioext_falha_consumir(f, sizeof f) && !strcmp(f, "no audio")); }
+  // A track of the other version picked in the menu: reopens with it, and is
+  // forgotten with the mark or a new version.
+  audioext_alvo("tt21");
+  assert(audioext_alternar("https://e/pl.mkv", "", "PL") == 1 && audioext_faixa() == -1);
+  { unsigned g = audioext_pedido_geracao();
+    audioext_escolher_faixa(2);
+    assert(audioext_faixa() == 2 && audioext_pedido_geracao() == g + 1); }
+  audioext_escolher("https://e/pl.mkv", "", "PL", "pl");   // same version: the track stays
+  assert(audioext_faixa() == 2);
+  audioext_escolher("https://e/other.mkv", "", "PL2", "pl");
+  assert(audioext_faixa() == -1);
+  audioext_escolher_faixa(1); audioext_limpar();
+  assert(audioext_faixa() == -1);
+  audioext_escolher_faixa(1);   // no mark: nothing to pick from
+  assert(audioext_faixa() == -1);
   puts("audioext: marks, menu requests, offsets and series memory passed");
   return 0;
 }

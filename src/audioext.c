@@ -16,6 +16,8 @@ static int prefSoAudio, prefSerie = 1;
 // while it loaded). The next start of the title then plays the file's own
 // audio instead of trying the same thing again.
 static int pendente, voltouPadrao;
+// The donor's audio stream picked in the menu (-1 = by language), for the mark.
+static int faixaMarca = -1;
 // One remembered series at a time (test build, not saved).
 static struct { char serie[64], episodio[64]; AudioExtIdent id; int offset, ativo; } memo;
 static void serieDe(const char *alvo, char *out, size_t tam) {
@@ -26,7 +28,7 @@ static void serieDe(const char *alvo, char *out, size_t tam) {
 void audioext_limpar(void) {
   urlMarca[0] = cabMarca[0] = nomeMarca[0] = alvoMarca[0] = idiomaMarca[0] = 0;
   offsetMs = 0; offsetGeracao++;
-  pendente = 0;
+  pendente = 0; faixaMarca = -1;
 }
 // "tt123" and "tt123:1:2" are the same title: the detail page stamps the raw
 // id before the episode list arrives (addons.c). Another episode is not.
@@ -58,7 +60,7 @@ int audioext_alternar(const char *url, const char *cabecalhos, const char *nome)
   snprintf(alvoMarca, sizeof alvoMarca, "%s", alvoAtual);
   idiomaMarca[0] = 0;
   offsetMs = 0; offsetGeracao++;
-  pendente = 0;
+  pendente = 0; faixaMarca = -1;
   // The name is the add-on's label, never the URL (signed links stay out of logs).
   printf("[ext-audio] audio source marked: %.80s (target %s)\n", nomeMarca, alvoMarca);
   fflush(stdout);
@@ -72,6 +74,7 @@ void audioext_escolher(const char *url, const char *cabecalhos, const char *nome
     snprintf(nomeMarca, sizeof nomeMarca, "%s", nome ? nome : "");
     snprintf(alvoMarca, sizeof alvoMarca, "%s", alvoAtual);
     offsetMs = 0; offsetGeracao++;
+    faixaMarca = -1;
   }
   snprintf(idiomaMarca, sizeof idiomaMarca, "%s", idioma ? idioma : "");
   pedidoGeracao++;
@@ -86,6 +89,15 @@ void audioext_original(void) {
   printf("[ext-audio] back to this file's own audio\n"); fflush(stdout);
 }
 unsigned audioext_pedido_geracao(void) { return pedidoGeracao; }
+void audioext_escolher_faixa(int stream) {
+  if (!urlMarca[0] || stream < 0) return;
+  faixaMarca = stream;
+  pedidoGeracao++;
+  pendente = 1;   // the player reopens with it now
+  printf("[ext-audio] track %d of \"%.80s\" chosen in the audio menu\n", stream, nomeMarca);
+  fflush(stdout);
+}
+int audioext_faixa(void) { return faixaMarca; }
 int audioext_tem_marca(void) { return urlMarca[0] != 0; }
 const char *audioext_idioma(void) { return idiomaMarca; }
 int audioext_marcada(const char *url) {
@@ -178,6 +190,7 @@ void audioext_serie_achou(const char *url, const char *cabecalhos, const char *n
   snprintf(idiomaMarca, sizeof idiomaMarca, "%s", memo.id.idioma);
   snprintf(memo.episodio, sizeof memo.episodio, "%s", alvoAtual);
   offsetMs = memo.offset; offsetGeracao++;
+  faixaMarca = -1;
   pedidoGeracao++;
   printf("[ext-audio] series memory: this episode uses %.80s, offset %d ms\n", nomeMarca, offsetMs);
   fflush(stdout);

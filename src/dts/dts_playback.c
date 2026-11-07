@@ -1072,8 +1072,9 @@ done:
 
 static int dvNext, p7Next, seamlessNext, dvAudioNext, mp4Next;
 static char extUrlNext[NV_MEDIA_URL_MAX], extHeadersNext[2048], extLangsNext[64];
-static int extOffsetNext, extOnlyNext;
+static int extOffsetNext, extOnlyNext, extTrackNext = -1;
 void dts_playback_next_external_audio_only(int on) { extOnlyNext = !!on; }
+void dts_playback_next_external_track(int stream) { extTrackNext = stream >= 0 ? stream : -1; }
 void dts_playback_next_external_audio(const char *url, const char *headers,
                                       const char *langs, int offset_ms) {
   snprintf(extUrlNext, sizeof extUrlNext, "%s", url ? url : "");
@@ -1110,7 +1111,7 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
   int dv_audio=dvAudioNext;dvAudioNext=0;
   int mp4_test=mp4Next;mp4Next=0;
   char ext_url[NV_MEDIA_URL_MAX], ext_headers[2048], ext_langs[64];
-  int ext_offset=extOffsetNext, ext_only=extOnlyNext;extOnlyNext=0;
+  int ext_offset=extOffsetNext, ext_only=extOnlyNext, ext_track=extTrackNext;extOnlyNext=0;extTrackNext=-1;
   snprintf(ext_url,sizeof ext_url,"%s",extUrlNext);
   snprintf(ext_headers,sizeof ext_headers,"%s",extHeadersNext);
   snprintf(ext_langs,sizeof ext_langs,"%s",extLangsNext);
@@ -1152,6 +1153,7 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
     p->external=1;p->ext_offset_ms=ext_offset;
     dts_engine_external_audio(p->engine,ext_url,ext_headers,ext_langs,ext_offset);
     dts_engine_external_audio_only(p->engine,ext_only);
+    dts_engine_external_track(p->engine,ext_track);
     printf("[ext-audio] session uses the audio of another source offsetMs=%d dv=%d\n",ext_offset,p->dv);
     fflush(stdout);
   }

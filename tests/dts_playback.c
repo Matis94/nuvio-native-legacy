@@ -98,6 +98,8 @@ void dts_engine_external_offset(DtsEngine *e,int offset_ms) { (void)e;pthread_mu
 int dts_engine_external_active(DtsEngine *e) { return e->external; }
 static int ext_only;
 void dts_engine_external_audio_only(DtsEngine *e,int on) { (void)e;pthread_mutex_lock(&fixture);ext_only=on;pthread_mutex_unlock(&fixture); }
+static int ext_track=-2;
+void dts_engine_external_track(DtsEngine *e,int t) { (void)e;pthread_mutex_lock(&fixture);ext_track=t;pthread_mutex_unlock(&fixture); }
 int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,int core,double target) {
  (void)headers;assert(!strcmp(url,expected_url));
  pthread_mutex_lock(&fixture);opens++;last_stream=stream;last_open_target=target;if(core)core_opens++;pthread_mutex_unlock(&fixture);
@@ -407,8 +409,9 @@ int main(int argc,char **argv) {
   DtsTrack track={.kind=DTS_AUDIO,.channels=6};strcpy(track.codec,"dts");strcpy(track.language,"xx");
   dts_playback_next_external_audio("fixture://other","X-Other: 1","pl,en",120);
   dts_playback_next_external_audio_only(1);
+  dts_playback_next_external_track(3);
   p=start(0,-1,&track,7,9);s=wait_status(p,0,0);
-  pthread_mutex_lock(&fixture);assert(ext_only==1);pthread_mutex_unlock(&fixture);
+  pthread_mutex_lock(&fixture);assert(ext_only==1 && ext_track==3);pthread_mutex_unlock(&fixture);
   assert(dts_playback_external(p));
   assert(!s.failed && s.info.audio_stream==DTS_ENGINE_EXTERNAL_STREAM && !strcmp(s.info.audio_codec,"eac3"));
   pthread_mutex_lock(&fixture);
@@ -433,6 +436,7 @@ int main(int argc,char **argv) {
   p=dts_playback_start("fixture://movie","X-Token: fixture",-1,42.0,0,"window",0,&track,7,9);assert(p);
   s=wait_status(p,0,0);assert(!s.failed && dts_playback_external(p));
   pthread_mutex_lock(&fixture);
+  assert(ext_track==-1);   // the menu pick is consumed by one start
   assert(last_open_target==42.0 || (seeks>=1 && last_seek==42.0));
   pthread_mutex_unlock(&fixture);
   dts_playback_close(p);

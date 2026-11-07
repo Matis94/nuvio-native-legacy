@@ -106,6 +106,11 @@ int dts_engine_external_active(DtsEngine *);
 /* Before open: fetch only the donor's audio chunks when the file has an index
  * of them (MP4); Matroska and very fragmented files read the whole file. */
 void dts_engine_external_audio_only(DtsEngine *, int on);
+/* Before open: play this audio stream of the donor (its demux index) instead
+ * of the language pick; -1 = by language. The info's track list carries every
+ * usable donor audio track: the playing one as DTS_ENGINE_EXTERNAL_STREAM,
+ * the others as DTS_ENGINE_EXTERNAL_STREAM + 1 + donor index. */
+void dts_engine_external_track(DtsEngine *, int stream);
 /* Worker only: bytes the donor's reader has downloaded, and its size. */
 int64_t dts_engine_external_bytes(DtsEngine *, int64_t *total);
 /* Language comparison for the external track choice (the app passes

@@ -85,6 +85,7 @@ void dts_engine_interrupt(DtsEngine *e,int on) { (void)e; (void)on; }
 void dts_engine_external_audio(DtsEngine *e,const char *u,const char *h,const char *l,int o) { (void)e;(void)u;(void)h;(void)l;(void)o; }
 void dts_engine_external_offset(DtsEngine *e,int o) { (void)e;(void)o; }
 void dts_engine_external_audio_only(DtsEngine *e,int on) { (void)e;(void)on; }
+void dts_engine_external_track(DtsEngine *e,int s) { (void)e;(void)s; }
 int64_t dts_engine_external_bytes(DtsEngine *e,int64_t *t) { (void)e; if(t) *t=-1; return 0; }
 int dts_engine_external_active(DtsEngine *e) { (void)e; return 0; }
 #else
@@ -227,6 +228,7 @@ struct DtsEngine {
   struct DtsEngine *ext, *parent;
   int fx_mib;                /* ring of this reader in MiB (0: g_fx_cap_mib) */
   int ext_stream, ext_have, ext_eof;
+  int ext_force;   /* donor stream + 1 chosen in the menu; 0 = by language */
   /* ext_conv: the donor's audio is decoded and re-encoded (DTS, TrueHD,
    * Opus, FLAC, 44.1 kHz AAC...) through this engine's own dec/swr/fifo/enc,
    * idle while external audio is on; ext_in holds the donor's packets. */
@@ -784,6 +786,10 @@ static char *sp_fetch(DtsEngine *e,int64_t start,int64_t end,long *got) {
   if(d) { e->metrics.range_bytes+=(uint64_t)*got; e->sp_bytes+=*got; }
   if(!direct && d && fin[0]) { snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross; }
   pthread_mutex_unlock(&e->range_lock);
+  if(!d && !cancelled(e)) {
+    printf("[ext-audio] audio only: range %lld-%lld failed http=%d direct=%d\n",(long long)start,(long long)end,status,direct);
+    fflush(stdout);
+  }
   return d;
 }
 static void *sp_worker(void *opaque) {
@@ -872,7 +878,15 @@ static int read_sparse(DtsEngine *e,uint8_t *dst,int n) {
 static int read_fluxo_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
   DtsEngine *e=opaque;
   uint64_t wait_started=0;
-  if(e->sp_n) return read_sparse(e,dst,n);
+  if(e->sp_n) {
+    int r=read_sparse(e,dst,n);
+    if(r!=AVERROR(EIO)) return r;
+    /* A chunk the server would not give (owner's log 07/11): the audio comes
+     * from the whole file from here instead of failing the session. */
+    printf("[ext-audio] audio only: a chunk failed at %lld, reading the whole file from here\n",(long long)e->pos);
+    fflush(stdout);
+    sp_close(e);
+  }
   pthread_mutex_lock(&e->range_lock);
   if(!e->fx_thread_ok && !e->fx_stop) {
     if(!e->fx_buf) { if(!fx_long(e))e->fx_cap=(int64_t)(e->fx_mib>0?e->fx_mib:g_fx_cap_mib)*1024*1024; e->fx_buf=malloc((size_t)e->fx_cap); if(e->fx_buf) rings_add(e->fx_cap); }
@@ -1395,6 +1409,7 @@ void dts_engine_external_offset(DtsEngine *e,int offset_ms) {
 }
 int dts_engine_external_active(DtsEngine *e) { return e && e->ext_url && e->ext_headers; }
 void dts_engine_external_audio_only(DtsEngine *e,int on) { if(e) e->ext_audio_only=!!on; }
+void dts_engine_external_track(DtsEngine *e,int s) { if(e) e->ext_force=s>=0?s+1:0; }
 int64_t dts_engine_external_bytes(DtsEngine *e,int64_t *total) {
   DtsEngine *x=e?e->ext:NULL;
   if(total) *total=x?x->total:-1;
@@ -1611,6 +1626,8 @@ static int configure_external(DtsEngine *e,double start) {
     return -1;
   }
   int k=ext_pick(e,x->fmt);
+  if(e->ext_force>0 && (unsigned)(e->ext_force-1)<x->fmt->nb_streams &&
+     ext_rank(e,x->fmt->streams[e->ext_force-1]->codecpar)>0) k=e->ext_force-1;
   for(unsigned i=0;i<x->fmt->nb_streams;i++) {
     AVStream *st=x->fmt->streams[i]; AVCodecParameters *p=st->codecpar;
     AVDictionaryEntry *l=av_dict_get(st->metadata,"language",NULL,0);
@@ -1623,7 +1640,17 @@ static int configure_external(DtsEngine *e,double start) {
     if((int)i!=k) st->discard=AVDISCARD_ALL;
   }
   fflush(stdout);
-  if(k<0) return fail(e,"External audio: no audio track this TV can play or convert",0);
+  if(k<0) {
+    int audio=0;
+    for(unsigned i=0;i<x->fmt->nb_streams;i++) audio+=x->fmt->streams[i]->codecpar->codec_type==AVMEDIA_TYPE_AUDIO;
+    /* No audio at all, far shorter than the picture: the debrid service's
+     * placeholder clip for a file it does not have ready (owner's log 07/11:
+     * one 1 fps H.264 track). */
+    if(!audio && x->fmt->duration<e->fmt->duration/2)
+      return fail(e,"External audio: the debrid service does not have this version ready yet (placeholder clip)",0);
+    return fail(e,audio?"External audio: no audio track this TV can play or convert":
+                        "External audio: the other version has no audio track",0);
+  }
   if(e->ext_audio_only) ext_audio_only_start(x,x->fmt->streams[k]);
   { /* A different frame rate (25 vs 23.976) means a sped-up version: the
      * audio would drift away; log it, the TV test decides what to refuse. */
@@ -1660,14 +1687,19 @@ static int configure_external(DtsEngine *e,double start) {
     e->info.sample_rate=ap->sample_rate>0?ap->sample_rate:48000;
     snprintf(e->info.audio_codec,sizeof e->info.audio_codec,"%s",avcodec_get_name(ap->codec_id));
   }
-  if(e->info.n_tracks<DTS_TRACK_MAX) {
+  /* Every donor audio track this TV can play or convert, for the audio menu
+   * (owner, 07/11: a WEB-DL with a dub and a voice-over picks either). */
+  for(unsigned i=0;i<x->fmt->nb_streams && e->info.n_tracks<DTS_TRACK_MAX;i++) {
+    AVStream *ds=x->fmt->streams[i]; AVCodecParameters *dp=ds->codecpar;
+    if(dp->codec_type!=AVMEDIA_TYPE_AUDIO || ((int)i!=k && ext_rank(e,dp)<=0)) continue;
     DtsTrack *t=&e->info.tracks[e->info.n_tracks++];
     memset(t,0,sizeof *t);
-    t->kind=DTS_AUDIO; t->stream_index=DTS_ENGINE_EXTERNAL_STREAM; t->stream_id=as->id;
-    t->channels=ap->ch_layout.nb_channels>0?ap->ch_layout.nb_channels:e->info.channels;
-    snprintf(t->codec,sizeof t->codec,"%s",avcodec_get_name(ap->codec_id));
-    copy_metadata(t->language,sizeof t->language,as->metadata,"language");
-    copy_metadata(t->title,sizeof t->title,as->metadata,"title");
+    t->kind=DTS_AUDIO; t->stream_id=ds->id;
+    t->stream_index=(int)i==k?DTS_ENGINE_EXTERNAL_STREAM:DTS_ENGINE_EXTERNAL_STREAM+1+(int)i;
+    t->channels=dp->ch_layout.nb_channels>0?dp->ch_layout.nb_channels:((int)i==k?e->info.channels:2);
+    snprintf(t->codec,sizeof t->codec,"%s",avcodec_get_name(dp->codec_id));
+    copy_metadata(t->language,sizeof t->language,ds->metadata,"language");
+    copy_metadata(t->title,sizeof t->title,ds->metadata,"title");
   }
   e->info.duration_ns=av_rescale_q(e->fmt->duration,AV_TIME_BASE_Q,NS);
   e->info.start_ns=e->fmt->start_time==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->start_time,AV_TIME_BASE_Q,NS);
