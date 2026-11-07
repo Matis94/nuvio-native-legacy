@@ -72,6 +72,19 @@ static void ajustesEscrever(int idioma, int externo) {
   ajustes_iniciar();
 }
 
+static int fakeSonda(const char *url, const char *cab, AudioExtFaixa *out, int max) {
+  static const char *const lg[] = { "eng", "pol", "pol", "ces" };
+  static const char *const ti[] = { "", "Dubbing", "Lektor", "" };
+  (void)url; (void)cab;
+  for (int i = 0; i < 4 && i < max; i++) {
+    memset(&out[i], 0, sizeof out[i]);
+    out[i].stream = i + 1; out[i].canais = i == 0 ? 6 : 2;
+    snprintf(out[i].codec, sizeof out[i].codec, "%s", i == 0 ? "eac3" : "ac3");
+    snprintf(out[i].idioma, sizeof out[i].idioma, "%s", lg[i]);
+    snprintf(out[i].titulo, sizeof out[i].titulo, "%s", ti[i]);
+  }
+  return 4;
+}
 static const char *JSON =
   "{\"streams\":["
   "{\"url\":\"https://example.invalid/remux.mkv\",\"name\":\"AIOStreams 2160p\",\"description\":\"2160p REMUX DV · Cached\\n58 GB\\nEnglish\"},"
@@ -150,6 +163,20 @@ int main(int argc, char **argv) {
   fonteMenuAbrir(filtrado(foco));
   tecla(SDLK_ESCAPE, 1, 0);
   assert(!fmAberto && !audioext_tem_marca());
+  // "Choose audio track…": the version's tracks (read on a thread) as rows;
+  // one picked marks the version with that track.
+  audioext_definir_sonda(fakeSonda);
+  fonteMenuAbrir(filtrado(foco));
+  assert(fmN >= 2 && fmAcoes[1] == FM_FAIXAS);
+  tecla(SDLK_DOWN, 1, 0); tecla(SDLK_RETURN, 1, 0);
+  assert(fmAberto && fmModoFaixas);
+  for (int i = 0; i < 200 && fmSondaN == -2; i++) { SDL_Delay(2); quadros(1); }
+  assert(fmSondaN == 4);
+  quadros(30);
+  salvar("menu-sciezki");
+  tecla(SDLK_DOWN, 1, 0); tecla(SDLK_DOWN, 1, 0); tecla(SDLK_RETURN, 1, 0);
+  assert(!fmAberto && audioext_marcada(lista[filtrado(foco)].url) && audioext_faixa() == 3);
+  audioext_limpar();
   // The AVI source is not offered as audio (the converter does not open it).
   foco = linhaDoTeste("web.avi");
   assert(!fonteAceitaAudio(filtrado(foco)));

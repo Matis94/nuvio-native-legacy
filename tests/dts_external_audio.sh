@@ -52,4 +52,43 @@ ffmpeg -hide_banner -loglevel error \
   -f lavfi -i 'color=size=64x64:rate=24000/1001:duration=4' \
   -f lavfi -i 'sine=frequency=400:sample_rate=44100:duration=4' \
   -map 0:v -map 1:a -c:v libx264 -c:a aac -ac 2 -ar 44100 -metadata:s:a:0 language=pol "$TMP/aac44.mkv"
-"$TMP/ext" "$TMP/main.mkv" "$TMP/other.mkv" "$TMP/dts.mkv" "$TMP/short.mkv" "$TMP/other.mp4" "$TMP/aac44.mkv"
+# Long versions for the seek cost: a 60 s source, and a 60 s other version with
+# a heavy picture, with its index (Cues) and without one (a stream muxed to a
+# pipe has none). Seeking to 50 s must not read the file from the start.
+ffmpeg -hide_banner -loglevel error \
+  -f lavfi -i 'color=size=64x64:rate=25:duration=60' \
+  -f lavfi -i 'sine=frequency=300:sample_rate=48000:duration=60' \
+  -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a ac3 "$TMP/main60.mkv"
+ffmpeg -hide_banner -loglevel error \
+  -f lavfi -i 'nullsrc=s=320x180:d=60,geq=random(1)*255:128:128' \
+  -f lavfi -i 'sine=frequency=500:sample_rate=48000:duration=60' \
+  -map 0:v -map 1:a -c:v libx264 -preset ultrafast -qp 30 -g 25 -bf 0 -pix_fmt yuv420p \
+  -c:a ac3 -metadata:s:a:0 language=pol "$TMP/long.mkv"
+ffmpeg -hide_banner -loglevel error -i "$TMP/long.mkv" -c copy -f matroska - < /dev/null > "$TMP/long_nocues.mkv"
+# "Match automatically": a shared bed of random hits (music and effects) with
+# different "speech" on each; the dub's bed is 0.7 s late.
+python3 - "$TMP" <<'PY'
+import random, struct, sys, wave
+R = 48000
+def bursts(seed, n, count, amp):
+    rnd = random.Random(seed); out = [0.0] * n
+    for _ in range(count):
+        at = rnd.randrange(n); a = amp * (0.3 + rnd.random()); ln = rnd.randrange(R // 20, R // 4)
+        for i in range(at, min(n, at + ln)):
+            out[i] += a * (rnd.random() * 2 - 1) * (1 - (i - at) / ln)
+    return out
+def write(path, x):
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(R)
+        w.writeframes(b"".join(struct.pack("<h", max(-32767, min(32767, int(v * 12000)))) for v in x))
+n = 45 * R; d = int(0.7 * R)
+bed = bursts(1, n + d, 260, 1.0)
+write(sys.argv[1] + "/m.wav", [b + s for b, s in zip(bed[d:], bursts(2, n, 160, 0.5))])
+write(sys.argv[1] + "/d.wav", [b + s for b, s in zip(bed[:n], bursts(3, n, 160, 0.5))])
+PY
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=64x64:rate=25:duration=45' -i "$TMP/m.wav" \
+  -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a ac3 -shortest "$TMP/match_main.mkv"
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=64x64:rate=25:duration=45' -i "$TMP/d.wav" \
+  -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a eac3 -metadata:s:a:0 language=pol -shortest "$TMP/match_dub.mkv"
+"$TMP/ext" "$TMP/main.mkv" "$TMP/other.mkv" "$TMP/dts.mkv" "$TMP/short.mkv" "$TMP/other.mp4" "$TMP/aac44.mkv" \
+  "$TMP/main60.mkv" "$TMP/long.mkv" "$TMP/long_nocues.mkv" "$TMP/match_main.mkv" "$TMP/match_dub.mkv"

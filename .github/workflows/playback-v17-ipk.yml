@@ -23,7 +23,7 @@ jobs:
       NUVIO_BUILD_JOBS: '3'
       # Test build number (owner, 07/11): bumped with every new test build so
       # the IPK name and the title on the TV tell the versions apart.
-      NUVIO_EXT_TEST: '3'
+      NUVIO_EXT_TEST: '4'
       NUVIO_DTS_FFMPEG: '1'
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'
@@ -260,6 +260,8 @@ jobs:
           /tmp/audioextlista-test
           cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined tests/audioext.c src/audioext.c -o /tmp/audioext-test
           /tmp/audioext-test
+          cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined tests/dts_match.c -o /tmp/dts-match-test -lm
+          /tmp/dts-match-test
           NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 NV_TEST_P7_MAPPING=1 bash tests/dvaudio_lg.sh
       - name: Build host FFmpeg and test real HTTP buffering
         if: steps.tests.outputs.full == 'true'

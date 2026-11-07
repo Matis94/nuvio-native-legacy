@@ -166,9 +166,10 @@ static Run play(DtsEngine *e, int64_t offset_ns, int limit) {
 }
 
 int main(int argc, char **argv) {
-  assert(argc == 7);
+  assert(argc == 12);
   const char *main_file = argv[1], *other = argv[2], *dts_only = argv[3], *short_clip = argv[4], *mp4 = argv[5];
-  const char *aac44 = argv[6];
+  const char *aac44 = argv[6], *main60 = argv[7], *long_idx = argv[8], *long_noidx = argv[9];
+  const char *match_main = argv[10], *match_dub = argv[11];
   dts_engine_set_lang_match(lang_match);
   load_refs(other, "pol");
 
@@ -372,6 +373,57 @@ int main(int argc, char **argv) {
   DtsEngine *closed = dts_engine_create();
   assert(dts_engine_external_replace(closed, other, HEADERS, "pl", 0, -1, 0, 0) < 0);
   dts_engine_destroy(closed);
+  dts_engine_destroy(e);
+  /* Live offset (CH+/CH-): no seek of the main source, the audio timestamps
+   * continue where they were and the content is the other file's 0.5 s
+   * earlier (offset +500 ms = audio later). */
+  e = dts_engine_create();
+  dts_engine_external_audio(e, other, HEADERS, "pl", 0);
+  if (dts_engine_open(e, main_file, HEADERS, -1, 0, 0) < 0) { fprintf(stderr, "open: %s\n", dts_engine_error(e)); return 1; }
+  load_refs(other, "pol");
+  { Run a = play(e, 0, 60);
+    assert(a.audio > 5);
+    assert(dts_engine_external_shift(e, 500) == 0);
+    Run b = play(e, 500000000LL, 0);      /* bytes checked against the file 0.5 s earlier */
+    assert(b.audio > 20 && b.first_audio > a.last_audio && b.first_audio - a.last_audio < 100000000LL);
+    assert(b.video > 0 && b.last_audio > 3800000000LL); }
+  dts_engine_destroy(e);
+  /* Seeking the other version to 50 s of 60 reads around the target, not the
+   * file from the start: with its index (video Cues) and, without one, by a
+   * byte estimate (owner's logs 07/11: up to 162 s of black at 6187 s). */
+  checkBytes = 0;
+  for (int v = 0; v < 2; v++) {
+    e = dts_engine_create();
+    dts_engine_external_audio(e, v ? long_noidx : long_idx, HEADERS, "pl", 0);
+    if (dts_engine_open(e, main60, HEADERS, -1, 0, 0) < 0) { fprintf(stderr, "open: %s\n", dts_engine_error(e)); return 1; }
+    int64_t total = 0, before = dts_engine_external_bytes(e, &total);
+    assert(dts_engine_seek(e, 50.0) == 0);
+    r = play(e, 0, 60);
+    int64_t after = dts_engine_external_bytes(e, &total);
+    fprintf(stderr, "seek 50 s, %s: %lld of %lld bytes read (first audio %.2f s)\n", v ? "no index" : "index",
+            (long long)(after - before), (long long)total, r.first_audio / 1e9);
+    assert(r.audio > 5 && r.first_audio >= 49900000000LL / 1000 && r.first_audio < 51000000000LL);
+    /* Fixed costs (index probe, cluster search, read-ahead) are a few MiB:
+     * a lot next to this 50 MB file, nothing next to a real one. */
+    assert(after - before < (v ? total / 2 : total / 8));
+    dts_engine_destroy(e);
+  }
+  checkBytes = 1;
+  /* "Match automatically": the dub's bed is 0.7 s late, so its timestamps
+   * need -700 ms; found from both audios while playing. */
+  e = dts_engine_create();
+  dts_engine_external_audio(e, match_dub, HEADERS, "pl", 0);
+  if (dts_engine_open(e, match_main, HEADERS, -1, 0, 0) < 0) { fprintf(stderr, "open: %s\n", dts_engine_error(e)); return 1; }
+  { int mo = 0, ms = 0;
+    assert(dts_engine_external_match_poll(e, &mo, &ms) == 0);
+    assert(dts_engine_external_match_arm(e) == 0);
+    checkBytes = 0;
+    r = play(e, 0, 0);
+    checkBytes = 1;
+    int res = dts_engine_external_match_poll(e, &mo, &ms);
+    fprintf(stderr, "match: result %d offset %d ms score %d\n", res, mo, ms);
+    assert(res == 1 && mo > -740 && mo < -660);
+    assert(dts_engine_external_match_poll(e, &mo, &ms) == 0);   /* reported once */ }
   dts_engine_destroy(e);
   printf("External audio engine checks passed.\n");
   return 0;

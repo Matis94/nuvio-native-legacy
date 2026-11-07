@@ -100,6 +100,11 @@ static int ext_only;
 void dts_engine_external_audio_only(DtsEngine *e,int on) { (void)e;pthread_mutex_lock(&fixture);ext_only=on;pthread_mutex_unlock(&fixture); }
 static int ext_track=-2;
 void dts_engine_external_track(DtsEngine *e,int t) { (void)e;pthread_mutex_lock(&fixture);ext_track=t;pthread_mutex_unlock(&fixture); }
+void dts_engine_external_mismatch(DtsEngine *e,int *c,int *s) { (void)e; *c=26; *s=0; }
+int dts_engine_external_match_arm(DtsEngine *e) { (void)e; return 0; }
+int dts_engine_external_match_poll(DtsEngine *e,int *o,int *c) { (void)e; *o=0; *c=0; return 0; }
+static int ext_shifts, ext_shift_fail;
+int dts_engine_external_shift(DtsEngine *e,int o) { (void)e; pthread_mutex_lock(&fixture); ext_shifts++; ext_offset=o; int f=ext_shift_fail; pthread_mutex_unlock(&fixture); return f?-1:0; }
 static int ext_replaces, ext_replace_track;static double ext_replace_target;static char ext_replace_url[64];
 int dts_engine_external_replace(DtsEngine *e,const char *u,const char *h,const char *l,int o,int t,int a,double target) {
  (void)h;(void)l;(void)o;(void)a;pthread_mutex_lock(&fixture);ext_replaces++;ext_replace_track=t;ext_replace_target=target;
@@ -442,6 +447,19 @@ int main(int argc,char **argv) {
     assert(ext_replaces==1 && ext_replace_track==2 && ext_replace_target==7.5 && !strcmp(ext_replace_url,"fixture://third"));
     pthread_mutex_unlock(&fixture);
     assert(!s.failed && s.revision!=rev && count(&opens)==1); }
+  // Live offset: the other file moves, no seek of this source.
+  { int sk=count(&seeks);
+    dts_playback_external_offset_live(p,240);
+    for(int i=0;i<400 && count(&ext_shifts)==0;i++) nap();
+    for(int i=0;i<50;i++) nap();
+    pthread_mutex_lock(&fixture);assert(ext_shifts==1 && ext_offset==240);pthread_mutex_unlock(&fixture);
+    assert(count(&seeks)==sk);
+    // A live change that fails falls back to the seek of before.
+    pthread_mutex_lock(&fixture);ext_shift_fail=1;pthread_mutex_unlock(&fixture);
+    dts_playback_external_offset_live(p,-60);
+    for(int i=0;i<400 && count(&seeks)==sk;i++) nap();
+    assert(count(&seeks)==sk+1);
+    pthread_mutex_lock(&fixture);ext_shift_fail=0;pthread_mutex_unlock(&fixture); }
   // The session's own URL is never a swap target.
   assert(!dts_playback_external_swap(p,"fixture://movie","","",0,-1,0,1));
   dts_playback_close(p);

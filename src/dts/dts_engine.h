@@ -111,6 +111,22 @@ void dts_engine_external_audio_only(DtsEngine *, int on);
  * usable donor audio track: the playing one as DTS_ENGINE_EXTERNAL_STREAM,
  * the others as DTS_ENGINE_EXTERNAL_STREAM + 1 + donor index. */
 void dts_engine_external_track(DtsEngine *, int stream);
+/* Worker only, after open: the other version's length minus this one's, in
+ * seconds (another cut), and whether its frame rate differs (another speed). */
+void dts_engine_external_mismatch(DtsEngine *, int *cut_s, int *speed);
+/* Worker only, while playing: a new offset applied without a seek of this
+ * source (the other file moves, timestamps stay continuous). 0 ok; on -1 the
+ * caller seeks as before. */
+int dts_engine_external_shift(DtsEngine *, int offset_ms);
+/* Blocking (a worker thread): the audio tracks of a file this TV can play or
+ * convert, read from its container header only. Count, or -1. */
+int dts_engine_probe_audio(const char *url, const char *headers, DtsTrack *out, int max);
+/* Worker only, while another version plays: "Match automatically" captures
+ * both audios for DTS_MATCH_SECONDS of playback (dts_match.h). poll: 0 still
+ * capturing (or idle), 1 found (offset in ms, the app's sign), -1 not trusted,
+ * failed or interrupted; a result is reported once. */
+int dts_engine_external_match_arm(DtsEngine *);
+int dts_engine_external_match_poll(DtsEngine *, int *offset_ms, int *score);
 /* Worker only, on an open external session: replace the other version (new
  * file, track, offset, audio-only mode) at `target` seconds without reopening
  * this source. The track list is rebuilt. 0 on success; on failure the session

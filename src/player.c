@@ -4638,12 +4638,23 @@ void player_atualizar(float dt, Uint32 agora) {
       snprintf(t, sizeof t, i18n("Audio from the other version failed: %s"), falha);
       player_toast(t, 5000);
     }
+    { int ms, a = audioext_dopasuj_aviso_consumir(&ms);
+      if (a > 0) { snprintf(t, sizeof t, i18n("Matched automatically: %+d ms"), ms); player_toast(t, 4000); }
+      else if (a < 0) player_toast_ex(i18n("Could not match automatically: use the manual sync (CH+/CH-)."), 5000, "aj_triangle-alert", 1); }
     if (audioext_voltou_padrao_consumir())
       player_toast(i18n("The other version's audio did not start last time. Playing this file's own audio."), 5000);
     if (audioext_tocando() && !extVisto) {
       snprintf(t, sizeof t, i18n("Audio from: %s · CH+/CH- to sync"), audioext_nome());
       player_toast(t, 4000);
     }
+    { int corte, vel;
+      if (audioext_diferenca_consumir(&corte, &vel)) {
+        if (vel) snprintf(t, sizeof t, "%s", i18n("This version plays at another speed: the audio will drift. Pick another version."));
+        else snprintf(t, sizeof t, i18n(corte > 0 ? "This version is %d s longer (another cut): the sync may drift."
+                                                  : "This version is %d s shorter (another cut): the sync may drift."),
+                      corte > 0 ? corte : -corte);
+        player_toast_ex(t, 6000, "aj_triangle-alert", 1);
+      } }
     extVisto = audioext_tocando(); }
 #ifdef NV_TOUCH_UI
   playerTelaAtualizar();
@@ -6714,6 +6725,39 @@ void player_desenhar(Uint32 agora) {
 #ifdef NV_DV_TRUEHD_TEST
   avisarTruehd(agora);
 #endif
+  // AUDIO OF ANOTHER VERSION LOADING (owner, 07/11: "instead of a black
+  // screen, the title's art and that the audio is loading"): from the choice
+  // until that audio plays, the title's backdrop dimmed over the video hole and
+  // the compact island with the breathing dot and the version's name.
+  int extCarregando = audioext_carregando() && !player_carregando() && !erroFonte && !saindo && !ehCanal();
+  { static float extCarT;
+    static Uint32 extCarUlt;
+    float dtc = extCarUlt ? (float)(agora - extCarUlt) / 1000.0f : 1.0f / 60.0f;
+    extCarUlt = agora;
+    if (dtc > 0.1f) dtc = 0.1f;
+    extCarT = ajustes_animacoes_reduzidas() ? (extCarregando ? 1.0f : 0.0f)
+                                            : anim_mola(extCarT, extCarregando ? 1.0f : 0.0f, dtc, 12.0f);
+    if (extCarT < 0.01f) extCarT = 0.0f;
+    if (extCarT > 0.0f) {
+      const char *arte = c && c->backdrop[0] ? artehero_url(c) : NULL;
+      GLuint tx = arte ? tex_obter_hero(arte) : 0;
+      if (tx) {
+        gfx_tex_aspect_atual = tex_aspecto(arte);
+        gfx_rect(tela, tx, GFX_CARD, 0, 0, 0, 0.0f, 0, 0, 0, extCarT);
+        gfx_tex_aspect_atual = 0.0f;
+        gfx_cor(tela, 0.0f, 0.0f, 0.0f, 0.0f, 0.45f * extCarT);
+      } else gfx_cor(tela, 0.0f, 0.0f, 0.0f, 0.0f, extCarT);
+    }
+    if (extCarregando) {
+      static char lin[260];
+      PlrIlhaPedido pd;
+      const char *nome = audioext_nome();
+      memset(&pd, 0, sizeof pd);
+      if (nome && nome[0]) snprintf(lin, sizeof lin, "%s \xc2\xb7 %.150s", i18n("Loading audio from another version…"), nome);
+      else snprintf(lin, sizeof lin, "%s", i18n("Loading audio from another version…"));
+      pd.texto = lin; pd.respira = 1; pd.semFim = 1; pd.aberta = 1;
+      plrilha_pedir(&pd);
+    } }
   if (player_carregando() && ehCanal()) {
     // CANAL SINTONIZANDO: a versao COMPACTA, uma linha na propria ilha do
     // relogio (dono, 03/10: "no player do live tv vamos usar a versao compacta
@@ -6754,7 +6798,7 @@ void player_desenhar(Uint32 agora) {
   // Agora so os pontos, cada um com a sombra suave propria (plrui_anel_solto).
   // Com o veu da Cinema ainda na tela o trilho dela ja e o sinal (dono, 11/10:
   // o anel por cima do logo ficava feio).
-  else if (comVideo && !erroFonte && !saindo && video_bufferando_ms() >= 600 && cine.veu <= 0.01f) {
+  else if (comVideo && !erroFonte && !saindo && !extCarregando && video_bufferando_ms() >= 600 && cine.veu <= 0.01f) {
     ESCALA_INI();
     plrui_anel_solto(NV_VTELA_W * 0.5f, NV_VTELA_H * 0.5f, 56.0f, agora, entrada);
     ESCALA_FIM();

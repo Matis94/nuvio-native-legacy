@@ -588,7 +588,7 @@ static int linhaDaLeg(int i) {
 // two rows come first: Audio sync (LEFT/RIGHT) and this file's own audio.
 // Only the webOS converter plays it; the list is the source list on hand.
 #define FX_EXT_MAX 12
-enum { FXA_FAIXA = 0, FXA_SINC, FXA_ORIGINAL, FXA_CAND };
+enum { FXA_FAIXA = 0, FXA_SINC, FXA_DOPASUJ, FXA_ORIGINAL, FXA_CAND };
 static AudioExtCand extCand[FX_EXT_MAX];
 static AudioExtEntrada extEnt[FX_EXT_MAX];
 static char extVersao[FX_EXT_MAX][40];
@@ -633,7 +633,7 @@ static void extMontar(int forcar) {
 }
 static int nExtras(void) {
   if (!extMenu()) return 0;
-  return (audioext_tocando() ? 2 : 0) + extN;
+  return (audioext_tocando() ? 3 : 0) + extN;
 }
 // Row `i` of the audio list: the file's track `*k`, a candidate `*k`, or one
 // of the two rows of the audio being played from another version.
@@ -644,8 +644,9 @@ static int tipoLinha(int i, int *k) {
   i -= nA;
   if (extMenu() && audioext_tocando()) {
     if (i == 0) return FXA_SINC;
-    if (i == 1) return FXA_ORIGINAL;
-    i -= 2;
+    if (i == 1) return FXA_DOPASUJ;
+    if (i == 2) return FXA_ORIGINAL;
+    i -= 3;
   }
   if (k) *k = i;
   return FXA_CAND;
@@ -1025,7 +1026,9 @@ static void lembrarManual(int i) {
 }
 
 static void aplicarExterno(int tipo, int k) {
-  if (tipo == FXA_ORIGINAL) {
+  if (tipo == FXA_DOPASUJ) {
+    if (!audioext_dopasuj_ativo()) audioext_dopasuj_pedir();
+  } else if (tipo == FXA_ORIGINAL) {
     audioext_original();
     player_toast(i18n("Back to this file's own audio…"), 2500);
   } else if (tipo == FXA_CAND) {
@@ -1388,6 +1391,14 @@ void faixas_evento(const SDL_Event *e) {
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
     // The sync row is live (LEFT/RIGHT); its OK only closes, like Volume.
     if (!modo && coluna == 0 && tipoLinha(foco[0], NULL) == FXA_SINC) { aberta = 0; return; }
+    // "Match automatically": starts it and closes; the result comes as a toast.
+    if (!modo && coluna == 0 && tipoLinha(foco[0], NULL) == FXA_DOPASUJ) {
+      if (!audioext_dopasuj_ativo()) {
+        audioext_dopasuj_pedir();
+        player_toast(i18n("Matching the audio automatically… (about 30 s)"), 4000);
+      }
+      aberta = 0; return;
+    }
     aplicar(); aberta = 0; return;
   }
 }
@@ -1671,6 +1682,12 @@ static void linhaExterna(int i, float x, float y, float w, int sel, float a) {
     snprintf(sub, sizeof sub, "%s", i18n(o > 0 ? "Audio later" : o < 0 ? "Audio earlier" : "In sync with the file"));
     snprintf(val, sizeof val, "%+d ms", o);
     icone = "pl_audio-lines";
+  } else if (tipo == FXA_DOPASUJ) {
+    int ativa = audioext_dopasuj_ativo();
+    snprintf(nome, sizeof nome, "%s", i18n(ativa ? "Matching automatically…" : "Match automatically"));
+    snprintf(sub, sizeof sub, "%s", i18n("Compares the music and effects of both audios (about 30 s)"));
+    icone = "aj_zap";
+    if (ativa) da = a * 0.6f;
   } else if (tipo == FXA_ORIGINAL) {
     snprintf(nome, sizeof nome, "%s", i18n("This file's own audio"));
     snprintf(sub, sizeof sub, "%s", i18n("Back to the tracks of the playing source"));

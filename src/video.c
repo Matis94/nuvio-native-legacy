@@ -1909,8 +1909,21 @@ static int acbConfigurarTipo(int bufferstream) {
   } while (0)
 
 static int iniciar(int automatico);
-int video_iniciar(void)      { mkvass_aceitar_imagem(1); return iniciar(0); }
-int video_iniciar_auto(void) { mkvass_aceitar_imagem(1); return iniciar(1); }
+// The hold-OK menu's track list: the converter reads the version's header.
+static int extSondaFaixas(const char *url, const char *cab, AudioExtFaixa *out, int max) {
+  DtsTrack t[AUDIOEXT_FAIXAS_MAX];
+  int n = dts_engine_probe_audio(url, cab, t, max < AUDIOEXT_FAIXAS_MAX ? max : AUDIOEXT_FAIXAS_MAX);
+  for (int i = 0; i < n; i++) {
+    memset(&out[i], 0, sizeof out[i]);
+    out[i].stream = t[i].stream_index; out[i].canais = t[i].channels;
+    snprintf(out[i].codec, sizeof out[i].codec, "%s", t[i].codec);
+    snprintf(out[i].idioma, sizeof out[i].idioma, "%s", t[i].language);
+    snprintf(out[i].titulo, sizeof out[i].titulo, "%s", t[i].title);
+  }
+  return n;
+}
+int video_iniciar(void)      { mkvass_aceitar_imagem(1); if (dts_playback_enabled()) audioext_definir_sonda(extSondaFaixas); return iniciar(0); }
+int video_iniciar_auto(void) { mkvass_aceitar_imagem(1); if (dts_playback_enabled()) audioext_definir_sonda(extSondaFaixas); return iniciar(1); }
 int video_registro_negado(void) { return regNegado; }
 
 static int iniciar(int automatico) {
@@ -2697,6 +2710,7 @@ static void extReabrir(void) {
                                      audioext_offset_ms(), audioext_faixa(), audioext_so_audio(), posSeg)) {
         extGenAplicada = extGenVista = audioext_offset_geracao(); extGenEm = 0;
         audioext_tocando_definir(0);   // the new audio says so when it plays
+        audioext_carregando_definir(1);
         printf("[ext-audio] swapping the other version at %.1fs dv=%d\n", posSeg, dtsModoDv); fflush(stdout);
         return;
       }
@@ -2730,16 +2744,26 @@ void video_bombear(void) {
     if (g != extPedidoVisto) { extPedidoVisto = g; extReabrirPend = 1; } }
   if (extReabrirPend) extReabrir();
   // A new external audio offset (CH+/CH- on the player) applies 700 ms after
-  // the last press, with a seek to where the picture is: the native timeline
-  // restarts with the shifted audio instead of jumping under the decoder.
+  // the last press, live: the other file moves, the picture keeps playing.
+  // "Match automatically": the request goes to the converter; its result sets
+  // the offset (applied live below).
+  if (audioext_dopasuj_pedido_consumir()) {
+    if (dtsSessao && extAtivo) dts_playback_external_match(dtsSessao);
+    else audioext_dopasuj_resultado(0, 0);
+  }
+  if (dtsSessao && extAtivo && audioext_dopasuj_ativo()) {
+    int mo = 0, ms = 0, mr = dts_playback_external_match_result(dtsSessao, &mo, &ms);
+    if (mr) audioext_dopasuj_resultado(mr > 0, mo);
+  } else if (audioext_dopasuj_ativo() && !(dtsSessao && extAtivo)) audioext_dopasuj_resultado(0, 0);
   if (dtsSessao && extAtivo) {
     unsigned g = audioext_offset_geracao();
     if (g != extGenVista) { extGenVista = g; extGenEm = SDL_GetTicks(); }
     if (g != extGenAplicada && extGenEm && SDL_GetTicks() - extGenEm >= 700) {
       extGenAplicada = g; extGenEm = 0;
-      printf("[ext-audio] offset %d ms: seek to %.3f\n", audioext_offset_ms(), posSeg); fflush(stdout);
-      dts_playback_external_offset(dtsSessao, audioext_offset_ms());
-      video_buscar(posSeg);
+      // Applied live (owner, 07/11: every change used to reload the picture):
+      // only the other file moves; the worker seeks only if that fails.
+      printf("[ext-audio] offset %d ms: live at %.3f\n", audioext_offset_ms(), posSeg); fflush(stdout);
+      dts_playback_external_offset_live(dtsSessao, audioext_offset_ms());
     }
   }
   if (dtsSessao) bombearDts();
@@ -3248,7 +3272,7 @@ static void pararSessao(void) {
   dtsSessao = NULL;
   if (antigoDts) dts_playback_close(antigoDts);
   dtsSaida[0] = 0;
-  extAtivo = 0; audioext_tocando_definir(0);
+  extAtivo = 0; audioext_tocando_definir(0); audioext_carregando_definir(0);
 
   // Invalida tambem a sessao que ainda esta esperando o retorno de load. Esse
   // era o caso abrir -> sair -> abrir que travava: nao havia mediaId para
@@ -3614,6 +3638,7 @@ static int iniciarDts(int stream) {
     dts_playback_next_external_audio_only(audioext_so_audio());
     dts_playback_next_external_track(audioext_faixa());
     extGenAplicada = extGenVista = audioext_offset_geracao(); extGenEm = 0;
+    audioext_carregando_definir(1);
     printf("[ext-audio] start: picture from this source, audio from \"%.60s\" offsetMs=%d dv=%d langs=%s\n",
            audioext_nome(), audioext_offset_ms(), dtsModoDv, langs);
     fflush(stdout);
@@ -3621,7 +3646,7 @@ static int iniciarDts(int stream) {
   dtsSessao = dts_playback_start(urlAtual, cabsHttp, stream, alvo,
                                paused, expWin, 0, (a || trocada) ? &selected : NULL, ordinal, count);
   if (!dtsSessao) {
-    if (extAtivo) { extAtivo = 0; audioext_falhou("converter unavailable"); }
+    if (extAtivo) { extAtivo = 0; audioext_falhou("converter unavailable"); audioext_carregando_definir(0); }
     dtsMarcarAbertas(0);
     marco("DTS startup failed: software playback unavailable");
     dvCaminhoNaoAbriu();
@@ -3708,7 +3733,7 @@ static void bombearDts(void) {
       // without a DTS or Dolby Vision failure note (those paths were not tried).
       printf("[ext-audio] failed: %.159s\n", st.error); fflush(stdout);
       audioext_falhou(st.error);
-      extAtivo = 0; audioext_tocando_definir(0);
+      extAtivo = 0; audioext_tocando_definir(0); audioext_carregando_definir(0);
       dtsModoDv = 0; dvHabilitado = 0;
       dtsVoltarNativo("external audio");
       dtsEstado = 0;
@@ -3843,6 +3868,7 @@ static void bombearDts(void) {
         snprintf(sub, sizeof sub, "%.12s", st.info.audio_codec);
       snprintf(dtsSaida, sizeof dtsSaida, "Audio from another source · %s", sub);
       dtsEstado = 0;
+      if (!audioext_tocando()) audioext_diferenca(st.ext_cut_s, st.ext_speed);
       audioext_tocando_definir(1);
     } else if (!dtsModoDv || (audioAtual >= 0 && audioAtual < nAudio && !strcmp(faixaAudio[audioAtual].codec, "dts"))) {
       snprintf(dtsSaida, sizeof dtsSaida, "%s", !strcmp(st.info.audio_codec, "ac3") ? "DTS → AC3 5.1" : "DTS → AAC Stereo");

@@ -1,9 +1,21 @@
+#define _POSIX_C_SOURCE 200809L
 // The audio-source state (audioext.c): marks per title, menu choice requests,
 // offset, and the series memory that carries a choice to the next episodes.
 #include "../src/audioext.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
+static int fakeSonda(const char *url, const char *cab, AudioExtFaixa *out, int max) {
+  (void)cab; if (strstr(url, "bad")) return -1;
+  for (int i = 0; i < 2 && i < max; i++) { memset(&out[i], 0, sizeof out[i]); out[i].stream = i + 1; snprintf(out[i].idioma, sizeof out[i].idioma, "%s", i ? "eng" : "pol"); }
+  return 2;
+}
+static int esperarSonda(unsigned g, AudioExtFaixa *f) {
+  int n = -2; struct timespec ts = {0, 2000000};
+  for (int i = 0; i < 1000 && (n = audioext_sonda_resultado(g, f, AUDIOEXT_FAIXAS_MAX)) == -2; i++) nanosleep(&ts, NULL);
+  return n;
+}
 
 int main(void) {
   AudioExtIdent id, got;
@@ -99,6 +111,23 @@ int main(void) {
   assert(audioext_faixa() == -1);
   audioext_escolher_faixa(1);   // no mark: nothing to pick from
   assert(audioext_faixa() == -1);
+  // Tracks of a version for the hold-OK menu: read on a thread, by request.
+  { AudioExtFaixa f[AUDIOEXT_FAIXAS_MAX];
+    assert(!audioext_sonda_disponivel());
+    assert(esperarSonda(audioext_sondar("https://x/a.mkv", ""), f) == -1);   // no reader
+    audioext_definir_sonda(fakeSonda);
+    unsigned g = audioext_sondar("https://x/a.mkv", "");
+    assert(esperarSonda(g, f) == 2 && f[0].stream == 1 && !strcmp(f[1].idioma, "eng"));
+    assert(esperarSonda(audioext_sondar("https://x/bad.mkv", ""), f) == -1);
+    assert(audioext_sonda_resultado(g, f, AUDIOEXT_FAIXAS_MAX) == -1); }  // an older request
+  // The track picked before playing: set, nothing reopened, nothing pending.
+  audioext_alvo("tt22");
+  assert(audioext_alternar("https://e/v.mkv", "", "V") == 1);
+  { unsigned g = audioext_pedido_geracao();
+    audioext_definir_faixa(3);
+    assert(audioext_faixa() == 3 && audioext_pedido_geracao() == g);
+    audioext_inicio_reproducao("https://e/main.mkv");
+    assert(audioext_tem_marca() && !audioext_voltou_padrao_consumir()); }
   puts("audioext: marks, menu requests, offsets and series memory passed");
   return 0;
 }

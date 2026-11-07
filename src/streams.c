@@ -5201,8 +5201,14 @@ int stream_partes_escolheu(int *fonte, PartesLista *l, int *k) {
 // does) and, where TorBox lists the files, "Files of this version". With the
 // setting off, or on a source the converter cannot read, the hold opens the
 // files list exactly as before.
-enum { FM_AUDIO = 0, FM_ARQUIVOS };
-static int fmAberto, fmN, fmFoco, fmAcoes[2], fmMarcada;   // labels frozen at open (they fade out unchanged)
+enum { FM_AUDIO = 0, FM_FAIXAS, FM_ARQUIVOS };
+static int fmAberto, fmN, fmFoco, fmAcoes[3], fmMarcada;   // labels frozen at open (they fade out unchanged)
+// "Choose audio track…": the version's header is read on a thread
+// (audioext_sondar); its tracks become the menu's rows.
+static int fmModoFaixas, fmSondaN = -2;
+static unsigned fmSondaGer;
+static AudioExtFaixa fmFaixas[AUDIOEXT_FAIXAS_MAX];
+static char fmRotFaixa[AUDIOEXT_FAIXAS_MAX][120];
 static float fmAnim;
 static char fmUrl[NV_MEDIA_URL_MAX];   // the source by its link: the list can grow while the menu is open
 
@@ -5264,7 +5270,9 @@ static void fonteMenuAbrir(int i) {
   fmAberto = 1; fmFoco = 0; fmN = 0; fmAnim = 0;
   snprintf(fmUrl, sizeof fmUrl, "%s", lista[i].url);
   fmMarcada = audioext_marcada(lista[i].url);
+  fmModoFaixas = 0; fmSondaN = -2;
   fmAcoes[fmN++] = FM_AUDIO;
+  if (audioext_sonda_disponivel()) fmAcoes[fmN++] = FM_FAIXAS;
   if (linhaAceitaPartes(i)) fmAcoes[fmN++] = FM_ARQUIVOS;
   printf("[ext-audio] hold OK on source #%d (%s): source menu, %d option%s\n", i,
          lista[i].provedor[0] ? lista[i].provedor : "-", fmN, fmN == 1 ? "" : "s");
@@ -5279,14 +5287,82 @@ static int fonteMenuIndice(void) {
   for (int i = 0; i < n; i++) if (!strcmp(lista[i].url, fmUrl)) return i;
   return -1;
 }
+static const char *fmCodecTexto(const char *c) {
+  static const char *const m[][2] = { {"eac3","E-AC-3"}, {"ac3","AC-3"}, {"aac","AAC"}, {"dts","DTS"},
+    {"truehd","TrueHD"}, {"opus","Opus"}, {"flac","FLAC"}, {"vorbis","Vorbis"}, {"mp3","MP3"} };
+  for (size_t k = 0; k < sizeof m / sizeof *m; k++) if (!strcmp(c, m[k][0])) return m[k][1];
+  return c;
+}
+// "Polski · E-AC-3 5.1 · Dubbing": the language, the codec and channels, and
+// the file's track name when it says more than the release.
+static void fmMontarFaixas(void) {
+  for (int k = 0; k < fmSondaN && k < AUDIOEXT_FAIXAS_MAX; k++) {
+    const AudioExtFaixa *f = &fmFaixas[k];
+    const char *lg = f->idioma[0] ? i18n(ling_nome(f->idioma)) : i18n("Faixa");
+    char ch[8] = "";
+    if (f->canais == 8) snprintf(ch, sizeof ch, " 7.1");
+    else if (f->canais == 6) snprintf(ch, sizeof ch, " 5.1");
+    else if (f->canais > 0) snprintf(ch, sizeof ch, " %d.0", f->canais);
+    if (f->titulo[0] && strlen(f->titulo) < 40)
+      snprintf(fmRotFaixa[k], sizeof fmRotFaixa[k], "%s \xc2\xb7 %s%s \xc2\xb7 %s", lg, fmCodecTexto(f->codec), ch, f->titulo);
+    else snprintf(fmRotFaixa[k], sizeof fmRotFaixa[k], "%s \xc2\xb7 %s%s", lg, fmCodecTexto(f->codec), ch);
+  }
+}
+static int fmLinhas(void) {
+  if (!fmModoFaixas) return fmN;
+  return fmSondaN > 0 ? fmSondaN : 1;   /* "Reading…" or "Could not read" */
+}
+// The version with one of its tracks: marked like "Use as audio", the track
+// set on the mark; while this title plays it switches now.
+static void fonteMarcarFaixa(int i, const AudioExtFaixa *f) {
+  const Stream *s = &lista[i];
+  if (!fonteAceitaAudio(i)) return;
+  if (!audioext_marcada(s->url)) audioext_alternar(s->url, s->cabecalhos, s->rotulo);
+  { AudioExtEntrada e;
+    AudioExtIdent id;
+    stream_audioext_entrada(s, &e);
+    memset(&id, 0, sizeof id);
+    snprintf(id.grupo, sizeof id.grupo, "%s", s->bingeGroup);
+    snprintf(id.addon, sizeof id.addon, "%s", s->provedor);
+    snprintf(id.idioma, sizeof id.idioma, "%.7s", f->idioma);
+    id.altura = s->altura; id.codec = e.codec;
+    audioext_lembrar_serie(&id); }
+  if (player_aberto() && audioext_pedido(video_url_atual())) {
+    audioext_escolher(s->url, s->cabecalhos, s->rotulo, "");
+    audioext_definir_faixa(f->stream);
+    player_toast(i18n("Loading the audio of the other version…"), 2500);
+    aberta = 0;
+  } else {
+    audioext_definir_faixa(f->stream);
+    if (player_aberto()) player_toast(i18n("Audio source set. Play another source of this title."), 2600);
+  }
+}
 static void fonteMenuEscolher(void) {
-  int i = fonteMenuIndice(), acao = fmFoco >= 0 && fmFoco < fmN ? fmAcoes[fmFoco] : -1;
+  int i = fonteMenuIndice();
+  if (fmModoFaixas) {
+    if (fmSondaN > 0 && fmFoco >= 0 && fmFoco < fmSondaN && i >= 0) { fmAberto = 0; fonteMarcarFaixa(i, &fmFaixas[fmFoco]); }
+    else if (fmSondaN == -1) fmAberto = 0;
+    return;
+  }
+  int acao = fmFoco >= 0 && fmFoco < fmN ? fmAcoes[fmFoco] : -1;
+  if (acao == FM_FAIXAS && i >= 0) {
+    fmModoFaixas = 1; fmFoco = 0; fmSondaN = -2;
+    fmSondaGer = audioext_sondar(lista[i].url, lista[i].cabecalhos);
+    return;
+  }
   fmAberto = 0;
   if (i < 0) return;
   if (acao == FM_AUDIO) fonteMarcarAudio(i);
   else if (acao == FM_ARQUIVOS && linhaAceitaPartes(i)) partesAbrirPainel(i);
 }
 static const char *fonteMenuRotulo(int r, const char **icone) {
+  if (fmModoFaixas) {
+    *icone = "pl_audio-lines";
+    if (fmSondaN == -2) return "Reading the audio tracks…";
+    if (fmSondaN <= 0) { *icone = "aj_triangle-alert"; return fmSondaN == 0 ? "No audio track this TV can play" : "Could not read the audio tracks"; }
+    return fmRotFaixa[r];
+  }
+  if (fmAcoes[r] == FM_FAIXAS) { *icone = "aj_list-video"; return "Choose audio track…"; }
   if (fmAcoes[r] == FM_ARQUIVOS) { *icone = "aj_folders"; return "Files of this version"; }
   if (fmMarcada) { *icone = "pl_eye-off"; return "Stop using as audio"; }
   *icone = "pl_audio-lines";
@@ -5297,14 +5373,17 @@ static int fonteMenuEvento(const SDL_Event *e) {
   if (!fmAberto) return 0;
   if (e->type != SDL_KEYDOWN) return 1;   // the KEYUP of the hold that opened it, too
   k = e->key.keysym.sym;
-  if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE || k == SDLK_DELETE) { fmAberto = 0; return 1; }
+  if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE || k == SDLK_DELETE) {
+    if (fmModoFaixas) { fmModoFaixas = 0; fmFoco = 0; return 1; }   /* back to the actions */
+    fmAberto = 0; return 1;
+  }
   // The held OK that opened the menu keeps repeating: not a choice.
   if (e->key.repeat && (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE)) return 1;
   if (k == SDLK_UP && fmFoco > 0) fmFoco--;
-  else if (k == SDLK_DOWN && fmFoco < fmN - 1) fmFoco++;
+  else if (k == SDLK_DOWN && fmFoco < fmLinhas() - 1) fmFoco++;
   else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) fonteMenuEscolher();
 #if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
-  else if ((int)e->key.keysym.scancode == NV_SCANCODE_BLUE || k == SDLK_F4) { fmFoco = 0; fonteMenuEscolher(); }
+  else if (!fmModoFaixas && ((int)e->key.keysym.scancode == NV_SCANCODE_BLUE || k == SDLK_F4)) { fmFoco = 0; fonteMenuEscolher(); }
 #endif
   return 1;
 }
@@ -5446,6 +5525,10 @@ static void streamFolhaAtualizar(float dt, Uint32 agora) {
   if(!aberta) { detAberto=0; if (ptAberto) partes_cancelar(); ptAberto=0; fmAberto=0; ctxhold_cancelar(&folhaHold); }
   ptAnim=anim_mola(ptAnim,ptAberto?1:0,dt,NV_MOLA_TELA);
   fmAnim=anim_mola(fmAnim,fmAberto?1:0,dt,NV_MOLA_TELA);
+  if (fmAberto && fmModoFaixas && fmSondaN == -2) {
+    int nf = audioext_sonda_resultado(fmSondaGer, fmFaixas, AUDIOEXT_FAIXAS_MAX);
+    if (nf != -2) { fmSondaN = nf; fmFoco = 0; fmMontarFaixas(); }
+  }
   if (ptAberto) {
     int e = partes_resultado(NULL);
     if (e != ptL.estado) {
@@ -6096,14 +6179,16 @@ static void desenhaFonteMenu(float x, float w, float direita, int ptr) {
   float a = fmAnim, lh = 64.0f, vao = 6.0f, pad = 14.0f, mw = 0.0f, mh, mx, my;
   float ry = FOLHA_TOPO + linhaTopo(foco) - rolagem, rh = linhaAltura(foco);
   if (a < .01f || fmN <= 0) return;
-  for (int r = 0; r < fmN; r++) {
+  int nl = fmLinhas();
+  for (int r = 0; r < nl; r++) {
     const char *ic, *rot = fonteMenuRotulo(r, &ic);
     TxtLinha tl = txt_linha(TXT_PAINEL_ITEM, rot, 250, 250, 248, 255);
     if (tl.w > mw) mw = tl.w;
   }
   mw += pad * 2 + 24.0f + 26.0f + 18.0f + 24.0f;
   if (mw < 440.0f) mw = 440.0f;
-  mh = pad * 2 + fmN * lh + (fmN - 1) * vao;
+  if (mw > 1100.0f) mw = 1100.0f;
+  mh = pad * 2 + nl * lh + (nl - 1) * vao;
   mx = direita - mw - 24.0f;
   my = ry + rh + 6.0f;
   if (my + mh > NV_TELA_H - 24.0f) my = ry - 6.0f - mh;
@@ -6117,7 +6202,7 @@ static void desenhaFonteMenu(float x, float w, float direita, int ptr) {
     ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, ponteiroFonteMenuFora, 0, 0);
     ponteiro_alvo(mx, my, mw, mh, NULL, NULL, 0, 0);
   }
-  for (int r = 0; r < fmN; r++) {
+  for (int r = 0; r < nl; r++) {
     const char *ic, *rot = fonteMenuRotulo(r, &ic);
     GfxRect rr = {mx + pad, my + pad + r * (lh + vao), mw - pad * 2, lh};
     int sel = r == fmFoco;

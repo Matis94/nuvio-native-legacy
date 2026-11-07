@@ -8,6 +8,9 @@
 static int fake_sleep(const struct timespec *, struct timespec *);
 #define nanosleep fake_sleep
 #include "../src/video.c"
+/* External audio: the hold-OK menu's track reader (unused here). */
+int dts_playback_enabled(void) { return 0; }
+int dts_engine_probe_audio(const char *u, const char *h, DtsTrack *t, int m) { (void)u; (void)h; (void)t; (void)m; return -1; }
 #undef nanosleep
 
 /* The official native HTTP payload reads device buffering preferences. */

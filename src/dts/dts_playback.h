@@ -13,6 +13,7 @@ typedef struct {
   double buffered_until;
   double start_position; /* Position applied by the latest successful Load. */
   unsigned buffering_ms; /* Worker-managed refill; user pause remains separate. */
+  int ext_cut_s, ext_speed; /* audio of another version: other cut (s) / other speed */
 } DtsPlaybackStatus;
 /* All expensive work and native Feed calls are serialized on one worker.
  * Callers own a session; close joins it before freeing callback context. */
@@ -48,6 +49,14 @@ void dts_playback_next_external_audio(const char *url, const char *headers,
 /* New offset; it takes effect with the next seek (the caller seeks to the
  * current position right after, so the native timeline restarts cleanly). */
 void dts_playback_external_offset(DtsPlayback *p, int offset_ms);
+/* Main thread: a new offset applied at once without a seek or reload (only the
+ * other file moves); falls back to a seek if that fails. */
+void dts_playback_external_offset_live(DtsPlayback *p, int offset_ms);
+/* Main thread: "Match automatically" (about 30 s of playback). The result,
+ * once: 0 still working, 1 found (offset in ms, the app's sign), -1 not trusted
+ * or failed. */
+void dts_playback_external_match(DtsPlayback *p);
+int dts_playback_external_match_result(DtsPlayback *p, int *offset_ms, int *score);
 /* Before start, with the call above: fetch only the audio of that file where
  * it allows it (dts_engine_external_audio_only). Consumed by start. */
 void dts_playback_next_external_audio_only(int on);

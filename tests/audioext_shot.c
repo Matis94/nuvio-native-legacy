@@ -180,6 +180,12 @@ int main(int argc, char **argv) {
     assert(audioext_pedido_geracao() == g + 1 && audioext_tem_marca());
     assert(!strcmp(audioext_url(), "https://example.invalid/webdl-pl.mkv")); }
   quadros(30);
+  // 2b. While it opens: the title's art and the loading island, not black.
+  tecla(SDLK_ESCAPE);
+  audioext_carregando_definir(1);
+  estado(); quadros(40);
+  salvar("audio-other-version-loading");
+  audioext_carregando_definir(0);
 
   // 3. Playing it: the converter lists the other file's track; Audio sync
   // and this file's own audio come right after it.
@@ -192,6 +198,8 @@ int main(int argc, char **argv) {
   assert(audioext_offset_ms() == 150);
   estado(); quadros(20);
   salvar("audio-other-version-playing-sync");
+  tecla(SDLK_DOWN); estado(); quadros(10);
+  salvar("audio-other-version-match");
   tecla(SDLK_DOWN); estado(); quadros(10);
   { unsigned g = audioext_pedido_geracao();
     tecla(SDLK_RETURN);

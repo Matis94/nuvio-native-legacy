@@ -1,7 +1,9 @@
 // Audio from another version of the title: the marked source (audioext.h).
 #include "audioext.h"
 #include "mediaurl.h"
+#include <pthread.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static char alvoAtual[64], alvoMarca[64];
@@ -16,6 +18,11 @@ static int prefSoAudio, prefSerie = 1;
 // while it loaded). The next start of the title then plays the file's own
 // audio instead of trying the same thing again.
 static int pendente, voltouPadrao;
+static int avisoCorte, avisoVelocidade, avisoPendente;   // other cut / speed, once per start
+static int carregando;   // the other version's audio is being opened (player card)
+// "Match automatically": requested (for the player), working, and the outcome
+// for one toast: 1 found (offset applied), -1 not trusted.
+static int dopasujPedido, dopasujAtivo, dopasujAviso, dopasujMs;
 // The donor's audio stream picked in the menu (-1 = by language), for the mark.
 static int faixaMarca = -1;
 // One remembered series at a time (test build, not saved).
@@ -28,7 +35,8 @@ static void serieDe(const char *alvo, char *out, size_t tam) {
 void audioext_limpar(void) {
   urlMarca[0] = cabMarca[0] = nomeMarca[0] = alvoMarca[0] = idiomaMarca[0] = 0;
   offsetMs = 0; offsetGeracao++;
-  pendente = 0; faixaMarca = -1;
+  pendente = 0; faixaMarca = -1; carregando = 0;
+  dopasujPedido = dopasujAtivo = 0;
 }
 // "tt123" and "tt123:1:2" are the same title: the detail page stamps the raw
 // id before the episode list arrives (addons.c). Another episode is not.
@@ -98,6 +106,59 @@ void audioext_escolher_faixa(int stream) {
   fflush(stdout);
 }
 int audioext_faixa(void) { return faixaMarca; }
+void audioext_definir_faixa(int stream) { if (urlMarca[0]) faixaMarca = stream >= 0 ? stream : -1; }
+
+/* TRACKS OF A VERSION (hold-OK menu): the platform's header reader runs on a
+ * detached thread; the UI polls with the request's generation, and an older
+ * request finishing late is dropped. */
+static int (*sondaFn)(const char *, const char *, AudioExtFaixa *, int);
+static pthread_mutex_t sondaLock = PTHREAD_MUTEX_INITIALIZER;
+static unsigned sondaGer;
+static int sondaN = -2;
+static AudioExtFaixa sondaFaixas[AUDIOEXT_FAIXAS_MAX];
+typedef struct { unsigned ger; char *url, *cab; } SondaPedido;
+static char *dup(const char *t) { size_t n = strlen(t) + 1; char *d = malloc(n); if (d) memcpy(d, t, n); return d; }
+static void *sondaFio(void *arg) {
+  SondaPedido *p = arg;
+  AudioExtFaixa f[AUDIOEXT_FAIXAS_MAX];
+  int n = sondaFn ? sondaFn(p->url, p->cab, f, AUDIOEXT_FAIXAS_MAX) : -1;
+  pthread_mutex_lock(&sondaLock);
+  if (p->ger == sondaGer) {
+    sondaN = n < 0 ? -1 : n;
+    if (n > 0) memcpy(sondaFaixas, f, (size_t)n * sizeof *f);
+  }
+  pthread_mutex_unlock(&sondaLock);
+  printf("[ext-audio] tracks read for the hold-OK menu: %d\n", n); fflush(stdout);
+  free(p->url); free(p->cab); free(p);
+  return NULL;
+}
+void audioext_definir_sonda(int (*fn)(const char *, const char *, AudioExtFaixa *, int)) { sondaFn = fn; }
+int audioext_sonda_disponivel(void) { return sondaFn != NULL; }
+unsigned audioext_sondar(const char *url, const char *cab) {
+  SondaPedido *p = calloc(1, sizeof *p);
+  pthread_t t;
+  unsigned ger;
+  pthread_mutex_lock(&sondaLock);
+  ger = ++sondaGer; sondaN = -2;
+  pthread_mutex_unlock(&sondaLock);
+  if (!p || !sondaFn || !url || !*url) { free(p); pthread_mutex_lock(&sondaLock); if (ger == sondaGer) sondaN = -1; pthread_mutex_unlock(&sondaLock); return ger; }
+  p->ger = ger; p->url = dup(url); p->cab = dup(cab ? cab : "");
+  if (!p->url || !p->cab || pthread_create(&t, NULL, sondaFio, p)) {
+    free(p->url); free(p->cab); free(p);
+    pthread_mutex_lock(&sondaLock); if (ger == sondaGer) sondaN = -1; pthread_mutex_unlock(&sondaLock);
+    return ger;
+  }
+  pthread_detach(t);
+  return ger;
+}
+int audioext_sonda_resultado(unsigned ger, AudioExtFaixa *out, int max) {
+  int n;
+  pthread_mutex_lock(&sondaLock);
+  n = ger == sondaGer ? sondaN : -1;
+  if (n > 0) { if (n > max) n = max; memcpy(out, sondaFaixas, (size_t)n * sizeof *out); }
+  pthread_mutex_unlock(&sondaLock);
+  return n;
+}
 int audioext_tem_marca(void) { return urlMarca[0] != 0; }
 const char *audioext_idioma(void) { return idiomaMarca; }
 int audioext_marcada(const char *url) {
@@ -123,8 +184,29 @@ int audioext_offset_somar(int ms) {
 unsigned audioext_offset_geracao(void) { return offsetGeracao; }
 void audioext_tocando_definir(int sim) {
   tocando = sim != 0;
-  if (tocando) pendente = 0;
+  if (tocando) { pendente = 0; carregando = 0; }
 }
+void audioext_carregando_definir(int sim) { carregando = sim != 0; }
+void audioext_dopasuj_pedir(void) {
+  if (!urlMarca[0] || !tocando || dopasujAtivo) return;
+  dopasujPedido = 1; dopasujAtivo = 1;
+  printf("[ext-audio] match automatically: requested\n"); fflush(stdout);
+}
+int audioext_dopasuj_pedido_consumir(void) { int p = dopasujPedido; dopasujPedido = 0; return p; }
+int audioext_dopasuj_ativo(void) { return dopasujAtivo; }
+void audioext_dopasuj_resultado(int ok, int ms) {
+  dopasujAtivo = 0; dopasujPedido = 0;
+  if (ok && urlMarca[0]) {
+    if (ms > 10000) ms = 10000;
+    if (ms < -10000) ms = -10000;
+    offsetMs = ms; offsetGeracao++;
+    { char sr[64]; serieDe(alvoMarca, sr, sizeof sr);
+      if (memo.ativo && sr[0] && !strcmp(sr, memo.serie)) memo.offset = offsetMs; }
+  }
+  dopasujAviso = ok ? 1 : -1; dopasujMs = offsetMs;
+}
+int audioext_dopasuj_aviso_consumir(int *ms) { int a = dopasujAviso; dopasujAviso = 0; *ms = dopasujMs; return a; }
+int audioext_carregando(void) { return carregando && urlMarca[0]; }
 void audioext_inicio_reproducao(const char *urlVideo) {
   if (!audioext_pedido(urlVideo)) return;
   if (pendente) {
@@ -135,6 +217,16 @@ void audioext_inicio_reproducao(const char *urlVideo) {
     return;
   }
   pendente = 1;
+}
+void audioext_diferenca(int corteSeg, int velocidade) {
+  avisoCorte = corteSeg; avisoVelocidade = velocidade;
+  avisoPendente = (corteSeg > 10 || corteSeg < -10 || velocidade);
+}
+int audioext_diferenca_consumir(int *corteSeg, int *velocidade) {
+  if (!avisoPendente) return 0;
+  avisoPendente = 0;
+  *corteSeg = avisoCorte; *velocidade = avisoVelocidade;
+  return 1;
 }
 int audioext_voltou_padrao_consumir(void) {
   int v = voltouPadrao;

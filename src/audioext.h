@@ -51,6 +51,18 @@ unsigned audioext_pedido_geracao(void);
 // player reopens with it. Forgotten with the mark. -1 = by language.
 void audioext_escolher_faixa(int stream);
 int audioext_faixa(void);
+// The same choice before playing (hold-OK menu): no reopen, nothing pending.
+void audioext_definir_faixa(int stream);
+// TRACKS OF A VERSION for the hold-OK menu. The platform registers a blocking
+// header reader (webOS: the converter's); audioext_sondar runs it on a thread
+// and returns the request's generation; audioext_sonda_resultado says -2 still
+// reading, -1 failed, else the count copied to `out`.
+#define AUDIOEXT_FAIXAS_MAX 16
+typedef struct { int stream, canais; char codec[24], idioma[16], titulo[64]; } AudioExtFaixa;
+void audioext_definir_sonda(int (*fn)(const char *url, const char *cab, AudioExtFaixa *out, int max));
+int audioext_sonda_disponivel(void);
+unsigned audioext_sondar(const char *url, const char *cab);
+int audioext_sonda_resultado(unsigned ger, AudioExtFaixa *out, int max);
 int audioext_tem_marca(void);
 const char *audioext_idioma(void);
 // The source with this URL is the marked one (for the sheet's label).
@@ -69,6 +81,19 @@ unsigned audioext_offset_geracao(void);
 // The webOS player says whether the session on screen plays the external
 // audio (the player screen uses it for CH+/CH-), and why it could not.
 void audioext_tocando_definir(int sim);
+// The webOS player is opening the other version's audio (from the choice until
+// it plays or fails): the player shows a loading card instead of black.
+void audioext_carregando_definir(int sim);
+int audioext_carregando(void);
+// "Match automatically" (audio menu, on click only, while the other version
+// plays): the webOS player takes the request, works ~30 s and reports; a found
+// offset replaces the current one (applied live like CH+/CH-).
+void audioext_dopasuj_pedir(void);
+int audioext_dopasuj_pedido_consumir(void);
+int audioext_dopasuj_ativo(void);
+void audioext_dopasuj_resultado(int ok, int ms);
+// Once, for a toast: 1 found (offset in *ms), -1 not trusted, 0 nothing.
+int audioext_dopasuj_aviso_consumir(int *ms);
 int audioext_tocando(void);
 void audioext_falhou(const char *motivo);
 // Once: the last failure ("" none), for a toast on the player screen.
@@ -80,4 +105,9 @@ int audioext_falha_consumir(char *dst, unsigned tam);
 void audioext_inicio_reproducao(const char *urlVideo);
 // Once: the last start fell back to the file's own audio (player toast).
 int audioext_voltou_padrao_consumir(void);
+// The webOS player, when the other version starts: its length minus this
+// file's (seconds) and whether its speed differs. Over 10 s or another speed
+// is a different cut: the player says once that the sync may drift.
+void audioext_diferenca(int corteSeg, int velocidade);
+int audioext_diferenca_consumir(int *corteSeg, int *velocidade);
 #endif
