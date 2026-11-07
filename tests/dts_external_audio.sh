@@ -41,7 +41,7 @@ ffmpeg -hide_banner -loglevel error \
 # and tiny frames between: its audio samples gather into about one chunk per
 # second, as in a coarsely interleaved WEB-DL, and audio only skips the
 # keyframes.
-ffmpeg -hide_banner -loglevel error -f lavfi -i 'nullsrc=s=640x360:d=0.04,geq=random(1)*255:128:128' \
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'nullsrc=s=1280x720:d=0.04,geq=random(1)*255:128:128' \
   -frames:v 1 "$TMP/noise.png"
 ffmpeg -hide_banner -loglevel error -loop 1 -framerate 25 -t 20 -i "$TMP/noise.png" \
   -f lavfi -i 'sine=frequency=600:sample_rate=48000:duration=20' \

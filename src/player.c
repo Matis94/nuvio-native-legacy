@@ -4638,6 +4638,8 @@ void player_atualizar(float dt, Uint32 agora) {
       snprintf(t, sizeof t, i18n("Audio from the other version failed: %s"), falha);
       player_toast(t, 5000);
     }
+    if (audioext_voltou_padrao_consumir())
+      player_toast(i18n("The other version's audio did not start last time. Playing this file's own audio."), 5000);
     if (audioext_tocando() && !extVisto) {
       snprintf(t, sizeof t, i18n("Audio from: %s · CH+/CH- to sync"), audioext_nome());
       player_toast(t, 4000);

@@ -59,6 +59,31 @@ int main(void) {
   audioext_escolher("https://c/pl.mkv", "", "PL", "pl");
   audioext_lembrar_serie(&id);
   assert(!audioext_serie_procura("tt9", NULL));
+  // SAFETY NET: a start whose audio never played makes the next start of the
+  // title use the file's own audio.
+  audioext_alvo("tt20");
+  assert(audioext_alternar("https://d/pl.mkv", "", "PL") == 1);
+  audioext_inicio_reproducao("https://d/remux.mkv");          // first start: tries it
+  assert(audioext_pedido("https://d/remux.mkv"));
+  audioext_inicio_reproducao("https://d/remux.mkv");          // backed out while loading
+  assert(!audioext_tem_marca() && audioext_voltou_padrao_consumir());
+  assert(!audioext_voltou_padrao_consumir());
+  // A start whose audio played keeps the mark for the next one.
+  assert(audioext_alternar("https://d/pl.mkv", "", "PL") == 1);
+  audioext_inicio_reproducao("https://d/remux.mkv");
+  audioext_tocando_definir(1);
+  audioext_tocando_definir(0);
+  audioext_inicio_reproducao("https://d/remux.mkv");
+  assert(audioext_pedido("https://d/remux.mkv") && !audioext_voltou_padrao_consumir());
+  // Playing the marked source itself is not an attempt.
+  audioext_tocando_definir(1); audioext_tocando_definir(0);
+  audioext_inicio_reproducao("https://d/pl.mkv");
+  audioext_inicio_reproducao("https://d/pl.mkv");
+  assert(audioext_tem_marca());
+  // A reported failure clears the mark at once.
+  audioext_falhou("no audio");
+  assert(!audioext_tem_marca());
+  { char f[32]; assert(audioext_falha_consumir(f, sizeof f) && !strcmp(f, "no audio")); }
   puts("audioext: marks, menu requests, offsets and series memory passed");
   return 0;
 }

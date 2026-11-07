@@ -2595,7 +2595,9 @@ int video_tocar(const char *url) {
 #endif
   dvRecuado = 0;
   dtsTentou = 0; dtsRevisao = 0; dtsSaida[0] = 0; dtsNativePending = 0; dtsEstado = 0;
-  extSoAudio = 0; extReabrirPend = 0; extPedidoVisto = audioext_pedido_geracao();
+  extSoAudio = 0; extReabrirPend = 0;
+  audioext_inicio_reproducao(url);
+  extPedidoVisto = audioext_pedido_geracao();
   { /* Settings > DTS "Off": no DTS conversion. The converter itself stays
      * available to Dolby Vision (P7/P8 MKV, MP4) with non-DTS audio. */
     int conversao = dts_playback_enabled() && dtsLiberadoNestaTv();

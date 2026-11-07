@@ -124,7 +124,7 @@ int main(int argc, char **argv) {
   { char caminho[700]; FILE *f;
     snprintf(caminho, sizeof caminho, "%s/ajustes.txt", getenv("NUVIO_DADOS"));
     f = fopen(caminho, "w"); assert(f);
-    fprintf(f, "idioma %d\nselected_theme 2\nfonteInterface 3\n", argc > 2 ? atoi(argv[2]) : 10);   // 10 = Polish
+    fprintf(f, "idioma %d\nselected_theme 2\nfonteInterface 3\nexternalAudioLocal 0\n", argc > 2 ? atoi(argv[2]) : 10);   // 10 = Polish; the option is off by default
     fclose(f);
     ajustes_dir(getenv("NUVIO_DADOS")); }
   ajustes_iniciar();

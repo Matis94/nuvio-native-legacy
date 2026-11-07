@@ -68,4 +68,11 @@ int audioext_tocando(void);
 void audioext_falhou(const char *motivo);
 // Once: the last failure ("" none), for a toast on the player screen.
 int audioext_falha_consumir(char *dst, unsigned tam);
+// A failure clears the mark. The webOS player calls this when a playback
+// starts: a start with the mark that never reached audioext_tocando_definir(1)
+// (it hung, or the person backed out while it loaded) makes this next start
+// clear the mark and play the file's own audio.
+void audioext_inicio_reproducao(const char *urlVideo);
+// Once: the last start fell back to the file's own audio (player toast).
+int audioext_voltou_padrao_consumir(void);
 #endif

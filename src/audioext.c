@@ -11,6 +11,11 @@ static unsigned offsetGeracao;
 static char falha[160], idiomaMarca[8];
 static unsigned pedidoGeracao;
 static int prefSoAudio, prefSerie = 1;
+// SAFETY NET (owner, 07/11): a start with this mark began and the other
+// version's audio never played (it failed, hung, or the person backed out
+// while it loaded). The next start of the title then plays the file's own
+// audio instead of trying the same thing again.
+static int pendente, voltouPadrao;
 // One remembered series at a time (test build, not saved).
 static struct { char serie[64], episodio[64]; AudioExtIdent id; int offset, ativo; } memo;
 static void serieDe(const char *alvo, char *out, size_t tam) {
@@ -21,6 +26,7 @@ static void serieDe(const char *alvo, char *out, size_t tam) {
 void audioext_limpar(void) {
   urlMarca[0] = cabMarca[0] = nomeMarca[0] = alvoMarca[0] = idiomaMarca[0] = 0;
   offsetMs = 0; offsetGeracao++;
+  pendente = 0;
 }
 // "tt123" and "tt123:1:2" are the same title: the detail page stamps the raw
 // id before the episode list arrives (addons.c). Another episode is not.
@@ -52,6 +58,7 @@ int audioext_alternar(const char *url, const char *cabecalhos, const char *nome)
   snprintf(alvoMarca, sizeof alvoMarca, "%s", alvoAtual);
   idiomaMarca[0] = 0;
   offsetMs = 0; offsetGeracao++;
+  pendente = 0;
   // The name is the add-on's label, never the URL (signed links stay out of logs).
   printf("[ext-audio] audio source marked: %.80s (target %s)\n", nomeMarca, alvoMarca);
   fflush(stdout);
@@ -68,6 +75,7 @@ void audioext_escolher(const char *url, const char *cabecalhos, const char *nome
   }
   snprintf(idiomaMarca, sizeof idiomaMarca, "%s", idioma ? idioma : "");
   pedidoGeracao++;
+  pendente = 1;   // the player reopens with it now
   printf("[ext-audio] chosen in the audio menu: %.80s lang=%s (target %s)\n", nomeMarca, idiomaMarca, alvoMarca);
   fflush(stdout);
 }
@@ -101,10 +109,32 @@ int audioext_offset_somar(int ms) {
   return offsetMs;
 }
 unsigned audioext_offset_geracao(void) { return offsetGeracao; }
-void audioext_tocando_definir(int sim) { tocando = sim != 0; }
+void audioext_tocando_definir(int sim) {
+  tocando = sim != 0;
+  if (tocando) pendente = 0;
+}
+void audioext_inicio_reproducao(const char *urlVideo) {
+  if (!audioext_pedido(urlVideo)) return;
+  if (pendente) {
+    printf("[ext-audio] the last start with \"%.80s\" never played its audio: this file's own audio now\n", nomeMarca);
+    fflush(stdout);
+    audioext_limpar();
+    voltouPadrao = 1;
+    return;
+  }
+  pendente = 1;
+}
+int audioext_voltou_padrao_consumir(void) {
+  int v = voltouPadrao;
+  voltouPadrao = 0;
+  return v;
+}
 int audioext_tocando(void) { return tocando; }
 void audioext_falhou(const char *motivo) {
   snprintf(falha, sizeof falha, "%s", motivo && *motivo ? motivo : "unknown error");
+  // The session goes back to the file's own audio, and so does the next start:
+  // the mark goes away (it can be picked again in the audio menu).
+  audioext_limpar();
 }
 int audioext_falha_consumir(char *dst, unsigned tam) {
   if (!falha[0]) return 0;

@@ -285,10 +285,11 @@ int main(int argc, char **argv) {
       r = play(e, 0, 0);
       assert(r.video == 100 && r.audio > 100 && r.last_audio > 3800000000LL);
       bytes = dts_engine_external_bytes(e, &total);
-      printf("MP4 donor %s: %lld of %lld bytes downloaded\n", only ? "audio only" : "whole file", (long long)bytes, (long long)total);
-      /* The header read at open costs up to the stream's 2 MiB read-ahead. */
-      if (only) assert(bytes < total / 2);
-      else assert(bytes >= total * 9 / 10);
+      printf("MP4 donor %s: %lld of %lld bytes downloaded\n", only ? "audio only" : "whole file", (long long)bytes, (long long)total); fflush(stdout);
+      /* The header read at open fills the donor's 8 MiB ring once (nothing
+       * next to a real file); after it only the audio chunks are fetched, so
+       * the 25 MiB donor stays well under half. */
+      if (only) assert(bytes < total / 2 && bytes < (int64_t)(DTS_ENGINE_EXTERNAL_RING_MIB + 2) * 1048576);
       /* A seek back reads the earlier chunks again. */
       assert(dts_engine_seek(e, 1.0) == 0);
       r = play(e, 0, 0);

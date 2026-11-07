@@ -5196,6 +5196,122 @@ int stream_partes_escolheu(int *fonte, PartesLista *l, int *k) {
   ptEscolhaFonte = -1;
   return 1;
 }
+// HOLD OK ON A SOURCE = a small source menu (test build, webOS only, and only
+// with "Audio from another version" on): "Use as audio" (what the BLUE key
+// does) and, where TorBox lists the files, "Files of this version". With the
+// setting off, or on a source the converter cannot read, the hold opens the
+// files list exactly as before.
+enum { FM_AUDIO = 0, FM_ARQUIVOS };
+static int fmAberto, fmN, fmFoco, fmAcoes[2], fmMarcada;   // labels frozen at open (they fade out unchanged)
+static float fmAnim;
+static char fmUrl[NV_MEDIA_URL_MAX];   // the source by its link: the list can grow while the menu is open
+
+static int fonteAceitaAudio(int i) {
+#if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
+  AudioExtEntrada e;
+  if (!ajustes_audio_externo() || canalFolha || i < 0 || i >= n) return 0;
+  stream_audioext_entrada(&lista[i], &e);
+  return e.temUrl && !e.hls && !e.naoVideo;
+#else
+  (void)i;
+  return 0;
+#endif
+}
+static int fonteSegurarAceita(int i) { return linhaAceitaPartes(i) || fonteAceitaAudio(i); }
+
+// Mark (or unmark) source `i` as the audio source. While a video of this title
+// plays, the choice applies at once (same as picking it in the audio menu) and
+// the sheet closes back to the picture; otherwise it waits for the next source
+// played for this title.
+static void fonteMarcarAudio(int i) {
+  const Stream *s;
+  if (i < 0 || i >= n) return;
+  s = &lista[i];
+  if (!fonteAceitaAudio(i)) {
+    if (player_aberto()) player_toast(i18n("This source can't be used as audio."), 2600);
+    return;
+  }
+  if (audioext_marcada(s->url)) {
+    if (player_aberto() && audioext_tocando()) {
+      audioext_original();
+      player_toast(i18n("Back to this file's own audio…"), 2500);
+      aberta = 0;
+    } else {
+      audioext_alternar(s->url, s->cabecalhos, s->rotulo);
+      if (player_aberto()) player_toast(i18n("Audio source cleared."), 2600);
+    }
+    return;
+  }
+  audioext_alternar(s->url, s->cabecalhos, s->rotulo);
+  { AudioExtEntrada e;
+    AudioExtIdent id;
+    stream_audioext_entrada(s, &e);
+    memset(&id, 0, sizeof id);
+    snprintf(id.grupo, sizeof id.grupo, "%s", s->bingeGroup);
+    snprintf(id.addon, sizeof id.addon, "%s", s->provedor);
+    if (e.nIdiomas > 0) snprintf(id.idioma, sizeof id.idioma, "%s", e.idiomas[0]);
+    id.altura = s->altura; id.codec = e.codec;
+    audioext_lembrar_serie(&id); }
+  if (player_aberto() && audioext_pedido(video_url_atual())) {
+    audioext_escolher(s->url, s->cabecalhos, s->rotulo, "");
+    player_toast(i18n("Loading the audio of the other version…"), 2500);
+    aberta = 0;
+  } else if (player_aberto())
+    player_toast(i18n("Audio source set. Play another source of this title."), 2600);
+}
+
+static void fonteMenuAbrir(int i) {
+  fmAberto = 1; fmFoco = 0; fmN = 0; fmAnim = 0;
+  snprintf(fmUrl, sizeof fmUrl, "%s", lista[i].url);
+  fmMarcada = audioext_marcada(lista[i].url);
+  fmAcoes[fmN++] = FM_AUDIO;
+  if (linhaAceitaPartes(i)) fmAcoes[fmN++] = FM_ARQUIVOS;
+  printf("[ext-audio] hold OK on source #%d (%s): source menu, %d option%s\n", i,
+         lista[i].provedor[0] ? lista[i].provedor : "-", fmN, fmN == 1 ? "" : "s");
+  fflush(stdout);
+}
+// The hold crossed its threshold on source `i`.
+static void fonteSegurou(int i) {
+  if (fonteAceitaAudio(i)) fonteMenuAbrir(i);
+  else if (linhaAceitaPartes(i)) partesAbrirPainel(i);
+}
+static int fonteMenuIndice(void) {
+  for (int i = 0; i < n; i++) if (!strcmp(lista[i].url, fmUrl)) return i;
+  return -1;
+}
+static void fonteMenuEscolher(void) {
+  int i = fonteMenuIndice(), acao = fmFoco >= 0 && fmFoco < fmN ? fmAcoes[fmFoco] : -1;
+  fmAberto = 0;
+  if (i < 0) return;
+  if (acao == FM_AUDIO) fonteMarcarAudio(i);
+  else if (acao == FM_ARQUIVOS && linhaAceitaPartes(i)) partesAbrirPainel(i);
+}
+static const char *fonteMenuRotulo(int r, const char **icone) {
+  if (fmAcoes[r] == FM_ARQUIVOS) { *icone = "aj_folders"; return "Files of this version"; }
+  if (fmMarcada) { *icone = "pl_eye-off"; return "Stop using as audio"; }
+  *icone = "pl_audio-lines";
+  return "Use as audio";
+}
+static int fonteMenuEvento(const SDL_Event *e) {
+  SDL_Keycode k;
+  if (!fmAberto) return 0;
+  if (e->type != SDL_KEYDOWN) return 1;   // the KEYUP of the hold that opened it, too
+  k = e->key.keysym.sym;
+  if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE || k == SDLK_DELETE) { fmAberto = 0; return 1; }
+  // The held OK that opened the menu keeps repeating: not a choice.
+  if (e->key.repeat && (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE)) return 1;
+  if (k == SDLK_UP && fmFoco > 0) fmFoco--;
+  else if (k == SDLK_DOWN && fmFoco < fmN - 1) fmFoco++;
+  else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) fonteMenuEscolher();
+#if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
+  else if ((int)e->key.keysym.scancode == NV_SCANCODE_BLUE || k == SDLK_F4) { fmFoco = 0; fonteMenuEscolher(); }
+#endif
+  return 1;
+}
+static void ponteiroFonteMenu(int r, int b) { (void)b; if (fmAberto) fmFoco = r; }
+static void ponteiroFonteMenuEscolher(int r, int b) { (void)b; if (fmAberto) { fmFoco = r; fonteMenuEscolher(); } }
+static void ponteiroFonteMenuFora(int a, int b) { (void)a; (void)b; fmAberto = 0; }
+
 // O toque curto (ou o OK de sempre) numa linha da lista: a mesma acao de antes.
 static void okNaLinha(void) {
   int i = filtrado(foco);
@@ -5220,11 +5336,12 @@ void stream_folha_evento(const SDL_Event *e) {
   }
   if(aberta && detalheEvento(e)) return;
   if(aberta && partesEvento(e)) return;
+  if(aberta && fonteMenuEvento(e)) return;
   // SEGURAR OK NUMA FONTE (so onde partes_disponivel): o OK arma no KEYDOWN e
   // so age no KEYUP. Linha que nao aceita (canal, "Onde ver", cabecalho) segue
   // o caminho de antes, com o OK no KEYDOWN.
   if (aberta && grupo == 1 && (e->type == SDL_KEYDOWN || e->type == SDL_KEYUP)) {
-    switch (ctxhold_evento(&folhaHold, e, linhaAceitaPartes(filtrado(foco)))) {
+    switch (ctxhold_evento(&folhaHold, e, fonteSegurarAceita(filtrado(foco)))) {
       case CTXH_CONSUMIDO:
         // OK afundou numa fonte: a busca comeca ja, na lista da memoria, para a
         // modal abrir pronta se o dedo segurar.
@@ -5234,7 +5351,7 @@ void stream_folha_evento(const SDL_Event *e) {
         }
         return;
       case CTXH_TOQUE: okNaLinha(); return;
-      case CTXH_LONGO: { int i = filtrado(foco); if (linhaAceitaPartes(i)) partesAbrirPainel(i); } return;
+      case CTXH_LONGO: fonteSegurou(filtrado(foco)); return;
       default: break;
     }
   }
@@ -5247,19 +5364,13 @@ void stream_folha_evento(const SDL_Event *e) {
     recarregarFonteConfirmacao = 0;
   if(k==SDLK_ESCAPE || k==SDLK_AC_BACK || k==SDLK_BACKSPACE || k==SDLK_DELETE) {aberta=0;return;}
   if(k==SDLK_r) {recarregar=1;return;}
-  // Test build: BLUE (or F4) marks the source in focus as the audio source of
-  // the next source played for this title (audioext.h). Only the webOS
-  // converter plays it.
+  // Test build: BLUE (or F4) = "Use as audio" of the hold-OK menu on the
+  // source in focus (fonteMarcarAudio). Only the webOS converter plays it.
 #if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
   if(grupo==1 && !canalFolha && !e->key.repeat && ajustes_audio_externo() &&
      ((int)e->key.keysym.scancode==NV_SCANCODE_BLUE || k==SDLK_F4)) {
     int i=filtrado(foco);
-    if(i>=0) {
-      int r=audioext_alternar(lista[i].url,lista[i].cabecalhos,lista[i].rotulo);
-      if(player_aberto())
-        player_toast(i18n(r>0?"Audio source set. Play another source of this title.":
-                          r==0?"Audio source cleared.":"This source has no direct link."),2600);
-    }
+    if(i>=0) fonteMarcarAudio(i);
     return;
   }
 #endif
@@ -5332,8 +5443,9 @@ static void streamFolhaAtualizar(float dt, Uint32 agora) {
   medirCabecalho();
   if (aberta || anim > 0.001f) folhaGeometria();
   anim=anim_mola(anim,aberta?1:0,dt,NV_MOLA_TELA);
-  if(!aberta) { detAberto=0; if (ptAberto) partes_cancelar(); ptAberto=0; ctxhold_cancelar(&folhaHold); }
+  if(!aberta) { detAberto=0; if (ptAberto) partes_cancelar(); ptAberto=0; fmAberto=0; ctxhold_cancelar(&folhaHold); }
   ptAnim=anim_mola(ptAnim,ptAberto?1:0,dt,NV_MOLA_TELA);
+  fmAnim=anim_mola(fmAnim,fmAberto?1:0,dt,NV_MOLA_TELA);
   if (ptAberto) {
     int e = partes_resultado(NULL);
     if (e != ptL.estado) {
@@ -5378,9 +5490,8 @@ static void streamFolhaAtualizar(float dt, Uint32 agora) {
       ptRol = fabsf(d) < .5f ? ptRolAlvo : ptRol + d * (dt * 16 > 1 ? 1 : dt * 16); }
   }
   // O dedo ainda segura OK numa fonte: no limiar abre a lista de arquivos.
-  if (aberta && !ptAberto && grupo == 1 && ctxhold_passo(&folhaHold, agora, 1)) {
-    int i = filtrado(foco);
-    if (linhaAceitaPartes(i)) partesAbrirPainel(i);
+  if (aberta && !ptAberto && !fmAberto && grupo == 1 && ctxhold_passo(&folhaHold, agora, 1)) {
+    fonteSegurou(filtrado(foco));
     ctxhold_cancelar(&folhaHold);
   }
   detAnim=anim_mola(detAnim,detAberto?1:0,dt,NV_MOLA_TELA);
@@ -5979,6 +6090,48 @@ static void ptTamanho(uint64_t bytes, int sel, float ix, float iw, float ry, flo
   txt_desenhar_alpha(lu, ix + iw - lu.w, ry + 14 + (lg.h - lu.h) - 3, a);
   txt_desenhar_alpha(lg, ix + iw - lu.w - 6 - lg.w, ry + 14, a);
 }
+// The hold-OK source menu: a dropdown under the source row (above it when
+// there is no room), right-aligned in the list, over a light veil.
+static void desenhaFonteMenu(float x, float w, float direita, int ptr) {
+  float a = fmAnim, lh = 64.0f, vao = 6.0f, pad = 14.0f, mw = 0.0f, mh, mx, my;
+  float ry = FOLHA_TOPO + linhaTopo(foco) - rolagem, rh = linhaAltura(foco);
+  if (a < .01f || fmN <= 0) return;
+  for (int r = 0; r < fmN; r++) {
+    const char *ic, *rot = fonteMenuRotulo(r, &ic);
+    TxtLinha tl = txt_linha(TXT_PAINEL_ITEM, rot, 250, 250, 248, 255);
+    if (tl.w > mw) mw = tl.w;
+  }
+  mw += pad * 2 + 24.0f + 26.0f + 18.0f + 24.0f;
+  if (mw < 440.0f) mw = 440.0f;
+  mh = pad * 2 + fmN * lh + (fmN - 1) * vao;
+  mx = direita - mw - 24.0f;
+  my = ry + rh + 6.0f;
+  if (my + mh > NV_TELA_H - 24.0f) my = ry - 6.0f - mh;
+  if (my < 24.0f) my = 24.0f;
+  my += (1.0f - a) * -10.0f;
+  gfx_cor((GfxRect){x, 0, w, NV_TELA_H}, 0, 0, 0, 0, .35f * a);
+  // Opaque base: the rows of the list must not show through the glass.
+  gfx_cor((GfxRect){mx, my, mw, mh}, FOLHA_RAIO_IL * .6f / mh, .071f, .075f, .086f, a);
+  ajustes_ui_ilha_a((GfxRect){mx, my, mw, mh}, FOLHA_RAIO_IL * .6f, 1, a);
+  if (ptr) {
+    ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, ponteiroFonteMenuFora, 0, 0);
+    ponteiro_alvo(mx, my, mw, mh, NULL, NULL, 0, 0);
+  }
+  for (int r = 0; r < fmN; r++) {
+    const char *ic, *rot = fonteMenuRotulo(r, &ic);
+    GfxRect rr = {mx + pad, my + pad + r * (lh + vao), mw - pad * 2, lh};
+    int sel = r == fmFoco;
+    if (sel && !gfx_foco_placa(rr, FOLHA_RAIO / rr.h, 1, a)) {
+      if (ajustes_vidro()) gfx_cor(rr, FOLHA_RAIO / rr.h, 1, 1, 1, .12f * a);
+      else gfx_cor(rr, FOLHA_RAIO / rr.h, .17f, .176f, .204f, a);
+    }
+    if (ptr) ponteiro_alvo(rr.x, rr.y, rr.w, rr.h, ponteiroFonteMenu, ponteiroFonteMenuEscolher, r, 0);
+    gfx_icone((GfxRect){rr.x + 24.0f, rr.y + (lh - 26.0f) * .5f, 26, 26}, ic, sel ? .98f : .86f, sel ? .98f : .86f, sel ? .97f : .85f, a);
+    { TxtLinha tl = txt_linha_corta(TXT_PAINEL_ITEM, rot, sel ? 250 : 220, sel ? 250 : 220, sel ? 248 : 218, 255,
+                                    rr.w - 24.0f - 26.0f - 18.0f - 24.0f);
+      txt_desenhar_alpha(tl, rr.x + 24.0f + 26.0f + 18.0f, rr.y + (lh - tl.h) * .5f, a); }
+  }
+}
 static void desenhaPartes(float x, float w, int ptr, Uint32 agora) {
   float a = ptAnim;
   const char *msg;
@@ -6247,10 +6400,11 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     if (n > 0 && addons_ocupado() && rw-360-cw > 80) {
       if (cw > 0) gfx_cor((GfxRect){tx+cw-13.5f,oy+74+ch*.5f-2.5f,5,5},.5f,.5f,.5f,.49f,anim);
       txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,"Buscando mais fontes…",ai,(int)(ag*255),(int)(ab*255),255,rw-360-cw),tx+cw,oy+72,anim);
-    } else if (grupo == 1 && linhaAceitaPartes(filtrado(foco)) && rw-360-cw > 80) {
+    } else if (grupo == 1 && fonteSegurarAceita(filtrado(foco)) && rw-360-cw > 80) {
       // O GESTO NAO SE ADIVINHA: a dica fica no lugar do "Buscando mais fontes".
+      const char *dica = fonteAceitaAudio(filtrado(foco)) ? "Hold OK: source options" : "Segure OK: todos os arquivos";
       if (cw > 0) gfx_cor((GfxRect){tx+cw-13.5f,oy+74+ch*.5f-2.5f,5,5},.5f,.5f,.5f,.49f,anim);
-      txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,"Segure OK: todos os arquivos",130,130,128,255,rw-360-cw),tx+cw,oy+72,anim);
+      txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,dica,130,130,128,255,rw-360-cw),tx+cw,oy+72,anim);
     } }
   medirCabecalho();
   txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_TITULO,"Fontes",243,242,239,255,titMaxCab),tx,oy+94,anim);
@@ -6700,6 +6854,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     desenhaPartes(x,w,ptr && ptAberto,agora);
     if (ilha) gfx_recorte(ilhaR.x,ilhaR.y,ilhaR.w,ilhaR.h);
   }
+  if (fmAnim > .01f) desenhaFonteMenu(x,w,lx+rw,ptr && fmAberto);
   sourceperf_end(NV_SRC_DRAW, perf);
 }
 
