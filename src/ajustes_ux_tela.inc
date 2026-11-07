@@ -18,11 +18,6 @@ static const Item TELA[] = {
 #ifdef NV_TPK
       OPC(AJ_AUDIO_OFFSET),
 #endif
-#if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
-    ROT("Audio from another version"),
-      OPC(AJ_EXT_AUDIO), OPC(AJ_EXT_AUDIO_MODO), OPC(AJ_EXT_AUDIO_SERIE), OPC(AJ_EXT_AUDIO_CACHE),
-      OPC(AJ_EXT_AUDIO_PASSO), OPC(AJ_EXT_AUDIO_GRANDE),
-#endif
     ROT("Escolha da fonte"),
       OPC(AJ_FONTE_MANUAL), OPC(AJ_FONTE_PRIORIDADE), OPC(AJ_FONTE_IDIOMA_AUDIO), OPC(AJ_FONTE_PRAZO),
       OPC(AJ_FONTE_REPOR), OPC(AJ_TAM_MAX),
@@ -66,6 +61,12 @@ static const Item TELA[] = {
 #endif
 #if defined(NV_DV_FIXED_AUDIO_TEST) && defined(NV_WEBOS)
       OPC(AJ_DV_AUDIO_FIXO),
+#endif
+#ifndef __EMSCRIPTEN__
+      // Audio from another version (owner, 07/11): right under the Dolby
+      // Vision audio output, inside this group (the webOS converter plays it).
+      OPC(AJ_EXT_AUDIO), OPC(AJ_EXT_AUDIO_MODO), OPC(AJ_EXT_AUDIO_SERIE), OPC(AJ_EXT_AUDIO_CACHE),
+      OPC(AJ_EXT_AUDIO_PASSO), OPC(AJ_EXT_AUDIO_GRANDE),
 #endif
 #endif
       OPC(AJ_CACHE_SEEK), OPC(AJ_MANTER_VIDEO), OPC(AJ_RETOMADA_MORNA), OPC(AJ_MANTER_PRAZO), OPC(AJ_SEEKR_AJUSTE),
