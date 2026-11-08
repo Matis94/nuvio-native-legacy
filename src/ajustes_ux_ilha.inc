@@ -2198,7 +2198,11 @@ static void desenhaFolhaExtAudio(void) {
   int ligado = ajustes_audio_externo();
   ponteiro_camada(); ajVeuModal(); ajCentraModal(&m); ajIlha(m, 36.0f, 1.0f, 1.0f);
   // The focused option says what it does, under the title.
-  topo = ajCabecalhoFolha(m, "Reprodução", rotuloOpcao(AJ_EXT_AUDIO), ajudaOpcao(EA_OPS[eaFoco]), 0, 1);
+  // The main row's own help is long (the list shows it in full); here a short one fits two lines.
+  topo = ajCabecalhoFolha(m, "Reprodução", rotuloOpcao(AJ_EXT_AUDIO),
+                          eaFoco == 0 ? "Picture from one source, audio from another version of the same title. "
+                                        "Pick it in the source list: hold OK, Use as audio."
+                                      : ajudaOpcao(EA_OPS[eaFoco]), 0, 1);
   base = m.y + m.h - 96.0f;
   y = topo;
   for (int i = 0; i < EA_N; i++, y += passo) {

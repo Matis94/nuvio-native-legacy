@@ -505,5 +505,18 @@ int main(void) {
   char path[700]; snprintf(path, sizeof path, "%s/ajustes.txt", dir); unlink(path);
   snprintf(path, sizeof path, "%s/ajustes-locais.txt", dir); unlink(path);
   rmdir(dir); SDL_Quit();
+  // Audio from another version: OK on its row opens the sheet without toggling;
+  // OK inside the sheet changes the focused row; Back closes it.
+  if (ajOpcaoDisponivel(AJ_EXT_AUDIO)) {
+    uxCancelar(); frAberta = 0;
+    int ea = valor[AJ_EXT_AUDIO], seg = valor[AJ_EXT_AUDIO_SEGUIR];
+    focarOpcao(AJ_EXT_AUDIO); key(SDLK_RETURN);
+    assert(frAberta == 9 && valor[AJ_EXT_AUDIO] == ea);
+    key(SDLK_RETURN); assert(valor[AJ_EXT_AUDIO] != ea);
+    key(SDLK_DOWN); key(SDLK_RETURN); assert(valor[AJ_EXT_AUDIO_SEGUIR] != seg);
+    key(SDLK_ESCAPE); assert(frAberta == 0);
+    assert(definirValorDireto(AJ_EXT_AUDIO, ea) && definirValorDireto(AJ_EXT_AUDIO_SEGUIR, seg));
+  }
+
   puts("ajustes_ux_interacao: cenários OK"); return 0;
 }

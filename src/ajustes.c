@@ -7923,7 +7923,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_PULAR_ABERTURA: return "Pula a abertura sozinho quando o episódio tem o trecho marcado, e avisa na tela. Sem marcador, nada é pulado. O botão manual depende de Show intro skip button.";
     case AJ_SHOW_SKIP_INTRO: return "Show the manual Skip intro button when an intro marker is available. Turning this off hides the button, including while player controls are open. Automatic intro skipping is controlled separately.";
     case AJ_SHOW_SKIP_RECAP: return "Show the manual Skip recap button when a recap marker is available. Turning this off hides only this button. Automatic recap skipping is controlled separately.";
-    case AJ_EXT_AUDIO: return "Play the picture of one source with the audio of another version of the same title, for example a dub from a WEB-DL over a remux. The other versions appear in the player's audio menu. The audio file is read in full over its own connection, so a small version (WEB-DL) is the better choice.";
+    case AJ_EXT_AUDIO: return "Play the picture of one source with the audio of another version of the same title, for example a dub from another release. The other versions appear in the player's audio menu. The audio file is read in full over its own connection: the bigger it is, the more bandwidth it needs, so a smaller file is the better choice.";
     case AJ_EXT_AUDIO_CACHE: return "Versions the debrid service does not have ready may not load. Show them dimmed at the end of their language, or hide them.";
     case AJ_EXT_AUDIO_PASSO: return "How much one press moves the audio of another version in the player (Audio sync row, CH+/CH-).";
     case AJ_EXT_AUDIO_GRANDE: return "Say so when the chosen audio comes from a file larger than 20 GB: it is downloaded in full next to the video.";
@@ -11447,8 +11447,20 @@ int ajustes_teste_quadro(const char *id) {
   else if (!strncmp(id, "guia", 4)) { if (!ajustesTesteGuia(id)) return 0; }
   else if (!strcmp(id, "principal")) { focarOpcao(AJ_HOME_LAYOUT); }
   // External audio test 7: the "Audio from another version" sheet.
-  else if (!strcmp(id, "ext-audio")) { valor[AJ_EXT_AUDIO] = 0; focarOpcao(AJ_EXT_AUDIO); uxAbrirEditor(AJ_EXT_AUDIO); eaFoco = 1; }
-  else if (!strcmp(id, "ext-audio-linha")) { valor[AJ_EXT_AUDIO] = 0; focarOpcao(AJ_EXT_AUDIO); }
+  // The sheet opens through the real OK key on its row (test 8: OK no longer toggles it).
+  // NUVIO_SHOT_PL=1 / NUVIO_SHOT_EN=1 show it in Polish / English.
+  else if (!strncmp(id, "ext-audio", 9)) {
+    if (getenv("NUVIO_SHOT_PL")) valor[AJ_IDIOMA] = IDIOMA_PL + 1;
+    if (getenv("NUVIO_SHOT_EN")) valor[AJ_IDIOMA] = IDIOMA_EN + 1;
+    valor[AJ_EXT_AUDIO] = 0; focarOpcao(AJ_EXT_AUDIO);
+    if (strcmp(id, "ext-audio-linha")) {
+      SDL_Event ok = {0}; ok.type = SDL_KEYDOWN; ok.key.keysym.sym = SDLK_RETURN;
+      ajustes_evento(&ok);
+      if (!strcmp(id, "ext-audio-seguir")) {
+        SDL_Event dn = ok; dn.key.keysym.sym = SDLK_DOWN; ajustes_evento(&dn); ajustes_evento(&ok);
+      }
+    }
+  }
   // 2.0 N1: logo e abertura. NUVIO_N1_LOGO / NUVIO_N1_ABERT escolhem o valor salvo.
   else if (!strncmp(id, "n1-", 3)) {
     if (getenv("NUVIO_N1_LOGO")) valor[AJ_LOGO_APP] = atoi(getenv("NUVIO_N1_LOGO"));

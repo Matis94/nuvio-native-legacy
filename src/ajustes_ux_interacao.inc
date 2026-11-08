@@ -338,6 +338,8 @@ static int uxAlternarDireto(int op) {
   int antes, novo;
   if (ajFalhaBackend(op)) ajFalhaEspelhar();
   if (!ehInterruptor(op) || soLeitura(op) || inativa(op)) return 0;
+  // Audio from another version: OK opens its sheet (the on/off is its first row).
+  if (op == AJ_EXT_AUDIO) return 0;
   uxCancelar();
   antes = uxValorAtual(op);
   novo = antes == 0 ? 1 : 0;
