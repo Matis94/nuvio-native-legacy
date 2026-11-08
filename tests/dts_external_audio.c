@@ -167,7 +167,7 @@ static Run play(DtsEngine *e, int64_t offset_ns, int limit) {
 }
 
 int main(int argc, char **argv) {
-  assert(argc == 31);
+  assert(argc == 33);
   const char *main_file = argv[1], *other = argv[2], *dts_only = argv[3], *short_clip = argv[4], *mp4 = argv[5];
   const char *aac44 = argv[6], *main60 = argv[7], *long_idx = argv[8], *long_noidx = argv[9];
   const char *match_main = argv[10], *match_dub = argv[11];
@@ -175,7 +175,7 @@ int main(int argc, char **argv) {
   const char *cut_main = argv[17], *cut_dub = argv[18], *pal_dub = argv[19], *pair_dub = argv[20];
   const char *follow_ext = argv[21], *follow_th = argv[22], *lang_main = argv[23], *lang_pl = argv[24];
   const char *dub_ru = argv[25], *dub_pl = argv[26], *follow_ext_ru = argv[27], *follow_th_pl = argv[28];
-  const char *shift_main = argv[29], *shift_dub = argv[30];
+  const char *shift_main = argv[29], *shift_dub = argv[30], *gap_main = argv[31], *gap_dub = argv[32];
   dts_engine_set_lang_match(lang_match);
   load_refs(other, "pol");
 
@@ -576,6 +576,23 @@ int main(int argc, char **argv) {
     }
     fprintf(stderr, "follow, small shift: %d shift(s), first %d ms at %.1f s, own audio %d\n", shifts, shift_ms, shift_at / 1e9, fills);
     assert(got == 0 && fills == 0 && shifts >= 1 && shift_ms < -550 && shift_ms > -650 && shift_at > 70e9 && shift_at < 90e9); }
+  dts_engine_destroy(e);
+  /* The second look, same frame rate, a gap 0.5 s longer at 200 s: an
+   * offset move (how 1, no speed), never a speed change (how 5). */
+  e = dts_engine_create();
+  dts_engine_external_audio(e, gap_dub, HEADERS, "en", 0);
+  assert(dts_engine_open(e, gap_main, HEADERS, -1, 0, 0) == 0);
+  { DtsFrame f; int got, results = 0, speed = 0, moved = 0, moved_ms = 0; DtsMatchInfo mi;
+    assert(dts_engine_external_match_arm(e) == 0);
+    while ((got = dts_engine_next(e, &f)) == 1) {
+      if (dts_engine_external_match_poll(e, &mi) == 1) {
+        results++;
+        if (mi.how == 5 || mi.ratio_ppm) speed = 1;
+        if (results >= 2) { moved = 1; moved_ms = mi.offset_ms; }
+      }
+    }
+    fprintf(stderr, "second look, same frame rate: %d result(s), speed %d, moved to %d ms\n", results, speed, moved_ms);
+    assert(got == 0 && !speed && moved && moved_ms < -450 && moved_ms > -550); }
   dts_engine_destroy(e);
   /* A real missing scene between two languages: found later (the slower
    * check), and the other version still resumes 25 s on. */

@@ -2717,6 +2717,26 @@ static void match_second_look(DtsEngine *e,const DtsMatchSig *sm,const DtsMatchS
   fflush(stdout);
   if(fabs(drift)<0.0002) return;   /* the same speed: 0.7 s an hour at most */
   double k=1.0/(1.0-drift);
+  /* A speed change is only believed when the frame rates differ, or the
+   * measure lands on a known film/TV ratio (24/23.976, 25/24, 25/23.976 and
+   * back). Same frame rate and an odd ratio: the offset moved instead (a gap
+   * longer in one release; owner's log 08/11, Chicago Fire: 0.5 s read as
+   * 1645 ppm, the other version reopened at that speed and back again). */
+  { static const double known[]={24000.0/23976.0,25.0/24.0,25000.0/23976.0};
+    int std=0;
+    for(int i=0;i<3 && !std;i++)
+      std=fabs(k-known[i])<0.15*(known[i]-1.0) || fabs(k-1.0/known[i])<0.15*(known[i]-1.0);
+    int same_fps=e->ext_fps_ratio>0 && fabs(e->ext_fps_ratio-1.0)<1e-4;
+    if(same_fps && !std) {
+      printf("[ext-audio] match: second look: the same frame rate, so not a speed difference: offset moved to %.3f s\n",
+             r.offset_s-e->ext_base_ns/1e9);
+      fflush(stdout);
+      match_report(e,r.offset_s,0,r.score,1);
+      /* and looked at again 5 minutes on from here */
+      e->mt_t1=t2; e->mt_o1=r.offset_s; e->mt_o1_user_ns=(int64_t)e->mt_offset_ms*1000000;
+      return;
+    }
+  }
   /* The frame rates name the exact ratio when they agree with the measure. */
   if(e->ext_fps_ratio>0 && fabs(e->ext_fps_ratio-1.0)>1e-5 && fabs((e->ext_fps_ratio-k)/(k-1.0))<0.3) k=e->ext_fps_ratio;
   /* this file = other * k + c, through the second find */
