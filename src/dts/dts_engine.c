@@ -3455,7 +3455,13 @@ static int ext_index_by_clusters(DtsEngine *e,AVFormatContext *xf,int vs,double 
  * 960-6187 s). The video track first; a file with no index gets one from the
  * Clusters found by position; the plain seek is the last resort. `how`:
  * 1 index, 2 clusters found by position, 3 plain. */
+static void follow_side_reset(MatchSide *m);
 static int ext_donor_seek(DtsEngine *e,double t,int *how) {
+  /* The follow's copy of the other version is placed by sample count from
+   * its first frame: after any jump of the other file it starts over
+   * (owner's log 08/11, Chicago Fire: every live offset change from a new
+   * find read as a missing scene ~13 s later). */
+  if(e->fw) follow_side_reset(&e->fw->d);
   AVFormatContext *xf=e->ext->fmt;
   int64_t ts=(int64_t)(t*1000000.0);
   int vs=-1;

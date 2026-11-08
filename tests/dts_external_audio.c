@@ -500,7 +500,7 @@ int main(int argc, char **argv) {
   assert(!strcmp(dts_engine_info(e)->audio_codec, "aac"));   /* converted, to switch source */
   { DtsFrame f; int got, fill = 0, resumed = 0, resume_ms = 0, state, ms;
     int64_t last = INT64_MIN, worst_gap = 0, fill_at = 0, resume_at = 0;
-    DtsMatchInfo mi; int automatch = 0;
+    DtsMatchInfo mi; int automatch = 0, found_ms = 0, shifted = 0, fills = 0;
     while ((got = dts_engine_next(e, &f)) == 1) {
       if (f.kind == DTS_AUDIO) {
         assert(last == INT64_MIN || f.pts_ns > last);
@@ -510,12 +510,19 @@ int main(int argc, char **argv) {
       int k = dts_engine_external_follow_poll(e, &state, &ms);
       if (k == 1 && !fill) { fill = 1; fill_at = last; }
       if (k == 2 && !resumed) { resumed = 1; resume_ms = ms; resume_at = last; }
-      if (dts_engine_external_match_poll(e, &mi) == 1 && mi.automatic) automatch = 1;
+      if (dts_engine_external_match_poll(e, &mi) == 1 && mi.automatic) { automatch = 1; found_ms = mi.offset_ms; }
+      /* Owner's log 08/11 (Chicago Fire): a new find moves the other version
+       * live by a few ms; that must not read as a missing scene ~15 s later. */
+      if (resumed && !shifted && last > resume_at + 2e9) {
+        shifted = 1; assert(dts_engine_external_shift(e, resume_ms + 6) == 0);
+      }
+      if (k == 1) fills++;
     }
     assert(got == 0);
     fprintf(stderr, "follow: auto match %d, own audio at %.1f s, resumed at %.1f s with %d ms, last audio %.1f s, worst gap %.0f ms\n",
             automatch, fill_at / 1e9, resume_at / 1e9, resume_ms, last / 1e9, worst_gap / 1e6);
-    assert(automatch && fill && resumed);
+    assert(automatch && shifted && fill && resumed && fills == 1);
+    (void)found_ms;
     assert(fill_at > 60e9 && fill_at < 72e9);
     assert(resume_at > 85e9 && resume_at < 110e9);
     assert(resume_ms > 24900 && resume_ms < 25100);
