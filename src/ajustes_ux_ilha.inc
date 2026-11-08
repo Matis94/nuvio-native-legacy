@@ -2193,7 +2193,7 @@ static void eaPontMudar(int i, int b) { (void)b; if (frAberta == 9 && i >= 0 && 
 static void eaPontVoltar(int a, int b) { (void)a; (void)b; if (frAberta == 9) frAberta = 0; }
 static void desenhaFolhaExtAudio(void) {
   GfxRect m = {460.0f, 90.0f, 1000.0f, 900.0f};
-  const float passo = 76.0f;   /* 8 rows fit above the hints */
+  const float passo = 68.0f;   /* 9 rows fit above the hints */
   float topo, base, y;
   int ligado = ajustes_audio_externo();
   ponteiro_camada(); ajVeuModal(); ajCentraModal(&m); ajIlha(m, 36.0f, 1.0f, 1.0f);

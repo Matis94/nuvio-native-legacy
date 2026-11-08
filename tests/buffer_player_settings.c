@@ -27,7 +27,7 @@ int main(void) {
   assert(AJ_SHOW_SKIP_RECAP==AJ_SHOW_SKIP_INTRO+1);
   assert(AJ_SHOW_SKIP_CREDITS==AJ_SHOW_SKIP_RECAP+1);
   assert(AJ_EXT_AUDIO==AJ_SHOW_SKIP_CREDITS+1);
-  assert(AJ_N==AJ_EXT_AUDIO_AVISO+1);
+  assert(AJ_N==AJ_EXT_AUDIO_AUTO+1);
   assert(!strcmp(CHAVE[AJ_REMEMBER_PROFILE],"rememberLastProfileLocal"));
   assert(ajustes_escopo(AJ_REMEMBER_PROFILE)==ESC_TV && !dePerfil(AJ_REMEMBER_PROFILE));
   assert(!ajustePortavel(AJ_REMEMBER_PROFILE) && !ajusteAparelho(AJ_REMEMBER_PROFILE));

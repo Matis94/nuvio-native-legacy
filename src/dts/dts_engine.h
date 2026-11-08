@@ -164,6 +164,10 @@ void dts_engine_reconnect(DtsEngine *);
  * corrected live to *offset_ms), 0 none; *state
  * 0 off, 1 in sync, 2 own audio, 3 lost. */
 void dts_engine_external_follow(DtsEngine *, int on);
+/* Before open (or replace): "Match automatically" starts by itself once the
+ * other version plays (Settings, owner 08/11); results come back with
+ * DtsMatchInfo.automatic set. */
+void dts_engine_external_automatch(DtsEngine *, int on);
 int dts_engine_external_follow_poll(DtsEngine *, int *state, int *offset_ms);
 /* Worker only, on an open external session: replace the other version (new
  * file, track, offset, audio-only mode) at `target` seconds without reopening

@@ -23,7 +23,10 @@ jobs:
       NUVIO_BUILD_JOBS: '3'
       # Test build number (owner, 07/11): bumped with every new test build so
       # the IPK name and the title on the TV tell the versions apart.
-      NUVIO_EXT_TEST: '13'
+      NUVIO_EXT_TEST: '14'
+      # Short name of the change in this build (owner, 08/11): in the IPK
+      # name and the title on the TV, after the number.
+      NUVIO_EXT_NAME: 'auto-match-start'
       # Quick test builds (owner, 08/11): skip the long regression suites; the
       # changed parts are tested locally before the push. Manual runs with
       # "full_regression" still run everything.
@@ -400,6 +403,8 @@ jobs:
           # and expose the custom release revision in the install label.
           import os
           n = os.environ["NUVIO_EXT_TEST"]
+          name = os.environ.get("NUVIO_EXT_NAME", "")
+          if name: n = "%s %s" % (n, name.replace("-", " "))
           sha = os.environ["GITHUB_SHA"][:7]
           data["title"] = "Nuvio Legacy 2.0.8.7 (external audio test %s)" % n
           data["appDescription"] = "Nuvio webOS 2.0.8.7 (external audio test %s, %s)" % (n, sha)
@@ -415,7 +420,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk "output/space.nuvio.native.legacy_2.0.8.7_arm-external-audio-test${NUVIO_EXT_TEST}-${GITHUB_SHA::7}.ipk"
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk "output/space.nuvio.native.legacy_2.0.8.7_arm-ext-audio-${NUVIO_EXT_TEST}-${NUVIO_EXT_NAME:+$NUVIO_EXT_NAME-}${GITHUB_SHA::7}.ipk"
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -431,7 +436,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: nuvio-webos-2.0.8.7-external-audio-test${{ env.NUVIO_EXT_TEST }}-arm-ipk
+          name: nuvio-webos-2.0.8.7-ext-audio-${{ env.NUVIO_EXT_TEST }}-${{ env.NUVIO_EXT_NAME }}-arm-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14

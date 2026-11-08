@@ -429,7 +429,21 @@ int main(int argc, char **argv) {
     int res = dts_engine_external_match_poll(e, &mi);
     fprintf(stderr, "match: result %d offset %d ms score %d how %d\n", res, mi.offset_ms, mi.score, mi.how);
     assert(res == 1 && mi.offset_ms > -740 && mi.offset_ms < -660 && mi.how == 1 && mi.ratio_ppm == 0);
-    assert(dts_engine_external_match_poll(e, &mi) == 0);   /* reported once */ }
+    assert(dts_engine_external_match_poll(e, &mi) == 0);   /* reported once */
+    assert(!mi.automatic); }
+  dts_engine_destroy(e);
+  /* Settings: "Match automatically at start": the same find, by itself, marked automatic. */
+  e = dts_engine_create();
+  dts_engine_external_automatch(e, 1);
+  dts_engine_external_audio(e, match_dub, HEADERS, "pl", 0);
+  assert(dts_engine_open(e, match_main, HEADERS, -1, 0, 0) == 0);
+  { DtsMatchInfo mi; DtsFrame f; int got, res = 0, autom = 0, off = 0;
+    checkBytes = 0;
+    while ((got = dts_engine_next(e, &f)) == 1)
+      if (!res && (res = dts_engine_external_match_poll(e, &mi)) != 0) { autom = mi.automatic; off = mi.offset_ms; }
+    checkBytes = 1;
+    fprintf(stderr, "match at start: result %d offset %d ms automatic %d\n", res, off, autom);
+    assert(got == 0 && res == 1 && autom && off > -740 && off < -660); }
   dts_engine_destroy(e);
   /* AVI and MPEG-TS (owner's log 07/11: a 4.3 GB AVI picture source; small
    * AVI/TS versions with other audio). The picture from an H.264 AVI, the

@@ -96,6 +96,7 @@ int dts_engine_prefetch(DtsEngine *e,double s) { (void)e;(void)s; return -1; }
 void dts_engine_prefetch_tidy(DtsEngine *e) { (void)e; }
 void dts_engine_reconnect(DtsEngine *e) { (void)e; }
 void dts_engine_external_follow(DtsEngine *e,int on) { (void)e;(void)on; }
+void dts_engine_external_automatch(DtsEngine *e,int on) { (void)e;(void)on; }
 int dts_engine_external_follow_poll(DtsEngine *e,int *s,int *o) { (void)e; *s=0; *o=0; return 0; }
 int64_t dts_engine_external_bytes(DtsEngine *e,int64_t *t) { (void)e; if(t) *t=-1; return 0; }
 int dts_engine_external_active(DtsEngine *e) { (void)e; return 0; }
@@ -268,6 +269,7 @@ struct DtsEngine {
   /* FOLLOW ANOTHER CUT (Settings, off by default): struct Follow below. */
   int fw_on, fw_state, fw_autoarm, mt_auto;
   int mt_main_pref;      /* this file's track that compared best, +1 (0: none; see match_alt) */
+  int ext_automatch;     /* Settings: "Match automatically" by itself when the other version starts */
   struct Follow *fw;
   int fw_event, fw_event_ms;   /* last event for the app: 1 own audio, 2 resumed, 3 gave up, 4 small shift corrected */
   double ext_fps_ratio;  /* other version's frame rate / this one's (0: unknown) */
@@ -1971,7 +1973,7 @@ static int configure_external(DtsEngine *e,double start) {
   e->target_ns=(int64_t)(start*1000000000.0);
   printf("[ext-audio] ready codec=%s ch=%d rate=%d stream=%d%s\n",e->info.audio_codec,e->info.channels,
     e->info.sample_rate,k,follow?" (following another cut)":"");
-  e->fw_autoarm=follow; e->mt_main_pref=0;
+  e->fw_autoarm=follow || e->ext_automatch; e->mt_main_pref=0;
   fflush(stdout);
   return start>0?dts_engine_seek(e,start):0;
 }
@@ -2954,7 +2956,7 @@ static int match_arm(DtsEngine *e,int check) {
 }
 int dts_engine_external_match_arm(DtsEngine *e) {
   if(!e) return -1;
-  match_job_stop(e); e->mt_t1=-1;
+  match_job_stop(e); e->mt_t1=-1; e->mt_auto=0;   /* a click; the automatic callers set it after */
   e->mt_heavy=e->mt_hint_ms=e->mt_how=e->mt_ncand=0;
   if(match_arm(e,0)<0) { match_fail(e,0); return -1; }
   e->mt_state=1; e->mt_started_ms=clock_ns(CLOCK_MONOTONIC)/1000000u;
@@ -3245,7 +3247,7 @@ static void follow_check(DtsEngine *e) {
     if(!f->good_since_seek || f->t_good<0) {
       /* Lost right after a jump: the place is unknown, search it all. */
       follow_enter_fill(e,tend-8.0);
-      if(!e->mt && !e->mj) { e->mt_auto=1; dts_engine_external_match_arm(e); }
+      if(!e->mt && !e->mj) { dts_engine_external_match_arm(e); e->mt_auto=1; }
       return;
     }
     follow_enter_fill(e,f->t_good);
@@ -3322,6 +3324,7 @@ static int follow_fill_conv(DtsEngine *e) {
   return 0;
 }
 void dts_engine_external_follow(DtsEngine *e,int on) { if(e) e->fw_on=!!on; }
+void dts_engine_external_automatch(DtsEngine *e,int on) { if(e) e->ext_automatch=!!on; }
 int dts_engine_external_follow_poll(DtsEngine *e,int *state,int *offset_ms) {
   int k=e?e->fw_event:0;
   *state=e?e->fw_state:0; *offset_ms=e?e->fw_event_ms:0;
@@ -3636,7 +3639,7 @@ static int next_frame_passthrough(DtsEngine *e,DtsFrame *f) {
 #endif
       if(e->mt_t1>=0) match_second_look_due(e,ns(e->in->pts!=AV_NOPTS_VALUE?e->in->pts:e->in->dts,tb));
       /* Follow on, another cut: the first match starts by itself. */
-      if(e->fw_autoarm && !e->mt && !e->mj) { e->fw_autoarm=0; e->mt_auto=1; dts_engine_external_match_arm(e); }
+      if(e->fw_autoarm && !e->mt && !e->mj) { e->fw_autoarm=0; dts_engine_external_match_arm(e); e->mt_auto=1; }
       if(!e->bsf) {
         if(e->hevc_annexb.sets && (r=hevc_annexb_packet(e))<0) { av_packet_unref(e->in); return fail(e,"Compressed video output",r); }
         av_packet_move_ref(e->out,e->in); return ext_video_out(e,f,tb);

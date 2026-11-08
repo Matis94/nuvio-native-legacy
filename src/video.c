@@ -3655,6 +3655,7 @@ static int iniciarDts(int stream) {
     dts_playback_next_external_track(audioext_faixa());
     dts_playback_next_external_speed(audioext_velocidade());
     dts_playback_next_external_follow(ajustes_audio_externo_seguir());
+    dts_playback_next_external_automatch(ajustes_audio_externo_auto());
     extGenAplicada = extGenVista = audioext_offset_geracao(); extGenEm = 0;
     audioext_carregando_definir(1);
     printf("[ext-audio] start: picture from this source, audio from \"%.60s\" offsetMs=%d dv=%d langs=%s\n",

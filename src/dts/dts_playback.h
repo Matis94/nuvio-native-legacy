@@ -67,6 +67,7 @@ void dts_playback_external_speed(DtsPlayback *p, int ratio_ppm);
 void dts_playback_next_external_speed(int ratio_ppm);
 /* Before a start: follow another cut through the whole film (Settings). */
 void dts_playback_next_external_follow(int on);
+void dts_playback_next_external_automatch(int on);   /* Settings: match automatically at start */
 /* Main thread: a jump to `seconds` is coming (an intro skip): its bytes are
  * fetched ahead (dts_engine_prefetch). */
 void dts_playback_prefetch(DtsPlayback *p, double seconds);

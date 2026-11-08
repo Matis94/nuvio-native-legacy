@@ -513,7 +513,7 @@ int main(void) {
     focarOpcao(AJ_EXT_AUDIO); key(SDLK_RETURN);
     assert(frAberta == 9 && valor[AJ_EXT_AUDIO] == ea);
     key(SDLK_RETURN); assert(valor[AJ_EXT_AUDIO] != ea);
-    key(SDLK_DOWN); key(SDLK_RETURN); assert(valor[AJ_EXT_AUDIO_SEGUIR] != seg);
+    key(SDLK_DOWN); key(SDLK_DOWN); key(SDLK_RETURN); assert(valor[AJ_EXT_AUDIO_SEGUIR] != seg);
     key(SDLK_ESCAPE); assert(frAberta == 0);
     assert(definirValorDireto(AJ_EXT_AUDIO, ea) && definirValorDireto(AJ_EXT_AUDIO_SEGUIR, seg));
   }
