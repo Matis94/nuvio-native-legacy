@@ -23,7 +23,7 @@ jobs:
       NUVIO_BUILD_JOBS: '3'
       # Test build number (owner, 07/11): bumped with every new test build so
       # the IPK name and the title on the TV tell the versions apart.
-      NUVIO_EXT_TEST: '12'
+      NUVIO_EXT_TEST: '13'
       # Quick test builds (owner, 08/11): skip the long regression suites; the
       # changed parts are tested locally before the push. Manual runs with
       # "full_regression" still run everything.

@@ -4662,7 +4662,8 @@ void player_atualizar(float dt, Uint32 agora) {
       if (a == 1) player_toast(i18n("A scene the other version does not have: this file's own audio plays."), 4000);
       else if (a == 2) { snprintf(t, sizeof t, i18n("The other version's audio is back (%s)."), v); player_toast(t, 3500); }
       else if (a == 3) player_toast_ex(i18n("Lost the other version: use Match automatically in the audio menu."), 6000, "aj_triangle-alert", 1);
-      else if (a == 4) { snprintf(t, sizeof t, i18n("Audio sync adjusted by itself (%s)."), v); player_toast(t, 3000); } }
+      else if (a == 4 && ajustes_audio_externo_aviso()) {   // Settings: the message can be hidden (the fix still happens)
+        snprintf(t, sizeof t, i18n("Audio sync adjusted by itself (%s)."), v); player_toast(t, 3000); } }
     if (audioext_reconexao_consumir())
       player_toast(i18n("The source slowed down: reconnecting…"), 3500);
     if (audioext_voltou_padrao_consumir())

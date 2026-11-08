@@ -376,3 +376,4 @@
   0, /* Download of the audio file: Whole file */
   0, /* Remember for the next episodes: On */
   1, /* Follow through the whole movie (another cut): Off */
+  0, /* Sync adjusted message: On */
