@@ -3737,7 +3737,7 @@ static void bombearDts(void) {
     if (extAtivo && st.follow_events != events && st.follow_kind) {
       printf("[ext-audio] follow event %d offset %d ms\n", st.follow_kind, st.follow_offset_ms); fflush(stdout);
       audioext_seguir_evento(st.follow_kind, st.follow_offset_ms);
-      if (st.follow_kind == 2) extGenAplicada = extGenVista = audioext_offset_geracao();
+      if (st.follow_kind == 2 || st.follow_kind == 4) extGenAplicada = extGenVista = audioext_offset_geracao();
     }
     events = st.follow_events; }
   // A slow source reconnected (another version's audio kept): said once.

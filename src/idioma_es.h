@@ -957,6 +957,7 @@
   T("Audio source cleared.", "Audio source cleared."),
   T("Audio source set. Play another source of this title.", "Audio source set. Play another source of this title."),
   T("Audio sync", "Audio sync"),
+  T("Audio sync adjusted by itself (%s).", "Audio sync adjusted by itself (%s)."),
   T("Audio sync saved: %s", "Audio sync saved: %s"),
   T("Audio sync step", "Audio sync step"),
   T("Audio sync: %s", "Audio sync: %s"),

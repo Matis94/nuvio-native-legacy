@@ -167,7 +167,7 @@ static Run play(DtsEngine *e, int64_t offset_ns, int limit) {
 }
 
 int main(int argc, char **argv) {
-  assert(argc == 29);
+  assert(argc == 31);
   const char *main_file = argv[1], *other = argv[2], *dts_only = argv[3], *short_clip = argv[4], *mp4 = argv[5];
   const char *aac44 = argv[6], *main60 = argv[7], *long_idx = argv[8], *long_noidx = argv[9];
   const char *match_main = argv[10], *match_dub = argv[11];
@@ -175,6 +175,7 @@ int main(int argc, char **argv) {
   const char *cut_main = argv[17], *cut_dub = argv[18], *pal_dub = argv[19], *pair_dub = argv[20];
   const char *follow_ext = argv[21], *follow_th = argv[22], *lang_main = argv[23], *lang_pl = argv[24];
   const char *dub_ru = argv[25], *dub_pl = argv[26], *follow_ext_ru = argv[27], *follow_th_pl = argv[28];
+  const char *shift_main = argv[29], *shift_dub = argv[30];
   dts_engine_set_lang_match(lang_match);
   load_refs(other, "pol");
 
@@ -559,6 +560,22 @@ int main(int argc, char **argv) {
     }
     fprintf(stderr, "follow, two dubs: found %d, switches %d\n", found, switches);
     assert(got == 0 && found && switches == 0); }
+  dts_engine_destroy(e);
+  /* A gap 0.6 s longer in the other version at 70 s: the follow moves the
+   * sync there by itself (event 4), no switch to this file's audio. */
+  e = dts_engine_create();
+  dts_engine_external_follow(e, 1);
+  dts_engine_external_audio(e, shift_dub, HEADERS, "en", 0);
+  assert(dts_engine_open(e, shift_main, HEADERS, -1, 0, 0) == 0);
+  { DtsFrame f; int got, fills = 0, shifts = 0, shift_ms = 0, state, ms; int64_t last = INT64_MIN, shift_at = 0;
+    while ((got = dts_engine_next(e, &f)) == 1) {
+      if (f.kind == DTS_AUDIO) last = f.pts_ns;
+      int k = dts_engine_external_follow_poll(e, &state, &ms);
+      if (k == 1) fills++;
+      if (k == 4 && !shifts++) { shift_ms = ms; shift_at = last; }
+    }
+    fprintf(stderr, "follow, small shift: %d shift(s), first %d ms at %.1f s, own audio %d\n", shifts, shift_ms, shift_at / 1e9, fills);
+    assert(got == 0 && fills == 0 && shifts >= 1 && shift_ms < -550 && shift_ms > -650 && shift_at > 70e9 && shift_at < 90e9); }
   dts_engine_destroy(e);
   /* A real missing scene between two languages: found later (the slower
    * check), and the other version still resumes 25 s on. */

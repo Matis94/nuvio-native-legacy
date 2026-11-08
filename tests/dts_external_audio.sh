@@ -171,6 +171,11 @@ def talk(seed, count, amp):
 fx2 = bursts(35, 150, 900, 0.8)
 render(sys.argv[1] + '/y_ru.wav', 120, [(fx2, lambda t: t), (talk(36, 260, 2.6), lambda t: t)])
 render(sys.argv[1] + '/y_pl.wav', 150, [(fx2, lambda t: t), (talk(37, 260, 2.6), lambda t: t)])
+# Two episode releases (owner's log 08/11, Chicago Fire): a gap 0.6 s longer
+# at 70 s in the other one (and 15 s more at the end): the sync shifts by 0.6 s.
+ep = bursts(41, 200, 1400, 1.0)
+render(sys.argv[1] + '/s_main.wav', 120, [(ep, lambda t: t)])
+render(sys.argv[1] + '/s_dub.wav', 135, [(ep, lambda t: t if t < 70 else t + 0.6), (bursts(42, 135, 120, 0.2), lambda t: t)])
 PY
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=32x32:rate=24000/1001:duration=120' -i "$TMP/c_main.wav" \
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 24 -c:a ac3 -ar 48000 -b:a 96k -metadata:s:a:0 language=eng -shortest "$TMP/cut_main.mkv"
@@ -198,6 +203,10 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=32x32:rate=25:durati
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a ac3 -ar 48000 -b:a 96k -metadata:s:a:0 language=rus -shortest "$TMP/dub_ru.mkv"
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=32x32:rate=25:duration=150' -i "$TMP/y_pl.wav" \
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a libvorbis -ar 48000 -ac 2 -metadata:s:a:0 language=pol -shortest "$TMP/dub_pl.mkv"
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=32x32:rate=25:duration=120' -i "$TMP/s_main.wav" \
+  -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a ac3 -ar 48000 -b:a 96k -metadata:s:a:0 language=eng -shortest "$TMP/shift_main.mkv"
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=32x32:rate=25:duration=135' -i "$TMP/s_dub.wav" \
+  -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a eac3 -ar 48000 -b:a 96k -metadata:s:a:0 language=eng -shortest "$TMP/shift_dub.mkv"
 # The same cut fixtures labelled as two languages: a real missing scene is still found.
 ffmpeg -hide_banner -loglevel error -i "$TMP/follow_ext.mkv" -map 0 -c copy -metadata:s:a:0 language=rus "$TMP/follow_ext_ru.mkv"
 ffmpeg -hide_banner -loglevel error -i "$TMP/follow_th.mkv" -map 0 -c copy -metadata:s:a:0 language=pol "$TMP/follow_th_pl.mkv"
@@ -205,4 +214,4 @@ ffmpeg -hide_banner -loglevel error -i "$TMP/follow_th.mkv" -map 0 -c copy -meta
   "$TMP/main60.mkv" "$TMP/long.mkv" "$TMP/long_nocues.mkv" "$TMP/match_main.mkv" "$TMP/match_dub.mkv" \
   "$TMP/main.avi" "$TMP/other.avi" "$TMP/other.ts" "$TMP/xvid.avi" "$TMP/film.mkv" \
   "$TMP/cut_main.mkv" "$TMP/cut_dub.mkv" "$TMP/pal_dub.mkv" "$TMP/pair_dub.mkv" \
-  "$TMP/follow_ext.mkv" "$TMP/follow_th.mkv" "$TMP/lang_main.mkv" "$TMP/lang_pl.mkv" "$TMP/dub_ru.mkv" "$TMP/dub_pl.mkv" "$TMP/follow_ext_ru.mkv" "$TMP/follow_th_pl.mkv"
+  "$TMP/follow_ext.mkv" "$TMP/follow_th.mkv" "$TMP/lang_main.mkv" "$TMP/lang_pl.mkv" "$TMP/dub_ru.mkv" "$TMP/dub_pl.mkv" "$TMP/follow_ext_ru.mkv" "$TMP/follow_th_pl.mkv" "$TMP/shift_main.mkv" "$TMP/shift_dub.mkv"

@@ -957,6 +957,7 @@
   { "Audio source cleared.", "Audio source cleared." },
   { "Audio source set. Play another source of this title.", "Audio source set. Play another source of this title." },
   { "Audio sync", "Audio sync" },
+  { "Audio sync adjusted by itself (%s).", "Audio sync adjusted by itself (%s)." },
   { "Audio sync saved: %s", "Audio sync saved: %s" },
   { "Audio sync step", "Audio sync step" },
   { "Audio sync: %s", "Audio sync: %s" },

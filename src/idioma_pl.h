@@ -958,6 +958,7 @@
   T("Audio source cleared.", "Usunięto źródło dźwięku."),
   T("Audio source set. Play another source of this title.", "Ustawiono źródło dźwięku. Włącz inne źródło tego tytułu."),
   T("Audio sync", "Synchronizacja dźwięku"),
+  T("Audio sync adjusted by itself (%s).", "Synchronizacja dźwięku poprawiona automatycznie (%s)."),
   T("Audio sync saved: %s", "Zapisano synchronizację: %s"),
   T("Audio sync step", "Krok synchronizacji dźwięku"),
   T("Audio sync: %s", "Synchronizacja dźwięku: %s"),

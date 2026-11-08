@@ -264,7 +264,7 @@ void audioext_reconexao_marcar(void) { reconexao = 1; }
 static int seguirAviso, seguirMs;
 void audioext_seguir_evento(int tipo, int ms) {
   if (!urlMarca[0]) return;
-  if (tipo == 2) {
+  if (tipo == 2 || tipo == 4) {   // resumed / a small shift corrected: the converter's new offset
     offsetMs = ms > AUDIOEXT_OFFSET_MAX ? AUDIOEXT_OFFSET_MAX : ms < -AUDIOEXT_OFFSET_MAX ? -AUDIOEXT_OFFSET_MAX : ms;
     offsetGeracao++;   // the converter already moved: the live apply finds it equal
   }

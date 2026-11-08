@@ -269,7 +269,7 @@ struct DtsEngine {
   int fw_on, fw_state, fw_autoarm, mt_auto;
   int mt_main_pref;      /* this file's track that compared best, +1 (0: none; see match_alt) */
   struct Follow *fw;
-  int fw_event, fw_event_ms;   /* last event for the app: 1 own audio, 2 resumed, 3 gave up */
+  int fw_event, fw_event_ms;   /* last event for the app: 1 own audio, 2 resumed, 3 gave up, 4 small shift corrected */
   double ext_fps_ratio;  /* other version's frame rate / this one's (0: unknown) */
   int64_t fx_live_total;   /* stream size from the response headers (rede_fluxo64) */
   /* ext_conv: the donor's audio is decoded and re-encoded (DTS, TrueHD,
@@ -3005,6 +3005,7 @@ struct Follow {
   int need;                /* bad checks (2 s apart) before a scene counts as missing */
   int strict;              /* false alarms so far (the other version came back at the same offset) */
   int other;               /* the compared tracks are in two languages */
+  int shift_n; double shift_s;   /* checks in a row that found the same small shift (raw offset, s) */
   int64_t fill_off_ns;     /* FILL: the offset it began with */
   double t_good;           /* this file's time of the last check in sync (s) */
   double d_pause;          /* FILL: the other version's time its content stopped matching (raw, s) */
@@ -3017,9 +3018,10 @@ static void follow_streams(DtsEngine *e,int *mains,int *donor) {
 }
 static void follow_event(DtsEngine *e,int kind,int ms) {
   e->fw_event=kind; e->fw_event_ms=ms;
-  printf("[ext-audio] follow: %s%s\n",kind==1?"a scene the other version lacks: this file's own audio":
-         kind==2?"shared scenes again: the other version resumes":"lost it: use Match automatically",
-         kind==2?"":""); fflush(stdout);
+  printf("[ext-audio] follow: %s\n",kind==1?"a scene the other version lacks: this file's own audio":
+         kind==2?"shared scenes again: the other version resumes":
+         kind==4?"a small shift (a shorter or longer gap in one version): sync adjusted":"lost it: use Match automatically");
+  fflush(stdout);
 }
 static void follow_side_reset(MatchSide *m) {
   if(m->dec) avcodec_flush_buffers(m->dec);
@@ -3167,7 +3169,26 @@ static void follow_check(DtsEngine *e) {
   DtsMatchResult r;
   if(e->fw_state==FW_SYNC) {
     if(!dts_match_search_at(&sm,&sd,k,off,1.0,win,pos,&r)) return;   /* not covered (yet) or silent */
-    int here=fabs(r.offset_s-off)<0.25;
+    double dd=r.offset_s-off;
+    int here=fabs(dd)<0.25;
+    if(r.score>=f->thr && fabs(dd)<0.10) { f->bad=0; f->good_since_seek=1; f->t_good=tend-8.0; f->shift_n=0; return; }
+    /* Owner's log 08/11 (Chicago Fire, two episode releases): the sync was
+     * right, then 0.6 s off a few minutes on (a gap a little longer in one
+     * of them) until matched again by hand. A clear peak at another offset
+     * up to ~1 s away, the same in two checks in a row: moved there live. */
+    if(r.score>=f->thr && r.margin>=0.10 && fabs(dd)<=0.95) {
+      if(f->shift_n && fabs(r.offset_s-f->shift_s)<0.04) f->shift_n++;
+      else { f->shift_n=1; f->shift_s=r.offset_s; }
+      f->bad=0;
+      if(f->shift_n>=2) {
+        int ms=(int)lround((r.offset_s*1e9-e->ext_base_ns)/1e6);
+        f->shift_n=0;
+        printf("[ext-audio] follow: shifted %+d ms (score %.2f): offset %d ms\n",(int)lround(dd*1000.0),r.score,ms);
+        if(dts_engine_external_shift(e,ms)==0) { f->good_since_seek=1; f->t_good=-1; follow_event(e,4,ms); }
+      }
+      return;
+    }
+    f->shift_n=0;
     if(r.score>=f->thr && here) { f->bad=0; f->good_since_seek=1; f->t_good=tend-8.0; return; }
     /* Weak, but the peak is still at this offset: in sync (quiet scene, or
      * dialogue in another language over the same music and effects). */
@@ -3186,6 +3207,16 @@ static void follow_check(DtsEngine *e) {
            (f->other?c.score>=0.05 && c.margin>=0.02:c.score>=fmax(0.05,f->thr*0.4) && c.margin>=0.04)) {
           printf("[ext-audio] follow: still in sync over %.0f s (score %.2f): not a missing scene\n",cw,c.score); fflush(stdout);
           f->bad=0; f->t_good=tend-8.0; return;
+        }
+        /* ...or clearly at another offset close by (a gap a little longer
+         * or shorter in one version): moved there instead of switching. */
+        if(got && fabs(c.offset_s-off)>=0.10 && fabs(c.offset_s-off)<=1.4 && c.score>=f->thr*0.8 && c.margin>=0.08) {
+          int ms=(int)lround((c.offset_s*1e9-e->ext_base_ns)/1e6);
+          printf("[ext-audio] follow: shifted %+d ms over %.0f s (score %.2f): offset %d ms\n",
+                 (int)lround((c.offset_s-off)*1000.0),cw,c.score,ms);
+          f->bad=0; f->shift_n=0;
+          if(dts_engine_external_shift(e,ms)==0) { f->good_since_seek=1; f->t_good=-1; follow_event(e,4,ms); }
+          return;
         }
         if(!got && f->bad<f->need*2) return;   /* not covered: look again */
       }

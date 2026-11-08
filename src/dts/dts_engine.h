@@ -160,7 +160,8 @@ void dts_engine_reconnect(DtsEngine *);
 /* Before open (or replace): follow another cut through the whole film
  * (Settings). Only for a version whose length differs by over 10 s; its
  * audio is converted. poll: an event (1 this file's own audio in a scene the
- * other lacks, 2 the other resumed at *offset_ms, 3 lost it), 0 none; *state
+ * other lacks, 2 the other resumed at *offset_ms, 3 lost it, 4 a small shift
+ * corrected live to *offset_ms), 0 none; *state
  * 0 off, 1 in sync, 2 own audio, 3 lost. */
 void dts_engine_external_follow(DtsEngine *, int on);
 int dts_engine_external_follow_poll(DtsEngine *, int *state, int *offset_ms);
