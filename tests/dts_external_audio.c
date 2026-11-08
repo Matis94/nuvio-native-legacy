@@ -167,13 +167,14 @@ static Run play(DtsEngine *e, int64_t offset_ns, int limit) {
 }
 
 int main(int argc, char **argv) {
-  assert(argc == 23);
+  assert(argc == 29);
   const char *main_file = argv[1], *other = argv[2], *dts_only = argv[3], *short_clip = argv[4], *mp4 = argv[5];
   const char *aac44 = argv[6], *main60 = argv[7], *long_idx = argv[8], *long_noidx = argv[9];
   const char *match_main = argv[10], *match_dub = argv[11];
   const char *main_avi = argv[12], *other_avi = argv[13], *other_ts = argv[14], *main_xvid = argv[15], *film = argv[16];
   const char *cut_main = argv[17], *cut_dub = argv[18], *pal_dub = argv[19], *pair_dub = argv[20];
-  const char *follow_ext = argv[21], *follow_th = argv[22];
+  const char *follow_ext = argv[21], *follow_th = argv[22], *lang_main = argv[23], *lang_pl = argv[24];
+  const char *dub_ru = argv[25], *dub_pl = argv[26], *follow_ext_ru = argv[27], *follow_th_pl = argv[28];
   dts_engine_set_lang_match(lang_match);
   load_refs(other, "pol");
 
@@ -519,6 +520,54 @@ int main(int argc, char **argv) {
     assert(resume_at > 85e9 && resume_at < 110e9);
     assert(resume_ms > 24900 && resume_ms < 25100);
     assert(last > 118e9 && worst_gap < 200000000LL); }
+  dts_engine_destroy(e);
+  /* Following, the same cut in other languages: this file's Russian dub
+   * (default) and English original against a Polish voice-over on the
+   * original, 30 s longer (credits). The English track is the one compared,
+   * and dialogue never counts as a missing scene. */
+  e = dts_engine_create();
+  dts_engine_external_follow(e, 1);
+  dts_engine_external_audio(e, lang_pl, HEADERS, "pl", 0);
+  assert(dts_engine_open(e, lang_main, HEADERS, -1, 0, 0) == 0);
+  { DtsFrame f; int got, switches = 0, state, ms, found = 0; DtsMatchInfo mi;
+    while ((got = dts_engine_next(e, &f)) == 1) {
+      int k = dts_engine_external_follow_poll(e, &state, &ms);
+      if (k == 1 || k == 2) switches++;
+      if (dts_engine_external_match_poll(e, &mi) == 1) found = 1;
+    }
+    fprintf(stderr, "follow, other languages: found %d, switches %d\n", found, switches);
+    assert(got == 0 && found && switches == 0); }
+  dts_engine_destroy(e);
+  /* Only two dubs (Russian, Polish) sharing the effects: a weak find, and
+   * the dialogue alone must not count as a missing scene. */
+  e = dts_engine_create();
+  dts_engine_external_follow(e, 1);
+  dts_engine_external_audio(e, dub_pl, HEADERS, "pl", 0);
+  assert(dts_engine_open(e, dub_ru, HEADERS, -1, 0, 0) == 0);
+  { DtsFrame f; int got, switches = 0, state, ms, found = 0; DtsMatchInfo mi;
+    while ((got = dts_engine_next(e, &f)) == 1) {
+      int k = dts_engine_external_follow_poll(e, &state, &ms);
+      if (k == 1 || k == 2) switches++;
+      if (dts_engine_external_match_poll(e, &mi) == 1) found = 1;
+    }
+    fprintf(stderr, "follow, two dubs: found %d, switches %d\n", found, switches);
+    assert(got == 0 && found && switches == 0); }
+  dts_engine_destroy(e);
+  /* A real missing scene between two languages: found later (the slower
+   * check), and the other version still resumes 25 s on. */
+  e = dts_engine_create();
+  dts_engine_external_follow(e, 1);
+  dts_engine_external_audio(e, follow_th_pl, HEADERS, "pl", 0);
+  assert(dts_engine_open(e, follow_ext_ru, HEADERS, -1, 0, 0) == 0);
+  { DtsFrame f; int got, fill = 0, resumed = 0, resume_ms = 0, state, ms; int64_t last = INT64_MIN, fill_at = 0;
+    while ((got = dts_engine_next(e, &f)) == 1) {
+      if (f.kind == DTS_AUDIO) last = f.pts_ns;
+      int k = dts_engine_external_follow_poll(e, &state, &ms);
+      if (k == 1 && !fill) { fill = 1; fill_at = last; }
+      if (k == 2 && !resumed) { resumed = 1; resume_ms = ms; }
+    }
+    fprintf(stderr, "follow, cut in two languages: own audio at %.1f s, resumed %d with %d ms\n", fill_at / 1e9, resumed, resume_ms);
+    assert(got == 0 && fill && fill_at > 60e9 && fill_at < 80e9 && resumed && resume_ms > 24900 && resume_ms < 25100); }
   dts_engine_destroy(e);
   /* Prefetch ahead of a jump (an intro skip) on the one-connection stream
    * reader: the jump lands on the fetched bytes and plays on from there. */

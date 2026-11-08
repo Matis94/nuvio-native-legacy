@@ -166,8 +166,10 @@ int main(int argc, char **argv) {
   memset(&sim, 0, sizeof sim);
   sim.largura = 3840; sim.altura = 2160; sim.pronto = 1; sim.pos = 1312.0; sim.duracao = 7380.0;
   sim.nAudio = 2;
-  faixa(&sim.audio[0], 1, "Angielski  \xc2\xb7  TrueHD Atmos 7.1", "en");
-  faixa(&sim.audio[1], 2, "Angielski  \xc2\xb7  AC3 5.1", "en");
+  // Track names as the file carries them, in the shot's UI language (1 = English).
+  const int ingles = argc > 2 && atoi(argv[2]) == 1;
+  faixa(&sim.audio[0], 1, ingles ? "English  \xc2\xb7  TrueHD Atmos 7.1" : "Angielski  \xc2\xb7  TrueHD Atmos 7.1", "en");
+  faixa(&sim.audio[1], 2, ingles ? "English  \xc2\xb7  AC3 5.1" : "Angielski  \xc2\xb7  AC3 5.1", "en");
   sim.nLeg = 0; sim.legAtual = -1;
   estado(); quadros(20);
 
@@ -198,7 +200,7 @@ int main(int argc, char **argv) {
   // and this file's own audio come right after it.
   audioext_tocando_definir(1);
   sim.nAudio = 1;
-  faixa(&sim.audio[0], 1, "Polski  \xc2\xb7  E-AC3 5.1", "pl");
+  faixa(&sim.audio[0], 1, ingles ? "Polish  \xc2\xb7  E-AC3 5.1" : "Polski  \xc2\xb7  E-AC3 5.1", "pl");
   faixas_abrir_em(0); estado(); quadros(40);
   tecla(SDLK_DOWN);
   tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); tecla(SDLK_RIGHT);

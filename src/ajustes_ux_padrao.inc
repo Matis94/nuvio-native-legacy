@@ -375,4 +375,4 @@
   0, /* Warn about large files: On */
   0, /* Download of the audio file: Whole file */
   0, /* Remember for the next episodes: On */
-  1, /* Follow through the whole film (another cut): Off */
+  1, /* Follow through the whole movie (another cut): Off */

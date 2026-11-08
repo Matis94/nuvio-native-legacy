@@ -23,7 +23,7 @@ jobs:
       NUVIO_BUILD_JOBS: '3'
       # Test build number (owner, 07/11): bumped with every new test build so
       # the IPK name and the title on the TV tell the versions apart.
-      NUVIO_EXT_TEST: '8'
+      NUVIO_EXT_TEST: '9'
       # Quick test builds (owner, 08/11): skip the long regression suites; the
       # changed parts are tested locally before the push. Manual runs with
       # "full_regression" still run everything.
@@ -359,6 +359,13 @@ jobs:
       - name: Build official pinned P2P engine for ARM
         run: |
           export NUVIO_P2P_MOTOR="$GITHUB_WORKSPACE/.build-p2p"
+          # The cache key pins the engine's build scripts: with its archives
+          # restored there is nothing to rebuild (saves ~4 min a build).
+          if [ -f "$NUVIO_P2P_MOTOR/arm/build-arm/libnuvio_engine.a" ] &&
+             [ -f "$NUVIO_P2P_MOTOR/arm/build-arm/_deps/nuvio_libtorrent-build/libtorrent-rasterbar.a" ]; then
+            echo "P2P engine archives restored from the cache."
+            exit 0
+          fi
           python3 - <<'PY'
           import pathlib
           p = pathlib.Path("tools/p2p-motor/build-arm.sh")

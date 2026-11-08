@@ -1921,7 +1921,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Warn about large files", V_LIGA, 2),
   ESC("Download of the audio file", V_EXT_AUDIO_MODO, 2),
   ESC("Remember for the next episodes", V_LIGA, 2),
-  ESC("Follow through the whole film", V_LIGA, 2),
+  ESC("Follow through the whole movie", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por

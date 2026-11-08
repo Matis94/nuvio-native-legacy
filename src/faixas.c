@@ -2096,7 +2096,14 @@ static void corpoLista(GfxRect c, float a) {
     txt_desenhar_alpha(t, x0 + 10.0f, ty, a);
     if (!modo) {
       char q[96];
-      snprintf(q, sizeof q, i18n("%d faixas"), video_n_audio());
+      { int na = video_n_audio();
+        /* 1 track / 2-4 (Polish "ścieżki") / the rest; the 2-4 key falls back to the plural where untranslated. */
+        const char *fq = na == 1 ? i18n("%d faixa") : i18n("%d faixas");
+        if (na % 10 >= 2 && na % 10 <= 4 && (na % 100 < 12 || na % 100 > 14)) {
+          const char *few = i18n("%d faixas (2-4)");
+          if (strcmp(few, "%d faixas (2-4)")) fq = few;
+        }
+        snprintf(q, sizeof q, fq, na); }
       if (extMenu() && addons_busca_parcial()) {
         strncat(q, " · ", sizeof q - strlen(q) - 1);
         strncat(q, i18n("searching add-ons…"), sizeof q - strlen(q) - 1);

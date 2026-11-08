@@ -150,6 +150,27 @@ def warp_ext(at):   # the bed's event at `at` (theatrical time) in the extended 
     return at if at < 60 else at + 25
 render(sys.argv[1] + '/f_ext.wav', 120, [(ext, warp_ext), (bursts(22, 25, 160, 1.0), lambda t: t + 60)])
 render(sys.argv[1] + '/f_th.wav', 95, [(ext, lambda t: t), (bursts(23, 95, 100, 0.25), lambda t: t)])
+# The same cut in other languages (owner's log 08/11, The Godfather): this
+# file has a Russian dub (default) over the same effects and its English
+# original; the other version is a Polish voice-over on the original (quiet)
+# with loud Polish speech, and 30 s more at the end (credits), so it is taken
+# for "another cut". Nothing is missing: no switch may happen.
+fx = bursts(31, 150, 700, 0.6)
+en = bursts(32, 150, 900, 1.0)
+render(sys.argv[1] + '/x_ru.wav', 120, [(fx, lambda t: t), (bursts(33, 120, 900, 1.3), lambda t: t)])
+render(sys.argv[1] + '/x_en.wav', 120, [(fx, lambda t: t), (en, lambda t: t)])
+render(sys.argv[1] + '/x_pl.wav', 150, [(fx, lambda t: t), (en, lambda t: t), (bursts(34, 150, 1300, 1.6), lambda t: t)])
+# Only a dub in each, sharing louder effects (scores like the log's, ~0.2-0.4).
+# Dialogue scenes (both talk at the same places) drown the shared effects.
+def talk(seed, count, amp):
+    rnd = random.Random(seed); ev = []
+    for a, b in ((22, 38), (50, 64), (72, 112)):
+        for _ in range(count):
+            ev.append((rnd.uniform(a, b), amp * (0.5 + rnd.random()), rnd.uniform(0.08, 0.3), rnd.random()))
+    return ev
+fx2 = bursts(35, 150, 900, 0.8)
+render(sys.argv[1] + '/y_ru.wav', 120, [(fx2, lambda t: t), (talk(36, 260, 2.6), lambda t: t)])
+render(sys.argv[1] + '/y_pl.wav', 150, [(fx2, lambda t: t), (talk(37, 260, 2.6), lambda t: t)])
 PY
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=32x32:rate=24000/1001:duration=120' -i "$TMP/c_main.wav" \
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 24 -c:a ac3 -ar 48000 -b:a 96k -metadata:s:a:0 language=eng -shortest "$TMP/cut_main.mkv"
@@ -168,8 +189,20 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=32x32:rate=25:durati
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a ac3 -ar 48000 -b:a 96k -metadata:s:a:0 language=eng -shortest "$TMP/follow_ext.mkv"
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=32x32:rate=25:duration=95' -i "$TMP/f_th.wav" \
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a eac3 -ar 48000 -b:a 96k -metadata:s:a:0 language=eng -shortest "$TMP/follow_th.mkv"
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=32x32:rate=25:duration=120' -i "$TMP/x_ru.wav" -i "$TMP/x_en.wav" \
+  -map 0:v -map 1:a -map 2:a -c:v libx264 -bf 0 -g 25 -c:a ac3 -ar 48000 -b:a 96k \
+  -metadata:s:a:0 language=rus -metadata:s:a:1 language=eng -disposition:a:0 default -disposition:a:1 0 -shortest "$TMP/lang_main.mkv"
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=32x32:rate=25:duration=150' -i "$TMP/x_pl.wav" \
+  -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a libvorbis -ar 48000 -ac 2 -metadata:s:a:0 language=pol -shortest "$TMP/lang_pl.mkv"
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=32x32:rate=25:duration=120' -i "$TMP/y_ru.wav" \
+  -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a ac3 -ar 48000 -b:a 96k -metadata:s:a:0 language=rus -shortest "$TMP/dub_ru.mkv"
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=32x32:rate=25:duration=150' -i "$TMP/y_pl.wav" \
+  -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a libvorbis -ar 48000 -ac 2 -metadata:s:a:0 language=pol -shortest "$TMP/dub_pl.mkv"
+# The same cut fixtures labelled as two languages: a real missing scene is still found.
+ffmpeg -hide_banner -loglevel error -i "$TMP/follow_ext.mkv" -map 0 -c copy -metadata:s:a:0 language=rus "$TMP/follow_ext_ru.mkv"
+ffmpeg -hide_banner -loglevel error -i "$TMP/follow_th.mkv" -map 0 -c copy -metadata:s:a:0 language=pol "$TMP/follow_th_pl.mkv"
 "$TMP/ext" "$TMP/main.mkv" "$TMP/other.mkv" "$TMP/dts.mkv" "$TMP/short.mkv" "$TMP/other.mp4" "$TMP/aac44.mkv" \
   "$TMP/main60.mkv" "$TMP/long.mkv" "$TMP/long_nocues.mkv" "$TMP/match_main.mkv" "$TMP/match_dub.mkv" \
   "$TMP/main.avi" "$TMP/other.avi" "$TMP/other.ts" "$TMP/xvid.avi" "$TMP/film.mkv" \
   "$TMP/cut_main.mkv" "$TMP/cut_dub.mkv" "$TMP/pal_dub.mkv" "$TMP/pair_dub.mkv" \
-  "$TMP/follow_ext.mkv" "$TMP/follow_th.mkv"
+  "$TMP/follow_ext.mkv" "$TMP/follow_th.mkv" "$TMP/lang_main.mkv" "$TMP/lang_pl.mkv" "$TMP/dub_ru.mkv" "$TMP/dub_pl.mkv" "$TMP/follow_ext_ru.mkv" "$TMP/follow_th_pl.mkv"

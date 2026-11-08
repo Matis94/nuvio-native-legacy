@@ -267,6 +267,7 @@ struct DtsEngine {
   double ext_ratio;      /* other version's speed (0 or 1: the same; dts_engine_external_speed) */
   /* FOLLOW ANOTHER CUT (Settings, off by default): struct Follow below. */
   int fw_on, fw_state, fw_autoarm, mt_auto;
+  int mt_main_pref;      /* this file's track that compared best, +1 (0: none; see match_alt) */
   struct Follow *fw;
   int fw_event, fw_event_ms;   /* last event for the app: 1 own audio, 2 resumed, 3 gave up */
   double ext_fps_ratio;  /* other version's frame rate / this one's (0: unknown) */
@@ -1970,7 +1971,7 @@ static int configure_external(DtsEngine *e,double start) {
   e->target_ns=(int64_t)(start*1000000000.0);
   printf("[ext-audio] ready codec=%s ch=%d rate=%d stream=%d%s\n",e->info.audio_codec,e->info.channels,
     e->info.sample_rate,k,follow?" (following another cut)":"");
-  e->fw_autoarm=follow;
+  e->fw_autoarm=follow; e->mt_main_pref=0;
   fflush(stdout);
   return start>0?dts_engine_seek(e,start):0;
 }
@@ -2429,7 +2430,9 @@ typedef struct {
   DtsMatchEnv ev; int64_t t0_ns; int cap;
   float *env[DTS_MATCH_BANDS];
 } MatchSide;
-struct MatchCap { int main_stream, donor_stream; MatchSide s[2]; };
+/* s[2]: a second track of this file captured with the first when the two
+ * files share no language (alt_stream, -1 none); the better one is kept. */
+struct MatchCap { int main_stream, donor_stream, alt_stream; MatchSide s[3]; };
 struct MatchJob {
   pthread_t th; pthread_mutex_t lock; int started, done, cancel;
   DtsEngine *holder;                       /* the capture in progress, to cancel its reads */
@@ -2526,7 +2529,10 @@ static void match_disarm(DtsEngine *e) {
   if(e->ext && e->ext->fmt && mc->donor_stream!=e->ext_stream && mc->donor_stream>=0 && mc->donor_stream!=fd &&
      (unsigned)mc->donor_stream<e->ext->fmt->nb_streams)
     e->ext->fmt->streams[mc->donor_stream]->discard=AVDISCARD_ALL;
-  match_side_free(&mc->s[0]); match_side_free(&mc->s[1]);
+  if(e->fmt && mc->alt_stream>=0 && (unsigned)mc->alt_stream<e->fmt->nb_streams && mc->alt_stream!=fm &&
+     mc->alt_stream!=mc->main_stream)
+    e->fmt->streams[mc->alt_stream]->discard=AVDISCARD_ALL;
+  match_side_free(&mc->s[0]); match_side_free(&mc->s[1]); match_side_free(&mc->s[2]);
   av_free(mc); e->mt=NULL; e->mt_check=0;
 }
 static void match_job_free(struct MatchJob *j) {
@@ -2723,6 +2729,22 @@ static void match_finish(DtsEngine *e) {
   match_side_sig(&mc->s[0],&sm); match_side_sig(&mc->s[1],&sd);
   if(e->mt_check) { match_second_look(e,&sm,&sd); match_disarm(e); return; }
   double base=e->ext_base_ns/1e9, center=e->ext_offset_ns/1e9+base, k0=ext_k(e);
+  if(mc->alt_stream>=0) {   /* two tracks of this file: keep the one that compares better */
+    DtsMatchSig sa; DtsMatchResult r0, ra;
+    match_side_sig(&mc->s[2],&sa);
+    int g0=dts_match_search(&sm,&sd,k0,center,10.0,&r0), ga=sa.n>0 && dts_match_search(&sa,&sd,k0,center,10.0,&ra);
+    double s0=g0?r0.score+(r0.confident?1.0:0.0):-1.0, sa_=ga?ra.score+(ra.confident?1.0:0.0):-1.0;
+    printf("[ext-audio] match: track %d scores %.2f, track %d scores %.2f\n",mc->main_stream,g0?r0.score:0.0,mc->alt_stream,ga?ra.score:0.0);
+    if(sa_>s0) {
+      int fm=-1, fd=-1, old=mc->main_stream;
+      follow_streams(e,&fm,&fd);
+      if(old!=fm) e->fmt->streams[old]->discard=AVDISCARD_ALL;
+      sm=sa; mc->main_stream=mc->alt_stream;
+      printf("[ext-audio] match: comparing with this file's track %d from now on\n",mc->main_stream);
+    }
+    fflush(stdout);
+    e->mt_main_pref=mc->main_stream+1;
+  }
   double ks[2]={k0,e->ext_fps_ratio}; int nk=e->ext_fps_ratio>0 && fabs(e->ext_fps_ratio-k0)>0.0005?2:1;
   DtsMatchResult best={0}; double bk=k0; int found=0;
   e->mt_ncand=0;
@@ -2771,7 +2793,8 @@ static void match_feed(DtsEngine *e,int side,AVPacket *pkt,AVRational tb) {
   struct MatchCap *mc=e->mt;
   if(!mc || match_side_full(&mc->s[side])) return;
   if(match_side_feed(&mc->s[side],pkt,tb)<0) { mc->s[side].ev.max=mc->s[side].ev.n=1; }
-  if(match_side_full(&mc->s[0]) && match_side_full(&mc->s[1])) match_finish(e);
+  if(match_side_full(&mc->s[0]) && match_side_full(&mc->s[1]) && (mc->alt_stream<0 || match_side_full(&mc->s[2])))
+    match_finish(e);
 }
 /* An interrupted capture (seek, live offset) is not used; a search already
  * reading on its own goes on (this file's capture is kept with it). */
@@ -2816,7 +2839,7 @@ static int match_track_lang(AVFormatContext *f,const char *lang) {
  * default language in the other version, then any language both have.
  * `alt` 0: the other version's playing track only (its other tracks are
  * not read: an MP4 read by its audio chunks alone). */
-static void match_pair(DtsEngine *e,int alt,int *mains,int *donor) {
+static void match_pair(DtsEngine *e,int alt,int *mains,int *donor,int *shared) {
   AVFormatContext *mf=e->fmt, *df=e->ext->fmt;
   char ld[16]="", lm[16]="";
   int m=-1, d=e->ext_stream, def=-1;
@@ -2839,26 +2862,64 @@ static void match_pair(DtsEngine *e,int alt,int *mains,int *donor) {
     int k=l[0]?match_track_lang(df,l):-1;
     if(k>=0) { m=(int)i; d=k; }
   }
+  if(shared) *shared=m>=0;
   if(m<0) {   /* no shared language: the lightest track of the default one */
     char l[16]="";
     if(def>=0) copy_metadata(l,sizeof l,mf->streams[def]->metadata,"language");
     m=l[0]?match_track_lang(mf,l):-1;
     if(m<0) m=def;
+    /* ...unless another track of this file already compared better. */
+    int p=e->mt_main_pref-1;
+    if(p>=0 && (unsigned)p<mf->nb_streams && match_rank(mf->streams[p])) m=p;
   }
   *mains=m; *donor=d;
+}
+static int lang_is_en(const char *l) {
+  return l && l[0] && (!strcasecmp(l,"en") || !strcasecmp(l,"eng") || ext_lang_is(l,"en") || ext_lang_is(l,"eng"));
+}
+/* NO SHARED LANGUAGE (owner's log 08/11: The Godfather compared its Russian
+ * dub with a Polish voice-over; a voice-over usually sits on the original,
+ * often English, track): a second track of this file in another language
+ * is captured too, English first, and the better one is kept. -1 none. */
+static int match_alt(DtsEngine *e,int m) {
+  AVFormatContext *mf=e->fmt;
+  char lm[16]="";
+  int best=-1, br=0;
+  if(m<0) return -1;
+  copy_metadata(lm,sizeof lm,mf->streams[m]->metadata,"language");
+  for(unsigned i=0;i<mf->nb_streams;i++) {
+    char l[16]="";
+    int r=match_rank(mf->streams[i]);
+    if(!r || (int)i==m) continue;
+    copy_metadata(l,sizeof l,mf->streams[i]->metadata,"language");
+    if(!l[0] || (lm[0] && (!strcasecmp(l,lm) || ext_lang_is(l,lm)))) continue;   /* another language only */
+    r+=lang_is_en(l)?10:0;
+    if(r>br) { br=r; best=(int)i; }
+  }
+  return best;
 }
 static int match_arm(DtsEngine *e,int check) {
   if(!e || !e->ext || !e->ext->fmt || !e->fmt || e->ext_stream<0) return -1;
   match_disarm(e);
-  int best=-1, donor=e->ext_stream;
-  match_pair(e,e->ext->sp_n<=0,&best,&donor);
+  int best=-1, donor=e->ext_stream, shared=0;
+  match_pair(e,e->ext->sp_n<=0,&best,&donor,&shared);
   if(best<0) return -1;
   struct MatchCap *mc=av_mallocz(sizeof *mc);
   if(!mc) return -1;
-  mc->main_stream=best; mc->donor_stream=donor; e->mt=mc;
+  mc->main_stream=best; mc->donor_stream=donor; mc->alt_stream=-1; e->mt=mc;
   if(match_side_open(&mc->s[0],e->fmt->streams[best],DTS_MATCH_MAX)<0 ||
      match_side_open(&mc->s[1],e->ext->fmt->streams[donor],DTS_MATCH_MAX)<0) { match_disarm(e); return -1; }
   e->fmt->streams[best]->discard=AVDISCARD_DEFAULT;
+  if(!shared && !check && !e->mt_main_pref) {
+    int a=match_alt(e,best);
+    if(a>=0 && match_side_open(&mc->s[2],e->fmt->streams[a],DTS_MATCH_MAX)==0) {
+      char la[16]="";
+      mc->alt_stream=a; e->fmt->streams[a]->discard=AVDISCARD_DEFAULT;
+      copy_metadata(la,sizeof la,e->fmt->streams[a]->metadata,"language");
+      printf("[ext-audio] match: no shared language, also trying this file's track %d (%s %s)\n",a,
+             avcodec_get_name(e->fmt->streams[a]->codecpar->codec_id),la);
+    }
+  }
   if(donor!=e->ext_stream) e->ext->fmt->streams[donor]->discard=AVDISCARD_DEFAULT;
   e->mt_check=check;
   { char lm[16]="", ld[16]="";
@@ -2939,7 +3000,12 @@ struct Follow {
   int mstream, dstream;
   MatchSide m, d;          /* this file (rolling 60 s); the other version (rolling, or the lookahead in FILL) */
   double thr;              /* "in sync" score, from the find that started it */
+  double base;             /* that find's score: low when the two languages differ */
   int bad, good_since_seek, checked;
+  int need;                /* bad checks (2 s apart) before a scene counts as missing */
+  int strict;              /* false alarms so far (the other version came back at the same offset) */
+  int other;               /* the compared tracks are in two languages */
+  int64_t fill_off_ns;     /* FILL: the offset it began with */
   double t_good;           /* this file's time of the last check in sync (s) */
   double d_pause;          /* FILL: the other version's time its content stopped matching (raw, s) */
   double fill_since;       /* FILL: this file's time it began (s) */
@@ -2979,7 +3045,7 @@ static void follow_start(DtsEngine *e,double score) {
   struct Follow *f=e->fw;
   if(!f) {
     int ms=-1, ds=-1;
-    match_pair(e,e->ext->sp_n<=0,&ms,&ds);
+    match_pair(e,e->ext->sp_n<=0,&ms,&ds,NULL);
     if(ms<0 || ds<0 || !(f=calloc(1,sizeof *f))) return;
     f->mstream=ms; f->dstream=ds;
     if(match_side_open(&f->m,e->fmt->streams[ms],FW_MAIN_S*DTS_MATCH_HZ)<0 ||
@@ -2991,6 +3057,18 @@ static void follow_start(DtsEngine *e,double score) {
     e->fw=f;
   }
   f->thr=0.5*score; if(f->thr<0.12) f->thr=0.12;
+  if(f->strict) { f->thr*=0.8; if(f->thr<0.06) f->thr=0.06; }
+  f->base=score;
+  /* Owner's log 08/11 (The Godfather, Russian against a Polish voice-over,
+   * find 0.19): in another language the dialogue alone drops the score under
+   * the bar, so two languages (or a weak find) wait ~10 s (and a longer
+   * check) before calling a scene missing; every false alarm doubles that. */
+  { char lm[16]="", ld[16]="";
+    copy_metadata(lm,sizeof lm,e->fmt->streams[f->mstream]->metadata,"language");
+    copy_metadata(ld,sizeof ld,e->ext->fmt->streams[f->dstream]->metadata,"language");
+    int other=lm[0] && ld[0] && strcasecmp(lm,ld) && !ext_lang_is(lm,ld) && !ext_lang_is(ld,lm);
+    f->other=other;
+    f->need=(other || score<0.20?5:2)<<(f->strict>2?2:f->strict); }
   f->bad=0; f->good_since_seek=1; f->t_good=-1;
   if(e->fw_state!=FW_FILL) e->fw_state=FW_SYNC;
   printf("[ext-audio] follow: on (in sync from score %.2f, this file's track %d, the other's %d)\n",f->thr,f->mstream,f->dstream);
@@ -3046,7 +3124,7 @@ static void follow_enter_fill(DtsEngine *e,double t_good) {
   e->sample_pts=av_rescale_q(out-e->ext_offset_ns-e->ext_base_ns,NS,e->enc->time_base);
   e->ext_floor_ns=out;
   follow_side_reset(&f->d);
-  f->look_s=FW_LOOK_S; f->fill_since=out/1e9; f->bad=0;
+  f->look_s=FW_LOOK_S; f->fill_since=out/1e9; f->bad=0; f->fill_off_ns=e->ext_offset_ns;
   e->fw_state=FW_FILL;
   printf("[ext-audio] follow: own audio from %.1fs, the other version waits at %.1fs\n",out/1e9,f->d_pause); fflush(stdout);
   follow_event(e,1,(int)(e->ext_offset_ns/1000000));
@@ -3063,7 +3141,16 @@ static void follow_resume(DtsEngine *e,int64_t offset_ns) {
   if(t<0) t=0;
   if(ext_donor_seek(e,t,&how)<0 || ext_reset_chain(e)<0) return;
   e->ext_floor_ns=from;
-  if(f) { follow_side_reset(&f->d); f->bad=0; f->good_since_seek=1; }
+  if(f) {
+    follow_side_reset(&f->d); f->bad=0; f->good_since_seek=1;
+    /* Back at the offset it left after a short while: nothing was missing
+     * (dialogue in another language). Stricter from now on. */
+    if(e->fw_state==FW_FILL && llabs(offset_ns-f->fill_off_ns)<80000000LL && from/1e9-f->fill_since<120.0 && f->strict<3) {
+      f->strict++;
+      f->need*=2; f->thr*=0.8; if(f->thr<0.06) f->thr=0.06;
+      printf("[ext-audio] follow: false alarm (same offset again): now waits for %d checks, bar %.2f\n",f->need,f->thr);
+    }
+  }
   e->fw_state=FW_SYNC;
   printf("[ext-audio] follow: the other version resumes at %.1fs, offset %lld ms\n",from/1e9,(long long)(offset_ns/1000000)); fflush(stdout);
   follow_event(e,2,(int)(offset_ns/1000000));
@@ -3080,9 +3167,29 @@ static void follow_check(DtsEngine *e) {
   DtsMatchResult r;
   if(e->fw_state==FW_SYNC) {
     if(!dts_match_search_at(&sm,&sd,k,off,1.0,win,pos,&r)) return;   /* not covered (yet) or silent */
-    if(r.score>=f->thr && fabs(r.offset_s-off)<0.25) { f->bad=0; f->good_since_seek=1; f->t_good=tend-8.0; return; }
+    int here=fabs(r.offset_s-off)<0.25;
+    if(r.score>=f->thr && here) { f->bad=0; f->good_since_seek=1; f->t_good=tend-8.0; return; }
+    /* Weak, but the peak is still at this offset: in sync (quiet scene, or
+     * dialogue in another language over the same music and effects). */
+    if(fabs(r.offset_s-off)<0.08 && r.score>=0.04 && r.margin>=(f->other?0.025:0.05)) { f->bad=0; f->t_good=tend-8.0; return; }
     if(r.score>=f->thr*0.7) return;   /* unclear: neither */
-    if(++f->bad<2) return;
+    if(++f->bad<f->need) return;
+    /* Before switching: the whole bad stretch at once (longer = surer). Still
+     * peaking at this offset = not a missing scene. */
+    { double cw=2.0*f->bad+4.0; if(cw>16.0) cw=16.0;
+      DtsMatchResult c;
+      if(sm.n>=(cw+3.0)*DTS_MATCH_HZ) {
+        int got=dts_match_search_at(&sm,&sd,k,off,1.5,cw,(sm.n-(cw/2.0+1.0)*DTS_MATCH_HZ)/sm.n,&c);
+        /* Two languages: a weak peak right here is enough (the effects and
+         * music line up, the speech does not). */
+        if(got && fabs(c.offset_s-off)<0.08 &&
+           (f->other?c.score>=0.05 && c.margin>=0.02:c.score>=fmax(0.05,f->thr*0.4) && c.margin>=0.04)) {
+          printf("[ext-audio] follow: still in sync over %.0f s (score %.2f): not a missing scene\n",cw,c.score); fflush(stdout);
+          f->bad=0; f->t_good=tend-8.0; return;
+        }
+        if(!got && f->bad<f->need*2) return;   /* not covered: look again */
+      }
+    }
     printf("[ext-audio] follow: no longer in sync (score %.2f, needs %.2f)\n",r.score,f->thr); fflush(stdout);
     if(!f->good_since_seek || f->t_good<0) {
       /* Lost right after a jump: the place is unknown, search it all. */
@@ -3483,6 +3590,7 @@ static int next_frame_passthrough(DtsEngine *e,DtsFrame *f) {
       continue;
     }
     if(e->mt && e->in->stream_index==e->mt->main_stream) match_feed(e,0,e->in,tb);
+    else if(e->mt && e->in->stream_index==e->mt->alt_stream) match_feed(e,2,e->in,tb);
     if(e->fw && e->in->stream_index==e->fw->mstream) follow_feed_main(e,e->in,tb);
     av_packet_unref(e->in);
   }
