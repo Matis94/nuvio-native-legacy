@@ -59,6 +59,12 @@ void audioext_definir_faixa(int stream);
 // reading, -1 failed, else the count copied to `out`.
 #define AUDIOEXT_FAIXAS_MAX 16
 typedef struct { int stream, canais; char codec[24], idioma[16], titulo[64]; } AudioExtFaixa;
+// SERIES MEMORY, the track (owner 09/11): the other version's track picked by
+// hand (two English: the one chosen) goes with the remembered version to the
+// next episodes. The player passes the hint on; the engine looks there for
+// the track most like it (name, codec, channels, number; the same language).
+void audioext_lembrar_faixa_serie(const AudioExtFaixa *f);
+int audioext_faixa_dica(AudioExtFaixa *out);   // 1: this episode has one
 void audioext_definir_sonda(int (*fn)(const char *url, const char *cab, AudioExtFaixa *out, int max));
 int audioext_sonda_disponivel(void);
 unsigned audioext_sondar(const char *url, const char *cab);

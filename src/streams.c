@@ -5377,7 +5377,8 @@ static void fonteMarcarFaixa(int i, const AudioExtFaixa *f) {
     snprintf(id.addon, sizeof id.addon, "%s", s->provedor);
     snprintf(id.idioma, sizeof id.idioma, "%.7s", f->idioma);
     id.altura = s->altura; id.codec = e.codec;
-    audioext_lembrar_serie(&id); }
+    audioext_lembrar_serie(&id);
+    audioext_lembrar_faixa_serie(f); }   // and this very track, for the next episodes
   if (player_aberto() && audioext_pedido(video_url_atual())) {
     audioext_escolher(s->url, s->cabecalhos, s->rotulo, "");
     audioext_definir_faixa(f->stream);

@@ -164,6 +164,11 @@ void dts_engine_reconnect(DtsEngine *);
  * corrected live to *offset_ms), 0 none; *state
  * 0 off, 1 in sync, 2 own audio, 3 lost. */
 void dts_engine_external_follow(DtsEngine *, int on);
+/* Before open: the track chosen in the last episode's version (series
+ * memory): this version's track most like it is used when none is forced
+ * (dts_engine_external_track). stream -1: unknown. */
+void dts_engine_external_track_hint(DtsEngine *, int stream, const char *lang, const char *codec,
+                                    int channels, const char *title);
 /* Before open (or replace): "Match automatically" starts by itself once the
  * other version plays (Settings, owner 08/11); results come back with
  * DtsMatchInfo.automatic set. */

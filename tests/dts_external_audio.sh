@@ -216,6 +216,10 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=16x16:rate=24000/100
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 48 -c:a ac3 -ar 48000 -b:a 64k -metadata:s:a:0 language=eng -shortest "$TMP/gap_main.mkv"
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=16x16:rate=24000/1001:duration=380' -i "$TMP/l_dub.wav" \
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 48 -c:a ac3 -ar 48000 -b:a 64k -metadata:s:a:0 language=eng -shortest "$TMP/gap_dub.mkv"
+# Two English tracks (owner 09/11): the series memory keeps the chosen one.
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=32x32:rate=25:duration=20' -i "$TMP/x_en.wav" -i "$TMP/x_ru.wav" \
+  -map 0:v -map 1:a -map 2:a -t 20 -c:v libx264 -bf 0 -g 25 -c:a ac3 -ac 2 -ar 48000 -b:a 96k \
+  -metadata:s:a:0 language=eng -metadata:s:a:0 title=Main -metadata:s:a:1 language=eng -metadata:s:a:1 title=Commentary "$TMP/two_en.mkv"
 # The same cut fixtures labelled as two languages: a real missing scene is still found.
 ffmpeg -hide_banner -loglevel error -i "$TMP/follow_ext.mkv" -map 0 -c copy -metadata:s:a:0 language=rus "$TMP/follow_ext_ru.mkv"
 ffmpeg -hide_banner -loglevel error -i "$TMP/follow_th.mkv" -map 0 -c copy -metadata:s:a:0 language=pol "$TMP/follow_th_pl.mkv"
@@ -223,4 +227,4 @@ ffmpeg -hide_banner -loglevel error -i "$TMP/follow_th.mkv" -map 0 -c copy -meta
   "$TMP/main60.mkv" "$TMP/long.mkv" "$TMP/long_nocues.mkv" "$TMP/match_main.mkv" "$TMP/match_dub.mkv" \
   "$TMP/main.avi" "$TMP/other.avi" "$TMP/other.ts" "$TMP/xvid.avi" "$TMP/film.mkv" \
   "$TMP/cut_main.mkv" "$TMP/cut_dub.mkv" "$TMP/pal_dub.mkv" "$TMP/pair_dub.mkv" \
-  "$TMP/follow_ext.mkv" "$TMP/follow_th.mkv" "$TMP/lang_main.mkv" "$TMP/lang_pl.mkv" "$TMP/dub_ru.mkv" "$TMP/dub_pl.mkv" "$TMP/follow_ext_ru.mkv" "$TMP/follow_th_pl.mkv" "$TMP/shift_main.mkv" "$TMP/shift_dub.mkv" "$TMP/gap_main.mkv" "$TMP/gap_dub.mkv"
+  "$TMP/follow_ext.mkv" "$TMP/follow_th.mkv" "$TMP/lang_main.mkv" "$TMP/lang_pl.mkv" "$TMP/dub_ru.mkv" "$TMP/dub_pl.mkv" "$TMP/follow_ext_ru.mkv" "$TMP/follow_th_pl.mkv" "$TMP/shift_main.mkv" "$TMP/shift_dub.mkv" "$TMP/gap_main.mkv" "$TMP/gap_dub.mkv" "$TMP/two_en.mkv"

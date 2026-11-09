@@ -109,6 +109,7 @@ void dts_engine_prefetch_tidy(DtsEngine *e) { (void)e; }
 void dts_engine_reconnect(DtsEngine *e) { (void)e; }
 void dts_engine_external_follow(DtsEngine *e,int on) { (void)e; (void)on; }
 void dts_engine_external_automatch(DtsEngine *e,int on) { (void)e; (void)on; }
+void dts_engine_external_track_hint(DtsEngine *e,int s,const char *l,const char *c,int ch,const char *t) { (void)e; (void)s; (void)l; (void)c; (void)ch; (void)t; }
 int dts_engine_external_follow_poll(DtsEngine *e,int *s,int *o) { (void)e; *s=0; *o=0; return 0; }
 void dts_engine_external_speed(DtsEngine *e,int p) { (void)e; pthread_mutex_lock(&fixture); ext_speed_set=p; pthread_mutex_unlock(&fixture); }
 static int ext_shifts, ext_shift_fail;

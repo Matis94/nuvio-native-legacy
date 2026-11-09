@@ -96,6 +96,7 @@ int dts_engine_prefetch(DtsEngine *e,double s) { (void)e;(void)s; return -1; }
 void dts_engine_prefetch_tidy(DtsEngine *e) { (void)e; }
 void dts_engine_reconnect(DtsEngine *e) { (void)e; }
 void dts_engine_external_follow(DtsEngine *e,int on) { (void)e;(void)on; }
+void dts_engine_external_track_hint(DtsEngine *e,int s,const char *l,const char *c,int ch,const char *t) { (void)e;(void)s;(void)l;(void)c;(void)ch;(void)t; }
 void dts_engine_external_automatch(DtsEngine *e,int on) { (void)e;(void)on; }
 int dts_engine_external_follow_poll(DtsEngine *e,int *s,int *o) { (void)e; *s=0; *o=0; return 0; }
 int64_t dts_engine_external_bytes(DtsEngine *e,int64_t *t) { (void)e; if(t) *t=-1; return 0; }
@@ -253,6 +254,10 @@ struct DtsEngine {
   int fx_mib;                /* ring of this reader in MiB (0: g_fx_cap_mib) */
   int ext_stream, ext_have, ext_eof;
   int ext_force;   /* donor stream + 1 chosen in the menu; 0 = by language */
+  /* Series memory (owner 09/11): the track chosen in the last episode's
+   * version, looked for in this one when nothing is forced (ext_hint_pick). */
+  int ext_hint_on, ext_hint_idx, ext_hint_ch;
+  char ext_hint_lang[16], ext_hint_codec[24], ext_hint_title[64];
   int ext_idx;     /* the donor has an index: 0 unknown, 1 yes, 2 no */
   int ext_cut_s, ext_speed;   /* other version minus this one, seconds; other speed */
   int64_t ext_last_end_ns, ext_floor_ns;   /* end of the last audio given out; drop audio before */
@@ -1596,6 +1601,14 @@ static double ext_k(const DtsEngine *e) { return e->ext_ratio>0?e->ext_ratio:1.0
 int dts_engine_external_active(DtsEngine *e) { return e && e->ext_url && e->ext_headers; }
 void dts_engine_external_audio_only(DtsEngine *e,int on) { if(e) e->ext_audio_only=!!on; }
 void dts_engine_external_track(DtsEngine *e,int s) { if(e) e->ext_force=s>=0?s+1:0; }
+void dts_engine_external_track_hint(DtsEngine *e,int stream,const char *lang,const char *codec,int channels,const char *title) {
+  if(!e) return;
+  e->ext_hint_on=stream>=0 || (codec && *codec) || (title && *title);
+  e->ext_hint_idx=stream; e->ext_hint_ch=channels;
+  snprintf(e->ext_hint_lang,sizeof e->ext_hint_lang,"%s",lang?lang:"");
+  snprintf(e->ext_hint_codec,sizeof e->ext_hint_codec,"%s",codec?codec:"");
+  snprintf(e->ext_hint_title,sizeof e->ext_hint_title,"%s",title?title:"");
+}
 void dts_engine_external_mismatch(DtsEngine *e,int *cut_s,int *speed) {
   *cut_s=e&&e->ext?e->ext_cut_s:0; *speed=e&&e->ext?e->ext_speed:0;
 }
@@ -1785,6 +1798,35 @@ static int ext_pick(DtsEngine *e,AVFormatContext *fmt) {
     for(unsigned i=0;i<fmt->nb_streams;i++) if(ext_rank(e,fmt->streams[i]->codecpar)==want) return (int)i;
   return -1;
 }
+/* The remembered track in this episode's version: the same language (when
+ * both say one), then the file's track name, codec, channels and number.
+ * Two English tracks (main and commentary) are told apart by the name, or by
+ * the number in the same release. -1: nothing like it (by language then). */
+static int ext_hint_pick(DtsEngine *e,AVFormatContext *fmt) {
+  int best=-1, bs=2;
+  for(unsigned i=0;i<fmt->nb_streams;i++) {
+    AVStream *st=fmt->streams[i];
+    char l[16]="", t[64]="";
+    int s=0;
+    if(!ext_rank(e,st->codecpar)) continue;
+    copy_metadata(l,sizeof l,st->metadata,"language");
+    copy_metadata(t,sizeof t,st->metadata,"title");
+    if(e->ext_hint_lang[0] && l[0]) {
+      const char *h=e->ext_hint_lang;
+      /* "en"/"eng", "pl"/"pol": the app's matcher, or the same first letters */
+      int same=!strcasecmp(l,h) || ext_lang_is(l,h) || ext_lang_is(h,l) ||
+               ((strlen(l)==2)!=(strlen(h)==2) && !strncasecmp(l,h,2));
+      if(!same) continue;
+      s+=1;
+    }
+    if(e->ext_hint_title[0] && t[0] && !strcasecmp(t,e->ext_hint_title)) s+=4;
+    if(e->ext_hint_codec[0] && !strcasecmp(avcodec_get_name(st->codecpar->codec_id),e->ext_hint_codec)) s+=2;
+    if(e->ext_hint_ch>0 && st->codecpar->ch_layout.nb_channels==e->ext_hint_ch) s+=1;
+    if((int)i==e->ext_hint_idx) s+=1;
+    if(s>bs) { bs=s; best=(int)i; }
+  }
+  return best;
+}
 /* Decoder and encoder for a donor track that needs conversion. */
 static int ext_configure_conv(DtsEngine *e,AVStream *as) {
   AVCodecParameters *ap=as->codecpar;
@@ -1872,6 +1914,12 @@ static int configure_external(DtsEngine *e,double start) {
     return -1;
   }
   int k=ext_pick(e,x->fmt);
+  if(!e->ext_force && e->ext_hint_on) {
+    int h=ext_hint_pick(e,x->fmt);
+    printf("[ext-audio] series memory: the track like the one chosen (%s %s %dch \"%.40s\", was %d): %d\n",
+           e->ext_hint_lang,e->ext_hint_codec,e->ext_hint_ch,e->ext_hint_title,e->ext_hint_idx,h);
+    if(h>=0) k=h;
+  }
   if(e->ext_force>0 && (unsigned)(e->ext_force-1)<x->fmt->nb_streams &&
      ext_rank(e,x->fmt->streams[e->ext_force-1]->codecpar)>0) k=e->ext_force-1;
   for(unsigned i=0;i<x->fmt->nb_streams;i++) {

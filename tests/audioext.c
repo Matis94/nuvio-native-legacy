@@ -44,12 +44,23 @@ int main(void) {
   assert(audioext_offset_ms() == 150 && !strcmp(audioext_idioma(), "pl"));
   assert(audioext_pedido("https://a/remux-e2.mkv"));
   assert(!audioext_serie_procura("tt1:1:2", NULL));      // already chosen here
-  // A new offset in episode 2 is what episode 3 gets.
-  audioext_offset_somar(-50);
-  audioext_alvo("tt1:1:3");
-  assert(audioext_serie_procura("tt1:1:3", NULL));
-  audioext_serie_achou("https://a/pl-e3.mkv", "", "E3");
-  assert(audioext_offset_ms() == 100);
+  // No track remembered yet: no hint.
+  assert(!audioext_faixa_dica(NULL));
+  // Episode 2: the second English track chosen by hand (owner 09/11).
+  { AudioExtFaixa f = { 2, 2, "ac3", "eng", "Commentary" }, h;
+    audioext_escolher_faixa(f.stream);
+    audioext_lembrar_faixa_serie(&f);
+    assert(!audioext_faixa_dica(NULL));                   // chosen here: forced, not a hint
+    // A new offset in episode 2 is what episode 3 gets, and the track with it.
+    audioext_offset_somar(-50);
+    audioext_alvo("tt1:1:3");
+    assert(audioext_serie_procura("tt1:1:3", NULL));
+    audioext_serie_achou("https://a/pl-e3.mkv", "", "E3");
+    assert(audioext_offset_ms() == 100 && audioext_faixa() == -1);
+    assert(audioext_faixa_dica(&h) && h.stream == 2 && !strcmp(h.titulo, "Commentary") && !strcmp(h.codec, "ac3"));
+    // Another track picked in episode 3: no hint any more (forced).
+    audioext_escolher_faixa(1);
+    assert(!audioext_faixa_dica(NULL)); }
   // Another series does not inherit it.
   audioext_alvo("tt2:1:1");
   assert(!audioext_serie_procura("tt2:1:1", NULL));

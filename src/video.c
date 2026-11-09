@@ -3653,6 +3653,8 @@ static int iniciarDts(int stream) {
     dts_playback_next_external_audio(audioext_url(), audioext_cabecalhos(), langs, audioext_offset_ms());
     dts_playback_next_external_audio_only(audioext_so_audio());
     dts_playback_next_external_track(audioext_faixa());
+    { AudioExtFaixa h;   // series memory: the track chosen in the last episode
+      if (audioext_faixa_dica(&h)) dts_playback_next_external_hint(h.stream, h.idioma, h.codec, h.canais, h.titulo); }
     dts_playback_next_external_speed(audioext_velocidade());
     dts_playback_next_external_follow(ajustes_audio_externo_seguir());
     dts_playback_next_external_automatch(ajustes_audio_externo_auto());
@@ -4460,8 +4462,16 @@ void video_escolher_audio(int i) {
   // The audio of another version: the rows are that file's tracks. Another one
   // reopens with it (audioext_escolher_faixa); the playing one does nothing.
   if (dtsSessao && extAtivo) {
-    if (f && f->stream_index > DTS_ENGINE_EXTERNAL_STREAM)
-      audioext_escolher_faixa(f->stream_index - DTS_ENGINE_EXTERNAL_STREAM - 1);
+    if (f && f->stream_index > DTS_ENGINE_EXTERNAL_STREAM) {
+      AudioExtFaixa m;
+      memset(&m, 0, sizeof m);
+      m.stream = f->stream_index - DTS_ENGINE_EXTERNAL_STREAM - 1; m.canais = f->canais;
+      snprintf(m.codec, sizeof m.codec, "%s", f->codec);
+      snprintf(m.idioma, sizeof m.idioma, "%s", f->idioma);
+      snprintf(m.titulo, sizeof m.titulo, "%s", f->nome);
+      audioext_escolher_faixa(m.stream);
+      audioext_lembrar_faixa_serie(&m);   // the next episodes look for this track
+    }
     return;
   }
   if (dtsSessao && f) {

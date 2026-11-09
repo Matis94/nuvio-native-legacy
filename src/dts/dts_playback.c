@@ -1142,6 +1142,14 @@ static char extUrlNext[NV_MEDIA_URL_MAX], extHeadersNext[2048], extLangsNext[64]
 static int extOffsetNext, extOnlyNext, extTrackNext = -1, extSpeedNext, extFollowNext, extAutoNext;
 void dts_playback_next_external_follow(int on) { extFollowNext = !!on; }
 void dts_playback_next_external_automatch(int on) { extAutoNext = !!on; }
+typedef struct { int on, stream, ch; char lang[16], codec[24], title[64]; } ExtHint;
+static ExtHint extHintNext;
+void dts_playback_next_external_hint(int stream, const char *lang, const char *codec, int channels, const char *title) {
+  extHintNext.on = 1; extHintNext.stream = stream; extHintNext.ch = channels;
+  snprintf(extHintNext.lang, sizeof extHintNext.lang, "%s", lang ? lang : "");
+  snprintf(extHintNext.codec, sizeof extHintNext.codec, "%s", codec ? codec : "");
+  snprintf(extHintNext.title, sizeof extHintNext.title, "%s", title ? title : "");
+}
 void dts_playback_next_external_speed(int ratio_ppm) { extSpeedNext = ratio_ppm; }
 void dts_playback_next_external_audio_only(int on) { extOnlyNext = !!on; }
 void dts_playback_next_external_track(int stream) { extTrackNext = stream >= 0 ? stream : -1; }
@@ -1234,7 +1242,8 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
   char ext_url[NV_MEDIA_URL_MAX], ext_headers[2048], ext_langs[64];
   int ext_offset=extOffsetNext, ext_only=extOnlyNext, ext_track=extTrackNext, ext_speed=extSpeedNext;
   int ext_follow=extFollowNext, ext_auto=extAutoNext;
-  extOnlyNext=0;extTrackNext=-1;extSpeedNext=0;extFollowNext=0;extAutoNext=0;
+  ExtHint ext_hint=extHintNext;
+  extOnlyNext=0;extTrackNext=-1;extSpeedNext=0;extFollowNext=0;extAutoNext=0;extHintNext.on=0;
   snprintf(ext_url,sizeof ext_url,"%s",extUrlNext);
   snprintf(ext_headers,sizeof ext_headers,"%s",extHeadersNext);
   snprintf(ext_langs,sizeof ext_langs,"%s",extLangsNext);
@@ -1280,6 +1289,7 @@ DtsPlayback *dts_playback_start(const char *url, const char *headers,
     dts_engine_external_speed(p->engine,ext_speed); p->ext_speed_ppm=ext_speed;
     dts_engine_external_follow(p->engine,ext_follow);
     dts_engine_external_automatch(p->engine,ext_auto);
+    if(ext_hint.on) dts_engine_external_track_hint(p->engine,ext_hint.stream,ext_hint.lang,ext_hint.codec,ext_hint.ch,ext_hint.title);
     printf("[ext-audio] session uses the audio of another source offsetMs=%d speedPpm=%d dv=%d\n",ext_offset,ext_speed,p->dv);
     fflush(stdout);
   }

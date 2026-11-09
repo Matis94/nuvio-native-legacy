@@ -167,7 +167,7 @@ static Run play(DtsEngine *e, int64_t offset_ns, int limit) {
 }
 
 int main(int argc, char **argv) {
-  assert(argc == 33);
+  assert(argc == 34);
   const char *main_file = argv[1], *other = argv[2], *dts_only = argv[3], *short_clip = argv[4], *mp4 = argv[5];
   const char *aac44 = argv[6], *main60 = argv[7], *long_idx = argv[8], *long_noidx = argv[9];
   const char *match_main = argv[10], *match_dub = argv[11];
@@ -175,7 +175,7 @@ int main(int argc, char **argv) {
   const char *cut_main = argv[17], *cut_dub = argv[18], *pal_dub = argv[19], *pair_dub = argv[20];
   const char *follow_ext = argv[21], *follow_th = argv[22], *lang_main = argv[23], *lang_pl = argv[24];
   const char *dub_ru = argv[25], *dub_pl = argv[26], *follow_ext_ru = argv[27], *follow_th_pl = argv[28];
-  const char *shift_main = argv[29], *shift_dub = argv[30], *gap_main = argv[31], *gap_dub = argv[32];
+  const char *shift_main = argv[29], *shift_dub = argv[30], *gap_main = argv[31], *gap_dub = argv[32], *two_en = argv[33];
   dts_engine_set_lang_match(lang_match);
   load_refs(other, "pol");
 
@@ -575,6 +575,21 @@ int main(int argc, char **argv) {
     fprintf(stderr, "follow, two dubs: found %d, switches %d\n", found, switches);
     assert(got == 0 && found && switches == 0); }
   dts_engine_destroy(e);
+  /* Series memory, the track (owner 09/11): two English tracks; without a
+   * hint the first, with the remembered one ("Commentary", stream 2) that one. */
+  for (int hint = 0; hint < 2; hint++) {
+    e = dts_engine_create();
+    dts_engine_external_audio(e, two_en, HEADERS, "en", 0);
+    if (hint) dts_engine_external_track_hint(e, 2, "en", "ac3", 2, "Commentary");
+    assert(dts_engine_open(e, main_file, HEADERS, -1, 0, 0) == 0);
+    const DtsMediaInfo *in = dts_engine_info(e);
+    const char *chosen = "";
+    for (int i = 0; i < in->n_tracks; i++)
+      if (in->tracks[i].stream_index == DTS_ENGINE_EXTERNAL_STREAM) chosen = in->tracks[i].title;
+    fprintf(stderr, "two English tracks, hint %d: %s\n", hint, chosen);
+    assert(!strcmp(chosen, hint ? "Commentary" : "Main"));
+    dts_engine_destroy(e);
+  }
   /* A gap 0.6 s longer in the other version at 70 s: the follow moves the
    * sync there by itself (event 4), no switch to this file's audio. */
   e = dts_engine_create();
