@@ -24,8 +24,9 @@ jobs:
       # Test build number (owner, 07/11): bumped with every new test build so
       # the IPK name and the title on the TV tell the versions apart.
       NUVIO_EXT_TEST: '15'
-      # Short name of the change in this build (owner, 08/11): in the IPK
-      # name and the title on the TV, after the number.
+      # Short name of the change in this build (owner, 08-09/11): the IPK is
+      # named by it alone (…_arm-ext-audio-<name>.ipk); the TV title keeps
+      # the number too.
       NUVIO_EXT_NAME: 'series-track'
       # Quick test builds (owner, 08/11): skip the long regression suites; the
       # changed parts are tested locally before the push. Manual runs with
@@ -420,7 +421,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk "output/space.nuvio.native.legacy_2.0.8.7_arm-ext-audio-${NUVIO_EXT_TEST}-${NUVIO_EXT_NAME:+$NUVIO_EXT_NAME-}${GITHUB_SHA::7}.ipk"
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk "output/space.nuvio.native.legacy_2.0.8.7_arm-ext-audio-${NUVIO_EXT_NAME:-$NUVIO_EXT_TEST}.ipk"
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
