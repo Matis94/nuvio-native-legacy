@@ -39,7 +39,9 @@ void dts_engine_set_conversion_stream(int on) { g_conversion_stream = on ? 1 : 0
 /* Settings > DTS "Off": engines opened after this never select or switch to a
  * DTS track (the controller then hands the source back to the TV player). */
 static volatile int g_dts_off;
-void dts_engine_set_dts_off(int on) { g_dts_off = on ? 1 : 0; }
+/* 1 = DTS off; 2 = off and the TV decodes DTS (tv.model.edidType): on the
+ * Dolby Vision path the DTS core then passes through untouched. */
+void dts_engine_set_dts_off(int on) { g_dts_off = on == 2 ? 2 : on ? 1 : 0; }
 int dts_engine_dts_off(void) { return g_dts_off; }
 static int (*g_lang_match)(const char *code, const char *pref);
 void dts_engine_set_lang_match(int (*match)(const char *code, const char *pref)) { g_lang_match = match; }
@@ -220,6 +222,7 @@ struct DtsEngine {
   AVIOContext *io;
   AVCodecContext *dec, *enc;
   AVBSFContext *bsf;
+  AVBSFContext *dts_core;    /* DTS passed through (DTS off, the TV decodes it): core only */
   /* HEVC hvcC: own Annex-B conversion instead of bsf (keeps the stream's
    * VPS/SPS/PPS, see hevc_annexb.h). hevc_annexb.sets!=NULL means active. */
   NvHevcAnnexB hevc_annexb;
@@ -1401,7 +1404,7 @@ static void close_media(DtsEngine *e) {
   av_packet_free(&e->in); av_packet_free(&e->out);
   av_frame_free(&e->decoded); av_frame_free(&e->encoded);
   avcodec_free_context(&e->dec); avcodec_free_context(&e->enc);
-  av_bsf_free(&e->bsf); swr_free(&e->swr); av_audio_fifo_free(e->fifo); e->fifo=NULL;
+  av_bsf_free(&e->bsf); av_bsf_free(&e->dts_core); swr_free(&e->swr); av_audio_fifo_free(e->fifo); e->fifo=NULL;
   nv_hevc_annexb_close(&e->hevc_annexb);
   av_freep(&e->dv7_buffer); e->dv7_capacity=0; e->dv7=0; e->mapping_reported=0;
 #ifdef NV_MP4_BD_TEST
@@ -1682,13 +1685,30 @@ static int configure_audio(DtsEngine *e,int core,double start) {
    * native decoder must see the same codec, channel layout and rate from its
    * initial Load onward. Reuse v12 Seek; never call changeAudioCodec. */
   int fixed=e->dv && e->dv_audio;
-  e->passthrough=ap->codec_id!=AV_CODEC_ID_DTS &&
+  /* DTS off and the TV decodes DTS (dts_off 2, tv.model.edidType): on the
+   * Dolby Vision path the DTS core goes to the TV untouched (experimental). */
+  int dts_native=ap->codec_id==AV_CODEC_ID_DTS && e->dv && e->dts_off==2 && !fixed;
+  e->passthrough=(ap->codec_id!=AV_CODEC_ID_DTS || dts_native) &&
     !(e->dv && nv_dts_truehd_codec(avcodec_get_name(ap->codec_id))) && !fixed;
   if(e->passthrough) {
     e->in=av_packet_alloc(); e->out=av_packet_alloc();
     if(!e->in || !e->out) return fail(e,"Audio queue allocation",0);
     e->info.channels=ap->ch_layout.nb_channels>0?ap->ch_layout.nb_channels:6;
     e->info.sample_rate=ap->sample_rate>0?ap->sample_rate:48000;
+    if(dts_native) {
+      /* The core only (DTS-HD MA/HRA extensions dropped): the 1.5 Mbps stream
+       * every DTS decoder takes. A DTS core carries at most 5.1 here. */
+      const AVBitStreamFilter *core=av_bsf_get_by_name("dca_core");
+      if(!core) return fail(e,"DTS core filter absent",0);
+      if((r=av_bsf_alloc(core,&e->dts_core))<0) return fail(e,"DTS core filter",r);
+      if((r=avcodec_parameters_copy(e->dts_core->par_in,ap))<0) return fail(e,"DTS core filter",r);
+      e->dts_core->time_base_in=e->fmt->streams[e->info.audio_stream]->time_base;
+      if((r=av_bsf_init(e->dts_core))<0) return fail(e,"DTS core filter open",r);
+      if(e->info.channels>6) e->info.channels=6;
+      printf("[dts] dv-dts-native: the TV decodes DTS, core passed through ch=%d rate=%d profile=%d\n",
+        e->info.channels,e->info.sample_rate,ap->profile);
+      fflush(stdout);
+    }
     snprintf(e->info.audio_codec,sizeof(e->info.audio_codec),"%s",avcodec_get_name(ap->codec_id));
     e->info.duration_ns=e->fmt->duration==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->duration,AV_TIME_BASE_Q,NS);
     e->info.start_ns=e->fmt->start_time==AV_NOPTS_VALUE?0:av_rescale_q(e->fmt->start_time,AV_TIME_BASE_Q,NS);
@@ -2253,6 +2273,7 @@ int dts_engine_audio(DtsEngine *e,int stream,int core,double target) {
   av_packet_free(&e->in); av_packet_free(&e->out);
   av_frame_free(&e->decoded); av_frame_free(&e->encoded);
   avcodec_free_context(&e->dec); avcodec_free_context(&e->enc);
+  av_bsf_free(&e->dts_core);
   swr_free(&e->swr); av_audio_fifo_free(e->fifo); e->fifo=NULL;
   av_channel_layout_uninit(&e->input_layout);
   e->info.audio_stream=stream;e->has_core=0;e->error[0]=0;
@@ -3698,6 +3719,14 @@ static int next_frame_passthrough(DtsEngine *e,DtsFrame *f) {
     }
     if(e->in->stream_index==e->info.audio_stream) {
       if(e->in->pts==AV_NOPTS_VALUE || ns(e->in->pts+e->in->duration,tb)<=e->target_ns) { av_packet_unref(e->in); continue; }
+      if(e->dts_core) {
+        /* One DTS packet in, its core out (same timestamps). */
+        if((r=av_bsf_send_packet(e->dts_core,e->in))<0) { av_packet_unref(e->in); return fail(e,"DTS core input",r); }
+        r=av_bsf_receive_packet(e->dts_core,e->out);
+        if(r==AVERROR(EAGAIN)) continue;
+        if(r<0) return fail(e,"DTS core output",r);
+        return frame_out(e,f,DTS_AUDIO,e->dts_core->time_base_out);
+      }
       av_packet_move_ref(e->out,e->in);
       return frame_out(e,f,DTS_AUDIO,tb);
     }
@@ -3925,6 +3954,7 @@ int dts_engine_seek(DtsEngine *e,double seconds) {
 #endif
   if(e->passthrough) {
     if(e->bsf) av_bsf_flush(e->bsf);
+    if(e->dts_core) av_bsf_flush(e->dts_core);
     av_packet_unref(e->in); av_packet_unref(e->out);
     e->demux_eof=0; e->target_ns=(int64_t)(seconds*1000000000.0);
     return e->ext?ext_seek(e,seconds):0;

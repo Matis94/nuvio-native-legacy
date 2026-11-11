@@ -1,7 +1,7 @@
 name: Build webOS 2.0.8.7 external audio test
 on:
   push:
-    branches: [external-audio-test-2.0.8.7]
+    branches: [external-audio-test-2.0.8.7, dv-dts-native-test-2.0.8.7]
   workflow_dispatch:
     inputs:
       full_regression:
@@ -11,7 +11,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: webos-2087-external-audio-ipk
+  group: webos-2087-external-audio-ipk-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   build:
@@ -23,11 +23,11 @@ jobs:
       NUVIO_BUILD_JOBS: '3'
       # Test build number (owner, 07/11): bumped with every new test build so
       # the IPK name and the title on the TV tell the versions apart.
-      NUVIO_EXT_TEST: '19'
+      NUVIO_EXT_TEST: '20'
       # Short name of the change in this build (owner, 08-09/11): the IPK is
       # named by it alone (…_arm-ext-audio-<name>.ipk); the TV title keeps
       # the number too.
-      NUVIO_EXT_NAME: 'skip-stall'
+      NUVIO_EXT_NAME: 'dv-dts-native'
       # Quick test builds (owner, 08/11): skip the long regression suites; the
       # changed parts are tested locally before the push. Manual runs with
       # "full_regression" still run everything.
@@ -201,6 +201,7 @@ jobs:
           SANITIZE=1 bash tests/logexport.sh
           CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular_export.sh
           CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular.sh
+          bash tests/logcloud.sh
       - name: Continue Watching and next-release regressions
         if: steps.tests.outputs.full == 'true'
         timeout-minutes: 12
