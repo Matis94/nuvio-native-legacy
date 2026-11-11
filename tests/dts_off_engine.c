@@ -68,16 +68,16 @@ int main(int argc, char **argv) {
   assert(dts_engine_info(e)->audio_stream == 2 && frames(e, 50) == 50);
   assert(dts_engine_audio(e, 1, 0, 1.0) == -1 && dts_engine_info(e)->audio_stream == 2);
   check(e, dts_engine_seek(e, 2.0)); assert(frames(e, 50) == 50);
-  /* Off, the TV decodes DTS (2): the DV path takes DTS as its core, untouched;
+  /* Off, the TV decodes DTS (2): the DV path takes the DTS stream untouched;
    * plain conversion still has nothing to convert. */
   dts_engine_set_dts_off(2);
   check(e, dts_engine_open(e, argv[1], HEADERS, -1, 0, 0));
   assert(dts_engine_info(e)->audio_stream == 1 && !strcmp(dts_engine_info(e)->audio_codec, "dts"));
-  assert(dts_engine_info(e)->channels >= 1 && dts_engine_info(e)->channels <= 6);
+  assert(dts_engine_info(e)->channels >= 1 && dts_engine_info(e)->channels <= 8);
   { DtsFrame f; int audio = 0, ok = 1;
     for (int i = 0; i < 80 && dts_engine_next(e, &f) > 0; i++)
       if (f.kind == DTS_AUDIO) { audio++; ok = ok && f.size >= 4 && f.data[0] == 0x7F && f.data[1] == 0xFE && f.data[2] == 0x80 && f.data[3] == 0x01; }
-    assert(audio > 5 && ok); }                                               /* DTS core sync word */
+    assert(audio > 5 && ok); }                                               /* DTS sync word, packets as in the file */
   check(e, dts_engine_seek(e, 2.0)); assert(frames(e, 50) == 50);
   check(e, dts_engine_audio(e, 2, 0, 1.0));
   assert(dts_engine_info(e)->audio_stream == 2 && !strcmp(dts_engine_info(e)->audio_codec, "ac3"));

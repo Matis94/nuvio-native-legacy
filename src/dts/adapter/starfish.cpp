@@ -228,7 +228,7 @@ static int load(void *ctx,const DtsMediaInfo *m,double target) {
    * and E-AC-3 (passed through). Names and the ac3PlusInfo block are the ones
    * libpf-1.0.so parses on webOS 4.10; on the LG C9 E-AC-3 5.1 was heard and
    * a passed-through AC-3 5.1 track played with codec "AC3" + ac3PlusInfo. */
-  /* DTS (its core) only from the Dolby Vision path with DTS off on a TV that
+  /* DTS (untouched) only from the Dolby Vision path with DTS off on a TV that
    * declares DTS (tv.model.edidType). Experimental: nobody had sent "DTS"
    * here before; a refusal ends the session and the TV player takes over. */
   const bool dts = !strcmp(m->audio_codec,"dts");

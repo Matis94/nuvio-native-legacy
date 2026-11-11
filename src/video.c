@@ -1716,8 +1716,14 @@ static const char EDID_URI[] = "luna://com.webos.service.config/getConfigs";
 static const char EDID_CARGA[] = "{\"configNames\":[\"tv.model.edidType\"]}";
 static void edidGuardar(const char *r, const char *via) {
   int v = nv_dts_edid(r);
-  printf("[dts-edid] via %s: %.200s -> %s\n", via, r ? r : "(nothing)",
-         v == 1 ? "TV decodes DTS" : v == 0 ? "no DTS" : "no answer");
+  char valor[48];
+  /* Value only: a raw JSON line is hidden whole by the log export. */
+  if (nv_dts_edid_valor(r, valor, sizeof valor))
+    printf("[dts-edid] via %s: edidType=%s -> %s\n", via, valor[0] ? valor : "(empty)", v == 1 ? "TV decodes DTS" : "no DTS");
+  else
+    printf("[dts-edid] via %s: no edidType in the reply (%s, errorCode %d) -> no answer\n", via,
+           !r ? "nothing" : strstr(r, "\"returnValue\":false") || strstr(r, "\"returnValue\": false") ? "refused" : "other reply",
+           nv_dts_edid_erro(r));
   fflush(stdout);
   if (v >= 0) { __atomic_store_n(&edidDts, v, __ATOMIC_RELEASE); __atomic_store_n(&edidEtapa, 3, __ATOMIC_RELEASE); }
   else if (__atomic_load_n(&edidEtapa, __ATOMIC_ACQUIRE) == 1) __atomic_store_n(&edidTentarHelpers, 1, __ATOMIC_RELEASE);
@@ -1736,7 +1742,9 @@ static void edidPedirHelpers(void) {
   __atomic_store_n(&edidEtapa, 2, __ATOMIC_RELEASE);
   if (!chamarH && (h = dlopen("libhelpers.so.2", RTLD_NOW))) *(void **)(&chamarH) = dlsym(h, "HLunaServiceCall");
   if (!chamarH || !lsPayload || !chamarH(EDID_URI, EDID_CARGA, &ctx)) {
-    printf("[dts-edid] libhelpers route unavailable: TV DTS support unknown\n"); fflush(stdout);
+    printf("[dts-edid] libhelpers route unavailable (%s)\n",
+           !chamarH ? "no HLunaServiceCall" : !lsPayload ? "no payload reader" : "call returned false");
+    fflush(stdout);
     __atomic_store_n(&edidEtapa, 3, __ATOMIC_RELEASE);
   }
 }
@@ -2678,7 +2686,7 @@ int video_tocar(const char *url) {
      * available to Dolby Vision (P7/P8 MKV, MP4) with non-DTS audio. */
     int conversao = dts_playback_enabled() && dtsLiberadoNestaTv();
     /* 2: Off and the TV declares DTS (edidType): DTS goes to it as it is,
-     * also on the Dolby Vision path (core passed through, experimental). */
+     * also on the Dolby Vision path (passed through untouched, experimental). */
     dtsDesligado = ajustes_dts_desligado() ? (dtsTvDts() ? 2 : 1) : 0;
     nv_dvaudio_sem_dts = dtsDesligado;
     dtsHabilitado = conversao && !dtsDesligado;
@@ -3982,8 +3990,8 @@ static void bombearDts(void) {
       if (!audioext_tocando()) audioext_diferenca(st.ext_cut_s, st.ext_speed);
       audioext_tocando_definir(1);
     } else if (dtsModoDv && !strcmp(st.info.audio_codec, "dts")) {
-      /* DTS off, the TV decodes DTS: its core went through untouched. */
-      snprintf(dtsSaida, sizeof dtsSaida, "DTS (core) · Dolby Vision");
+      /* DTS off, the TV decodes DTS: the stream went through untouched. */
+      snprintf(dtsSaida, sizeof dtsSaida, "DTS · Dolby Vision");
       dtsEstado = VIDEO_DTS_NATIVO;
     } else if (!dtsModoDv || (audioAtual >= 0 && audioAtual < nAudio && !strcmp(faixaAudio[audioAtual].codec, "dts"))) {
       snprintf(dtsSaida, sizeof dtsSaida, "%s", !strcmp(st.info.audio_codec, "ac3") ? "DTS → AC3 5.1" : "DTS → AAC Stereo");

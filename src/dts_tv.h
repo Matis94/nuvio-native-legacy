@@ -1,6 +1,7 @@
 #ifndef NV_DTS_TV_H
 #define NV_DTS_TV_H
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 /* Does this TV decode DTS itself? Decided from the starfish release major
  * (/etc/starfish-release, "release 11.2" -> 11), never from the TV's answer:
@@ -39,6 +40,35 @@ static inline int nv_dts_edid(const char *json) {
   }
   v[n] = 0;
   return strstr(v, "dts") != NULL;
+}
+/* For the log: the edidType value alone, letters/digits/+-_ only (a raw JSON
+ * line is hidden whole by the log export). 0 = no string value. */
+static inline int nv_dts_edid_valor(const char *json, char *dst, size_t n) {
+  const char *k = json ? strstr(json, "\"tv.model.edidType\"") : NULL;
+  size_t i = 0;
+  if (!dst || !n) return 0;
+  dst[0] = 0;
+  if (!k) return 0;
+  k += 19;
+  while (*k == ' ' || *k == '\t') k++;
+  if (*k++ != ':') return 0;
+  while (*k == ' ' || *k == '\t') k++;
+  if (*k++ != '"') return 0;
+  for (; *k && *k != '"' && i + 1 < n; k++) {
+    char c = *k;
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '+' || c == '-' || c == '_')
+      dst[i++] = c;
+  }
+  dst[i] = 0;
+  return 1;
+}
+/* errorCode of a refused call (0 when there is none). */
+static inline int nv_dts_edid_erro(const char *json) {
+  const char *k = json ? strstr(json, "\"errorCode\"") : NULL;
+  if (!k) return 0;
+  k += 11;
+  while (*k == ' ' || *k == ':' || *k == '\t') k++;
+  return atoi(k);
 }
 /* Convert now (before any native play) a DTS track on a TV with no DTS. */
 static inline int nv_dts_converter_ja(int release_major, int faixa_dts,
