@@ -275,6 +275,7 @@ struct DtsEngine {
   int fw_on, fw_state, fw_autoarm, mt_auto;
   int mt_main_pref;      /* this file's track that compared best, +1 (0: none; see match_alt) */
   int ext_automatch;     /* Settings: "Match automatically" by itself when the other version starts */
+  int mt_retry;          /* automatic captures started again after a jump cut them short */
   struct Follow *fw;
   int fw_event, fw_event_ms;   /* last event for the app: 1 own audio, 2 resumed, 3 gave up, 4 small shift corrected */
   double ext_fps_ratio;  /* other version's frame rate / this one's (0: unknown) */
@@ -2021,7 +2022,7 @@ static int configure_external(DtsEngine *e,double start) {
   e->target_ns=(int64_t)(start*1000000000.0);
   printf("[ext-audio] ready codec=%s ch=%d rate=%d stream=%d%s\n",e->info.audio_codec,e->info.channels,
     e->info.sample_rate,k,follow?" (following another cut)":"");
-  e->fw_autoarm=follow || e->ext_automatch; e->mt_main_pref=0;
+  e->fw_autoarm=follow || e->ext_automatch; e->mt_main_pref=0; e->mt_retry=0;
   fflush(stdout);
   return start>0?dts_engine_seek(e,start):0;
 }
@@ -2873,6 +2874,17 @@ static void match_cancel(DtsEngine *e) {
   int check=e->mt_check;
   match_disarm(e);
   if(check) return;   /* the second look is armed again later */
+  /* An automatic capture cut short by a jump (owner's log 11/11, S9E16: the
+   * automatic intro skip right at the start) is no failure to report: it
+   * starts again from where playback went, up to 3 times. A click still
+   * reports its interruption. */
+  if(e->mt_auto) {
+    e->mt_auto=0; e->mt_state=0;
+    if(e->mt_retry<3) { e->mt_retry++; e->fw_autoarm=1; }
+    printf("[ext-audio] match: interrupted by a jump (automatic)%s\n",e->fw_autoarm?": again from there":"");
+    fflush(stdout);
+    return;
+  }
   e->mt_state=3; e->mt_offset_ms=e->mt_score=0; e->mt_how=e->mt_hint_ms=e->mt_heavy=0;
   printf("[ext-audio] match: interrupted\n"); fflush(stdout);
 }

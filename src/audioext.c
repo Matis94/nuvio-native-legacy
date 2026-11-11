@@ -35,6 +35,9 @@ static struct { char serie[64], episodio[64]; AudioExtIdent id; int offset, velo
 // 09/11: two English tracks, the one chosen): the hint for the player.
 static int dicaAtiva;
 static AudioExtFaixa dica;
+// The offset came from the series memory (same version as the last episode):
+// an automatic match at start that is not sure keeps it quietly.
+static int offsetLembrado;
 static void serieDe(const char *alvo, char *out, size_t tam) {
   const char *c = alvo ? strchr(alvo, ':') : NULL;
   snprintf(out, tam, "%.*s", c ? (int)(c - alvo) : 0, c ? alvo : "");
@@ -43,7 +46,7 @@ static void serieDe(const char *alvo, char *out, size_t tam) {
 void audioext_limpar(void) {
   urlMarca[0] = cabMarca[0] = nomeMarca[0] = alvoMarca[0] = idiomaMarca[0] = 0;
   offsetMs = 0; offsetGeracao++; velocidadePpm = 0; kandN = 0;
-  pendente = 0; faixaMarca = -1; carregando = 0; dicaAtiva = 0;
+  pendente = 0; faixaMarca = -1; carregando = 0; dicaAtiva = 0; offsetLembrado = 0;
   dopasujPedido = dopasujAtivo = 0;
 }
 // "tt123" and "tt123:1:2" are the same title: the detail page stamps the raw
@@ -76,7 +79,7 @@ int audioext_alternar(const char *url, const char *cabecalhos, const char *nome)
   snprintf(alvoMarca, sizeof alvoMarca, "%s", alvoAtual);
   idiomaMarca[0] = 0;
   offsetMs = 0; offsetGeracao++; velocidadePpm = 0; kandN = 0;
-  pendente = 0; faixaMarca = -1; dicaAtiva = 0;
+  pendente = 0; faixaMarca = -1; dicaAtiva = 0; offsetLembrado = 0;
   // The name is the add-on's label, never the URL (signed links stay out of logs).
   printf("[ext-audio] audio source marked: %.80s (target %s)\n", nomeMarca, alvoMarca);
   fflush(stdout);
@@ -90,7 +93,7 @@ void audioext_escolher(const char *url, const char *cabecalhos, const char *nome
     snprintf(nomeMarca, sizeof nomeMarca, "%s", nome ? nome : "");
     snprintf(alvoMarca, sizeof alvoMarca, "%s", alvoAtual);
     offsetMs = 0; offsetGeracao++; velocidadePpm = 0; kandN = 0; kandN = 0; velocidadePpm = 0;
-    faixaMarca = -1; dicaAtiva = 0;
+    faixaMarca = -1; dicaAtiva = 0; offsetLembrado = 0;
   }
   snprintf(idiomaMarca, sizeof idiomaMarca, "%s", idioma ? idioma : "");
   pedidoGeracao++;
@@ -364,6 +367,7 @@ void audioext_serie_achou(const char *url, const char *cabecalhos, const char *n
   offsetMs = memo.offset; offsetGeracao++; velocidadePpm = memo.velocidade;
   faixaMarca = -1;
   dicaAtiva = memo.temFaixa; if (dicaAtiva) dica = memo.faixa;
+  offsetLembrado = 1;
   pedidoGeracao++;
   printf("[ext-audio] series memory: this episode uses %.80s, offset %d ms\n", nomeMarca, offsetMs);
   fflush(stdout);
@@ -377,6 +381,7 @@ void audioext_lembrar_faixa_serie(const AudioExtFaixa *f) {
   printf("[ext-audio] series memory: track %d (%s %s %dch \"%.40s\")\n", f->stream, f->idioma, f->codec, f->canais, f->titulo);
   fflush(stdout);
 }
+int audioext_offset_lembrado(void) { return offsetLembrado && urlMarca[0]; }
 int audioext_faixa_dica(AudioExtFaixa *out) {
   if (!dicaAtiva || !urlMarca[0] || faixaMarca >= 0) return 0;
   if (out) *out = dica;

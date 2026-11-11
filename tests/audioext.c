@@ -42,6 +42,7 @@ int main(void) {
   audioext_serie_achou("https://a/pl-e2.mkv", "X: 1", "WEB-DL PL E2");
   assert(audioext_pedido_geracao() == g + 1);
   assert(audioext_offset_ms() == 150 && !strcmp(audioext_idioma(), "pl"));
+  assert(audioext_offset_lembrado());   // from the series memory (owner 11/11)
   assert(audioext_pedido("https://a/remux-e2.mkv"));
   assert(!audioext_serie_procura("tt1:1:2", NULL));      // already chosen here
   // No track remembered yet: no hint.

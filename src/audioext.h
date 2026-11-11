@@ -65,6 +65,9 @@ typedef struct { int stream, canais; char codec[24], idioma[16], titulo[64]; } A
 // the track most like it (name, codec, channels, number; the same language).
 void audioext_lembrar_faixa_serie(const AudioExtFaixa *f);
 int audioext_faixa_dica(AudioExtFaixa *out);   // 1: this episode has one
+// 1: this episode's offset came from the series memory (owner 11/11: an
+// automatic match at start that fails keeps it without a message).
+int audioext_offset_lembrado(void);
 void audioext_definir_sonda(int (*fn)(const char *url, const char *cab, AudioExtFaixa *out, int max));
 int audioext_sonda_disponivel(void);
 unsigned audioext_sondar(const char *url, const char *cab);

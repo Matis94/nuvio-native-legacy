@@ -575,6 +575,23 @@ int main(int argc, char **argv) {
     fprintf(stderr, "follow, two dubs: found %d, switches %d\n", found, switches);
     assert(got == 0 && found && switches == 0); }
   dts_engine_destroy(e);
+  /* The match at start cut short by a jump (owner's log 11/11, S9E16: the
+   * automatic intro skip): no failure; it starts again from there and finds. */
+  e = dts_engine_create();
+  dts_engine_external_automatch(e, 1);
+  dts_engine_external_audio(e, gap_dub, HEADERS, "en", 0);
+  assert(dts_engine_open(e, gap_main, HEADERS, -1, 0, 0) == 0);
+  { DtsFrame f; DtsMatchInfo mi; int got, fails = 0, found = 0, autom = 0, off = 99999, jumped = 0;
+    while ((got = dts_engine_next(e, &f)) == 1) {
+      if (!jumped && f.kind == DTS_AUDIO && f.pts_ns > 5e9) { jumped = 1; assert(dts_engine_seek(e, 60.0) == 0); continue; }
+      int r = dts_engine_external_match_poll(e, &mi);
+      if (r < 0) fails++;
+      if (r == 1 && !found) { found = 1; autom = mi.automatic; off = mi.offset_ms; }
+      if (found && f.kind == DTS_AUDIO && f.pts_ns > 130e9) break;
+    }
+    fprintf(stderr, "match at start, jump: found %d (automatic %d, %d ms), failures %d\n", found, autom, off, fails);
+    assert(jumped && found && autom && !fails && off > -60 && off < 60); }
+  dts_engine_destroy(e);
   /* Series memory, the track (owner 09/11): two English tracks; without a
    * hint the first, with the remembered one ("Commentary", stream 2) that one. */
   for (int hint = 0; hint < 2; hint++) {
