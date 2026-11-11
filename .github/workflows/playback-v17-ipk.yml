@@ -23,11 +23,11 @@ jobs:
       NUVIO_BUILD_JOBS: '3'
       # Test build number (owner, 07/11): bumped with every new test build so
       # the IPK name and the title on the TV tell the versions apart.
-      NUVIO_EXT_TEST: '22'
+      NUVIO_EXT_TEST: '23'
       # Short name of the change in this build (owner, 08-09/11): the IPK is
       # named by it alone (…_arm-ext-audio-<name>.ipk); the TV title keeps
       # the number too.
-      NUVIO_EXT_NAME: 'dv-dts-x'
+      NUVIO_EXT_NAME: 'dv-dts-x-subs'
       # Quick test builds (owner, 08/11): skip the long regression suites; the
       # changed parts are tested locally before the push. Manual runs with
       # "full_regression" still run everything.
