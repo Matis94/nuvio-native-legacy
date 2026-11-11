@@ -1741,12 +1741,17 @@ static void edidPedirHelpers(void) {
   void *h;
   __atomic_store_n(&edidEtapa, 2, __ATOMIC_RELEASE);
   if (!chamarH && (h = dlopen("libhelpers.so.2", RTLD_NOW))) *(void **)(&chamarH) = dlsym(h, "HLunaServiceCall");
-  if (!chamarH || !lsPayload || !chamarH(EDID_URI, EDID_CARGA, &ctx)) {
-    printf("[dts-edid] libhelpers route unavailable (%s)\n",
-           !chamarH ? "no HLunaServiceCall" : !lsPayload ? "no payload reader" : "call returned false");
+  if (!chamarH || !lsPayload) {
+    printf("[dts-edid] libhelpers route unavailable (%s)\n", !chamarH ? "no HLunaServiceCall" : "no payload reader");
     fflush(stdout);
     __atomic_store_n(&edidEtapa, 3, __ATOMIC_RELEASE);
+    return;
   }
+  /* Its return value says nothing about the reply (C3: false, and the
+   * answer still came), so only the reply itself counts. */
+  chamarH(EDID_URI, EDID_CARGA, &ctx);
+  printf("[dts-edid] asked via libhelpers\n");
+  fflush(stdout);
 }
 static void edidPedir(void) {
   if (__atomic_load_n(&edidEtapa, __ATOMIC_ACQUIRE)) return;
