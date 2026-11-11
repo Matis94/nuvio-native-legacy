@@ -1441,6 +1441,14 @@ void dts_engine_buffer_info(DtsEngine *e,DtsBufferInfo *b) {
     b->http_workers=e->http_workers;
     b->position=e->pos;b->total=e->total;b->capacity_bytes=e->fx_buf?e->fx_cap:0;
     if(e->fx_req<0 && e->pos>=e->fx_lo && e->pos<=e->fx_hi)b->ready_bytes=e->fx_hi-e->pos;
+    else if(e->pf_buf && e->pos>=e->pf_lo && e->pos<e->pf_hi) {
+      /* A jump served from the prefetched bytes (owner's log 11/11: intro
+       * skip, the stream restarts after them): they are ready too, and so
+       * is what the stream already has right after them. Not counting them
+       * left the rebuffer waiting on 0 KiB while playback stood still. */
+      b->ready_bytes=e->pf_hi-e->pos;
+      if(e->fx_req<0 && e->fx_lo<=e->pf_hi && e->fx_hi>e->pf_hi)b->ready_bytes+=e->fx_hi-e->pf_hi;
+    }
     b->contiguous_bytes=b->ready_bytes;
   } else if(!e->remux && e->range_threads && !cancelled(e)) {
     b->http_workers=e->http_workers;

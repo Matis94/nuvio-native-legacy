@@ -659,6 +659,7 @@ int main(int argc, char **argv) {
   /* Prefetch ahead of a jump (an intro skip) on the one-connection stream
    * reader: the jump lands on the fetched bytes and plays on from there. */
   dts_engine_set_conversion_stream(1);
+  dts_engine_set_ahead_mib(8);   /* a small ring: the jump lands past it, as on the TV */
   e = dts_engine_create();
   dts_engine_external_audio(e, main60, HEADERS, "", 0);
   assert(dts_engine_open(e, long_idx, HEADERS, -1, 0, 0) == 0);   /* 52 MB, heavy picture */
@@ -667,6 +668,11 @@ int main(int argc, char **argv) {
   usleep(300000);
   dts_engine_prefetch_tidy(e);
   assert(dts_engine_seek(e, 40.0) == 0);
+  /* Owner's log 11/11: right after a jump served from the prefetched bytes
+   * the buffer reported 0 KiB ready and the rebuffer waited on it. */
+  { DtsBufferInfo bi; dts_engine_buffer_info(e, &bi);
+    fprintf(stderr, "prefetch: ready after the jump %lld KiB of %lld\n", (long long)(bi.contiguous_bytes / 1024), (long long)(bi.capacity_bytes / 1024));
+    assert(bi.capacity_bytes > 0 && bi.contiguous_bytes >= 1024 * 1024); }
   r = play(e, 0, 200);
   fprintf(stderr, "prefetch: after the jump, first audio %.2f s, last video %.2f s\n", r.first_audio / 1e9, r.max_video / 1e9);
   assert(r.first_audio > 39500000000LL && r.first_audio < 40600000000LL && r.max_video > 40000000000LL);
@@ -674,6 +680,7 @@ int main(int argc, char **argv) {
   r = play(e, 0, 100);
   assert(r.video > 10);
   dts_engine_destroy(e);
+  dts_engine_set_ahead_mib(0);
   dts_engine_set_conversion_stream(0);
   /* Interrupted: the session closes while the reader works. */
   e = dts_engine_create();

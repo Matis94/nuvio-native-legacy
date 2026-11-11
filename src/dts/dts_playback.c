@@ -41,6 +41,7 @@ typedef struct { DtsSubtitle cue; unsigned revision; } DtsQueuedSubtitle;
 #define DTS_REFILL_TIMEOUT_SECONDS 20.0
 #define DTS_REFILL_FULL_SECONDS 0.10
 #define DTS_REFILL_MIN_SECONDS 0.25
+#define DTS_REFILL_TV_FULL_SECONDS 4.0   /* external audio: TV full this long ends the wait */
 struct DtsPlayback {
 #ifdef NV_MP4_BD_TEST
   int mp4_recovery;
@@ -685,10 +686,16 @@ static void *run(void *user) {
       int bytes_ready=b.contiguous_bytes>=refillGoal(&b) || refillTail(&b);
       int full_ready=refillFullReady(refill_full_since,wall,have_frame,seek_preroll,complete,
                                     fed_audio,fed_video,network_target);
+      /* Audio of another version (owner's log 11/11): the TV full with
+       * enough of both for a while is not a missing network; waiting on
+       * the byte goal there only stood still until the fallback. */
+      int tv_ready=p->external && enough && refill_full_since>=0 &&
+                   wall-refill_full_since>=DTS_REFILL_TV_FULL_SECONDS;
+      if(tv_ready && !bytes_ready)bytes_ready=1;
       if(!pause && (enough || full_ready) && bytes_ready) {
         printf("[dts-rebuffer] event=end ms=%.0f aheadA=%.2f aheadV=%.2f contiguousKiB=%lld reason=%s\n",
           (wall-network_since)*1000,fed_audio-network_target,fed_video-network_target,
-          (long long)(b.contiguous_bytes/1024),enough?"ready":"native-full");fflush(stdout);
+          (long long)(b.contiguous_bytes/1024),tv_ready?"tv-full":enough?"ready":"native-full");fflush(stdout);
         network_hold=0;refill_full_since=-1;p->starved=0;pause_dirty=1;refillPublish(p,0,0);
         network_retried=0;
         resetStall(&stall,presented);native_unhealthy=0;
