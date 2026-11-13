@@ -1,7 +1,7 @@
-name: Build webOS 2.0.8.7 external audio test
+name: Build webOS 2.0.8.8 (stable version)
 on:
   push:
-    branches: [external-audio-test-2.0.8.7, dv-dts-native-test-2.0.8.7]
+    branches: [Nuvio_webOS_2.0.8.8]
   workflow_dispatch:
     inputs:
       full_regression:
@@ -11,7 +11,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: webos-2087-external-audio-ipk-${{ github.ref }}
+  group: webos-2088-ipk
   cancel-in-progress: true
 jobs:
   build:
@@ -21,13 +21,6 @@ jobs:
       NUVIO_BUILD_PLATFORM: linux/amd64
       NUVIO_CONTAINER_RUNTIME: docker
       NUVIO_BUILD_JOBS: '3'
-      # Test build number (owner, 07/11): bumped with every new test build so
-      # the IPK name and the title on the TV tell the versions apart.
-      NUVIO_EXT_TEST: '24'
-      # Short name of the change in this build (owner, 08-09/11): the IPK is
-      # named by it alone (…_arm-ext-audio-<name>.ipk); the TV title keeps
-      # the number too.
-      NUVIO_EXT_NAME: 'dv-dts-edid-log'
       # Quick test builds (owner, 08/11): skip the long regression suites; the
       # changed parts are tested locally before the push. Manual runs with
       # "full_regression" still run everything.
@@ -193,16 +186,12 @@ jobs:
           bash tests/dv7_mapping_settings.sh
           bash tests/dv7.sh
           NV_TEST_P7_MAPPING=1 SANITIZE=1 bash tests/dts_playback.sh
-      - name: Diagnostic QR export and normal phone input
+      - name: Diagnostic QR absence and normal phone input
         if: steps.tests.outputs.full == 'true'
         timeout-minutes: 3
         run: |
-          bash tests/diagnostics_qr_settings.sh
-          SANITIZE=1 bash tests/logexport.sh
-          CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular_export.sh
+          bash tests/no_qr_export.sh
           CEL_TEST_LOOPBACK=1 SANITIZE=1 bash tests/celular.sh
-          bash tests/logcloud.sh
-          bash tests/celular_cgnat.sh
       - name: Continue Watching and next-release regressions
         if: steps.tests.outputs.full == 'true'
         timeout-minutes: 12
@@ -404,13 +393,8 @@ jobs:
           assert data["id"] == "space.nuvio.native.legacy"
           # webOS requires a three-component technical version. Keep 2.0.8
           # and expose the custom release revision in the install label.
-          import os
-          n = os.environ["NUVIO_EXT_TEST"]
-          name = os.environ.get("NUVIO_EXT_NAME", "")
-          if name: n = "%s %s" % (n, name.replace("-", " "))
-          sha = os.environ["GITHUB_SHA"][:7]
-          data["title"] = "Nuvio Legacy 2.0.8.7 (external audio test %s)" % n
-          data["appDescription"] = "Nuvio webOS 2.0.8.7 (external audio test %s, %s)" % (n, sha)
+          data["title"] = "Nuvio Legacy 2.0.8.8 (stable version)"
+          data["appDescription"] = "Nuvio webOS 2.0.8.8 (stable version)"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -423,7 +407,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk "output/space.nuvio.native.legacy_2.0.8.7_arm-ext-audio-${NUVIO_EXT_NAME:-$NUVIO_EXT_TEST}.ipk"
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8.8_arm-stable.ipk
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -439,7 +423,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: nuvio-webos-2.0.8.7-ext-audio-${{ env.NUVIO_EXT_TEST }}-${{ env.NUVIO_EXT_NAME }}-arm-ipk
+          name: nuvio-webos-2.0.8.8-stable-arm-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14

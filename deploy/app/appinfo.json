@@ -4,7 +4,7 @@
   "vendor": "iqui27",
   "type": "native",
   "main": "nuvio-proto",
-  "title": "Nuvio Legacy 2.0.8.7 (external audio test)",
+  "title": "Nuvio Legacy 2.0.8.8 (stable version)",
   "icon": "icon-20.png",
   "largeIcon": "icon-large-20.png",
   "splashBackground": "splash.png",
@@ -16,5 +16,5 @@
     "all"
   ],
   "nativeLifeCycleInterfaceVersion": 2,
-  "appDescription": "Nuvio webOS 2.0.8.7 (external audio test)"
+  "appDescription": "Nuvio webOS 2.0.8.8 (stable version)"
 }
