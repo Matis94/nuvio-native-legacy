@@ -1,6 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "rede.h"
-#include "logexport.h"
+#include "logrede.h"
 #include <assert.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -32,11 +32,12 @@ static void *parallel(void *unused) {
 int main(int argc, char **argv) {
   assert(argc == 2 || argc == 3);
   if (argc == 3) {
-    char path[256], line[4096];
-    assert(!strcmp(argv[1], "--export") && logexport_create(argv[2], path, sizeof path));
-    FILE *f = fopen(path, "r"); assert(f);
-    while (fgets(line, sizeof line, f)) fputs(line, stdout);
-    fclose(f); unlink(path); return 0;
+    /* What Log on local network serves: each line cleaned by logrede_limpar. */
+    char line[4096];
+    assert(!strcmp(argv[1], "--export"));
+    FILE *f = fopen(argv[2], "r"); assert(f);
+    while (fgets(line, sizeof line, f)) { logrede_limpar(line); fputs(line, stdout); }
+    fclose(f); return 0;
   }
   port = atoi(argv[1]);
   chunk("/diag-limit", 429);

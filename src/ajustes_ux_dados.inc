@@ -259,7 +259,6 @@ static const char *uxSinonimos(int op) {
     case AJ_CW_MINIMO: return "minimo continuar assistindo porcentagem percentual entrar fileira retomada progresso quanto assistir comecou piso minimum percent continue watching threshold row";
     case AJ_FONTE_PREPARAR: return "preparar fonte ao abrir titulo antecipar resolver antecipado play instantaneo inicio rapido debrid painel arquivo prepare source ahead instant start";
     case AJ_COLECAO_EXIBICAO: return "colecao colecoes exibicao padrao automatico grade linha tempo ranking saga decadas mural vitrine global collection collections default view automatic grid timeline showcase";
-    case AJ_DIAGNOSTICS_QR: return "diagnostics diagnostic qr logs export download registro baixar azul blue F10";
     case AJ_SOURCE_BADGE_POSITION: return "badges position top bottom formatter addon icons selos cima baixo gora dol polozenie ikon";
     case AJ_REMEMBER_PROFILE: return "remember last profile startup auto enter lembrar ultimo perfil zapamietaj ostatni profil";
     case AJ_UPDATE_NOTIFICATIONS: return "update notifications new version release aviso atualizacao powiadomienia aktualizacja wersja";

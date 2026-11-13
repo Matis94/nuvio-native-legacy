@@ -214,7 +214,6 @@ int ajustes_fonte_grupo_sessoes(void);
 // Reusar o ultimo link (fontevolta.h): 1 = ligado; e a validade em segundos.
 int ajustes_link_reusar(void);
 int ajustes_log_rede(void);   // pagina de registro na rede local (logrede.h)
-int ajustes_diagnostics_qr(void); // on-demand QR log export; off by default
 int ajustes_lembrar_perfil(void); // remember last unlocked profile on this TV; default OFF
 int ajustes_update_notifications(void); // automatic update card/notices; on by default
 /* Independent device-local HTTP download limits for the next source. */

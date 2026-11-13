@@ -731,7 +731,6 @@ typedef enum {
   AJ_RAM_VERDE, // optional green-key RAM shortcut, device-local, off by default
   AJ_MP4_BD_TEST, // experimental separate-track P7 MP4, append-only, default OFF
   AJ_DV7_MAPPING, // isolated P7 RPU mapping experiment; append-only, default OFF
-  AJ_DIAGNOSTICS_QR, // local opt-in; ordinary logging is independent
   AJ_UPDATE_NOTIFICATIONS, // device-local; automatic notices on by default
   AJ_BUFFER_NATIVE_CONNECTIONS, // append-only; native player defaults to 1
   AJ_BUFFER_CONVERSION_CONNECTIONS, // append-only; conversion defaults to Standard (1)
@@ -1908,7 +1907,6 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Green button shortcut", V_LIGA, 2),
   ESC("Dolby Vision MP4 (experimental)", V_LIGA, 2),
   ESC("Dolby Vision P7 mapping (experimental)", V_LIGA, 2),
-  ESC("Diagnostics QR", V_LIGA, 2),
   ESC("Update notifications", V_LIGA, 2),
   ESC("Standard native-player buffering", V_BUFFER_CONNECTIONS, 4),
   ESC("DTS/TrueHD and DV7 buffering", V_BUFFER_CONVERSION_CONNECTIONS, 4),
@@ -2265,7 +2263,6 @@ static const char *CHAVE[] = {
   "ramGreenShortcutLocal",
   "mp4BdRemuxTestLocal",
   "dv7PreserveMappingTestLocal",
-  "diagnosticsQrLocal",
   "updateNotificationsLocal",
   "nativeBufferConnectionsLocal",
   "conversionBufferConnectionsLocal",
@@ -3071,7 +3068,6 @@ int ajustes_fonte_grupo(void) { return ajustes_fonte_prioridade() != 3 && lig(AJ
 int ajustes_fonte_grupo_sessoes(void) { return lig(AJ_FONTE_GRUPO_SESSOES); }
 int ajustes_link_reusar(void) { return lig(AJ_LINK_REUSAR); }
 int ajustes_log_rede(void) { return lig(AJ_LOG_REDE); }
-int ajustes_diagnostics_qr(void) { return lig(AJ_DIAGNOSTICS_QR); }
 int ajustes_update_notifications(void) { return lig(AJ_UPDATE_NOTIFICATIONS); }
 int ajustes_lembrar_perfil(void) { return lig(AJ_REMEMBER_PROFILE); }
 unsigned ajustes_link_prazo_s(void) {
@@ -6166,7 +6162,6 @@ static int somenteDesteAparelho(int op) {
     case AJ_TEX_MB:         /* teto de memoria de imagem: depende da RAM */
     case AJ_QUALIDADE_IMG:  /* resolucao da arte decodificada: idem */
     case AJ_ENVIO_AUTO:     /* consentimento de envio de registro deste aparelho */
-    case AJ_DIAGNOSTICS_QR: /* on-demand export on this TV */
     case AJ_REMEMBER_PROFILE: /* startup choice belongs to this TV */
     case AJ_UPDATE_NOTIFICATIONS: /* automatic notices on this TV */
     case AJ_LOG_REDE:       /* pagina de registro na rede desta casa */
@@ -6350,7 +6345,7 @@ static int soNaTv(int op) {
     case AJ_LIVETV_DIAG: case AJ_LIVETV_MODO: case AJ_LIVETV_PROXY:
     case AJ_P2P_LIGADO: case AJ_JF_LIGADO: case AJ_POSTER_PROV: case AJ_EPG_PAIS:
     case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: case AJ_RELOGIO_12H:
-    case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_DIAGNOSTICS_QR: case AJ_UPDATE_NOTIFICATIONS: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS: case AJ_REMEMBER_PROFILE:
+    case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_UPDATE_NOTIFICATIONS: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS: case AJ_REMEMBER_PROFILE:
     case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO:
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_BUFFER:
     case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
@@ -8337,7 +8332,6 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_DICASCONTROLE: return "Dicas do controle";
     case AJ_NOVIDADES20: return "O tour do que mudou na 2.0, capítulo por capítulo, com o que vale neste aparelho. Abre do começo.";
     case AJ_APOIAR: return "Se o Nuvio te ajuda e você quiser apoiar quem faz o app, aponte a câmera do celular para um dos códigos. É opcional: nada muda no app.";
-    case AJ_DIAGNOSTICS_QR: return "Enable QR log download in the log panel (Blue/F10). Off by default. Normal logs stay active. The temporary snapshot is created only when opened.";
     case AJ_UPDATE_NOTIFICATIONS: return "Show automatic notifications and the update panel when a new version is available. Turn off to hide them. You can still check for updates manually here.";
     case AJ_LOG_REDE: return "Mostra o registro desta TV numa página da sua rede: abra o endereço abaixo no celular ou no computador, na mesma rede. Sem senhas nem chaves; endereços vão cortados no host. Desligue quando terminar.";
     case AJ_ENVIAR_LOG: return "Manda os últimos 200 KB do registro desta sessão (sem senhas nem chaves) para quem faz o app. Use quando algo estiver errado agora.";
@@ -11072,7 +11066,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_SALVOS_DEST: case AJ_TRAKT: case AJ_SIMKL: case AJ_DISCORD: case AJ_HIST_CONTA: case AJ_SOCIAL:
       return AJPV_RASTREIO;
     case AJ_VERSAO_I: case AJ_ATUALIZAR: case AJ_UPDATE_NOTIFICATIONS: case AJ_ENVIAR_LOG: case AJ_GUIA: case AJ_NOVIDADES20: case AJ_DICASCONTROLE: case AJ_APOIAR:
-    case AJ_ENVIO_AUTO: case AJ_VER_REGISTRO: case AJ_LOG_REDE: case AJ_DIAGNOSTICS_QR:
+    case AJ_ENVIO_AUTO: case AJ_VER_REGISTRO: case AJ_LOG_REDE:
 #ifdef NV_ANDROID
     case AJ_BAIXAR_REGISTRO:
 #endif

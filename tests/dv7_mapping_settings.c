@@ -2,7 +2,7 @@
 #include <assert.h>
 int main(void) {
   // Later append-only preferences must not move this setting's stored ID.
-  assert(AJ_DV7_MAPPING==AJ_MP4_BD_TEST+1 && AJ_DIAGNOSTICS_QR==AJ_DV7_MAPPING+1 && AJ_N>AJ_DIAGNOSTICS_QR);
+  assert(AJ_DV7_MAPPING==AJ_MP4_BD_TEST+1 && AJ_UPDATE_NOTIFICATIONS==AJ_DV7_MAPPING+1 && AJ_N>AJ_UPDATE_NOTIFICATIONS);
   assert(valor[AJ_DV7_MAPPING]==1 && valorPadrao[AJ_DV7_MAPPING]==1);
   assert(!ajustes_dv7_mapping());
   assert(!strcmp(CHAVE[AJ_DV7_MAPPING],"dv7PreserveMappingTestLocal"));
