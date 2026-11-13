@@ -50,7 +50,7 @@ RETIRADAS = {
     # External audio test 7: the options of "Audio from another version" live
     # in its sheet (eaAbrir), opened from that one row.
     "AJ_EXT_AUDIO_CACHE", "AJ_EXT_AUDIO_PASSO", "AJ_EXT_AUDIO_GRANDE", "AJ_EXT_AUDIO_MODO",
-    "AJ_EXT_AUDIO_SERIE", "AJ_EXT_AUDIO_SEGUIR", "AJ_EXT_AUDIO_AVISO", "AJ_EXT_AUDIO_AUTO",
+    "AJ_EXT_AUDIO_SERIE", "AJ_EXT_AUDIO_SEGUIR", "AJ_EXT_AUDIO_AVISO", "AJ_EXT_AUDIO_AUTO", "AJ_EXT_AUDIO_COPIAS",
 }
 opcoes = [op for op in opcoes if op not in RETIRADAS]
 

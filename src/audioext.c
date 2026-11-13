@@ -11,6 +11,9 @@ static char urlMarca[NV_MEDIA_URL_MAX], cabMarca[512], nomeMarca[192];
 static int offsetMs, tocando;
 static unsigned offsetGeracao;
 static char falha[160], idiomaMarca[8];
+// Fallback copies of the marked file (audioext_reserva).
+static char resUrl[3][NV_MEDIA_URL_MAX], resCab[3][512];
+static int resN, resProx;
 static unsigned pedidoGeracao;
 static int prefSoAudio, prefSerie = 1;
 // SAFETY NET (owner, 07/11): a start with this mark began and the other
@@ -44,6 +47,7 @@ static void serieDe(const char *alvo, char *out, size_t tam) {
 }
 
 void audioext_limpar(void) {
+  resN = resProx = 0;
   urlMarca[0] = cabMarca[0] = nomeMarca[0] = alvoMarca[0] = idiomaMarca[0] = 0;
   offsetMs = 0; offsetGeracao++; velocidadePpm = 0; kandN = 0;
   pendente = 0; faixaMarca = -1; carregando = 0; dicaAtiva = 0; offsetLembrado = 0;
@@ -88,6 +92,7 @@ int audioext_alternar(const char *url, const char *cabecalhos, const char *nome)
 void audioext_escolher(const char *url, const char *cabecalhos, const char *nome, const char *idioma) {
   if (!url || !*url) return;
   if (!audioext_marcada(url)) {
+    resN = resProx = 0;
     snprintf(urlMarca, sizeof urlMarca, "%s", url);
     snprintf(cabMarca, sizeof cabMarca, "%s", cabecalhos ? cabecalhos : "");
     snprintf(nomeMarca, sizeof nomeMarca, "%s", nome ? nome : "");
@@ -317,7 +322,27 @@ int audioext_voltou_padrao_consumir(void) {
   return v;
 }
 int audioext_tocando(void) { return tocando; }
+void audioext_reserva(const char *url, const char *cabecalhos) {
+  if (!url || !*url || resN >= 3 || !urlMarca[0] || !strcmp(url, urlMarca)) return;
+  snprintf(resUrl[resN], sizeof resUrl[resN], "%s", url);
+  snprintf(resCab[resN], sizeof resCab[resN], "%s", cabecalhos ? cabecalhos : "");
+  resN++;
+}
 void audioext_falhou(const char *motivo) {
+  // Another copy of the same file is on hand (another add-on): that one now,
+  // same name, language and track; the failure is only said if all fail.
+  if (resProx < resN && urlMarca[0]) {
+    int r = resProx++;
+    printf("[ext-audio] copy failed (%.80s): trying copy %d of %d\n",
+           motivo && *motivo ? motivo : "unknown error", r + 1, resN);
+    fflush(stdout);
+    snprintf(urlMarca, sizeof urlMarca, "%s", resUrl[r]);
+    snprintf(cabMarca, sizeof cabMarca, "%s", resCab[r]);
+    tocando = 0; carregando = 0;
+    pedidoGeracao++;
+    pendente = 1;   // the player reopens with it now
+    return;
+  }
   snprintf(falha, sizeof falha, "%s", motivo && *motivo ? motivo : "unknown error");
   // The session goes back to the file's own audio, and so does the next start:
   // the mark goes away (it can be picked again in the audio menu).

@@ -1,4 +1,4 @@
-// Candidates for "From another version" in the audio menu (audioextlista.h).
+// Candidates for "From another source" in the audio menu (audioextlista.h).
 #include "audioextlista.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,13 +14,19 @@ static int casa(const char *a, const char *b) {
 // (DTS only while DTS conversion is on).
 static int codecUsavel(int c, int semDts) { return !(semDts && c == AEXT_DTS); }
 
-typedef struct { AudioExtCand c; int cache, codec; uint64_t bytes; } Item;
+typedef struct { AudioExtCand c; int cache, canais, codec; uint64_t bytes; } Item;
+
+// 5.1 or more first, then channels not declared (add-ons often leave them out
+// of full releases), then stereo and mono; 7.1 and 5.1 are one step (the TV
+// gets AC-3 5.1 either way).
+static int nivelCanais(int c) { return c >= 6 ? 0 : c <= 0 ? 1 : 2; }
 
 static int cmpItem(const void *pa, const void *pb) {
   const Item *a = pa, *b = pb;
   if (a->c.grupo != b->c.grupo) return a->c.grupo - b->c.grupo;
-  if (a->c.grupo == 2) { int k = strcasecmp(a->c.idioma, b->c.idioma); if (k) return k; }
+  if (a->c.grupo == AEXT_G_OUTRA) { int k = strcasecmp(a->c.idioma, b->c.idioma); if (k) return k; }
   if (a->cache != b->cache) return b->cache - a->cache;
+  if (nivelCanais(a->canais) != nivelCanais(b->canais)) return nivelCanais(a->canais) - nivelCanais(b->canais);
   if (a->codec != b->codec) return a->codec - b->codec;
   if (a->bytes != b->bytes) {
     if (!a->bytes) return 1;
@@ -30,40 +36,84 @@ static int cmpItem(const void *pa, const void *pb) {
   return a->c.indice - b->c.indice;
 }
 
-int audioext_candidatos(const AudioExtEntrada *e, int n, const char *pref1, const char *pref2,
-                        int ocultarForaCache, int semDts, int (*fn)(const char *, const char *),
-                        AudioExtCand *out, int max) {
+static int mesmasLinguas(const AudioExtEntrada *a, const AudioExtEntrada *b) {
+  if (a->nIdiomas != b->nIdiomas) return 0;
+  for (int i = 0; i < a->nIdiomas && i < AUDIOEXT_IDIOMAS; i++) {
+    int achou = 0;
+    for (int j = 0; j < b->nIdiomas && j < AUDIOEXT_IDIOMAS && !achou; j++)
+      achou = !strcasecmp(a->idiomas[i], b->idiomas[j]) || casa(a->idiomas[i], b->idiomas[j]);
+    if (!achou) return 0;
+  }
+  return 1;
+}
+int audioext_mesmo_arquivo(const AudioExtEntrada *a, const AudioExtEntrada *b) {
+  if (!a || !b) return 0;
+  // Both name the file the same way (hash with hash, torrent with torrent):
+  // that settles it, either way.
+  if (a->ident[0] && a->ident[0] == b->ident[0]) return !strcmp(a->ident, b->ident);
+  // Otherwise the exact size with the same audio and languages: in practice
+  // the same release reached through two add-ons.
+  return a->bytes && a->bytes == b->bytes && a->codec == b->codec && a->canais == b->canais &&
+         mesmasLinguas(a, b);
+}
+
+static int limiteDe(int modo, int grupo) {
+  if (modo == AEXT_MODO_TODOS) return 1 << 30;
+  return grupo == AEXT_G_SEM ? AUDIOEXT_BEST_DESC : grupo == AEXT_G_OUTRA ? AUDIOEXT_BEST_OUTRA : AUDIOEXT_BEST_PREF;
+}
+
+int audioext_lista(const AudioExtEntrada *e, int n, const AudioExtOpcoes *o, AudioExtCand *out, int max) {
   Item *it;
-  int m = 0, k = 0;
-  if (!e || n <= 0 || !out || max <= 0) return 0;
+  int m = 0, k = 0, *mantido;
+  if (!e || n <= 0 || !o || !out || max <= 0) return 0;
   it = malloc((size_t)n * sizeof *it);
-  if (!it) return 0;
-  casaFn = fn;
+  mantido = malloc((size_t)n * sizeof *mantido);
+  if (!it || !mantido) { free(it); free(mantido); return 0; }
+  casaFn = o->casa;
   for (int i = 0; i < n; i++) {
     const AudioExtEntrada *s = &e[i];
-    int g = 2, l = 0;
-    if (!s->temUrl || s->hls || s->naoVideo || s->atual || s->nIdiomas <= 0) continue;
-    if (!codecUsavel(s->codec, semDts) || (ocultarForaCache && s->cache < 0)) continue;
+    int g = AEXT_G_OUTRA, l = 0;
+    if (!s->temUrl || s->hls || s->naoVideo || s->atual) continue;
+    if (!codecUsavel(s->codec, o->semDts) || (o->ocultarForaCache && s->cache < 0)) continue;
+    if (s->nIdiomas <= 0) g = AEXT_G_SEM;
     for (int j = 0; j < s->nIdiomas && j < AUDIOEXT_IDIOMAS; j++) {
-      if (casa(s->idiomas[j], pref1)) { g = 0; l = j; break; }
-      if (g > 1 && casa(s->idiomas[j], pref2)) { g = 1; l = j; }
+      if (casa(s->idiomas[j], o->pref1)) { g = AEXT_G_PREF1; l = j; break; }
+      if (g > AEXT_G_PREF2 && casa(s->idiomas[j], o->pref2)) { g = AEXT_G_PREF2; l = j; }
     }
     memset(&it[m], 0, sizeof it[m]);
     it[m].c.indice = i; it[m].c.grupo = g;
-    snprintf(it[m].c.idioma, sizeof it[m].c.idioma, "%s", s->idiomas[l]);
-    it[m].cache = s->cache; it[m].codec = s->codec; it[m].bytes = s->bytes;
+    if (g != AEXT_G_SEM) snprintf(it[m].c.idioma, sizeof it[m].c.idioma, "%s", s->idiomas[l]);
+    it[m].cache = s->cache; it[m].canais = s->canais; it[m].codec = s->codec; it[m].bytes = s->bytes;
     m++;
   }
   qsort(it, (size_t)m, sizeof *it, cmpItem);
-  for (int i = 0, porIdioma = 0; i < m && k < max; i++) {
-    // The preferred and the second language are one bucket each, whatever
-    // code the add-on wrote ("pl", "pol"); the others group by their code.
-    if (i && it[i].c.grupo == it[i - 1].c.grupo &&
-        (it[i].c.grupo < 2 || !strcasecmp(it[i].c.idioma, it[i - 1].c.idioma))) porIdioma++;
-    else porIdioma = 0;
-    if (porIdioma < AUDIOEXT_POR_IDIOMA) out[k++] = it[i].c;
+  // Copies of one file: the first (best) stays, the rest become its fallbacks.
+  // `mantido[i]` = the position in `it` of the row that kept item i, or -1.
+  for (int i = 0; i < m; i++) {
+    mantido[i] = -1;
+    if (!o->ocultarCopias) continue;
+    for (int j = 0; j < i; j++) {
+      if (mantido[j] != -1) continue;
+      if (audioext_mesmo_arquivo(&e[it[i].c.indice], &e[it[j].c.indice])) {
+        AudioExtCand *c = &it[j].c;
+        if (c->nReservas < AUDIOEXT_RESERVAS) c->reservas[c->nReservas++] = it[i].c.indice;
+        mantido[i] = j;
+        break;
+      }
+    }
   }
-  free(it);
+  for (int i = 0, porIdioma = 0, ant = -1; i < m && k < max; i++) {
+    if (mantido[i] != -1) continue;
+    // The preferred and the second language are one bucket each, whatever
+    // code the add-on wrote ("pl", "pol"); the others group by language.
+    if (ant >= 0 && it[i].c.grupo == it[ant].c.grupo &&
+        (it[i].c.grupo != AEXT_G_OUTRA || !strcasecmp(it[i].c.idioma, it[ant].c.idioma) ||
+         casa(it[i].c.idioma, it[ant].c.idioma))) porIdioma++;
+    else porIdioma = 0;
+    ant = i;
+    if (porIdioma < limiteDe(o->modo, it[i].c.grupo)) out[k++] = it[i].c;
+  }
+  free(it); free(mantido);
   casaFn = NULL;
   return k;
 }

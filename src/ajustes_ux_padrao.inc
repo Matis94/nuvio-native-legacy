@@ -377,3 +377,4 @@
   1, /* Follow through the whole movie (another cut): Off */
   0, /* Sync adjusted message: On */
   0, /* Match automatically at start: On */
+  0, /* Hide duplicates: On */

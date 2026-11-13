@@ -66,6 +66,7 @@ static void quadros(int n) {
 static void tecla(SDL_Keycode k) {
   SDL_Event ev; memset(&ev, 0, sizeof ev);
   ev.type = SDL_KEYDOWN; ev.key.keysym.sym = k; faixas_evento(&ev);
+  ev.type = SDL_KEYUP; faixas_evento(&ev);
   quadros(3);
 }
 static void faixa(VideoFaixa *f, int numero, const char *rot, const char *idioma) {
@@ -98,6 +99,19 @@ static void fonte(Stream *s, const char *rot, const char *url, const char *langs
   s->filtro.valores[FONTEFILTRO_QUALIDADE] = bit(FONTEFILTRO_QUALIDADE, qual);
   s->altura = altura; s->tamanhoBytes = (uint64_t)(gb * 1e9); s->fileIdx = -1;
   s->emCache = cache > 0; s->foraCache = cache < 0; s->filtroLido = 1;
+}
+
+// The header reader of the hold-OK track list: two tracks, as the converter
+// would read them.
+static int sondaFalsa(const char *url, const char *cab, AudioExtFaixa *out, int max) {
+  (void)url; (void)cab;
+  if (max < 2) return 0;
+  memset(out, 0, 2 * sizeof *out);
+  out[0].stream = 1; out[0].canais = 6; snprintf(out[0].codec, sizeof out[0].codec, "eac3");
+  snprintf(out[0].idioma, sizeof out[0].idioma, "pol"); snprintf(out[0].titulo, sizeof out[0].titulo, "Dubbing");
+  out[1].stream = 2; out[1].canais = 2; snprintf(out[1].codec, sizeof out[1].codec, "aac");
+  snprintf(out[1].idioma, sizeof out[1].idioma, "eng"); snprintf(out[1].titulo, sizeof out[1].titulo, "Commentary");
+  return 2;
 }
 
 int main(int argc, char **argv) {
@@ -140,7 +154,7 @@ int main(int argc, char **argv) {
     cat_definir(&c, 1); }
 
   // The source list of the title: the remux playing, and other versions.
-  static Stream lista[9];
+  static Stream lista[10];
   fonte(&lista[0], "Remux 2160p DV", "https://example.invalid/remux.mkv", "en", "TrueHD", "7.1", "BluRay REMUX", 2160, 78.4, 1);
   fonte(&lista[1], "WEB-DL PL", "https://example.invalid/webdl-pl.mkv", "pl,en", "DD+", "5.1", "WEB-DL", 1080, 6.1, 1);
   fonte(&lista[2], "WEB-DL PL 720", "https://example.invalid/webdl-pl-720.mkv", "pl", "DD", "5.1", "WEB-DL", 720, 2.9, 1);
@@ -150,13 +164,14 @@ int main(int argc, char **argv) {
   fonte(&lista[6], "WEBRip DE", "https://example.invalid/webrip-de.mkv", "de", "AAC", "2.0", "WEBRip", 1080, 2.1, 0);
   fonte(&lista[7], "BluRay PL DTS Extended", "https://example.invalid/bd-pl-dts.mkv", "pl", "DTS-HD MA", "5.1", "BluRay", 1080, 14.0, 1);
   fonte(&lista[8], "WEB-DL ES", "https://example.invalid/webdl-es.mkv", "es", "DD+", "5.1", "WEB-DL", 1080, 4.8, 1);
+  fonte(&lista[9], "BluRay untagged", "https://example.invalid/bd-untagged.mkv", "", "DD+", "5.1", "BluRay", 2160, 9.1, 1);
   /* Cut names: "Extended" is another cut than an unnamed (theatrical) one. */
   assert(!strcmp(stream_edicao(&lista[7]), "Extended") && !stream_edicao(&lista[0]));
   assert(stream_outro_corte(&lista[7], &lista[0]) && !stream_outro_corte(&lista[6], &lista[0]));
   { Stream dc = lista[0]; snprintf(dc.rotulo, sizeof dc.rotulo, "Movie.2001.Directors.Cut.1080p");
     assert(!strcmp(stream_edicao(&dc), "Director's Cut")); }
   stream_definir_alvo("tt0000001");
-  stream_definir_lista(lista, 9);
+  stream_definir_lista(lista, 10);
   stream_definir_atual(0);
   assert(stream_lista_do_alvo_atual());
 
@@ -173,19 +188,53 @@ int main(int argc, char **argv) {
   sim.nLeg = 0; sim.legAtual = -1;
   estado(); quadros(20);
 
-  // 1. The audio sheet: the file's two tracks, then the other versions,
-  // Polish first, then the rest by language.
+  // 1. The audio sheet: the file's two tracks, then "From another source".
   faixas_abrir_em(0); estado(); quadros(40);
   fprintf(stderr, "sheet open=%d player=%d tracks=%d\n", faixas_aberta(), player_aberto(), video_n_audio());
   /* This file is English: the Polish WEB-DL that also has English is marked. */
   assert(!strcmp(audioext_idioma_principal(), "en") && stream_audio_tem(&lista[1], "en") && !stream_audio_tem(&lista[2], "en"));
-  salvar("audio-other-versions");
-  // 2. Down to the first other version, the focused row.
   tecla(SDLK_DOWN); tecla(SDLK_DOWN); estado(); quadros(20);
-  salvar("audio-other-versions-focus");
-  // OK picks it: the request reaches the player (audioext_pedido_geracao).
+  salvar("audio-from-another-source");
+  // 2. OK: the page in the same island, Best first (Polish, then the version
+  // without a language, then Other languages).
+  tecla(SDLK_RETURN); estado(); quadros(30);
+  assert(faixas_aberta());
+  salvar("audio-source-best");
+  // 2a. RIGHT: All, every version under its language.
+  tecla(SDLK_RIGHT); estado(); quadros(20);
+  salvar("audio-source-all");
+  for (int i = 0; i < 6; i++) tecla(SDLK_DOWN);
+  estado(); quadros(20);
+  salvar("audio-source-all-scrolled");
+  // 2b. LEFT: Best again; down to Other languages, OK: the language bar.
+  tecla(SDLK_LEFT);
+  for (int i = 0; i < 20; i++) tecla(SDLK_DOWN);
+  tecla(SDLK_RETURN); estado(); quadros(20);
+  salvar("audio-source-other-languages");
+  tecla(SDLK_RIGHT); estado(); quadros(20);
+  salvar("audio-source-other-languages-next");
+  // 2c. Back: Best; hold OK on the first version: its tracks.
+  tecla(SDLK_ESCAPE);
+  audioext_definir_sonda(sondaFalsa);
+  for (int i = 0; i < 20; i++) tecla(SDLK_UP);
+  { SDL_Event ev; memset(&ev, 0, sizeof ev);
+    ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_RETURN; faixas_evento(&ev);
+    quadros(10);
+    ev.type = SDL_KEYUP; faixas_evento(&ev); }
+  for (int i = 0; i < 40; i++) { SDL_Delay(5); quadros(1); }
+  estado(); quadros(10);
+  salvar("audio-source-tracks");
   { unsigned g = audioext_pedido_geracao();
-    tecla(SDLK_RETURN);
+    tecla(SDLK_DOWN); tecla(SDLK_ESCAPE);    /* Back: nothing picked */
+    assert(audioext_pedido_geracao() == g && faixas_aberta()); }
+  estado(); quadros(40);
+  salvar("audio-source-best-hold-hints");
+  // 2d. Back: the audio list, on the row.
+  tecla(SDLK_ESCAPE);
+  assert(faixas_aberta());
+  // OK on the row, OK on the first version: the request reaches the player.
+  { unsigned g = audioext_pedido_geracao();
+    tecla(SDLK_RETURN); tecla(SDLK_RETURN);
     assert(audioext_pedido_geracao() == g + 1 && audioext_tem_marca());
     assert(!strcmp(audioext_url(), "https://example.invalid/webdl-pl.mkv")); }
   quadros(30);
@@ -238,7 +287,9 @@ int main(int argc, char **argv) {
   estado(); quadros(10);
   tecla(SDLK_DOWN); estado(); quadros(10);
   salvar("audio-other-version-match");
-  tecla(SDLK_DOWN); estado(); quadros(10);
+  tecla(SDLK_DOWN); tecla(SDLK_DOWN); estado(); quadros(10);
+  salvar("audio-from-another-source-now");
+  tecla(SDLK_UP); estado(); quadros(10);
   { unsigned g = audioext_pedido_geracao();
     tecla(SDLK_RETURN);
     assert(audioext_pedido_geracao() == g + 1 && !audioext_tem_marca()); }

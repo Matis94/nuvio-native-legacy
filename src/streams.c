@@ -713,6 +713,8 @@ static void audioextSerie(void) {
     stream_audioext_entrada(&lista[i], &e);
     if (!e.temUrl || e.hls || e.naoVideo) continue;
     for (int j = 0; j < e.nIdiomas; j++) if (ling_casa(e.idiomas[j], id.idioma)) lingua = 1;
+    // A version picked without a declared language ("Unknown"): the same kind.
+    if (!id.idioma[0]) lingua = e.nIdiomas == 0;
     if (!lingua) continue;
     if (id.grupo[0] && !strcmp(lista[i].bingeGroup, id.grupo)) k = 3;
     else if (!strcmp(lista[i].provedor, id.addon) && lista[i].altura == id.altura && e.codec == id.codec) k = 2;
@@ -3998,6 +4000,14 @@ void stream_audioext_entrada(const Stream *s, AudioExtEntrada *e) {
               filtroTem(s, FONTEFILTRO_CANAIS, "5.1") ? 6 : filtroTem(s, FONTEFILTRO_CANAIS, "2.0") ? 2 : 0;
   e->cache = s->emCache || s->cacheNativo ? 1 : (s->foraCache || s->cacheNegado) ? -1 : 0;
   e->bytes = s->tamanhoBytes ? s->tamanhoBytes : s->tamanhoMB > 0 ? (uint64_t)s->tamanhoMB * 1000000u : 0;
+  // The file itself, for the copies of one release reached through several
+  // add-ons: the OpenSubtitles hash, or the torrent and the file in it.
+  { const char *h = s->infoHash[0] ? s->infoHash : s->hashTorrent;
+    if (s->videoHash[0]) snprintf(e->ident, sizeof e->ident, "v:%.24s", s->videoHash);
+    else if (h[0] && s->fileIdx >= 0) {
+      snprintf(e->ident, sizeof e->ident, "t:%.48s:%d", h, s->fileIdx);
+      for (char *c = e->ident; *c; c++) *c = (char)tolower((unsigned char)*c);
+    } }
 }
 // The release label of this source for the audio menu ("WEB-DL 1080p").
 // THE CUT OF A VERSION, from its name (owner, 07/11: an Extended picture

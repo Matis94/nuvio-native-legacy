@@ -108,6 +108,29 @@ int main(void) {
   audioext_falhou("no audio");
   assert(!audioext_tem_marca());
   { char f[32]; assert(audioext_falha_consumir(f, sizeof f) && !strcmp(f, "no audio")); }
+  // From another source: the other copies of the same file are tried, in
+  // order, before the failure is said; a new choice drops them.
+  audioext_alvo("tt22");
+  audioext_escolher("https://f/a.mkv", "", "PL", "pl");
+  audioext_reserva("https://f/b.mkv", "H: 1");
+  audioext_reserva("https://f/a.mkv", "");   // the chosen one itself: ignored
+  audioext_reserva("https://f/c.mkv", "");
+  { unsigned g = audioext_pedido_geracao();
+    audioext_falhou("http 404");
+    assert(audioext_tem_marca() && !strcmp(audioext_url(), "https://f/b.mkv") && !strcmp(audioext_cabecalhos(), "H: 1"));
+    assert(!strcmp(audioext_nome(), "PL") && !strcmp(audioext_idioma(), "pl"));
+    assert(audioext_pedido_geracao() == g + 1 && !audioext_falha_consumir(NULL, 0));
+    audioext_falhou("http 403");
+    assert(!strcmp(audioext_url(), "https://f/c.mkv"));
+    audioext_falhou("timeout");
+    assert(!audioext_tem_marca());
+    { char f[32]; assert(audioext_falha_consumir(f, sizeof f) && !strcmp(f, "timeout")); } }
+  audioext_escolher("https://g/a.mkv", "", "PL", "pl");
+  audioext_reserva("https://g/b.mkv", "");
+  audioext_escolher("https://g/other.mkv", "", "EN", "en");   // another version: no copies
+  audioext_falhou("x");
+  assert(!audioext_tem_marca());
+  audioext_falha_consumir(NULL, 0);
   // A track of the other version picked in the menu: reopens with it, and is
   // forgotten with the mark or a new version.
   audioext_alvo("tt21");

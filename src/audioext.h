@@ -23,6 +23,10 @@ void audioext_limpar(void);
 // the language it was listed under, tried first in that file). The webOS
 // player reopens the converter at the current position (audioext_pedido_geracao).
 void audioext_escolher(const char *url, const char *cabecalhos, const char *nome, const char *idioma);
+// Other copies of the same file (other add-ons), best first, set right after
+// audioext_escolher: when the chosen link fails the next one is tried before
+// the session falls back to the file's own audio. A new choice drops them.
+void audioext_reserva(const char *url, const char *cabecalhos);
 // SERIES MEMORY (Settings > Remember for the next episodes): what identifies
 // the chosen version across episodes. The add-on's binge group when it sends
 // one ("the same release"), else add-on + language + resolution + codec.

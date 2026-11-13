@@ -246,13 +246,14 @@ static const char *uxSinonimos(int op) {
     case AJ_SHOW_SKIP_INTRO: return "show hide skip intro button opening pokaz ukryj przycisk intro";
     case AJ_SHOW_SKIP_RECAP: return "show hide skip recap button summary poprzednio przypomnienie";
     case AJ_SHOW_SKIP_CREDITS: return "show hide skip outro credits button ending napisy koncowe przycisk";
-    case AJ_EXT_AUDIO: return "audio another version source dub dubbing lektor polish other file dzwiek z innej wersji sciezka";
+    case AJ_EXT_AUDIO: return "audio from another source version dub dubbing lektor polish other file dzwiek z innego zrodla innej wersji sciezka";
     case AJ_EXT_AUDIO_CACHE: return "audio another version cache debrid uncached hide dimmed dzwiek wersja";
     case AJ_EXT_AUDIO_PASSO: return "audio sync step offset delay ms synchronizacja przesuniecie dzwiek";
     case AJ_EXT_AUDIO_GRANDE: return "audio another version large file warning size gb duzy plik ostrzezenie";
     case AJ_EXT_AUDIO_MODO: return "audio another version download whole file audio only tylko dzwiek caly plik transfer";
     case AJ_EXT_AUDIO_SERIE: return "audio another version series next episodes remember pamietaj serial odcinki";
     case AJ_EXT_AUDIO_SEGUIR: return "audio another version cut extended theatrical follow track whole film sledzenie montaz kinowa";
+    case AJ_EXT_AUDIO_COPIAS: return "audio another source duplicates copies hide same file duplikaty kopie ukryj";
     case AJ_EXT_AUDIO_AUTO: return "audio another version match automatically start auto sync dopasuj automatycznie start";
     case AJ_EXT_AUDIO_AVISO: return "audio another version sync adjusted message notice toast komunikat synchronizacja poprawiona";
     case AJ_PROXIMO_AUTO: case AJ_PROXIMO_CONTAGEM: return "proximo episodio automatico autoplay creditos contagem netflix sozinho next episode auto play countdown";

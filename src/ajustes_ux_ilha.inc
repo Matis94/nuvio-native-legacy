@@ -2193,7 +2193,7 @@ static void eaPontMudar(int i, int b) { (void)b; if (frAberta == 9 && i >= 0 && 
 static void eaPontVoltar(int a, int b) { (void)a; (void)b; if (frAberta == 9) frAberta = 0; }
 static void desenhaFolhaExtAudio(void) {
   GfxRect m = {460.0f, 90.0f, 1000.0f, 900.0f};
-  const float passo = 68.0f;   /* 9 rows fit above the hints */
+  const float passo = 61.0f;   /* 10 rows fit above the hints */
   float topo, base, y;
   int ligado = ajustes_audio_externo();
   ponteiro_camada(); ajVeuModal(); ajCentraModal(&m); ajIlha(m, 36.0f, 1.0f, 1.0f);
@@ -2201,7 +2201,7 @@ static void desenhaFolhaExtAudio(void) {
   // The main row's own help is long (the list shows it in full); here a short one fits two lines.
   topo = ajCabecalhoFolha(m, "Reprodução", rotuloOpcao(AJ_EXT_AUDIO),
                           eaFoco == 0 ? "Picture from one source, audio from another version of the same title. "
-                                        "Pick it in the source list: hold OK, Use as audio."
+                                        "Pick it in the player's audio menu: From another source."
                                       : ajudaOpcao(EA_OPS[eaFoco]), 0, 1);
   base = m.y + m.h - 96.0f;
   y = topo;

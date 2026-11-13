@@ -698,6 +698,7 @@ int   ajustes_audio_externo_so_audio(void);           // 1 = fetch only the audi
 int   ajustes_audio_externo_serie(void);              // remember the version for the next episodes
 int   ajustes_audio_externo_seguir(void);             // another cut: follow it through the whole film
 int   ajustes_audio_externo_aviso(void);              // show "sync adjusted by itself" (default on)
+int   ajustes_audio_externo_ocultar_copias(void);    // "From another source": one row per file (default on)
 int   ajustes_audio_externo_auto(void);               // match automatically when the other version starts (default on)
 int   ajustes_dv_audio_fixo(void);       // experiment: 0 v12, 1 AAC stereo, 2 AC3 5.1
 int   ajustes_cw_retido_tambem(void);   // 1 = o titulo da ilha/Retomar tambem fica em Continuar assistindo
