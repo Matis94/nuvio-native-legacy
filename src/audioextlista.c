@@ -73,7 +73,7 @@ int audioext_lista(const AudioExtEntrada *e, int n, const AudioExtOpcoes *o, Aud
   for (int i = 0; i < n; i++) {
     const AudioExtEntrada *s = &e[i];
     int g = AEXT_G_OUTRA, l = 0;
-    if (!s->temUrl || s->hls || s->naoVideo || s->atual) continue;
+    if (!s->temUrl || s->hls || s->naoVideo || s->atual || s->foraFiltro) continue;
     if (!codecUsavel(s->codec, o->semDts) || (o->ocultarForaCache && s->cache < 0)) continue;
     if (s->nIdiomas <= 0) g = AEXT_G_SEM;
     for (int j = 0; j < s->nIdiomas && j < AUDIOEXT_IDIOMAS; j++) {

@@ -264,6 +264,8 @@ jobs:
           /tmp/audioextlista-test
           cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined tests/audioext.c src/audioext.c -o /tmp/audioext-test
           /tmp/audioext-test
+          cc -std=gnu11 -Wall -Wextra -Werror -fsanitize=address,undefined -Isrc tests/audioextaddons.c src/audioextaddons.c -o /tmp/audioextaddons-test
+          /tmp/audioextaddons-test
           cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined tests/dts_match.c -o /tmp/dts-match-test -lm
           /tmp/dts-match-test
           NV_TEST_TRUEHD=1 NV_TEST_FIXED_AUDIO=1 NV_TEST_P7_MAPPING=1 bash tests/dvaudio_lg.sh

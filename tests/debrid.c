@@ -1013,6 +1013,24 @@ static void parser(void) {
   assert(v[0].foraCache && !v[1].foraCache && v[2].foraCache && !v[3].foraCache && v[4].foraCache);
   free(v);
   OK("parser: marca fora de cache (⏳, [TB download], uncached) e nao a cacheada (⚡, [TB+])");
+
+  // AIOStreams' own field (streamData, "provide stream data"), whatever the
+  // formatter writes: the service's cached flag wins over the name; "⌛" too.
+  n = stream_extrair(
+    "{\"streams\":[{\"name\":\"FHD\",\"url\":\"https://aio/p/6\",\"streamData\":{\"service\":{\"id\":\"torbox\",\"cached\":false}}},"
+    "{\"name\":\"FHD\",\"url\":\"https://aio/p/7\",\"streamData\":{\"service\":{\"id\":\"torbox\",\"cached\":true}}},"
+    "{\"name\":\"FHD\",\"url\":\"https://aio/p/8\",\"streamData\":{\"cached\":false}},"
+    "{\"name\":\"FHD\",\"url\":\"https://aio/p/9\"},"
+    "{\"name\":\"[TB\xe2\x8c\x9b] Torrentio\",\"url\":\"https://aio/p/10\"}]}",
+    "AIOStreams", &v);
+  assert(n == 5);
+  assert(v[0].foraCache && !v[0].emCache);
+  assert(!v[1].foraCache && v[1].emCache);
+  assert(v[2].foraCache);
+  assert(!v[3].foraCache && !v[3].emCache);
+  assert(v[4].foraCache);
+  free(v);
+  OK("parser: streamData.service.cached / streamData.cached e o ⌛ do AIOStreams");
 }
 
 static void contas(void) {

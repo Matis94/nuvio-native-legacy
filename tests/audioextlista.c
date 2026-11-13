@@ -82,6 +82,11 @@ int main(void) {
   k = audioext_lista(e, n, &o, c, 64);
   assert(c[0].grupo == AEXT_G_SEM && c[0].indice == 8);
   assert(!strcmp(c[1].idioma, "cs") && !strcmp(c[2].idioma, "de"));
+  // Settings > Addons switched its add-on off: not listed.
+  e[7].foraFiltro = 1;
+  k = audioext_lista(e, n, &o, c, 64);
+  for (int i = 0; i < k; i++) assert(c[i].indice != 7);
+  e[7].foraFiltro = 0;
   // Total limit.
   o = opc("pl", "en", AEXT_MODO_BEST);
   assert(audioext_lista(e, n, &o, c, 2) == 2);

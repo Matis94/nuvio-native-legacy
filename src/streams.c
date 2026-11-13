@@ -701,6 +701,8 @@ void stream_definir_lista(const Stream *l, int qtd) {
 // later episode arrives (whole or add-on by add-on); the remembered version
 // is looked for in it. Same binge group and language first; without a group,
 // the same add-on, language, resolution and audio codec.
+static int (*filtroAddonAudioext)(const char *chave);
+void stream_audioext_filtro_addon(int (*fn)(const char *chave)) { filtroAddonAudioext = fn; }
 static void audioextSerie(void) {
   AudioExtIdent id;
 #if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
@@ -712,6 +714,7 @@ static void audioextSerie(void) {
     int lingua = 0, k;
     stream_audioext_entrada(&lista[i], &e);
     if (!e.temUrl || e.hls || e.naoVideo) continue;
+    if (filtroAddonAudioext && !filtroAddonAudioext(lista[i].addonChave)) continue;
     for (int j = 0; j < e.nIdiomas; j++) if (ling_casa(e.idiomas[j], id.idioma)) lingua = 1;
     // A version picked without a declared language ("Unknown"): the same kind.
     if (!id.idioma[0]) lingua = e.nIdiomas == 0;

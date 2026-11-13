@@ -240,11 +240,11 @@ static void exPasso(Uint32 agora) {
   if (exPag == EXP_FAIXAS && exFxN == -2 && !exFxDe) {
     int r = audioext_sonda_resultado(exFxGer, exFx, AUDIOEXT_FAIXAS_MAX);
     if (r == AUDIOEXT_SONDA_PLACEHOLDER) {
-      const AudioExtEntrada *en = extEntIdx(exFxCand.indice);
-      if (en && en->cache > 0 && exFxTentativa < AUDIOEXT_TENTATIVAS) {
+      int maxT = extTentativasIdx(exFxCand.indice);
+      if (exFxTentativa < maxT) {
         exFxTentativa++; exFxDe = agora ? agora : 1;
-        printf("[ext-audio] tracks: debrid placeholder on a cached version, read again (%d of %d)\n",
-               exFxTentativa, AUDIOEXT_TENTATIVAS); fflush(stdout);
+        printf("[ext-audio] tracks: debrid placeholder, read again (%d of %d)\n", exFxTentativa, maxT);
+        fflush(stdout);
       } else {
         const Stream *st = extFonteIdx(exFxCand.indice);
         exFxN = r;
@@ -381,6 +381,16 @@ static void corpoExt(GfxRect c, float a) {
     const char *rot[2] = { "Best", "All" };
     int cont[2] = { extBestN, extAllN };
     plrui_seg(rot, cont, 2, (float)exVista, 0, x0 + 10.0f, y, a);
+    // Settings > Addons leaves some out: said here, or versions seem missing.
+    { int on = 0, tot = 0;
+      if (audioext_addons_resumo(&on, &tot)) {
+        char f[64];
+        snprintf(f, sizeof f, i18n("Addons: %d of %d"), on, tot);
+        TxtLinha l = txt_linha(TXT_ILHA_APOIO, f, 243, 242, 239, 150);
+        float lx = x0 + w - 10.0f - (float)l.w;
+        gfx_icone((GfxRect){ lx - 26.0f, y + (EX_SEG_H - 20.0f) * 0.5f, 20.0f, 20.0f }, "aj_funnel", 1, 1, 1, 0.6f * a);
+        txt_desenhar_alpha(l, lx, y + (EX_SEG_H - (float)l.h) * 0.5f, a);
+      } }
     y += EX_SEG_H + 12.0f;
   } else if (exPag == EXP_OUTRAS) {
     exBarraLinguas(x0 + 10.0f, y, w - 20.0f, a);
@@ -392,7 +402,7 @@ static void corpoExt(GfxRect c, float a) {
       if (exFxFoco >= vis) r = exFxFoco - vis + 1;
       char prep[128];
       snprintf(prep, sizeof prep, i18n("The debrid service is preparing this version… (try %d of %d)"),
-               exFxTentativa, AUDIOEXT_TENTATIVAS);
+               exFxTentativa, extTentativasIdx(exFxCand.indice));
       for (int i = r; i < n && i < r + vis; i++, y += IL_LN_H + IL_LN_VAO) {
         int sel = i == exFxFoco, cc = sel ? 255 : 219;
         const char *rotulo = exFxN == -2 && exFxTentativa ? prep

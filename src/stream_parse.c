@@ -992,15 +992,30 @@ static int marcaEmCache(const char *p, const char *fim) {
 
 // Booleano da PROPRIA fonte, nao de cabecalhos nem da fonte seguinte.
 // 0 = ausente/invalido; -1 = false; 1 = true. Strings e numeros nao contam.
-static int cacheDeclarado(const char *p, const char *fim) {
-  const char *cr = objetoRaiz(p, fim, "clientResolve");
-  if (!cr) return 0;
-  const char *f = js_fim(cr), *v = valorRaiz(cr, f, "isCached");
+static int boolDoObjeto(const char *obj, const char *chave) {
+  if (!obj) return 0;
+  const char *f = js_fim(obj), *v = valorRaiz(obj, f, chave);
   if (!v) return 0;
   unsigned n = *v == 't' ? 4 : 5;
   if (f - v < n || memcmp(v, n == 4 ? "true" : "false", n)) return 0;
   const char *apos = faixasEspacos(v + n, f);
   return apos < f && (*apos == ',' || *apos == '}') ? (n == 4 ? 1 : -1) : 0;
+}
+// The add-on's own field, whatever its formatter writes in the name:
+// clientResolve.isCached, or AIOStreams' streamData (instances with "provide
+// stream data" on) - the service's cached flag, then a flat one.
+static int cacheDeclarado(const char *p, const char *fim, int *deStreamData) {
+  int c = boolDoObjeto(objetoRaiz(p, fim, "clientResolve"), "isCached");
+  if (deStreamData) *deStreamData = 0;
+  if (!c) {
+    const char *sd = objetoRaiz(p, fim, "streamData");
+    if (sd) {
+      c = boolDoObjeto(objetoRaiz(sd, js_fim(sd), "service"), "cached");
+      if (!c) c = boolDoObjeto(sd, "cached");
+      if (c && deStreamData) *deStreamData = 1;
+    }
+  }
+  return c;
 }
 
 // "sources": ["tracker:udp://...", "dht:<hash>"] de um stream de torrent, uma
@@ -1120,7 +1135,7 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
         fhd = fhdNoNome(nomeFonte);
       textoRaizLinhas(p, fim, "description", s.descricao, sizeof s.descricao);
       textoRaizLinhas(p, fim, "title", titulo, sizeof titulo);
-      int cache = cacheDeclarado(p, fim);
+      int cacheSD = 0, cache = cacheDeclarado(p, fim, &cacheSD);
       s.emCache = cache > 0 || (cache == 0 && marcaEmCache(p, fim));
       s.cacheNegado = cache < 0;
       metadadosFaixas(p, fim, &s);
@@ -1195,6 +1210,9 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
           !stream_texto_fora_de_cache(nomeFonte)) s.foraCache = 0;
       // AIOStreams: clientResolve.isCached e explicito; ausente nao e false.
       if (s.infoHash[0] && !s.url[0] && cache < 0) s.foraCache = 1;
+      // streamData's service flag describes this very link: false = the
+      // debrid does not have it (whatever icon the formatter uses, or none).
+      if (cacheSD && cache < 0) s.foraCache = 1;
       if (s.foraCache) s.emCache = 0;
       if (s.infoHash[0]) s.temSemeadores = lerSemeadores(texto, &s.semeadores);
       s.tamanhoBytes = bytesExatos(p, fim);

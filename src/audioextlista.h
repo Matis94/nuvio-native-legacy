@@ -49,6 +49,7 @@ typedef struct AudioExtEntradaS {
   int cache;                        // 1 cached, 0 unknown, -1 not cached
   uint64_t bytes;                   // 0 = unknown
   char ident[64];                   // the file itself (hash, torrent:file); "" unknown
+  int foraFiltro;                   // its add-on switched off in Settings > Addons
 } AudioExtEntrada;
 
 typedef struct {

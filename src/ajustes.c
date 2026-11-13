@@ -2,6 +2,7 @@
 // Todas as preferencias abrem um seletor com rascunho; OK confirma e Voltar
 // cancela. A lista mostra valor e chevron, a ficha explica alcance e padrao.
 // IDs, chaves persistidas e indices de valores continuam os legados.
+#include "audioextaddons.h"
 #include "ajustes.h"
 #include "legfontes.h"
 #include "logrede.h"
@@ -9438,12 +9439,32 @@ static void ffVoltar(void) {
 // THE "AUDIO FROM ANOTHER VERSION" SHEET (frAberta 9, owner 07/11): its
 // options in one place, opened from its row like Buffer. UP/DOWN pick,
 // LEFT/RIGHT or OK change and save at once, Back closes.
+// EA_ADDONS: the "Addons" row (audioextaddons.h), a list of its own (eaSub)
+// with the add-ons whose versions the audio pages list, per profile.
+#define EA_ADDONS (-1)
 static const int EA_OPS[] = { AJ_EXT_AUDIO, AJ_EXT_AUDIO_AUTO, AJ_EXT_AUDIO_SEGUIR, AJ_EXT_AUDIO_AVISO, AJ_EXT_AUDIO_SERIE, AJ_EXT_AUDIO_MODO,
-                              AJ_EXT_AUDIO_CACHE, AJ_EXT_AUDIO_COPIAS, AJ_EXT_AUDIO_PASSO, AJ_EXT_AUDIO_GRANDE };
+                              AJ_EXT_AUDIO_CACHE, AJ_EXT_AUDIO_COPIAS, EA_ADDONS, AJ_EXT_AUDIO_PASSO, AJ_EXT_AUDIO_GRANDE };
 #define EA_N ((int)(sizeof EA_OPS / sizeof *EA_OPS))
-static int eaFoco;
-static void eaAbrir(void) { uxCancelar(); faRetornarFolha = 0; frAberta = 9; eaFoco = 0; }
+static int eaFoco, eaSub, eaAddFoco, eaAddN;
+static AudioExtAddon eaAdd[AUDIOEXT_ADDONS_MAX];
+static void eaAbrir(void) { uxCancelar(); faRetornarFolha = 0; frAberta = 9; eaFoco = 0; eaSub = 0; }
+static void eaAddonsAbrir(void) {
+  eaAddN = audioext_addons_lista(eaAdd, AUDIOEXT_ADDONS_MAX);
+  eaSub = 1; eaAddFoco = 0;
+}
+static void eaAddonAlternar(void) {
+  if (eaAddFoco < 0 || eaAddFoco >= eaAddN) return;
+  audioext_addon_definir(eaAdd[eaAddFoco].chave, !audioext_addon_ligado(eaAdd[eaAddFoco].chave));
+}
+// "All" or "2 of 4": the value of the "Addons" row.
+static void eaAddonsValor(char *dst, size_t n) {
+  int on = 0, tot = 0;
+  audioext_addons_resumo(&on, &tot);
+  if (on >= tot) snprintf(dst, n, "%s", i18n("All"));
+  else snprintf(dst, n, i18n("%d of %d"), on, tot);
+}
 static void eaMudar(int d) {
+  if (EA_OPS[eaFoco] == EA_ADDONS) { eaAddonsAbrir(); return; }
   int op = EA_OPS[eaFoco], n = nValores(op), old = valor[op];
   if (n < 2) return;
   valor[op] = (old + d + n) % n;
@@ -9451,6 +9472,13 @@ static void eaMudar(int d) {
   printf("[ajustes] %s -> %s\n", rotuloOpcao(op), textoValor(op)); fflush(stdout);
 }
 static void eaEvento(SDL_Keycode k) {
+  if (eaSub) {
+    if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE || k == SDLK_DELETE) { eaSub = 0; return; }
+    if (k == SDLK_UP && eaAddFoco > 0) eaAddFoco--;
+    if (k == SDLK_DOWN && eaAddFoco + 1 < eaAddN) eaAddFoco++;
+    if (k == SDLK_RIGHT || k == SDLK_LEFT || k == SDLK_RETURN || k == SDLK_KP_ENTER) eaAddonAlternar();
+    return;
+  }
   if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE || k == SDLK_DELETE) { frAberta = 0; return; }
   if (k == SDLK_UP && eaFoco > 0) eaFoco--;
   if (k == SDLK_DOWN && eaFoco + 1 < EA_N) eaFoco++;

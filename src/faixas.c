@@ -30,6 +30,7 @@
 #include "faixasmkv.h"
 #include "audioext.h"
 #include "audioextlista.h"
+#include "audioextaddons.h"
 #include "ctxlista.h"
 #include "streams.h"
 #include "idiomacod.h"
@@ -623,7 +624,7 @@ static int extBestN, extAllN;
 static AudioExtEntrada *extEnt;
 static char (*extVersao)[40];
 static int extEntN;
-static unsigned extGeracao, extRevisao;
+static unsigned extGeracao, extRevisao, extAddonsVer;
 static int extListaN = -1;
 static int extMenu(void) {
 #if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
@@ -638,8 +639,12 @@ static void extMontar(int forcar) {
   AudioExtOpcoes o;
   if (!extMenu() || !stream_lista_do_alvo_atual()) { extBestN = extAllN = 0; extListaN = -1; return; }
   // A source's state changed too (marked not cached after a debrid placeholder).
-  if (!forcar && extGeracao == stream_lista_geracao() && extListaN == n && extRevisao == stream_revisao()) return;
-  extGeracao = stream_lista_geracao(); extRevisao = stream_revisao(); extListaN = n; extBestN = extAllN = 0;
+  // A source's state changed too (marked not cached after a debrid
+  // placeholder), or Settings > Addons.
+  if (!forcar && extGeracao == stream_lista_geracao() && extListaN == n && extRevisao == stream_revisao() &&
+      extAddonsVer == audioext_addons_versao()) return;
+  extGeracao = stream_lista_geracao(); extRevisao = stream_revisao(); extAddonsVer = audioext_addons_versao();
+  extListaN = n; extBestN = extAllN = 0;
   if (n <= 0) return;
   if (n > extEntN) {
     AudioExtEntrada *e2 = realloc(extEnt, (size_t)n * sizeof *e2);
@@ -655,6 +660,7 @@ static void extMontar(int forcar) {
     stream_audioext_entrada(st, &extEnt[i]);
     extEnt[i].atual = i == atual || (st && urlVideo && urlVideo[0] && !strcmp(st->url, urlVideo));
     stream_audioext_versao(st, extVersao[i], sizeof extVersao[i]);
+    extEnt[i].foraFiltro = st && !audioext_addon_ligado(st->addonChave);
   }
   memset(&o, 0, sizeof o);
   // The audio language of the account/TV; without one ("All", free), the
@@ -700,6 +706,10 @@ static const Stream *extFonteIdx(int indice) {
 }
 static const AudioExtEntrada *extEntIdx(int indice) {
   return indice >= 0 && indice < extEntN ? &extEnt[indice] : NULL;
+}
+static int extTentativasIdx(int indice) {
+  const AudioExtEntrada *e = extEntIdx(indice);
+  return !e ? 0 : e->cache > 0 ? AUDIOEXT_TENTATIVAS : e->cache == 0 ? 1 : 0;
 }
 static int extGrandeIdx(int indice) {
   const AudioExtEntrada *e = extEntIdx(indice);
@@ -1105,9 +1115,10 @@ static void extUsar(const AudioExtCand *c, const AudioExtFaixa *faixa) {
     if (rs) audioext_reserva(rs->url, rs->cabecalhos);
   }
   if (faixa) audioext_definir_faixa(faixa->stream);
-  // Said to be cached: the debrid may still answer with its placeholder clip
-  // on the first open (TorBox adds the file to the account): tried again.
-  audioext_tentativas(en->cache > 0 ? AUDIOEXT_TENTATIVAS : 0);
+  // The debrid may still answer with its placeholder clip on the first open
+  // (TorBox adds the file to the account): tried again. Said to be cached:
+  // 3 times; nothing said (a formatter without marks): once; not cached: no.
+  audioext_tentativas(extTentativasIdx(c->indice));
   printf("[ext-audio] from another source: #%d group %d lang=%s copies=%d%s\n", c->indice, c->grupo,
          c->idioma[0] ? c->idioma : "-", c->nReservas, faixa ? " (track picked)" : "");
   fflush(stdout);
@@ -1588,6 +1599,10 @@ static void avisarQueda(int e) {
 }
 
 void faixas_atualizar(float dt, Uint32 agora) {
+  // The series memory's pick of a later episode skips the add-ons switched off
+  // in Settings > Addons too (streams.c has no link to the settings).
+  { static int filtroPosto;
+    if (!filtroPosto) { stream_audioext_filtro_addon(audioext_addon_ligado); filtroPosto = 1; } }
   if (aberta && modo && coluna == 1) legendasui_atualizar(dt);
   exPasso(agora);
   // Other versions arrive with the add-ons (AIOStreams after 15-20 s): the

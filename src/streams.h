@@ -421,6 +421,9 @@ unsigned stream_lista_geracao(void);
 // A link the debrid service did not have ready (audio of another source):
 // marked not cached in the list. 1 when the list had it.
 int stream_marcar_fora_cache_url(const char *url);
+// Settings > Addons of "From another source": the series memory's pick skips
+// the add-ons it says no to (faixas.c sets it).
+void stream_audioext_filtro_addon(int (*fn)(const char *chave));
 // Bumps on any change of a source's state (cache, order): the audio pages
 // rebuild on it.
 unsigned stream_revisao(void);
