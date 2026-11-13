@@ -360,7 +360,7 @@
   1, /* BD REMUX MP4 test: Off (V_LIGA), device-local opt-in */
   1, /* preserve P7 mapping experiment: Off (V_LIGA), device-local opt-in */
 
-0, // Update notifications: on by default, device-local
+1, // Update notifications: off by default (owner, 13/11/2026), device-local
   0, /* native player: one sequential connection */
   0, /* DTS/TrueHD/DV7: Standard (1), Tizen method (owner, 06/11/2026) */
   1, /* Remember last profile: Off (V_LIGA), device-wide opt-in */

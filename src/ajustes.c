@@ -731,7 +731,7 @@ typedef enum {
   AJ_RAM_VERDE, // optional green-key RAM shortcut, device-local, off by default
   AJ_MP4_BD_TEST, // experimental separate-track P7 MP4, append-only, default OFF
   AJ_DV7_MAPPING, // isolated P7 RPU mapping experiment; append-only, default OFF
-  AJ_UPDATE_NOTIFICATIONS, // device-local; automatic notices on by default
+  AJ_UPDATE_NOTIFICATIONS, // device-local; automatic notices off by default
   AJ_BUFFER_NATIVE_CONNECTIONS, // append-only; native player defaults to 1
   AJ_BUFFER_CONVERSION_CONNECTIONS, // append-only; conversion defaults to Standard (1)
   AJ_REMEMBER_PROFILE, // device-wide startup preference; off by default

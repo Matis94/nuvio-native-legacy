@@ -37,8 +37,9 @@ int main(void) {
   dados_iniciar(dir); assert(!strcmp(dados_dir(), dir)); snprintf(dirAjustes, sizeof dirAjustes, "%s", dir);
   ajustes_iniciar(); assert(gravar());
 
-  // New local preference preserves the default and survives real disk reloads.
-  assert(ajustes_update_notifications());
+  // New local preference: off by default (owner, 13/11/2026), and it
+  // survives real disk reloads.
+  assert(!ajustes_update_notifications());
   assert(ajustes_escopo(AJ_UPDATE_NOTIFICATIONS)==ESC_TV);
   assert(!ajustePortavel(AJ_UPDATE_NOTIFICATIONS) && !ajusteAparelho(AJ_UPDATE_NOTIFICATIONS));
   for(int enabled=0;enabled<2;enabled++) {
