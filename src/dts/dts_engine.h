@@ -119,7 +119,8 @@ void dts_engine_external_mismatch(DtsEngine *, int *cut_s, int *speed);
  * caller seeks as before. */
 int dts_engine_external_shift(DtsEngine *, int offset_ms);
 /* Blocking (a worker thread): the audio tracks of a file this TV can play or
- * convert, read from its container header only. Count, or -1. */
+ * convert, read from its container header only. Count, -1, or -3 for the
+ * debrid placeholder clip (a file under two minutes). */
 int dts_engine_probe_audio(const char *url, const char *headers, DtsTrack *out, int max);
 /* Worker only, while another version plays: "Match automatically" captures
  * both audios for DTS_MATCH_SECONDS of playback (dts_match.h) and searches

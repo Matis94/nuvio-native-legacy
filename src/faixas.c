@@ -623,7 +623,7 @@ static int extBestN, extAllN;
 static AudioExtEntrada *extEnt;
 static char (*extVersao)[40];
 static int extEntN;
-static unsigned extGeracao;
+static unsigned extGeracao, extRevisao;
 static int extListaN = -1;
 static int extMenu(void) {
 #if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
@@ -637,8 +637,9 @@ static void extMontar(int forcar) {
   const char *urlVideo = video_url_atual();
   AudioExtOpcoes o;
   if (!extMenu() || !stream_lista_do_alvo_atual()) { extBestN = extAllN = 0; extListaN = -1; return; }
-  if (!forcar && extGeracao == stream_lista_geracao() && extListaN == n) return;
-  extGeracao = stream_lista_geracao(); extListaN = n; extBestN = extAllN = 0;
+  // A source's state changed too (marked not cached after a debrid placeholder).
+  if (!forcar && extGeracao == stream_lista_geracao() && extListaN == n && extRevisao == stream_revisao()) return;
+  extGeracao = stream_lista_geracao(); extRevisao = stream_revisao(); extListaN = n; extBestN = extAllN = 0;
   if (n <= 0) return;
   if (n > extEntN) {
     AudioExtEntrada *e2 = realloc(extEnt, (size_t)n * sizeof *e2);
@@ -1104,6 +1105,9 @@ static void extUsar(const AudioExtCand *c, const AudioExtFaixa *faixa) {
     if (rs) audioext_reserva(rs->url, rs->cabecalhos);
   }
   if (faixa) audioext_definir_faixa(faixa->stream);
+  // Said to be cached: the debrid may still answer with its placeholder clip
+  // on the first open (TorBox adds the file to the account): tried again.
+  audioext_tentativas(en->cache > 0 ? AUDIOEXT_TENTATIVAS : 0);
   printf("[ext-audio] from another source: #%d group %d lang=%s copies=%d%s\n", c->indice, c->grupo,
          c->idioma[0] ? c->idioma : "-", c->nReservas, faixa ? " (track picked)" : "");
   fflush(stdout);

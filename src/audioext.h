@@ -1,4 +1,6 @@
 #ifndef NV_AUDIOEXT_H
+#include <stddef.h>
+#include <stdint.h>
 #define NV_AUDIOEXT_H
 // AUDIO FROM ANOTHER VERSION OF THE TITLE (test build, external-audio-test).
 //
@@ -27,6 +29,24 @@ void audioext_escolher(const char *url, const char *cabecalhos, const char *nome
 // audioext_escolher: when the chosen link fails the next one is tried before
 // the session falls back to the file's own audio. A new choice drops them.
 void audioext_reserva(const char *url, const char *cabecalhos);
+// The debrid service's placeholder clip (a short warning video instead of the
+// file: not cached, or not ready yet). The converter's failure text carries
+// "(placeholder clip)". A version said to be cached is tried again after
+// AUDIOEXT_ESPERA_MS, `n` times (set right after audioext_escolher; 0 for the
+// others); meanwhile audioext_preparando() is 1 and the player says
+// "preparing" once per try (audioext_preparando_consumir). Links still not
+// ready after that come out of audioext_negada_consumir, to be marked not
+// cached in the source list.
+#define AUDIOEXT_TENTATIVAS 3
+#define AUDIOEXT_ESPERA_MS 5000
+#define AUDIOEXT_SONDA_PLACEHOLDER (-3)   /* audioext_sonda_resultado: the placeholder clip */
+void audioext_tentativas(int n);
+int audioext_motivo_placeholder(const char *motivo);
+int audioext_preparando(void);
+int audioext_preparando_consumir(int *tentativa, int *total);
+int audioext_negada_consumir(char *url, size_t n);
+// Tests: the clock in ms (NULL: the monotonic one).
+void audioext_definir_relogio(uint64_t (*fn)(void));
 // SERIES MEMORY (Settings > Remember for the next episodes): what identifies
 // the chosen version across episodes. The add-on's binge group when it sends
 // one ("the same release"), else add-on + language + resolution + codec.

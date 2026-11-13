@@ -283,6 +283,18 @@ int main(int argc, char **argv) {
   assert(dts_engine_open(e, main_file, HEADERS, -1, 0, 0) < 0);
   assert(strstr(dts_engine_error(e), "not cached"));
   dts_engine_destroy(e);
+  /* 7b. The same short clip with an audio track for an 11-minute picture (owner's
+   * log 13/11: TorBox's 30 s clip, even for a version marked cached): said
+   * as the debrid placeholder, the case the player tries again. The header
+   * read of the hold-OK track list says it too (-3), a real file its tracks. */
+  e = dts_engine_create();
+  dts_engine_external_audio(e, short_clip, HEADERS, "", 0);
+  assert(dts_engine_open(e, film, HEADERS, -1, 0, 0) < 0);
+  assert(strstr(dts_engine_error(e), "(placeholder clip)"));
+  dts_engine_destroy(e);
+  { DtsTrack tk[8];
+    assert(dts_engine_probe_audio(short_clip, HEADERS, tk, 8) == -3);
+    assert(dts_engine_probe_audio(film, HEADERS, tk, 8) >= 1); }
 
   /* 8. Audio only: an MP4 donor fetches its audio chunks, not its video. */
   {

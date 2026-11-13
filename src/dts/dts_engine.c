@@ -1789,6 +1789,15 @@ int dts_engine_probe_audio(const char *url,const char *headers,DtsTrack *out,int
   x->fx_mib=DTS_ENGINE_EXTERNAL_RING_MIB;
   if(dts_engine_open_demux(x,url,headers)==0) {
     n=0;
+    /* Under two minutes: no version of a film or an episode, the debrid
+     * service's placeholder clip (owner's log 13/11: a 30 s AAC clip served
+     * for a TorBox file not ready yet). */
+    if(x->fmt->duration>0 && x->fmt->duration<120LL*AV_TIME_BASE) {
+      printf("[ext-audio] tracks: %.0f s file, the debrid placeholder clip\n",x->fmt->duration/1e6);
+      fflush(stdout);
+      dts_engine_destroy(x);
+      return -3;
+    }
     for(unsigned i=0;i<x->fmt->nb_streams && n<max;i++) {
       AVStream *st=x->fmt->streams[i]; AVCodecParameters *p=st->codecpar;
       if(ext_rank(x,p)<=0) continue;
@@ -1964,7 +1973,7 @@ static int configure_external(DtsEngine *e,double start) {
      * placeholder clip for a file it does not have ready (owner's log 07/11:
      * one 1 fps H.264 track). */
     if(!audio && x->fmt->duration<e->fmt->duration/2)
-      return fail(e,"External audio: the debrid service does not have this version ready yet (placeholder clip)",0);
+      return fail(e,"External audio: this version is not ready on the debrid service yet (placeholder clip)",0);
     return fail(e,audio?"External audio: no audio track this TV can play or convert":
                         "External audio: the other version has no audio track",0);
   }
@@ -1991,6 +2000,11 @@ static int configure_external(DtsEngine *e,double start) {
     return fail(e,"This source is a placeholder clip from the debrid service (not cached yet): pick another source for the picture",0);
   /* A debrid file that is not cached answers with a short warning clip that
    * plays normally: far shorter than the picture, it is not this title. */
+  /* Under two minutes for a picture of ten or more: the same placeholder
+   * clip, with an audio track (owner's log 13/11: 30 s of AAC, 25 fps, for a
+   * TorBox file not ready yet, even one marked cached). */
+  if(x->fmt->duration>0 && x->fmt->duration<120LL*AV_TIME_BASE && e->fmt->duration>600LL*AV_TIME_BASE)
+    return fail(e,"External audio: this version is not ready on the debrid service yet (placeholder clip)",0);
   if(x->fmt->duration<e->fmt->duration/2) {
     snprintf(e->error,sizeof e->error,"External audio: the other version lasts %.0f s, this one %.0f s (not cached?)",
       x->fmt->duration/1e6,e->fmt->duration/1e6);

@@ -2030,6 +2030,32 @@ static int dicaTorrents(char *texto, size_t tam) {
   return 1;
 }
 
+// "From another source" found this link not ready on the debrid service (its
+// placeholder clip, even after the tries): the same as a debrid "still
+// downloading" answer here: not cached from now on, in this list and in the
+// audio pages. 1 when a source of the list had it.
+int stream_marcar_fora_cache_url(const char *url) {
+  int achou = 0;
+  if (!url || !*url) return 0;
+  pthread_mutex_lock(&verTrava);
+  for (int i = 0; i < n; i++) {
+    if (strcmp(lista[i].url, url)) continue;
+    lista[i].emCache = 0;
+    lista[i].cacheNativo = 0;
+    lista[i].cacheNegado = 1;
+    lista[i].foraCache = 1;
+    achou = 1;
+  }
+  pthread_mutex_unlock(&verTrava);
+  if (achou) {
+    atomic_fetch_add(&folhaRevisao, 1);
+    printf("[fonte] marked not cached by the audio of another source: %.80s\n", url);
+    fflush(stdout);
+  }
+  return achou;
+}
+unsigned stream_revisao(void) { return atomic_load(&folhaRevisao); }
+
 unsigned stream_lista_geracao(void) {
   unsigned g;
   pthread_mutex_lock(&verTrava);

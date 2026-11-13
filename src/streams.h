@@ -418,6 +418,12 @@ int  stream_cabe_no_teto(const Stream *s);
 //         P2P experimental (p2p.h) tambem nao; o motivo esta em p2p_ultimo_erro()
 #define STREAM_P2P_FALHOU 3
 unsigned stream_lista_geracao(void);
+// A link the debrid service did not have ready (audio of another source):
+// marked not cached in the list. 1 when the list had it.
+int stream_marcar_fora_cache_url(const char *url);
+// Bumps on any change of a source's state (cache, order): the audio pages
+// rebuild on it.
+unsigned stream_revisao(void);
 // Quantos torrents SEM url (so infoHash) ha na lista: os que so o P2P ou o
 // debrid tocam. Serve ao cartao "nenhuma fonte serve" dizer que ha P2P.
 int  stream_qtd_torrents(void);

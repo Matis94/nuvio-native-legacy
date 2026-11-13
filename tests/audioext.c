@@ -17,6 +17,9 @@ static int esperarSonda(unsigned g, AudioExtFaixa *f) {
   return n;
 }
 
+static uint64_t agoraTeste;
+static uint64_t relogioTeste(void) { return agoraTeste; }
+
 int main(void) {
   AudioExtIdent id, got;
   audioext_preferencias(0, 1);
@@ -125,6 +128,51 @@ int main(void) {
     audioext_falhou("timeout");
     assert(!audioext_tem_marca());
     { char f[32]; assert(audioext_falha_consumir(f, sizeof f) && !strcmp(f, "timeout")); } }
+  // The debrid's placeholder clip on a version said to be cached: copies
+  // first, then the chosen link again AUDIOEXT_ESPERA_MS later, n times; then
+  // every link tried comes out as "not ready". Not cached: said at once.
+  audioext_definir_relogio(relogioTeste);
+  agoraTeste = 1000;
+  audioext_escolher("https://p/a.mkv", "H: a", "PL", "pl");
+  audioext_reserva("https://p/b.mkv", "");
+  audioext_tentativas(2);
+  { unsigned g = audioext_pedido_geracao(); int t = 0, tot = 0;
+    char u[64];
+    audioext_falhou("External audio: x (placeholder clip)");          // -> copy b
+    assert(!strcmp(audioext_url(), "https://p/b.mkv") && audioext_pedido_geracao() == g + 1);
+    audioext_falhou("External audio: x (placeholder clip)");          // -> wait, then a again
+    assert(audioext_tem_marca() && audioext_preparando() && !strcmp(audioext_url(), "https://p/a.mkv"));
+    assert(!strcmp(audioext_cabecalhos(), "H: a"));
+    assert(audioext_preparando_consumir(&t, &tot) && t == 1 && tot == 2 && !audioext_preparando_consumir(NULL, NULL));
+    assert(audioext_pedido_geracao() == g + 1);                        // not yet
+    agoraTeste += AUDIOEXT_ESPERA_MS;
+    assert(audioext_pedido_geracao() == g + 2 && !audioext_preparando());
+    assert(!audioext_falha_consumir(NULL, 0) && !audioext_negada_consumir(u, sizeof u));
+    audioext_falhou("External audio: x (placeholder clip)");          // a -> b
+    audioext_falhou("External audio: x (placeholder clip)");          // try 2
+    agoraTeste += AUDIOEXT_ESPERA_MS;
+    assert(audioext_pedido_geracao() == g + 4);
+    audioext_falhou("External audio: x (placeholder clip)");          // a -> b
+    audioext_falhou("External audio: x (placeholder clip)");          // done
+    assert(!audioext_tem_marca() && !audioext_preparando());
+    { char f[96]; assert(audioext_falha_consumir(f, sizeof f) && audioext_motivo_placeholder(f)); }
+    assert(audioext_negada_consumir(u, sizeof u) && !strcmp(u, "https://p/a.mkv"));
+    assert(audioext_negada_consumir(u, sizeof u) && !strcmp(u, "https://p/b.mkv"));
+    assert(!audioext_negada_consumir(u, sizeof u)); }
+  // Not said to be cached (no tries): at once, marked not ready.
+  audioext_escolher("https://q/a.mkv", "", "PL", "pl");
+  audioext_falhou("External audio: x (placeholder clip)");
+  assert(!audioext_tem_marca());
+  { char u[64]; assert(audioext_negada_consumir(u, sizeof u) && !strcmp(u, "https://q/a.mkv")); }
+  audioext_falha_consumir(NULL, 0);
+  // Another failure (not the placeholder) on a cached version: no tries.
+  audioext_escolher("https://r/a.mkv", "", "PL", "pl");
+  audioext_tentativas(3);
+  audioext_falhou("http 404");
+  assert(!audioext_tem_marca() && !audioext_preparando());
+  { char u[64]; assert(!audioext_negada_consumir(u, sizeof u)); }
+  audioext_falha_consumir(NULL, 0);
+  audioext_definir_relogio(NULL);
   audioext_escolher("https://g/a.mkv", "", "PL", "pl");
   audioext_reserva("https://g/b.mkv", "");
   audioext_escolher("https://g/other.mkv", "", "EN", "en");   // another version: no copies

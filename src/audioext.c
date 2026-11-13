@@ -1,3 +1,6 @@
+#if !defined(_POSIX_C_SOURCE) && !defined(_GNU_SOURCE)
+#define _POSIX_C_SOURCE 200809L   /* clock_gettime (tests build with -std=c11) */
+#endif
 // Audio from another version of the title: the marked source (audioext.h).
 #include "audioext.h"
 #include "mediaurl.h"
@@ -5,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 static char alvoAtual[64], alvoMarca[64];
 static char urlMarca[NV_MEDIA_URL_MAX], cabMarca[512], nomeMarca[192];
@@ -14,6 +18,23 @@ static char falha[160], idiomaMarca[8];
 // Fallback copies of the marked file (audioext_reserva).
 static char resUrl[3][NV_MEDIA_URL_MAX], resCab[3][512];
 static int resN, resProx;
+// The debrid service's placeholder clip on a version said to be cached: the
+// file is being prepared (TorBox adds it to the account on the first open).
+// The chosen link (urlPrim) is tried again after AUDIOEXT_ESPERA_MS, up to
+// `tentativas` times; then every link tried goes to the "not ready" list.
+static char urlPrim[NV_MEDIA_URL_MAX], cabPrim[512];
+static int tentativas, tentativa;
+static uint64_t retryEm;          // ms (relogio()), 0 none
+static int preparandoAviso;       // the try to tell the player (consumed)
+static char negadas[4][NV_MEDIA_URL_MAX];
+static int negadasN;
+static uint64_t relogioPadrao(void) {
+  struct timespec t;
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return (uint64_t)t.tv_sec * 1000u + (uint64_t)(t.tv_nsec / 1000000);
+}
+static uint64_t (*relogio)(void) = relogioPadrao;
+void audioext_definir_relogio(uint64_t (*fn)(void)) { relogio = fn ? fn : relogioPadrao; }
 static unsigned pedidoGeracao;
 static int prefSoAudio, prefSerie = 1;
 // SAFETY NET (owner, 07/11): a start with this mark began and the other
@@ -48,6 +69,7 @@ static void serieDe(const char *alvo, char *out, size_t tam) {
 
 void audioext_limpar(void) {
   resN = resProx = 0;
+  tentativas = tentativa = 0; retryEm = 0; preparandoAviso = 0;
   urlMarca[0] = cabMarca[0] = nomeMarca[0] = alvoMarca[0] = idiomaMarca[0] = 0;
   offsetMs = 0; offsetGeracao++; velocidadePpm = 0; kandN = 0;
   pendente = 0; faixaMarca = -1; carregando = 0; dicaAtiva = 0; offsetLembrado = 0;
@@ -91,8 +113,11 @@ int audioext_alternar(const char *url, const char *cabecalhos, const char *nome)
 }
 void audioext_escolher(const char *url, const char *cabecalhos, const char *nome, const char *idioma) {
   if (!url || !*url) return;
-  if (!audioext_marcada(url)) {
-    resN = resProx = 0;
+  // A new pick (even of the same version): its fallbacks and tries start over.
+  resN = resProx = 0; tentativas = tentativa = 0; retryEm = 0; preparandoAviso = 0;
+  snprintf(urlPrim, sizeof urlPrim, "%s", url);
+  snprintf(cabPrim, sizeof cabPrim, "%s", cabecalhos ? cabecalhos : "");
+  if (strcmp(urlMarca, url)) {
     snprintf(urlMarca, sizeof urlMarca, "%s", url);
     snprintf(cabMarca, sizeof cabMarca, "%s", cabecalhos ? cabecalhos : "");
     snprintf(nomeMarca, sizeof nomeMarca, "%s", nome ? nome : "");
@@ -112,7 +137,39 @@ void audioext_original(void) {
   pedidoGeracao++;
   printf("[ext-audio] back to this file's own audio\n"); fflush(stdout);
 }
-unsigned audioext_pedido_geracao(void) { return pedidoGeracao; }
+unsigned audioext_pedido_geracao(void) {
+  // The try after the placeholder clip comes due here (the player asks every
+  // frame): the same as picking the version again.
+  if (retryEm && urlMarca[0] && relogio() >= retryEm) {
+    retryEm = 0;
+    pedidoGeracao++;
+    pendente = 1;
+    printf("[ext-audio] debrid placeholder: try %d of %d now\n", tentativa, tentativas); fflush(stdout);
+  }
+  return pedidoGeracao;
+}
+void audioext_tentativas(int n) { tentativas = n < 0 ? 0 : n; tentativa = 0; }
+int audioext_motivo_placeholder(const char *m) { return m && strstr(m, "(placeholder clip)") != NULL; }
+int audioext_preparando(void) { return retryEm != 0 && urlMarca[0]; }
+int audioext_preparando_consumir(int *t, int *total) {
+  int a = preparandoAviso;
+  preparandoAviso = 0;
+  if (a && t) *t = a;
+  if (a && total) *total = tentativas;
+  return a != 0;
+}
+static void negar(const char *url) {
+  if (!url || !*url) return;
+  for (int i = 0; i < negadasN; i++) if (!strcmp(negadas[i], url)) return;
+  if (negadasN < 4) snprintf(negadas[negadasN++], sizeof negadas[0], "%s", url);
+}
+int audioext_negada_consumir(char *dst, size_t n) {
+  if (!negadasN) return 0;
+  snprintf(dst, n, "%s", negadas[0]);
+  memmove(negadas[0], negadas[1], sizeof negadas[0] * (size_t)(negadasN - 1));
+  negadasN--;
+  return 1;
+}
 void audioext_escolher_faixa(int stream) {
   if (!urlMarca[0] || stream < 0) return;
   faixaMarca = stream; dicaAtiva = 0;
@@ -140,7 +197,7 @@ static void *sondaFio(void *arg) {
   int n = sondaFn ? sondaFn(p->url, p->cab, f, AUDIOEXT_FAIXAS_MAX) : -1;
   pthread_mutex_lock(&sondaLock);
   if (p->ger == sondaGer) {
-    sondaN = n < 0 ? -1 : n;
+    sondaN = n == AUDIOEXT_SONDA_PLACEHOLDER ? n : n < 0 ? -1 : n;
     if (n > 0) memcpy(sondaFaixas, f, (size_t)n * sizeof *f);
   }
   pthread_mutex_unlock(&sondaLock);
@@ -329,6 +386,7 @@ void audioext_reserva(const char *url, const char *cabecalhos) {
   resN++;
 }
 void audioext_falhou(const char *motivo) {
+  int ph = audioext_motivo_placeholder(motivo);
   // Another copy of the same file is on hand (another add-on): that one now,
   // same name, language and track; the failure is only said if all fail.
   if (resProx < resN && urlMarca[0]) {
@@ -343,6 +401,25 @@ void audioext_falhou(const char *motivo) {
     pendente = 1;   // the player reopens with it now
     return;
   }
+  // A version said to be cached answered with the debrid's placeholder clip:
+  // the file is being prepared. The chosen link again in a few seconds (the
+  // copies after it again too); meanwhile this file's own audio plays.
+  if (ph && urlMarca[0] && tentativa < tentativas) {
+    tentativa++;
+    printf("[ext-audio] debrid placeholder on a cached version: try %d of %d in %d s\n",
+           tentativa, tentativas, AUDIOEXT_ESPERA_MS / 1000);
+    fflush(stdout);
+    snprintf(urlMarca, sizeof urlMarca, "%s", urlPrim);
+    snprintf(cabMarca, sizeof cabMarca, "%s", cabPrim);
+    resProx = 0;
+    tocando = 0; carregando = 0;
+    retryEm = relogio() + AUDIOEXT_ESPERA_MS;
+    preparandoAviso = tentativa;
+    return;
+  }
+  // Not ready after all: the links tried are marked not cached (the source
+  // list learns it too), like a debrid "still downloading" answer there.
+  if (ph) { negar(urlPrim); for (int r = 0; r < resN; r++) negar(resUrl[r]); }
   snprintf(falha, sizeof falha, "%s", motivo && *motivo ? motivo : "unknown error");
   // The session goes back to the file's own audio, and so does the next start:
   // the mark goes away (it can be picked again in the audio menu).

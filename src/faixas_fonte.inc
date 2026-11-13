@@ -27,6 +27,10 @@ static int exOutIni[EX_OUT_MAX], exOutCont[EX_OUT_MAX], exOutN;   // Best's othe
 static CtxHold exHold;
 static unsigned exFxGer;
 static int exFxN = -2, exFxFoco;
+// The placeholder clip on a version said to be cached: read again (debrid
+// preparing the file), AUDIOEXT_TENTATIVAS times, AUDIOEXT_ESPERA_MS apart.
+static int exFxTentativa;
+static Uint32 exFxDe;
 static AudioExtFaixa exFx[AUDIOEXT_FAIXAS_MAX];
 static char exFxRot[AUDIOEXT_FAIXAS_MAX][120];
 static AudioExtCand exFxCand;
@@ -160,7 +164,7 @@ static void exAbrirFaixas(void) {
   if (!st || !audioext_sonda_disponivel()) return;
   exFxCand = *c;
   exVoltar = exPag; exPag = EXP_FAIXAS;
-  exFxN = -2; exFxFoco = 0;
+  exFxN = -2; exFxFoco = 0; exFxTentativa = 0; exFxDe = 0;
   exFxGer = audioext_sondar(st->url, st->cabecalhos);
   printf("[ext-audio] from another source: tracks of #%d asked\n", c->indice); fflush(stdout);
 }
@@ -227,9 +231,27 @@ static void exEvento(const SDL_Event *e) {
 static void exPasso(Uint32 agora) {
   if (!aberta) { if (exPag) exFechar(); return; }
   if ((exPag == EXP_LISTA || exPag == EXP_OUTRAS) && ctxhold_passo(&exHold, agora, 1)) exAbrirFaixas();
-  if (exPag == EXP_FAIXAS && exFxN == -2) {
+  if (exPag == EXP_FAIXAS && exFxN == -2 && exFxDe && agora - exFxDe >= AUDIOEXT_ESPERA_MS) {
+    const Stream *st = extFonteIdx(exFxCand.indice);
+    exFxDe = 0;
+    if (st) exFxGer = audioext_sondar(st->url, st->cabecalhos);
+    else exFxN = -1;
+  }
+  if (exPag == EXP_FAIXAS && exFxN == -2 && !exFxDe) {
     int r = audioext_sonda_resultado(exFxGer, exFx, AUDIOEXT_FAIXAS_MAX);
-    if (r != -2) { exFxN = r; exMontarFaixas(); }
+    if (r == AUDIOEXT_SONDA_PLACEHOLDER) {
+      const AudioExtEntrada *en = extEntIdx(exFxCand.indice);
+      if (en && en->cache > 0 && exFxTentativa < AUDIOEXT_TENTATIVAS) {
+        exFxTentativa++; exFxDe = agora ? agora : 1;
+        printf("[ext-audio] tracks: debrid placeholder on a cached version, read again (%d of %d)\n",
+               exFxTentativa, AUDIOEXT_TENTATIVAS); fflush(stdout);
+      } else {
+        const Stream *st = extFonteIdx(exFxCand.indice);
+        exFxN = r;
+        // Not ready after all: not cached from now on (the source list too).
+        if (st) stream_marcar_fora_cache_url(st->url);
+      }
+    } else if (r != -2) { exFxN = r; exMontarFaixas(); }
   }
   if (exPag == EXP_OUTRAS && !exOutN) exIr(EXP_LISTA);
 }
@@ -265,11 +287,21 @@ static void exLinhaCand(const AudioExtCand *c, float x, float y, float w, int se
               c->idioma[0] ? c->idioma : "?", NULL, sel, da);
   if (ativo) dir -= 46.0f;
   { float tx = x + 22.0f + 52.0f + 18.0f, tw = dir - tx;
-    TxtLinha ln = txt_linha_corta(TXT_ILHA_FORTE, extNomeIdioma(c->idioma), cc, cc, cc - 2, 255, tw);
+    TxtLinha ln = txt_linha_corta(TXT_ILHA_FORTE, extNomeIdioma(c->idioma), cc, cc, cc - 2, 255, tw * 0.6f);
     TxtLinha ls = txt_linha_corta(TXT_ILHA_GENERO, sub, cs, cs, cs - 2, 255, tw);
     float th = (float)ln.h + 5.0f + (float)ls.h, ty = y + (IL_LN_H - th) * 0.5f;
     txt_desenhar_alpha(ln, tx, ty, da);
-    txt_desenhar_alpha(ls, tx, ty + (float)ln.h + 5.0f, da); }
+    txt_desenhar_alpha(ls, tx, ty + (float)ln.h + 5.0f, da);
+    // What the add-on itself says ("[TB+] Torrentio 1080p", "[TB⌛] Comet"),
+    // like the source list, on the right of the language: its own cache mark
+    // stays in sight whatever the line below has room for.
+    if (st && st->rotulo[0]) {
+      float lw = tw - (float)ln.w - 18.0f;
+      if (lw > 60.0f) {
+        TxtLinha lr = txt_linha_corta(TXT_ILHA_GENERO, st->rotulo, cs, cs, cs - 2, 255, lw);
+        txt_desenhar_alpha(lr, tx + tw - (float)lr.w, ty + (float)(ln.h - lr.h) * 0.5f, da);
+      }
+    } }
   if (ativo) {
     float ar, ag, ab;
     ajustes_acento(&ar, &ag, &ab);
@@ -358,9 +390,14 @@ static void corpoExt(GfxRect c, float a) {
     if (exPag == EXP_FAIXAS) {
       int n = exFxN > 0 ? exFxN : 1, r = 0, vis = IL_VIS;
       if (exFxFoco >= vis) r = exFxFoco - vis + 1;
+      char prep[128];
+      snprintf(prep, sizeof prep, i18n("The debrid service is preparing this version… (try %d of %d)"),
+               exFxTentativa, AUDIOEXT_TENTATIVAS);
       for (int i = r; i < n && i < r + vis; i++, y += IL_LN_H + IL_LN_VAO) {
         int sel = i == exFxFoco, cc = sel ? 255 : 219;
-        const char *rotulo = exFxN == -2 ? "Reading the audio tracks…"
+        const char *rotulo = exFxN == -2 && exFxTentativa ? prep
+                           : exFxN == -2 ? "Reading the audio tracks…"
+                           : exFxN == AUDIOEXT_SONDA_PLACEHOLDER ? "This version is not ready on the debrid service yet. Try again in a moment."
                            : exFxN == 0 ? "No audio track this TV can play"
                            : exFxN < 0 ? "Could not read the audio tracks" : exFxRot[i];
         if (sel) plrui_linha_foco((GfxRect){ x0, y, w, IL_LN_H }, 22.0f, a);

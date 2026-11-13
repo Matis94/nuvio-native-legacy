@@ -4638,9 +4638,22 @@ void player_atualizar(float dt, Uint32 agora) {
     if (!ajustes_audio_externo() && audioext_tem_marca()) audioext_limpar();
     audioext_preferencias(ajustes_audio_externo_so_audio(), ajustes_audio_externo_serie());
     if (audioext_falha_consumir(falha, sizeof falha)) {
-      snprintf(t, sizeof t, i18n("Audio from the other version failed: %s"), falha);
-      player_toast(t, 5000);
+      // The debrid's placeholder clip: not a failure of the app, the version
+      // is just not ready (not cached) on the debrid service.
+      if (audioext_motivo_placeholder(falha))
+        player_toast_ex(i18n("This version is not ready on the debrid service yet (not cached)."), 6000, "aj_triangle-alert", 1);
+      else {
+        snprintf(t, sizeof t, i18n("Audio from the other version failed: %s"), falha);
+        player_toast(t, 5000);
+      }
     }
+    { int tt, tot;
+      if (audioext_preparando_consumir(&tt, &tot)) {
+        snprintf(t, sizeof t, i18n("The debrid service is preparing this version… (try %d of %d)"), tt, tot);
+        player_toast(t, 4500);
+      } }
+    { char u[NV_MEDIA_URL_MAX];
+      while (audioext_negada_consumir(u, sizeof u)) stream_marcar_fora_cache_url(u); }
     { AudioExtDopasuj d;
       int a = audioext_dopasuj_aviso_consumir(&d);
       char v[48];
