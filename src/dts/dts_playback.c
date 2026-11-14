@@ -440,9 +440,7 @@ static int prepare(DtsPlayback *p,int stream,int core,double target) {
 }
 /* Opt-in TV experiment. A format change or an unhealthy renderer uses the
  * proven fresh-Load path. No packet queue or second native player is added. */
-/* REPOSITION_REOPEN: another version could not be opened in place of the
- * old one (already gone): the source opens again with it. */
-enum { REPOSITION_FAILED, REPOSITION_OK, REPOSITION_FORMAT_CHANGED, REPOSITION_REOPEN };
+enum { REPOSITION_FAILED, REPOSITION_OK, REPOSITION_FORMAT_CHANGED };
 static int reposition(DtsPlayback *p,int stream,int core,double target,DtsFrame *primed) {
   const DtsMediaInfo *info=dts_engine_info(p->engine);
   if(!info || !p->pipeline) return 0;
@@ -454,21 +452,8 @@ static int reposition(DtsPlayback *p,int stream,int core,double target,DtsFrame 
    * packet. Borrow the engine's normal single pending frame: no second queue,
    * no additional video copy and no increase to the HTTP/native byte limits. */
   double began=clockSeconds(CLOCK_MONOTONIC);
-  int ok=!p->dv || dts_pipeline_pause(p->pipeline), reopen=0;
-  if(ok && p->ext_swap_now) {
-    /* Another version, or another track of it (owner, 14/11: every change
-     * reloaded the picture): only that file is replaced at the target, this
-     * source seeks there, and the TV keeps its player when the audio format
-     * stays the same (a new format still takes the fresh Load below). */
-    p->ext_swap_now=0;
-    dts_engine_external_speed(p->engine,p->ext_now_speed);
-    ok=dts_engine_external_replace(p->engine,p->ext_now_url,p->ext_now_headers,p->ext_now_langs,
-                                   p->ext_now_offset,p->ext_now_track,p->ext_now_only,target)>=0;
-    reopen=!ok && !stopped(p);
-    printf("[ext-audio] swap without reloading the picture at %.3f: %s\n",target,
-           ok?"other version ready":reopen?"failed, opening the source again":"stopped");
-    fflush(stdout);
-  } else if(ok) ok=(stream==before.audio_stream ? dts_engine_seek(p->engine,target) :
+  int ok=!p->dv || dts_pipeline_pause(p->pipeline);
+  if(ok) ok=(stream==before.audio_stream ? dts_engine_seek(p->engine,target) :
           dts_engine_audio(p->engine,stream,core,target))>=0;
   info=dts_engine_info(p->engine);
   // An expected format change needs Load, not a permanent Seek failure flag.
@@ -504,7 +489,6 @@ static int reposition(DtsPlayback *p,int stream,int core,double target,DtsFrame 
   if(ok){p->picture_epoch++;p->picture_samples=0;p->picture_last_pts=INT64_MIN;p->picture_last_size=0;}
 #endif
   if(format_changed) return REPOSITION_FORMAT_CHANGED; /* No duplicate demux seek. */
-  if(reopen) return REPOSITION_REOPEN;
   if(!ok) return 0;
   int subtitle;
   pthread_mutex_lock(&p->lock);subtitle=p->subtitle_stream;pthread_mutex_unlock(&p->lock);
@@ -863,8 +847,10 @@ static void *run(void *user) {
     }
     /* The adapter now requests a native segment seek and gates controls on
      * SEEKDONE. Test both DV and DTS while retaining one bounded cache/player. */
-    int audio_prepared=0, ext_reopen=0;
-    if((seek || audio) && p->seamless && !p->seamless_disabled && !native_unhealthy &&
+    int audio_prepared=0;
+    /* Another version (or a track of it) still takes the full Load path: the
+     * swap without reloading the picture (14/11) was taken back by the owner. */
+    if((seek || audio) && !p->ext_swap_now && p->seamless && !p->seamless_disabled && !native_unhealthy &&
        complete && (clock_seen || pause) && !eof) {
       int selected=audio?new_stream:stream;
       int moved=reposition(p,selected,audio?0:core,target,&frame);
@@ -895,9 +881,6 @@ static void *run(void *user) {
       } else if(moved==REPOSITION_FORMAT_CHANGED) {
         audio_prepared=1;
         nativeEvent(p,"{\"dtsStage\":{\"name\":\"audio-format-reload\"}}");
-      } else if(moved==REPOSITION_REOPEN) {
-        ext_reopen=1;
-        nativeEvent(p,"{\"dtsStage\":{\"name\":\"external-swap-reopen\"}}");
       } else {
         p->seamless_disabled=1;
         nativeEvent(p,"{\"dtsStage\":{\"name\":\"native-seek-fallback\",\"detail\":\"unavailable, refused or preparation failed\"}}");
@@ -956,7 +939,7 @@ static void *run(void *user) {
       stream = new_stream; core = core_tried = 0;
       timestamp_retries = 0; timestamp_anchor = target;
       DtsFrame primed={0};
-      if (!prepareModePrimed(p, stream, core, target,!ext_reopen,
+      if (!prepareModePrimed(p, stream, core, target,1,
                             p->dv && p->seamless ? &primed : NULL,audio_prepared)) break;
       fast_pending=0;
       dv_audio_hold=p->dv && p->seamless;hold_since=clockSeconds(CLOCK_MONOTONIC);hold_target=target;

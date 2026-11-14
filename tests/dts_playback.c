@@ -511,9 +511,10 @@ int main(int argc,char **argv) {
   puts("PASS external audio: other source handed to the engine, track changes ignored, offset applied with the seek");return 0;
  }
  if(!strcmp(argv[1],"external-seamless")) {
-  // Seamless repositioning on: another version (or another track of it) is
-  // swapped in the engine and the TV keeps its player (flush, no new Load);
-  // the request also stops a wait for the old version's data.
+  // Seamless repositioning on: another version still takes the full Load
+  // path (the swap without reloading the picture was taken back, 14/11); the
+  // request stops a wait for the old version's data, and a version that stops
+  // answering is counted once for the app.
   seamless_fixture=1;scenario=NORMAL;
   DtsTrack track={.kind=DTS_AUDIO,.channels=6};strcpy(track.codec,"dts");strcpy(track.language,"xx");
   dts_playback_next_dv(0);dts_playback_next_seamless(1);
@@ -523,28 +524,20 @@ int main(int argc,char **argv) {
   assert(!s.failed && dts_playback_external(p) && count(&loads)==1);
   int fl=count(&flushes);
   assert(dts_playback_external_swap(p,"fixture://third","","pl",0,2,0,5));
-  for(int i=0;i<400 && count(&flushes)==fl;i++) nap();
+  for(int i=0;i<400 && count(&loads)==1;i++) nap();
   pthread_mutex_lock(&fixture);
   assert(ext_wakes>=1 && ext_replaces==1 && ext_replace_target==5 && !strcmp(ext_replace_url,"fixture://third"));
   pthread_mutex_unlock(&fixture);
   s=wait_status(p,0,0);
-  assert(!s.failed && count(&flushes)==fl+1 && count(&loads)==1 && count(&opens)==1);
-  // The new version stops answering: counted once for the app.
+  assert(!s.failed && count(&loads)==2 && count(&flushes)==fl);
   pthread_mutex_lock(&fixture);ext_failed_fixture=1;pthread_mutex_unlock(&fixture);
   for(int i=0;i<400;i++){ s=wait_status(p,0,0); if(s.ext_failures) break; nap(); }
   for(int i=0;i<50;i++) nap();
   s=wait_status(p,0,0);assert(s.ext_failures==1);
   pthread_mutex_lock(&fixture);ext_failed_fixture=0;pthread_mutex_unlock(&fixture);
-  // A version that cannot be opened in place of the old one: the source
-  // opens again with it, the session goes on.
-  for(int i=0;i<100;i++) nap();
-  pthread_mutex_lock(&fixture);ext_replace_fail=1;pthread_mutex_unlock(&fixture);
-  assert(dts_playback_external_swap(p,"fixture://fourth","","pl",0,-1,0,6));
-  for(int i=0;i<400 && count(&opens)==1;i++) nap();
-  pthread_mutex_lock(&fixture);ext_replace_fail=0;assert(ext_replaces==2);pthread_mutex_unlock(&fixture);
-  s=wait_status(p,0,0);assert(!s.failed && count(&opens)==2);
   dts_playback_close(p);assert(count(&creates)==count(&destroys));
-  puts("PASS external seamless: swap without a new Load, wait stopped, failure counted once, failed swap reopens");return 0;
+  (void)ext_replace_fail;
+  puts("PASS external seamless: another version reloads, wait stopped, failure counted once");return 0;
  }
  if(!strcmp(argv[1],"late-dv")) {
   // Small UI probe missed RPU, but the real demux output is single-layer P8.
