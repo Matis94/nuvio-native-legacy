@@ -6585,6 +6585,13 @@ void player_desenhar(Uint32 agora) {
   // a arte 16:9 de esticar quando a tela nao for exatamente 16:9.
   GfxRect tela = { 0, 0, NV_TELA_W, NV_TELA_H };
   int quadroMorno = player_carregando() && !erroFonte && cacheboost_backend_quadro(3);
+  // AUDIO OF ANOTHER VERSION LOADING over a converter that already showed a
+  // picture (a DTS file): the same opening screen as a file the TV played
+  // itself (owner, 14/11: Chicago Fire showed the title's art, Stargate the
+  // opening card; "it should be like Stargate"). abrindoTela is what the
+  // opening black, the Cinema and the card go by.
+  int extAbrindo = audioext_carregando() && !player_carregando() && !erroFonte && !saindo && !ehCanal();
+  int abrindoTela = player_carregando() || extAbrindo;
   int furar = (player_com_video() && !esperandoFonte) || quadroMorno;   // abrindo a fonte: sem furo, so preto
 #ifdef NV_NATIVE_SEEK_TEST
   // Keep the initial cover through preroll/bind, but never restore it over
@@ -6627,7 +6634,7 @@ void player_desenhar(Uint32 agora) {
     if (!player_com_video()) imagem = 1;
     cineUlt = agora;
     // The DV screen keeps the opening alive: it only falls with the real frame, DV or not.
-    abrecine_passo(&cine, (player_carregando() || dvtela_ativa()) && !ehCanal(), imagem, ajustes_abertura_detalhada(),
+    abrecine_passo(&cine, (abrindoTela || dvtela_ativa()) && !ehCanal(), imagem, ajustes_abertura_detalhada(),
                    agora, dtc, ajustes_animacoes_reduzidas());
     if (erroFonte || saindo || ehCanal()) cine.veu = 0.0f; }
   // Live video below (hardware plane): the glass of the frame is translucent
@@ -6739,7 +6746,7 @@ void player_desenhar(Uint32 agora) {
     if (dtf > 0.1f) dtf = 0.1f;
     // A CINEMA tem o proprio crossfade (o veu dela), que espera o quadro real.
     if (quadroMorno || abrecine_cinema(&cine)) abrindoFundo = 0.0f;
-    else if (player_carregando() && !ehCanal()) abrindoFundo = 1.0f;
+    else if (abrindoTela && !ehCanal()) abrindoFundo = 1.0f;
     else if (abrindoFundo > 0.0f) {
       abrindoFundo = ajustes_animacoes_reduzidas() ? 0.0f : anim_mola(abrindoFundo, 0.0f, dtf, 12.0f);
       if (abrindoFundo < 0.01f) abrindoFundo = 0.0f;
@@ -6750,7 +6757,7 @@ void player_desenhar(Uint32 agora) {
   // Uma abertura NOVA (a anterior acabou, ou o player reabriu): volta ao compacto
   // e zera o relogio. Ao acabar, o estado fica como esta para o cartao sair com o
   // mesmo conteudo (a saida e a da ilha, plrilha.c).
-  if (player_carregando() && !ehCanal()) {
+  if (abrindoTela && !ehCanal()) {
     if (!abrindoViva) { abrindoDesde = agora; abrindoExp = 0; abrindoT = 0.0f; abrFitIdx = -2; }
     abrindoViva = 1;
   } else abrindoViva = 0;
@@ -6788,39 +6795,6 @@ void player_desenhar(Uint32 agora) {
 #ifdef NV_DV_TRUEHD_TEST
   avisarTruehd(agora);
 #endif
-  // AUDIO OF ANOTHER VERSION LOADING (owner, 07/11: "instead of a black
-  // screen, the title's art and that the audio is loading"): from the choice
-  // until that audio plays, the title's backdrop dimmed over the video hole and
-  // the compact island with the breathing dot and the version's name.
-  int extCarregando = audioext_carregando() && !player_carregando() && !erroFonte && !saindo && !ehCanal();
-  { static float extCarT;
-    static Uint32 extCarUlt;
-    float dtc = extCarUlt ? (float)(agora - extCarUlt) / 1000.0f : 1.0f / 60.0f;
-    extCarUlt = agora;
-    if (dtc > 0.1f) dtc = 0.1f;
-    extCarT = ajustes_animacoes_reduzidas() ? (extCarregando ? 1.0f : 0.0f)
-                                            : anim_mola(extCarT, extCarregando ? 1.0f : 0.0f, dtc, 12.0f);
-    if (extCarT < 0.01f) extCarT = 0.0f;
-    if (extCarT > 0.0f) {
-      const char *arte = c && c->backdrop[0] ? artehero_url(c) : NULL;
-      GLuint tx = arte ? tex_obter_hero(arte) : 0;
-      if (tx) {
-        gfx_tex_aspect_atual = tex_aspecto(arte);
-        gfx_rect(tela, tx, GFX_CARD, 0, 0, 0, 0.0f, 0, 0, 0, extCarT);
-        gfx_tex_aspect_atual = 0.0f;
-        gfx_cor(tela, 0.0f, 0.0f, 0.0f, 0.0f, 0.45f * extCarT);
-      } else gfx_cor(tela, 0.0f, 0.0f, 0.0f, 0.0f, extCarT);
-    }
-    if (extCarregando) {
-      static char lin[260];
-      PlrIlhaPedido pd;
-      const char *nome = audioext_nome();
-      memset(&pd, 0, sizeof pd);
-      if (nome && nome[0]) snprintf(lin, sizeof lin, "%s \xc2\xb7 %.150s", i18n("Loading audio from another version…"), nome);
-      else snprintf(lin, sizeof lin, "%s", i18n("Loading audio from another version…"));
-      pd.texto = lin; pd.respira = 1; pd.semFim = 1; pd.aberta = 1;
-      plrilha_pedir(&pd);
-    } }
   if (player_carregando() && ehCanal()) {
     // CANAL SINTONIZANDO: a versao COMPACTA, uma linha na propria ilha do
     // relogio (dono, 03/10: "no player do live tv vamos usar a versao compacta
@@ -6834,7 +6808,7 @@ void player_desenhar(Uint32 agora) {
     else snprintf(lin, sizeof lin, "%s", i18n("Sintonizando…"));
     pd.texto = lin; pd.respira = 1; pd.semFim = 1; pd.aberta = 1;
     plrilha_pedir(&pd);
-  } else if (player_carregando() && !stream_folha_aberta() && stream_folha_anim() < 0.05f &&
+  } else if (abrindoTela && !stream_folha_aberta() && stream_folha_anim() < 0.05f &&
              // A TELA DO DOLBY VISION substitui o cartao: sem ela, o caminho do
              // DV mostrava "Abrindo fonte" DUAS vezes (a TV e depois o demux).
              (!dvtela_visivel() || dvtela_variante() == DVT_VAR_DETALHADA) &&
@@ -6861,7 +6835,7 @@ void player_desenhar(Uint32 agora) {
   // Agora so os pontos, cada um com a sombra suave propria (plrui_anel_solto).
   // Com o veu da Cinema ainda na tela o trilho dela ja e o sinal (dono, 11/10:
   // o anel por cima do logo ficava feio).
-  else if (comVideo && !erroFonte && !saindo && !extCarregando && video_bufferando_ms() >= 600 && cine.veu <= 0.01f) {
+  else if (comVideo && !erroFonte && !saindo && !extAbrindo && video_bufferando_ms() >= 600 && cine.veu <= 0.01f) {
     ESCALA_INI();
     plrui_anel_solto(NV_VTELA_W * 0.5f, NV_VTELA_H * 0.5f, 56.0f, agora, entrada);
     ESCALA_FIM();
