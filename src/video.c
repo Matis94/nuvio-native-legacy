@@ -2807,6 +2807,9 @@ static void extReabrir(void) {
         extGenAplicada = extGenVista = audioext_offset_geracao(); extGenEm = 0;
         audioext_tocando_definir(0);   // the new audio says so when it plays
         audioext_carregando_definir(1);
+#ifdef NV_NATIVE_SEEK_TEST
+        dtsImagemExibida = 0;   // the swap reloads the TV player too (see below)
+#endif
         printf("[ext-audio] swapping the other version at %.1fs dv=%d\n", posSeg, dtsModoDv); fflush(stdout);
         return;
       }
@@ -2815,6 +2818,12 @@ static void extReabrir(void) {
       // Dolby Vision or DTS keep the converter: its own first usable track.
       pthread_mutex_lock(&audioMkvLock); audioAtual = -1; pthread_mutex_unlock(&audioMkvLock);
     }
+#ifdef NV_NATIVE_SEEK_TEST
+    // Until the reopened converter shows its picture the player counts as
+    // opening: the opening screen covers the gap, not a black screen
+    // (owner's log 14/11: the card went at "prepared", ~2 s before the frame).
+    dtsImagemExibida = 0;
+#endif
     printf("[ext-audio] reopening the converter at %.1fs external=%d dv=%d\n", posSeg, quer, dtsModoDv);
     fflush(stdout);
     iniciarDts(-1);
