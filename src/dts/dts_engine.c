@@ -220,7 +220,12 @@ struct DtsEngine {
    * too long reconnects at the same place (xs_tries at xs_at, a fresh link
    * from the add-on on the second), then gives up (ext_dead). xs_waiting:
    * the reader is waiting now (a track change or seek may wake it). */
-  int64_t xs_at; int xs_tries, ext_dead; volatile int xs_waiting;
+  int64_t xs_at; int xs_tries, ext_dead, xs_quiet; volatile int xs_waiting;
+  /* Speed guard (speed_guard): the current connection's first byte (time and
+   * ring end then), and a window of the reader's waiting: since sg_win_ms,
+   * fx_hi was sg_win_hi, sg_blocked_ms spent waiting, waiting now since
+   * sg_wait_ms (0: not waiting). */
+  uint64_t sg_first_ms, sg_win_ms, sg_blocked_ms, sg_wait_ms; int64_t sg_win_hi;
   /* Main engine: the other version's read was woken for a pending request
    * (ext_woken, until its seek or swap) or gave up (ext_failed). Either way
    * the picture goes on without its packets. */
@@ -758,6 +763,7 @@ static int fx_sink(void *opaque,const char *data,size_t n) {
     if(k>first) memcpy(e->fx_buf,data+first,k-first);
     e->fx_hi+=(int64_t)k; data+=k; n-=k;
     e->metrics.range_bytes+=(uint64_t)k;
+    if(!e->sg_first_ms) e->sg_first_ms=fx_now_ms();
     pthread_cond_broadcast(&e->range_wake);
   }
   pthread_mutex_unlock(&e->range_lock);
@@ -782,6 +788,7 @@ static void *fx_worker(void *opaque) {
     snprintf(target,sizeof target,"%s",direct?e->final_url:e->url);
     int strip=direct&&e->final_cross;
     if(fx_abortable(e))__atomic_store_n(&e->source_cancel,0,__ATOMIC_RELAXED);
+    e->sg_first_ms=0;   /* a new connection: the speed guard waits for its first byte */
     pthread_mutex_unlock(&e->range_lock);
     uint64_t t0=fx_now_ms();
     e->fx_live_total=-1;
@@ -1063,41 +1070,99 @@ int dts_engine_prefetch(DtsEngine *e,double seconds) {
   printf("[prefetch] %.1fs: fetching %lld KiB at %lld\n",seconds,(long long)(cap/1024),(long long)e->pf_lo); fflush(stdout);
   return 0;
 }
-/* The other version's reader has waited for the byte at pos since
- * *wait_started (under range_lock). Owner's log 14/11: a connection to a
- * TorBox CDN link that went quiet held the converter, and with it the
- * picture, until the next track change, which itself waited behind it. After
- * EXT_STALL_S s the request is dropped and made again at the same place; the
- * second time through the add-on (a fresh link); after EXT_STALL_TRIES tries
- * at that place, -1: the version gives up and the app goes back to the file's
- * own audio. A trickle that keeps the wait under EXT_STALL_S is the slow
- * download watchdog's case (dts_playback.c, video.c). */
+/* Guards of a reader waiting on a slow source (owner's logs 14/11: TorBox CDN
+ * connections that went quiet, or trickled at 15-25 KB/s while a fresh one
+ * got MB/s at once). Two readers: the other version's (parent set), and this
+ * source's in a conversion (one continuous stream; the TV player's own path
+ * is not watched). Both reconnect at the reader's place, the second time
+ * through the add-on (a fresh link), EXT_STALL_TRIES times per place; then the
+ * other version gives up (the app goes back to the file's own audio), this
+ * source just waits on (the rebuffer and fallback logic stays as it was). */
 #ifndef EXT_STALL_S
-#define EXT_STALL_S 8   /* tests build with a shorter one */
+#define EXT_STALL_S 8   /* tests build with shorter ones */
+#endif
+#ifndef SG_WINDOW_MS
+#define SG_WINDOW_MS 4000
 #endif
 #define EXT_STALL_TRIES 3
-static int ext_stall_guard(DtsEngine *e,uint64_t *wait_started) {
-  uint64_t now=clock_ns(CLOCK_MONOTONIC);
-  if(e->fx_req>=0 || now<*wait_started || now-*wait_started<(uint64_t)EXT_STALL_S*1000000000u) return 0;
+static int guarded(const DtsEngine *e) { return e->parent || (e->conv_stream && !e->source_stream); }
+/* Under range_lock. -1: the other version gives up. */
+static int xs_reconnect(DtsEngine *e,const char *why) {
+  const char *tag=e->parent?"ext-audio":"dts-guard", *who=e->parent?"the other version":"this source";
   if(e->xs_tries && llabs(e->pos-e->xs_at)>1024*1024) e->xs_tries=0;   /* another place: tries anew */
   if(e->xs_tries>=EXT_STALL_TRIES) {
+    if(!e->parent) {
+      if(!e->xs_quiet) {
+        printf("[%s] %s %s at %lld MiB after %d reconnections: waiting on\n",tag,who,why,(long long)(e->pos>>20),EXT_STALL_TRIES);
+        fflush(stdout); e->xs_quiet=1;
+      }
+      return 0;
+    }
     e->ext_dead=1;
-    printf("[ext-audio] waiting for the other version %d s at %lld MiB after %d reconnections: giving up\n",
-           EXT_STALL_S,(long long)(e->pos>>20),EXT_STALL_TRIES);
+    printf("[%s] %s %s at %lld MiB after %d reconnections: giving up\n",tag,who,why,(long long)(e->pos>>20),EXT_STALL_TRIES);
     fflush(stdout);
     return -1;
   }
-  e->xs_tries++; e->xs_at=e->pos;
+  e->xs_tries++; e->xs_at=e->pos; e->xs_quiet=0;
   int fresh=e->xs_tries==2 && e->final_url[0];
   if(fresh) { e->final_url[0]=0; e->fx_resolved_ms=fx_now_ms(); }
-  printf("[ext-audio] waiting for the other version %d s at %lld MiB: reconnecting (%d/%d)%s\n",
-         EXT_STALL_S,(long long)(e->pos>>20),e->xs_tries,EXT_STALL_TRIES,fresh?", a fresh link from the add-on":"");
+  printf("[%s] %s %s at %lld MiB: reconnecting (%d/%d)%s\n",tag,who,why,(long long)(e->pos>>20),
+         e->xs_tries,EXT_STALL_TRIES,fresh?", a fresh link from the add-on":"");
   fflush(stdout);
   e->fx_req=e->pos;
   __atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
   pthread_cond_broadcast(&e->range_wake);
-  *wait_started=now;   /* the new connection gets its own EXT_STALL_S */
   return 0;
+}
+/* Silent: the reader has waited EXT_STALL_S s since *wait_started without
+ * its byte. */
+static int ext_stall_guard(DtsEngine *e,uint64_t *wait_started) {
+  uint64_t now=clock_ns(CLOCK_MONOTONIC);
+  if(e->fx_req>=0 || now<*wait_started || now-*wait_started<(uint64_t)EXT_STALL_S*1000000000u) return 0;
+  char why[48]; snprintf(why,sizeof why,"silent %d s",EXT_STALL_S);
+  *wait_started=now;   /* the new connection gets its own EXT_STALL_S */
+  return xs_reconnect(e,why);
+}
+/* Bytes per second this file needs (size over length), 0 before it is open. */
+static double sg_need(const DtsEngine *e) {
+  return e->total>0 && e->fmt && e->fmt->duration>0 ? (double)e->total*AV_TIME_BASE/(double)e->fmt->duration : 0;
+}
+static void sg_window(DtsEngine *e,uint64_t now) {
+  e->sg_win_ms=now; e->sg_win_hi=e->fx_hi; e->sg_blocked_ms=0;
+  if(e->sg_wait_ms) e->sg_wait_ms=now;
+}
+/* Trickle: over SG_WINDOW_MS from the connection's first byte, the reader
+ * waited most of the time and the connection brought less than a quarter of
+ * what the file needs (128 KB/s before the file is open; 48..512 KB/s, so a
+ * home line slower than a big file is not reconnected over and over). A
+ * connection silent from its start is the other guard's. */
+static int speed_guard(DtsEngine *e,uint64_t *wait_started) {
+  uint64_t now=fx_now_ms();
+  if(e->fx_req>=0 || !e->sg_first_ms) return 0;
+  if(e->sg_win_ms<e->sg_first_ms) { sg_window(e,e->sg_first_ms<now?e->sg_first_ms:now); return 0; }
+  uint64_t el=now-e->sg_win_ms;
+  if(el<SG_WINDOW_MS) return 0;
+  uint64_t from=e->sg_wait_ms>e->sg_win_ms?e->sg_wait_ms:e->sg_win_ms;
+  uint64_t blocked=e->sg_blocked_ms+(e->sg_wait_ms && now>from?now-from:0);
+  double rate=(double)(e->fx_hi-e->sg_win_hi)*1000.0/(double)el, need=sg_need(e);
+  double thr=need>0?need/4:128*1024;
+  if(thr<48*1024) thr=48*1024;
+  if(thr>512*1024) thr=512*1024;   /* a trickle, not a line slower than a remux */
+  int slow=blocked*10>=el*6 && rate<thr;
+  sg_window(e,now);
+  if(!slow) return 0;
+  char why[64]; snprintf(why,sizeof why,"slow (%.0f KB/s, needs %.0f)",rate/1024,(need>0?need:thr*4)/1024);
+  *wait_started=clock_ns(CLOCK_MONOTONIC);   /* the new connection gets its own EXT_STALL_S */
+  return xs_reconnect(e,why);
+}
+/* The reader stops waiting (every return of read_fluxo_pending). */
+static void xs_leave(DtsEngine *e) {
+  e->xs_waiting=0;
+  if(e->sg_wait_ms) {
+    uint64_t now=fx_now_ms(), from=e->sg_wait_ms>e->sg_win_ms?e->sg_wait_ms:e->sg_win_ms;
+    if(now>from) e->sg_blocked_ms+=now-from;
+    e->sg_wait_ms=0;
+  }
 }
 static int read_fluxo_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
   DtsEngine *e=opaque;
@@ -1122,20 +1187,20 @@ static int read_fluxo_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
   for(;;) {
     struct pollfd pending={pending_fd,POLLIN,0};
     if(cancelled(e) || __atomic_load_n(&e->interrupt,__ATOMIC_RELAXED) ||
-       (pending_fd>=0 && poll(&pending,1,0)>0)) { e->xs_waiting=0; pthread_mutex_unlock(&e->range_lock); return AVERROR_EXIT; }
-    if(e->total>=0 && e->pos>=e->total) { e->xs_waiting=0; pthread_mutex_unlock(&e->range_lock); return AVERROR_EOF; }
+       (pending_fd>=0 && poll(&pending,1,0)>0)) { xs_leave(e); pthread_mutex_unlock(&e->range_lock); return AVERROR_EXIT; }
+    if(e->total>=0 && e->pos>=e->total) { xs_leave(e); pthread_mutex_unlock(&e->range_lock); return AVERROR_EOF; }
     if(e->ext_dead && !(e->fx_req<0 && e->pos>=e->fx_lo && e->pos<e->fx_hi)) {   /* gave up: no new wait */
-      e->xs_waiting=0; pthread_mutex_unlock(&e->range_lock); return AVERROR(EIO);
+      xs_leave(e); pthread_mutex_unlock(&e->range_lock); return AVERROR(EIO);
     }
     if(e->pf_buf && e->pos>=e->pf_lo && e->pos<e->pf_hi && !(e->fx_req<0 && e->pos>=e->fx_lo && e->pos<e->fx_hi)) {
-      e->xs_waiting=0;
+      xs_leave(e);
       int64_t k=e->pf_hi-e->pos; if(k>n) k=n;
       memcpy(dst,e->pf_buf+(e->pos-e->pf_lo),(size_t)k); e->pos+=k; e->pf_served+=k;
       pthread_mutex_unlock(&e->range_lock);
       return (int)k;
     }
     if(e->fx_req<0 && e->pos>=e->fx_lo && e->pos<e->fx_hi) {
-      e->xs_waiting=0;
+      xs_leave(e);
       int64_t k=e->fx_hi-e->pos; if(k>n) k=n;
       size_t at=(size_t)(e->pos%FX_CAP); if((int64_t)(FX_CAP-at)<k) k=FX_CAP-at;
       memcpy(dst,e->fx_buf+at,(size_t)k); e->pos+=k;
@@ -1144,10 +1209,10 @@ static int read_fluxo_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
       pthread_mutex_unlock(&e->range_lock);
       return (int)k;
     }
-    if(e->fx_req<0 && e->fx_eof && e->pos>=e->fx_hi) { e->xs_waiting=0; pthread_mutex_unlock(&e->range_lock); return AVERROR_EOF; }
+    if(e->fx_req<0 && e->fx_eof && e->pos>=e->fx_hi) { xs_leave(e); pthread_mutex_unlock(&e->range_lock); return AVERROR_EOF; }
     if(e->fx_req<0 && e->fx_err) {
       if(e->parent) e->ext_dead=1;   /* the stream's own retries ran out */
-      e->xs_waiting=0; pthread_mutex_unlock(&e->range_lock); return AVERROR(EIO);
+      xs_leave(e); pthread_mutex_unlock(&e->range_lock); return AVERROR(EIO);
     }
     /* Outside what the stream has or will soon have: start over there. */
     if(e->fx_req<0 && (e->pos<e->fx_lo || e->pos>e->fx_hi+(fx_long(e)?0:FX_SKIP))) {
@@ -1156,8 +1221,14 @@ static int read_fluxo_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
       pthread_cond_broadcast(&e->range_wake);
     }
     if(!wait_started) wait_started=clock_ns(CLOCK_MONOTONIC);
-    if(e->parent && ext_stall_guard(e,&wait_started)<0) {
-      e->xs_waiting=0; pthread_mutex_unlock(&e->range_lock); return AVERROR(EIO);
+    if(guarded(e)) {
+      if(!e->sg_wait_ms) e->sg_wait_ms=fx_now_ms();
+      /* This source's first connection may wait on the add-on's redirects:
+       * the silent guard starts once anything arrived. */
+      int silent=e->parent || e->metrics.range_bytes>0;
+      if((silent && ext_stall_guard(e,&wait_started)<0) || speed_guard(e,&wait_started)<0) {
+        xs_leave(e); pthread_mutex_unlock(&e->range_lock); return AVERROR(EIO);
+      }
     }
     e->xs_waiting=1;
     struct timespec ts; clock_gettime(CLOCK_REALTIME,&ts);
@@ -2203,6 +2274,7 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
   }
 #endif
   e->final_url[0]=0; e->final_cross=0; e->passthrough=0; e->remux=0; e->opening=1;
+  e->xs_tries=e->xs_quiet=0; e->sg_first_ms=e->sg_win_ms=e->sg_blocked_ms=e->sg_wait_ms=0;
   e->demux_eof=e->decoder_eof=e->resampler_eof=e->encoder_sent_eof=e->timeline=0;
   /* Test option: one continuous request; the ring takes the same RAM the
    * range slots would (Settings > Buffer size, 64 MiB when automatic). */

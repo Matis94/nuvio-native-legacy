@@ -20,6 +20,12 @@ static const char *HEADERS = "X-Fixture: yes";
 static unsigned streams_opened;
 static int64_t hang_at;          /* >0: the stream of hang_url stops sending there */
 static char hang_url[4096];
+/* trickle_left connections of trickle_url that reach trickle_at go on at
+ * about 20 KB/s (owner's logs 14/11: TorBox CDN connections at 15-25 KB/s
+ * while a fresh one got MB/s); trickle_hits counts them. */
+static int64_t trickle_at;
+static int trickle_left, trickle_hits;
+static char trickle_url[4096];
 
 char *rede_range_headers(const char *raw, int public_only) {
   (void)public_only; return strdup(raw ? raw : "");
@@ -40,8 +46,22 @@ int rede_fluxo64(const char *url, const char *headers, int64_t start,
   *status = 206;
   char buf[65536];
   int64_t at = start;
+  int slow = -1;   /* not decided until this connection reaches trickle_at */
   for (;;) {
     if (__atomic_load_n(cancel, __ATOMIC_RELAXED)) { fclose(f); return -1; }
+    if (slow < 0 && trickle_at > 0 && at >= trickle_at && !strcmp(url, trickle_url)) {
+      slow = __atomic_sub_fetch(&trickle_left, 1, __ATOMIC_RELAXED) >= 0;
+      if (slow) __atomic_add_fetch(&trickle_hits, 1, __ATOMIC_RELAXED);
+    }
+    if (slow == 1) {
+      size_t n = fread(buf, 1, 1024, f);
+      if (!n) break;
+      at += (int64_t)n;
+      if (!sink(opaque, buf, n)) { fclose(f); return 1; }
+      *bytes += (int64_t)n;
+      usleep(50000);
+      continue;
+    }
     /* A connection that goes quiet past hang_at (owner's log 14/11): open,
      * no bytes, until dropped. */
     int64_t h = __atomic_load_n(&hang_at, __ATOMIC_RELAXED);
@@ -541,6 +561,47 @@ int main(int argc, char **argv) {
     assert(reconnected >= 3 && took >= 3 * EXT_STALL_S && took < 6 * EXT_STALL_S);
     __atomic_store_n(&hang_at, 0, __ATOMIC_RELAXED);
     dts_engine_destroy(e);
+  }
+  /* A trickling connection (owner's logs 14/11): the speed guard reconnects
+   * at the same place, the second time with a fresh link; the third
+   * connection is a good one and everything plays to the end. The other
+   * version first, then the picture source of a conversion. */
+  { Run tr; struct timespec t0, t1; double took;
+    snprintf(trickle_url, sizeof trickle_url, "%s", long_idx);
+    e = dts_engine_create();
+    dts_engine_external_audio(e, long_idx, HEADERS, "pl", 0);
+    assert(dts_engine_open(e, main60, HEADERS, -1, 0, 0) == 0);
+    int64_t total = 0; dts_engine_external_bytes(e, &total);
+    trickle_hits = 0; trickle_left = 2; __atomic_store_n(&trickle_at, total / 2, __ATOMIC_RELAXED);
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    tr = play(e, 0, 0);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    took = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9;
+    fprintf(stderr, "trickling other version: %d slow connections, %.1f s, %d video %d audio, last audio %.1f s\n",
+            trickle_hits, took, tr.video, tr.audio, tr.last_audio / 1e9);
+    assert(trickle_hits == 2 && !dts_engine_external_failed(e) && tr.video == 1500);
+    assert(tr.last_audio > tr.max_video - 2000000000LL && took < 6.0 * SG_WINDOW_MS / 1000);
+    dts_engine_destroy(e);
+    __atomic_store_n(&trickle_at, 0, __ATOMIC_RELAXED);
+    dts_engine_set_conversion_stream(1);
+    dts_engine_set_ahead_mib(8);
+    e = dts_engine_create();
+    dts_engine_external_audio(e, main60, HEADERS, "", 0);
+    trickle_hits = 0; trickle_left = 2;
+    { FILE *lf = fopen(long_idx, "rb"); assert(lf); fseeko(lf, 0, SEEK_END); total = ftello(lf); fclose(lf); }
+    __atomic_store_n(&trickle_at, total / 2, __ATOMIC_RELAXED);
+    assert(dts_engine_open(e, long_idx, HEADERS, -1, 0, 0) == 0);
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    tr = play(e, 0, 0);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    took = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9;
+    fprintf(stderr, "trickling picture source: %d slow connections, %.1f s, %d video, last video %.1f s\n",
+            trickle_hits, took, tr.video, tr.max_video / 1e9);
+    assert(trickle_hits == 2 && tr.video > 0 && took < 6.0 * SG_WINDOW_MS / 1000);
+    dts_engine_destroy(e);
+    __atomic_store_n(&trickle_at, 0, __ATOMIC_RELAXED);
+    dts_engine_set_ahead_mib(0);
+    dts_engine_set_conversion_stream(0);
   }
   checkBytes = 1;
   /* AVI and MPEG-TS (owner's log 07/11: a 4.3 GB AVI picture source; small
