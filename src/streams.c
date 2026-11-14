@@ -916,6 +916,12 @@ const Stream *stream_item(int i) {
   return i >= 0 && i < n ? &lista[i] : NULL;
 }
 
+int stream_lista_tem_addon(const char *k) {
+  if (!k || !*k) return 0;
+  for (int i = 0; i < n; i++) if (!strcmp(lista[i].addonChave, k)) return 1;
+  return 0;
+}
+
 // Pontuacao da regra do dono, do mais forte para o mais fraco:
 //   MP4 4K Dolby Vision  >  4K Dolby Vision (qualquer container)
 //   >  4K  >  Dolby Vision  >  resolucao  >  ordem de chegada

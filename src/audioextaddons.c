@@ -4,6 +4,7 @@
 #include "dados.h"
 #include "fontefalha.h"
 #include "perfis.h"
+#include "streams.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -70,11 +71,14 @@ int audioext_addons_lista(AudioExtAddon *out, int max) {
   for (int i = 0; i < n && k < max; i++) {
     const char *base = addons_base(i), *h, *fim;
     if (!addons_ativo(i) || !addons_fornece(i, ADD_STREAM) || !base || !*base) continue;
+    fontefalha_addon_chave(base, out[k].chave, sizeof out[k].chave);
+    // Before its manifest answers, every add-on is presumed to have streams:
+    // a subtitles add-on (Napisy24) only counts once it sent a source here.
+    if (!addons_sondado(i) && !stream_lista_tem_addon(out[k].chave)) continue;
     snprintf(out[k].nome, sizeof out[k].nome, "%s", addons_nome(i)[0] ? addons_nome(i) : base);
     h = strstr(base, "://"); h = h ? h + 3 : base;
     fim = h + strcspn(h, "/?");
     snprintf(out[k].host, sizeof out[k].host, "%.*s", (int)(fim - h), h);
-    fontefalha_addon_chave(base, out[k].chave, sizeof out[k].chave);
     k++;
   }
   return k;

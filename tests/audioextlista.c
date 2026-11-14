@@ -1,4 +1,4 @@
-// "From another source" candidates: filters, language grouping, order, copies, the per-language cap.
+// "From another source" candidates: filters, language grouping, order, copies, no cap per language.
 #include "../src/audioextlista.h"
 #include <assert.h>
 #include <stdio.h>
@@ -129,10 +129,10 @@ int main(void) {
   o.ocultarCopias = 0;
   assert(audioext_lista(e, n, &o, c, 64) == n);
 
-  // THE CAP: every version is listed, AUDIOEXT_POR_IDIOMA per language at
-  // most (the smallest kept), the next languages still in; `max` in all.
+  // NO CAP PER LANGUAGE: a big language keeps every version (the smallest
+  // first) and the next languages are still in; `max` cuts the whole list.
   n = 0;
-  for (int i = 0; i < AUDIOEXT_POR_IDIOMA + 5; i++) e[n++] = fonte("pl", AEXT_DDP, 6, 1, 1 + i);
+  for (int i = 0; i < 205; i++) e[n++] = fonte("pl", AEXT_DDP, 6, 1, 1 + i);
   for (int i = 0; i < 7; i++) e[n++] = fonte("", AEXT_DDP, 6, 1, 1 + i);
   for (int i = 0; i < 11; i++) e[n++] = fonte("fr", AEXT_DDP, 6, 1, 1 + i);
   for (int i = 0; i < 3; i++) e[n++] = fonte("de", AEXT_DDP, 6, 1, 1 + i);
@@ -141,9 +141,8 @@ int main(void) {
   k = audioext_lista(e, n, &o, c, 256);
   { int g[4] = { 0 }, de = 0, fr = 0;
     for (int i = 0; i < k; i++) { g[c[i].grupo]++; if (!strcmp(c[i].idioma, "de")) de++; if (!strcmp(c[i].idioma, "fr")) fr++; }
-    assert(g[AEXT_G_PREF1] == AUDIOEXT_POR_IDIOMA && g[AEXT_G_SEM] == 7 && de == 3 && fr == 11);
-    assert(k == AUDIOEXT_POR_IDIOMA + 7 + 11 + 3);
-    for (int i = 0; i < AUDIOEXT_POR_IDIOMA; i++) assert(c[i].indice == i);
+    assert(g[AEXT_G_PREF1] == 205 && g[AEXT_G_SEM] == 7 && de == 3 && fr == 11 && k == n);
+    for (int i = 0; i < 205; i++) assert(c[i].indice == i);
     // Other languages alphabetically: German before French.
     for (int i = 1; i < k; i++) if (c[i].grupo == AEXT_G_OUTRA && c[i - 1].grupo == AEXT_G_OUTRA)
       assert(strcmp(c[i - 1].idioma, c[i].idioma) <= 0); }
@@ -158,6 +157,6 @@ int main(void) {
   audioext_tamanho_texto(6100000000ULL, t, sizeof t); assert(!strcmp(t, "6.1 GB"));
   audioext_tamanho_texto(850000000ULL, t, sizeof t); assert(!strcmp(t, "850 MB"));
   audioext_tamanho_texto(0, t, sizeof t); assert(!t[0]);
-  puts("audioextlista: filters, language groups (unknown 3rd), cache/channels/codec/size order, copies and the per-language cap passed");
+  puts("audioextlista: filters, language groups (unknown 3rd), cache/channels/codec/size order, copies and the whole list passed");
   return 0;
 }

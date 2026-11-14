@@ -19,10 +19,15 @@ int dados_gravar(const char *n, const char *t) {
 }
 int dados_apagar(const char *n) { int i = achar(n); if (i >= 0) arqNome[i][0] = 0; return 1; }
 int perfis_ativo(void) { return perfil; }
-static const char *const NOMES[] = { "AIOStreams", "Torrentio", "Cinemeta", "MediaFusion" };
+static const char *const NOMES[] = { "AIOStreams", "Torrentio", "Cinemeta", "MediaFusion", "Napisy24 Addon" };
 static const char *const BASES[] = { "https://aio.elfhosted.com/stremio/abc", "https://torrentio.strem.fun/tb=x",
-                                     "https://v3-cinemeta.strem.io", "https://mediafusion.elfhosted.com/xyz" };
-int addons_n(void) { return 4; }
+                                     "https://v3-cinemeta.strem.io", "https://mediafusion.elfhosted.com/xyz",
+                                     "https://napisy24.example/sub" };
+// Napisy24's manifest has not answered yet: presumed to have streams.
+static int napisyEnviou;
+int addons_n(void) { return 5; }
+int addons_sondado(int i) { return i != 4; }
+int stream_lista_tem_addon(const char *k) { return napisyEnviou && k && strstr(k, "napisy24"); }
 const char *addons_nome(int i) { return NOMES[i]; }
 const char *addons_base(int i) { return BASES[i]; }
 int addons_ativo(int i) { (void)i; return 1; }
@@ -35,6 +40,11 @@ int main(void) {
   unsigned v;
   assert(n == 3 && !strcmp(a[0].nome, "AIOStreams") && !strcmp(a[0].host, "aio.elfhosted.com"));
   assert(!strcmp(a[1].host, "torrentio.strem.fun") && !strcmp(a[2].nome, "MediaFusion"));
+  // An add-on whose manifest has not answered counts only once it sent a source.
+  napisyEnviou = 1;
+  assert(audioext_addons_lista(a, 8) == 4 && !strcmp(a[3].nome, "Napisy24 Addon"));
+  napisyEnviou = 0;
+  assert(audioext_addons_lista(a, 8) == 3);
   // All on by default; a source without a key always passes.
   assert(!audioext_addons_resumo(&on, &tot) && on == 3 && tot == 3);
   assert(audioext_addon_ligado(a[1].chave) && audioext_addon_ligado("") && audioext_addon_ligado(NULL));
@@ -56,6 +66,6 @@ int main(void) {
   v = audioext_addons_versao();
   audioext_addon_definir(a[0].chave, 1);
   assert(audioext_addons_versao() == v);
-  puts("audioextaddons: per-profile add-on filter, new add-ons on, list and summary passed");
+  puts("audioextaddons: per-profile add-on filter, new add-ons on, list (unprobed add-ons only with sources) and summary passed");
   return 0;
 }

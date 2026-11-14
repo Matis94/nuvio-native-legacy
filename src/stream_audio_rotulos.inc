@@ -16,6 +16,17 @@ static const char *audioRotuloIdioma(const char *p,const char *fim,char token[12
     if(!strcasecmp(token,aliases[i].nome))return aliases[i].codigo;
   return faixaIdiomaTextoConhecido(p,fim)?token:NULL;
 }
+// Two letters guessed from a release name ("PL", "DE") count only for the
+// languages releases tag that way: rare ISO codes are words of the title
+// there ("Stargate SG-1" is not Sango, "ST" is not Sesotho).
+static int audioRotuloCodigoComum(const char *t) {
+  static const char *const comuns[]={"en","pl","de","fr","es","it","pt","ru","nl","sv","da","no","nb","fi",
+    "cs","cz","sk","sl","hu","ro","bg","el","gr","tr","uk","ua","hr","sr","bs","lt","lv","et","he","ar","fa",
+    "hi","ta","te","ml","kn","bn","ja","jp","ko","kr","zh","cn","th","vi","id","ms","ca","eu","gl","is","mk",
+    "sq","ur","pa","mr","tl"};
+  for(size_t i=0;i<sizeof comuns/sizeof *comuns;i++) if(!strcasecmp(t,comuns[i]))return 1;
+  return 0;
+}
 static int audioRotuloSubs(const char *p,const char *fim) {
   static const char *const nomes[]={"sub","subs","subtitle","subtitles","subbed","softsub","softsubs",
     "hardsub","hardsubs","leg","legenda","legendas","legendado","altyazi","altyazı","altyazılı","vostfr"};
@@ -93,6 +104,7 @@ static void audioRotulosTexto(const char *texto,char *dst,unsigned tam) {
         p=q;continue;
       }
       char token[128];const char *idioma=audioRotuloIdioma(p,q,token);
+      if(idioma && q-p==2 && idioma==token && !audioRotuloCodigoComum(token))idioma=NULL;
       // Avoid treating ordinary lowercase words (it/is/as/hi) as ISO codes.
       int curto=q-p==2 && !(isupper((unsigned char)p[0]) && isupper((unsigned char)p[1]));
       int isolado=(p==linha && q==fim) || (p>linha && strchr("._[(/+-|",p[-1])) || (q<fim && strchr("._])",*q));

@@ -105,17 +105,8 @@ int audioext_lista(const AudioExtEntrada *e, int n, const AudioExtOpcoes *o, Aud
       }
     }
   }
-  for (int i = 0, porIdioma = 0, ant = -1; i < m && k < max; i++) {
-    if (mantido[i] != -1) continue;
-    // The preferred and the second language are one bucket each, whatever
-    // code the add-on wrote ("pl", "pol"); the others group by language.
-    if (ant >= 0 && it[i].c.grupo == it[ant].c.grupo &&
-        (it[i].c.grupo != AEXT_G_OUTRA || !strcasecmp(it[i].c.idioma, it[ant].c.idioma) ||
-         casa(it[i].c.idioma, it[ant].c.idioma))) porIdioma++;
-    else porIdioma = 0;
-    ant = i;
-    if (porIdioma < AUDIOEXT_POR_IDIOMA) out[k++] = it[i].c;
-  }
+  for (int i = 0; i < m && k < max; i++)
+    if (mantido[i] == -1) out[k++] = it[i].c;
   free(it); free(mantido);
   casaFn = NULL;
   return k;

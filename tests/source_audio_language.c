@@ -96,6 +96,14 @@ int main(void) {
   addon("\"title\":\"Movie no language information\"","tr",0);
   addon("\"title\":\"TRIGGER TURKEY ENTR TUR1080p Turkishly\"","tr",0);
   addon("\"title\":\"Unknown\"","*",1);
+  // Rare ISO codes in a title are words, not audio: "SG-1" is not Sango,
+  // "ST" is not Sesotho; a common tag in the same name still counts.
+  { Stream *t=NULL;
+    assert(stream_extrair("{\"streams\":[{\"url\":\"https://example.test/sg\",\"title\":\"Stargate.SG-1.S01E01.ST.1080p.BluRay.x264\"},"
+                          "{\"url\":\"https://example.test/sgpl\",\"title\":\"Stargate.SG-1.S01E01.PL.1080p.BluRay\"}]}","fixture",&t)==2);
+    assert(!t[0].audioRotulos[0]);
+    assert(!strcasecmp(t[1].audioRotulos,"pl"));
+    free(t); }
   // Inferring a chip match must not change the explicit audio display.
   Stream *parsed=NULL;assert(stream_extrair("{\"streams\":[{\"url\":\"https://example.test/1\",\"title\":\"🇹🇷\"},{\"url\":\"https://example.test/2\"}]}","fixture",&parsed)==2);
   assert(!parsed[0].audioIdiomas[0] && parsed[0].audioRotulos[0] && !parsed[1].audioRotulos[0]);free(parsed);

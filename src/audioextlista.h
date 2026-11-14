@@ -24,13 +24,12 @@
 //  - copies of the same file (same hash, or same size, codec, channels and
 //    languages) show once, the best one; the others stay as its fallbacks;
 //  - every version is listed (the screen shows one language at a time),
-//    at most AUDIOEXT_POR_IDIOMA per language and `max` in all.
+//    up to `max` in all (AUDIOEXT_LISTA_MAX on screen).
 #include <stdint.h>
 
 enum { AEXT_DDP = 0, AEXT_DD, AEXT_AAC, AEXT_DESCONHECIDO, AEXT_DTS, AEXT_TRUEHD, AEXT_OUTRO };
 #define AUDIOEXT_IDIOMAS 6
-#define AUDIOEXT_POR_IDIOMA 200
-#define AUDIOEXT_LISTA_MAX 600
+#define AUDIOEXT_LISTA_MAX 1000
 #define AUDIOEXT_RESERVAS 3
 // Groups, in this order on screen.
 enum { AEXT_G_PREF1 = 0, AEXT_G_PREF2, AEXT_G_SEM, AEXT_G_OUTRA };
