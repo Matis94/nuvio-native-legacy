@@ -752,6 +752,7 @@ typedef enum {
   AJ_EXT_AUDIO_AVISO,  // the "sync adjusted by itself" message: on
   AJ_EXT_AUDIO_AUTO,   // "Match automatically" by itself at start: on
   AJ_EXT_AUDIO_COPIAS, // "From another source": copies of one file shown once: on
+  AJ_EXT_AUDIO_ORDEM,  // "From another source": sort for audio (0) or like the addon (1)
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -809,6 +810,8 @@ _Static_assert(sizeof V_FUNDO_DIN_COR / sizeof *V_FUNDO_DIN_COR == sizeof FUNDO_
                "V_FUNDO_DIN_COR: um nome por linha de FUNDO_DIN_TEMA");
 static const char *V_QUALIDADE[] = { "Automática", "4K", "1080p", "720p" };
 static const char *V_LIGA[]      = { "Ligado", "Desligado" };
+// "From another source" > Sort versions (owner, 14/11): audio-first is the default.
+static const char *V_EXT_ORDEM[] = { "For audio", "Like the addon" };
 static const char *V_LIGA_AUTO[] = { "Ligado", "Desligado", "Automático" };
 // Estilo da fileira de formato do player; o indice e o PLR_FMT_* de ajustes.h
 // e o gravado em "plrFormatoLocal".
@@ -1927,6 +1930,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Sync adjusted message", V_LIGA, 2),
   ESC("Match automatically at start", V_LIGA, 2),
   ESC("Hide duplicates", V_LIGA, 2),
+  ESC("Sort versions", V_EXT_ORDEM, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2284,6 +2288,7 @@ static const char *CHAVE[] = {
   "externalAudioShiftNoticeLocal",
   "externalAudioAutoMatchLocal",
   "externalAudioHideCopiesLocal",
+  "externalAudioSortLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3022,6 +3027,7 @@ int ajustes_audio_externo_seguir(void) { return lig(AJ_EXT_AUDIO_SEGUIR); }
 int ajustes_audio_externo_aviso(void) { return lig(AJ_EXT_AUDIO_AVISO); }
 int ajustes_audio_externo_auto(void) { return lig(AJ_EXT_AUDIO_AUTO); }
 int ajustes_audio_externo_ocultar_copias(void) { return lig(AJ_EXT_AUDIO_COPIAS); }
+int ajustes_audio_externo_ordem_addon(void) { return valor[AJ_EXT_AUDIO_ORDEM] == 1; }
 int ajustes_medidor_desempenho(void)  { return valor[AJ_MEDIDOR]; }
 int ajustes_fonte_manual(void)        { return lig(AJ_FONTE_MANUAL); }
 int ajustes_fonte_primeira(void)      { return ajustes_fonte_prioridade() == 3 || valor[AJ_FONTE_AUTO] == 1; }
@@ -6254,7 +6260,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_DTS_AC3:        /* o conversor de DTS e desta TV */
     case AJ_DV_MKV:         /* o demux e o decoder sao desta TV */
     case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS:
-    case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS:
+    case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS: case AJ_EXT_AUDIO_ORDEM:
     case AJ_HIST_CONTA: case AJ_SOCIAL: /* por perfil desta TV (perfilLocal); o web nao tem */
     case AJ_TAM_MAX: case AJ_TAM_MIN: /* o web nao tem a faixa de tamanho */
     case AJ_ESPACO_FILEIRAS: case AJ_ESPACO_TITULOS: /* o web nao tem espacamento */
@@ -6351,7 +6357,7 @@ static int soNaTv(int op) {
     case AJ_P2P_LIGADO: case AJ_JF_LIGADO: case AJ_POSTER_PROV: case AJ_EPG_PAIS:
     case AJ_P2P_LIMITE: case AJ_P2P_DESTINO: case AJ_RELOGIO_12H:
     case AJ_AUDIO_OFFSET: case AJ_DTS_AC3: case AJ_DV_MKV: case AJ_DV7: case AJ_DV_AUDIO_FIXO: case AJ_BUFFER_DADOS: case AJ_RAM_OVERLAY: case AJ_RAM_VERDE: case AJ_MP4_BD_TEST: case AJ_DV7_MAPPING: case AJ_UPDATE_NOTIFICATIONS: case AJ_BUFFER_NATIVE_CONNECTIONS: case AJ_BUFFER_CONVERSION_CONNECTIONS: case AJ_REMEMBER_PROFILE:
-    case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS:
+    case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS: case AJ_EXT_AUDIO_ORDEM:
     case AJ_RETOMADA_MORNA: case AJ_MANTER_PRAZO: case AJ_BUFFER:
     case AJ_INTERFACE_MODO: case AJ_MIC_BUSCA: case AJ_TECLADO_ANDROID:
     case AJ_TUNNELING: case AJ_HDR_INTERFACE: case AJ_HDR_UI: case AJ_LEG_SYNC_AUTO:
@@ -6902,7 +6908,7 @@ static int foraDestaPlataforma(int op) {
   // Children of the "Audio from another version" sheet (owner, 07/11: one row,
   // its options inside, like Buffer).
   if (op == AJ_EXT_AUDIO_CACHE || op == AJ_EXT_AUDIO_PASSO || op == AJ_EXT_AUDIO_GRANDE ||
-      op == AJ_EXT_AUDIO_MODO || op == AJ_EXT_AUDIO_SERIE || op == AJ_EXT_AUDIO_SEGUIR || op == AJ_EXT_AUDIO_AVISO || op == AJ_EXT_AUDIO_AUTO || op == AJ_EXT_AUDIO_COPIAS) return 1;
+      op == AJ_EXT_AUDIO_MODO || op == AJ_EXT_AUDIO_SERIE || op == AJ_EXT_AUDIO_SEGUIR || op == AJ_EXT_AUDIO_AVISO || op == AJ_EXT_AUDIO_AUTO || op == AJ_EXT_AUDIO_COPIAS || op == AJ_EXT_AUDIO_ORDEM) return 1;
   // Child of AJ_BUFFER's editor, intentionally not a standalone Settings row.
   if(op==AJ_BUFFER_DADOS || op==AJ_RAM_OVERLAY || op==AJ_RAM_VERDE || uxBufferConexao(op))return 1;
   // Os limites dos provedores sao editados dentro da folha de ordem.
@@ -6947,7 +6953,7 @@ static int foraDestaPlataforma(int op) {
 #if defined(NV_TPK) || defined(NV_ANDROID) || defined(__EMSCRIPTEN__)
   // Only the webOS converter plays the audio of another version.
   if (op == AJ_EXT_AUDIO || op == AJ_EXT_AUDIO_CACHE || op == AJ_EXT_AUDIO_PASSO || op == AJ_EXT_AUDIO_GRANDE ||
-      op == AJ_EXT_AUDIO_MODO || op == AJ_EXT_AUDIO_SERIE || op == AJ_EXT_AUDIO_SEGUIR || op == AJ_EXT_AUDIO_AVISO || op == AJ_EXT_AUDIO_AUTO || op == AJ_EXT_AUDIO_COPIAS) return 1;
+      op == AJ_EXT_AUDIO_MODO || op == AJ_EXT_AUDIO_SERIE || op == AJ_EXT_AUDIO_SEGUIR || op == AJ_EXT_AUDIO_AVISO || op == AJ_EXT_AUDIO_AUTO || op == AJ_EXT_AUDIO_COPIAS || op == AJ_EXT_AUDIO_ORDEM) return 1;
 #endif
 #if !defined(NV_DV7_MAPPING_TEST) || !defined(NV_WEBOS) || !defined(NV_DV7_CONVERSION)
   if(op==AJ_DV7_MAPPING)return 1;
@@ -7643,7 +7649,7 @@ static int inativa(int op) {
     // Remover so vale para o pacote escolhido que foi posto nesta TV.
     case AJ_SOURCE_BADGE_POSITION: return !ajustes_fonte_texto_addon();
     case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE:
-    case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS: return !ajustes_audio_externo();
+    case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS: case AJ_EXT_AUDIO_ORDEM: return !ajustes_audio_externo();
     case AJ_SELOS_PACOTE_REM: return selospacote_ativo() < 0 || !selospacote_da_tv(selospacote_ativo());
     case AJ_URL_REM: return valor[AJ_URL_LISTA] < 1;
     // Sem o relogio nao ha ilha para onde minimizar: sai para a pagina, como antes.
@@ -7936,6 +7942,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_EXT_AUDIO_PASSO: return "How much one press moves the audio of another version in the player (Audio sync row, CH+/CH-).";
     case AJ_EXT_AUDIO_GRANDE: return "Say so when the chosen audio comes from a file larger than 20 GB: it is downloaded in full next to the video.";
     case AJ_EXT_AUDIO_MODO: return "Whole file reads the other version in full, picture included. Audio only fetches just its audio where the file allows it (MP4 with an index of its audio); Matroska (MKV) and finely interleaved files are still read in full. The log says which way each file went.";
+    case AJ_EXT_AUDIO_ORDEM: return "For audio: smaller files with DD+ 5.1 first, which the TV plays without converting. Like the addon: the order the addon sends (its own sort, e.g. cached first in AIOStreams), mostly picked for the picture.";
     case AJ_EXT_AUDIO_COPIAS: return "The same file from several add-ons shows once (the cached copy first). The other copies stay as backups: if the chosen link fails, the next one is tried.";
     case AJ_EXT_AUDIO_AUTO: return "When the audio of another version starts, both audios are compared for 40 s by themselves and the sync is set if the find is sure (the same as Match automatically in the audio menu).";
     case AJ_EXT_AUDIO_AVISO: return "A short message when the sync corrects itself (a gap a little longer in one version). Off: it still corrects, without the message.";
@@ -9443,7 +9450,7 @@ static void ffVoltar(void) {
 // with the add-ons whose versions the audio pages list, per profile.
 #define EA_ADDONS (-1)
 static const int EA_OPS[] = { AJ_EXT_AUDIO, AJ_EXT_AUDIO_AUTO, AJ_EXT_AUDIO_SEGUIR, AJ_EXT_AUDIO_AVISO, AJ_EXT_AUDIO_SERIE, AJ_EXT_AUDIO_MODO,
-                              AJ_EXT_AUDIO_CACHE, AJ_EXT_AUDIO_COPIAS, EA_ADDONS, AJ_EXT_AUDIO_PASSO, AJ_EXT_AUDIO_GRANDE };
+                              AJ_EXT_AUDIO_CACHE, AJ_EXT_AUDIO_COPIAS, AJ_EXT_AUDIO_ORDEM, EA_ADDONS, AJ_EXT_AUDIO_PASSO, AJ_EXT_AUDIO_GRANDE };
 #define EA_N ((int)(sizeof EA_OPS / sizeof *EA_OPS))
 static int eaFoco, eaSub, eaAddFoco, eaAddN;
 static AudioExtAddon eaAdd[AUDIOEXT_ADDONS_MAX];
@@ -11043,7 +11050,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_SELOS_PACOTE:
     case AJ_REACAO_CREDITOS: case AJ_PULAR_ABERTURA: case AJ_PULAR_RESUMO: case AJ_PROXIMO_AUTO: case AJ_PULAR_CREDITOS: case AJ_PROXIMO_CONTAGEM:
     case AJ_SHOW_SKIP_INTRO: case AJ_SHOW_SKIP_RECAP: case AJ_SHOW_SKIP_CREDITS:
-    case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS:
+    case AJ_EXT_AUDIO: case AJ_EXT_AUDIO_CACHE: case AJ_EXT_AUDIO_PASSO: case AJ_EXT_AUDIO_GRANDE: case AJ_EXT_AUDIO_MODO: case AJ_EXT_AUDIO_SERIE: case AJ_EXT_AUDIO_SEGUIR: case AJ_EXT_AUDIO_AVISO: case AJ_EXT_AUDIO_AUTO: case AJ_EXT_AUDIO_COPIAS: case AJ_EXT_AUDIO_ORDEM:
     case AJ_FONTE_PRAZO: case AJ_TAM_MAX: case AJ_TAM_MIN: case AJ_PROPORCAO_PADRAO: case AJ_DTS_AC3:
     case AJ_FONTE_ESCOPO: case AJ_FONTE_ADDONS_PERM: case AJ_FONTE_PLUGINS_PERM: case AJ_FONTE_OUTROS:
     case AJ_FONTE_REGEX: case AJ_FONTE_REGEX_PADRAO: case AJ_FONTE_REGEX_MODELO:

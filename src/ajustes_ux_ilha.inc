@@ -2232,7 +2232,7 @@ static void desenhaFolhaExtAudioAddons(GfxRect m) {
 }
 static void desenhaFolhaExtAudio(void) {
   GfxRect m = {460.0f, 90.0f, 1000.0f, 900.0f};
-  const float passo = 56.0f;   /* 11 rows fit above the hints */
+  const float passo = 52.0f;   /* 12 rows fit above the hints */
   float topo, base, y;
   int ligado = ajustes_audio_externo();
   ponteiro_camada(); ajVeuModal(); ajCentraModal(&m); ajIlha(m, 36.0f, 1.0f, 1.0f);

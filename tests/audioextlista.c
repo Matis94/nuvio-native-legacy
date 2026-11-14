@@ -91,6 +91,22 @@ int main(void) {
   o = opc("pl", "en", AEXT_MODO_BEST);
   assert(audioext_lista(e, n, &o, c, 2) == 2);
 
+  // "Sort versions: Like the addon": inside a language, the add-on's place
+  // then the list's order; the language groups stay.
+  { AudioExtEntrada f[5];
+    memset(f, 0, sizeof f);
+    f[0] = fonte("pl", AEXT_DTS, 8, 1, 60); f[0].ordemAddon = 0;     // add-on 0 sends a REMUX first
+    f[1] = fonte("pl", AEXT_DDP, 6, 1, 4);  f[1].ordemAddon = 0;
+    f[2] = fonte("pl", AEXT_DDP, 6, 1, 2);  f[2].ordemAddon = 1;     // a smaller one from add-on 1
+    f[3] = fonte("en", AEXT_DDP, 6, 1, 3);  f[3].ordemAddon = 0;
+    f[4] = fonte("pl", AEXT_DD, 6, -1, 1);  f[4].ordemAddon = 0;     // not cached, still in the add-on's place
+    o = opc("pl", "en", AEXT_MODO_TODOS); o.semDts = 0; o.ordemAddon = 1;
+    k = audioext_lista(f, 5, &o, c, 64);
+    assert(k == 5 && c[0].indice == 0 && c[1].indice == 1 && c[2].indice == 4 && c[3].indice == 2 && c[4].indice == 3);
+    o.ordemAddon = 0;
+    k = audioext_lista(f, 5, &o, c, 64);
+    assert(c[0].indice == 2 && c[1].indice == 1); }
+
   // COPIES OF ONE FILE: the same torrent file through two add-ons, and the
   // same size/codec/channels/languages without a hash. The cached one stays,
   // the others become its fallbacks, best first; off: all shown.

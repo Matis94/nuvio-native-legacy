@@ -671,6 +671,7 @@ static void extMontar(int forcar) {
   o.ocultarForaCache = ajustes_audio_externo_ocultar_fora_cache();
   o.semDts = ajustes_dts_desligado();
   o.ocultarCopias = ajustes_audio_externo_ocultar_copias();
+  o.ordemAddon = ajustes_audio_externo_ordem_addon();
   o.casa = ling_casa;
   o.modo = AEXT_MODO_BEST;
   extBestN = audioext_lista(extEnt, n, &o, extBest, AUDIOEXT_TODOS_MAX);

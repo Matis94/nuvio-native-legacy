@@ -14,7 +14,8 @@ static int casa(const char *a, const char *b) {
 // (DTS only while DTS conversion is on).
 static int codecUsavel(int c, int semDts) { return !(semDts && c == AEXT_DTS); }
 
-typedef struct { AudioExtCand c; int cache, canais, codec; uint64_t bytes; } Item;
+typedef struct { AudioExtCand c; int cache, canais, codec, ordemAddon; uint64_t bytes; } Item;
+static int ordemDoAddon;   // AudioExtOpcoes.ordemAddon, for cmpItem
 
 // 5.1 or more first, then channels not declared (add-ons often leave them out
 // of full releases), then stereo and mono; 7.1 and 5.1 are one step (the TV
@@ -25,6 +26,10 @@ static int cmpItem(const void *pa, const void *pb) {
   const Item *a = pa, *b = pb;
   if (a->c.grupo != b->c.grupo) return a->c.grupo - b->c.grupo;
   if (a->c.grupo == AEXT_G_OUTRA) { int k = strcasecmp(a->c.idioma, b->c.idioma); if (k) return k; }
+  if (ordemDoAddon) {
+    if (a->ordemAddon != b->ordemAddon) return a->ordemAddon - b->ordemAddon;
+    return a->c.indice - b->c.indice;
+  }
   if (a->cache != b->cache) return b->cache - a->cache;
   if (nivelCanais(a->canais) != nivelCanais(b->canais)) return nivelCanais(a->canais) - nivelCanais(b->canais);
   if (a->codec != b->codec) return a->codec - b->codec;
@@ -84,9 +89,12 @@ int audioext_lista(const AudioExtEntrada *e, int n, const AudioExtOpcoes *o, Aud
     it[m].c.indice = i; it[m].c.grupo = g;
     if (g != AEXT_G_SEM) snprintf(it[m].c.idioma, sizeof it[m].c.idioma, "%s", s->idiomas[l]);
     it[m].cache = s->cache; it[m].canais = s->canais; it[m].codec = s->codec; it[m].bytes = s->bytes;
+    it[m].ordemAddon = s->ordemAddon;
     m++;
   }
+  ordemDoAddon = o->ordemAddon;
   qsort(it, (size_t)m, sizeof *it, cmpItem);
+  ordemDoAddon = 0;
   // Copies of one file: the first (best) stays, the rest become its fallbacks.
   // `mantido[i]` = the position in `it` of the row that kept item i, or -1.
   for (int i = 0; i < m; i++) {

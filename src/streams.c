@@ -4029,6 +4029,7 @@ void stream_audioext_entrada(const Stream *s, AudioExtEntrada *e) {
               filtroTem(s, FONTEFILTRO_CANAIS, "5.1") ? 6 : filtroTem(s, FONTEFILTRO_CANAIS, "2.0") ? 2 : 0;
   e->cache = s->emCache || s->cacheNativo ? 1 : (s->foraCache || s->cacheNegado) ? -1 : 0;
   e->bytes = s->tamanhoBytes ? s->tamanhoBytes : s->tamanhoMB > 0 ? (uint64_t)s->tamanhoMB * 1000000u : 0;
+  e->ordemAddon = s->addonOrdem;
   // The file itself, for the copies of one release reached through several
   // add-ons: the OpenSubtitles hash, or the torrent and the file in it.
   { const char *h = s->infoHash[0] ? s->infoHash : s->hashTorrent;
