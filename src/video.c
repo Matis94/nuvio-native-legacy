@@ -92,6 +92,12 @@ static Uint32 extGenEm;
 // the audio menu asked for another audio (audioext_pedido_geracao) and the
 // session is reopened at the current position on the next possible pump.
 static int extSoAudio, extReabrirPend;
+// When the TV player handed over to the converter for another version's audio:
+// it had a track of this file it plays itself (not only DTS/TrueHD rows the
+// app recovered from the file). Owner's log 14/11: after a DTS conversion fell
+// back to the TV player (silent), going back to this file's own audio returned
+// there and stayed silent.
+static int extTvSom;
 static unsigned extPedidoVisto;
 // DOLBY VISION IN MKV (Settings > Playback, experimental). The TV's own URI
 // player turns a Dolby Vision MKV into HDR10 (measured on an LG C9). The same
@@ -2772,6 +2778,13 @@ static void extReabrir(void) {
   if (dtsSessao) {
     if (!quer && !extAtivo) { extReabrirPend = 0; return; }
     extReabrirPend = 0;
+    if (!quer && extSoAudio && !extTvSom && !dtsDesligado) {
+      // The TV player cannot play this file's own audio (DTS/TrueHD only):
+      // the converter keeps going with it instead.
+      printf("[ext-audio] the TV player has no audio of this file it plays: the converter keeps this file's own track\n");
+      fflush(stdout);
+      extSoAudio = 0;
+    }
     if (!quer && extSoAudio) {
       // Only the external audio needed the converter: the TV player again.
       char lu[sizeof legUrlAtual];
@@ -2812,7 +2825,12 @@ static void extReabrir(void) {
   extReabrirPend = 0;
   if (!dts_playback_enabled() || !dtsLiberadoNestaTv()) { audioext_falhou("converter unavailable on this TV"); return; }
   dtsModoDv = 0; extSoAudio = 1;
-  printf("[ext-audio] converter for the chosen audio at %.1fs\n", posSeg); fflush(stdout);
+  pthread_mutex_lock(&audioMkvLock);
+  extTvSom = 0;
+  for (int i = 0; i < nAudio; i++) if (faixaAudio[i].numero >= 0) extTvSom = 1;
+  pthread_mutex_unlock(&audioMkvLock);
+  printf("[ext-audio] converter for the chosen audio at %.1fs (TV audio of this file: %s)\n", posSeg,
+         extTvSom ? "yes" : "none it plays"); fflush(stdout);
   iniciarDts(-1);
 }
 void video_bombear(void) {
