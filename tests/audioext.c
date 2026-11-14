@@ -80,6 +80,13 @@ int main(void) {
   audioext_lembrar_serie(&id);
   audioext_alvo("tt3:1:2");
   assert(!audioext_serie_procura("tt3:1:2", NULL) && audioext_so_audio());
+  // The first pick of an episode: remembered before the mark is set too
+  // (the episode on screen), so the next episode finds it.
+  audioext_preferencias(0, 1);
+  audioext_limpar();
+  audioext_alvo("tt4:2:5");
+  audioext_lembrar_serie(&id);
+  assert(audioext_serie_procura("tt4:2:6", NULL) && !audioext_serie_procura("tt4:2:5", NULL));
   // Movies (no episode) are never remembered as a series.
   audioext_preferencias(0, 1);
   audioext_alvo("tt9");

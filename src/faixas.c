@@ -1099,6 +1099,9 @@ static void extUsar(const AudioExtCand *c, const AudioExtFaixa *faixa) {
   char t[224];
   if (!st || !en) return;
   legsync_audio_trocou();
+  // The pick first: the series memory takes the series from the mark it sets
+  // (the first pick of an episode had none, and nothing was remembered).
+  audioext_escolher(st->url, st->cabecalhos, st->rotulo, c->idioma);
   { AudioExtIdent id;
     memset(&id, 0, sizeof id);
     snprintf(id.grupo, sizeof id.grupo, "%s", st->bingeGroup);
@@ -1107,7 +1110,6 @@ static void extUsar(const AudioExtCand *c, const AudioExtFaixa *faixa) {
     id.altura = st->altura; id.codec = en->codec;
     audioext_lembrar_serie(&id);
     if (faixa) audioext_lembrar_faixa_serie(faixa); }
-  audioext_escolher(st->url, st->cabecalhos, st->rotulo, c->idioma);
   for (int r = 0; r < c->nReservas; r++) {
     const Stream *rs = extFonteIdx(c->reservas[r]);
     if (rs) audioext_reserva(rs->url, rs->cabecalhos);

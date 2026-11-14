@@ -442,11 +442,12 @@ void audioext_preferencias(int soAudio, int serie) {
 int audioext_so_audio(void) { return prefSoAudio; }
 void audioext_lembrar_serie(const AudioExtIdent *id) {
   char sr[64];
-  serieDe(alvoMarca, sr, sizeof sr);
+  // No mark yet (the pick being made now): the episode on screen.
+  serieDe(alvoMarca[0] ? alvoMarca : alvoAtual, sr, sizeof sr);
   if (!prefSerie || !id || !sr[0]) return;
   memset(&memo, 0, sizeof memo);
   snprintf(memo.serie, sizeof memo.serie, "%s", sr);
-  snprintf(memo.episodio, sizeof memo.episodio, "%s", alvoMarca);
+  snprintf(memo.episodio, sizeof memo.episodio, "%s", alvoMarca[0] ? alvoMarca : alvoAtual);
   memo.id = *id; memo.offset = offsetMs; memo.velocidade = velocidadePpm; memo.ativo = 1; memo.temFaixa = 0;
   printf("[ext-audio] series memory: group=%s addon=%.40s lang=%s %dp codec=%d\n", memo.id.grupo[0] ? memo.id.grupo : "-",
          memo.id.addon, memo.id.idioma, memo.id.altura, memo.id.codec);
