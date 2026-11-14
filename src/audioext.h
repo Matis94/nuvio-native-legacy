@@ -148,6 +148,7 @@ int audioext_dopasuj_aviso_consumir(AudioExtDopasuj *out);
 // The other version's speed from a match (ppm; 0 the same): the webOS player
 // opens that version at it.
 int audioext_velocidade(void);
+void audioext_velocidade_auto(int ppm);   // the speed the converter took from the frame rates
 // The offset the two lengths suggest (another cut), 0 when they are close or
 // beyond the sync's reach (10 min).
 int audioext_dica_ms(void);

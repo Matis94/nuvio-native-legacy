@@ -412,11 +412,11 @@ static int prepareModePrimed(DtsPlayback *p, int stream, int core, double target
              (clockSeconds(CLOCK_MONOTONIC) - opened) * 1000);
     nativeEvent(p, event);
   }
-  int cut_s = 0, speed = 0;
-  if (p->external) dts_engine_external_mismatch(p->engine, &cut_s, &speed);
+  int cut_s = 0, speed = 0, ratio_ppm = 0;
+  if (p->external) dts_engine_external_mismatch(p->engine, &cut_s, &speed, &ratio_ppm);
   pthread_mutex_lock(&p->lock);
   p->status.info = *info;
-  p->status.ext_cut_s = cut_s; p->status.ext_speed = speed;
+  p->status.ext_cut_s = cut_s; p->status.ext_speed = speed; p->status.ext_ratio_ppm = ratio_ppm;
   p->status.prepared = 1;
   p->status.start_position = target;
   p->status.revision++;

@@ -328,6 +328,12 @@ void audioext_formatar_offset(int ms, char *dst, unsigned tam, const char *fmtSe
   else snprintf(dst, tam, fmtMin, sinal, a / 60000, a / 1000 % 60, a % 1000);
 }
 int audioext_velocidade(void) { return urlMarca[0] ? velocidadePpm : 0; }
+// Known already in the converter: no new request (pedidoGeracao stays).
+void audioext_velocidade_auto(int ppm) {
+  if (!urlMarca[0]) return;
+  velocidadePpm = ppm;
+  printf("[ext-audio] speed %d ppm from the frame rates\n", ppm); fflush(stdout);
+}
 // The offset the two lengths suggest (another cut with its extra minutes at
 // the start), 0 when they are close: for the sync editor.
 int audioext_dica_ms(void) {

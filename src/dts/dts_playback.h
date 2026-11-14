@@ -14,6 +14,7 @@ typedef struct {
   double start_position; /* Position applied by the latest successful Load. */
   unsigned buffering_ms; /* Worker-managed refill; user pause remains separate. */
   int ext_cut_s, ext_speed; /* audio of another version: other cut (s) / other speed */
+  int ext_ratio_ppm;        /* its speed from the frame rates (0: none) */
   int net_retries;          /* times a slow source was reconnected instead of giving up */
   int ext_starved;          /* audio of another version: 5 s windows in a row waiting for data with under 1 s of video ahead */
   int ext_failures;         /* audio of another version: times it stopped answering after its reconnections (back to the file's own audio) */

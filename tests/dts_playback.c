@@ -105,7 +105,7 @@ static int ext_only;
 void dts_engine_external_audio_only(DtsEngine *e,int on) { (void)e;pthread_mutex_lock(&fixture);ext_only=on;pthread_mutex_unlock(&fixture); }
 static int ext_track=-2;
 void dts_engine_external_track(DtsEngine *e,int t) { (void)e;pthread_mutex_lock(&fixture);ext_track=t;pthread_mutex_unlock(&fixture); }
-void dts_engine_external_mismatch(DtsEngine *e,int *c,int *s) { (void)e; *c=26; *s=0; }
+void dts_engine_external_mismatch(DtsEngine *e,int *c,int *s,int *r) { (void)e; *c=26; *s=0; if(r) *r=0; }
 int dts_engine_external_match_arm(DtsEngine *e) { (void)e; return 0; }
 int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) { (void)e; memset(o,0,sizeof *o); return 0; }
 static int ext_speed_set, prefetches;

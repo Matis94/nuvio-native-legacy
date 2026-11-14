@@ -91,7 +91,7 @@ void dts_engine_external_audio(DtsEngine *e,const char *u,const char *h,const ch
 void dts_engine_external_offset(DtsEngine *e,int o) { (void)e;(void)o; }
 void dts_engine_external_audio_only(DtsEngine *e,int on) { (void)e;(void)on; }
 void dts_engine_external_track(DtsEngine *e,int s) { (void)e;(void)s; }
-void dts_engine_external_mismatch(DtsEngine *e,int *c,int *s) { (void)e; *c=0; *s=0; }
+void dts_engine_external_mismatch(DtsEngine *e,int *c,int *s,int *r) { (void)e; *c=0; *s=0; if(r) *r=0; }
 int dts_engine_external_shift(DtsEngine *e,int o) { (void)e;(void)o; return -1; }
 int dts_engine_probe_audio(const char *u,const char *h,DtsTrack *t,int m) { (void)u;(void)h;(void)t;(void)m; return -1; }
 int dts_engine_external_match_arm(DtsEngine *e) { (void)e; return -1; }
@@ -289,6 +289,7 @@ struct DtsEngine {
   char ext_hint_lang[16], ext_hint_codec[24], ext_hint_title[64];
   int ext_idx;     /* the donor has an index: 0 unknown, 1 yes, 2 no */
   int ext_cut_s, ext_speed;   /* other version minus this one, seconds; other speed */
+  int ext_speed_auto;         /* the speed came from the frame rates (configure_external) */
   int64_t ext_last_end_ns, ext_floor_ns;   /* end of the last audio given out; drop audio before */
   struct MatchCap *mt;   /* "Match automatically": capture in progress */
   int mt_state, mt_offset_ms, mt_score;   /* 0 none, 1 capturing, 2 found, 3 not trusted / failed */
@@ -1841,6 +1842,13 @@ void dts_engine_external_speed(DtsEngine *e,int ratio_ppm) {
   e->ext_ratio=ratio_ppm?1.0+ratio_ppm/1e6:0;
 }
 static double ext_k(const DtsEngine *e) { return e->ext_ratio>0?e->ext_ratio:1.0; }
+/* A known film/TV speed ratio (24/23.976, 25/24, 25/23.976 and back). */
+static int known_speed(double k) {
+  static const double known[]={24000.0/23976.0,25.0/24.0,25000.0/23976.0};
+  for(int i=0;i<3;i++)
+    if(fabs(k-known[i])<0.15*(known[i]-1.0) || fabs(k-1.0/known[i])<0.15*(known[i]-1.0)) return 1;
+  return 0;
+}
 int dts_engine_external_active(DtsEngine *e) { return e && e->ext_url && e->ext_headers; }
 void dts_engine_external_audio_only(DtsEngine *e,int on) { if(e) e->ext_audio_only=!!on; }
 void dts_engine_external_track(DtsEngine *e,int s) { if(e) e->ext_force=s>=0?s+1:0; }
@@ -1852,8 +1860,13 @@ void dts_engine_external_track_hint(DtsEngine *e,int stream,const char *lang,con
   snprintf(e->ext_hint_codec,sizeof e->ext_hint_codec,"%s",codec?codec:"");
   snprintf(e->ext_hint_title,sizeof e->ext_hint_title,"%s",title?title:"");
 }
-void dts_engine_external_mismatch(DtsEngine *e,int *cut_s,int *speed) {
-  *cut_s=e&&e->ext?e->ext_cut_s:0; *speed=e&&e->ext?e->ext_speed:0;
+/* speed: another speed still uncorrected; ratio_ppm: the speed played now
+ * (the app takes one the frame rates gave, so a match finding the same
+ * speed reopens nothing). */
+void dts_engine_external_mismatch(DtsEngine *e,int *cut_s,int *speed,int *ratio_ppm) {
+  int on=e && e->ext;
+  *cut_s=on?e->ext_cut_s:0; *speed=on && e->ext_speed && ext_k(e)==1.0;
+  if(ratio_ppm) *ratio_ppm=on && e->ext_speed_auto?(int)llrint((ext_k(e)-1.0)*1e6):0;
 }
 static int configure_external(DtsEngine *e,double start);
 int dts_engine_external_replace(DtsEngine *e,const char *url,const char *headers,const char *langs,
@@ -2269,9 +2282,22 @@ static int configure_external(DtsEngine *e,double start) {
       if(x->fmt->streams[i]->codecpar->codec_type==AVMEDIA_TYPE_VIDEO) { fb=ext_fps(x->fmt->streams[i]); break; }
     /* For the player's warning: another cut (owner's logs 07/11: a version
      * 25.7 s longer, another 100 s shorter) or another speed. */
-    e->ext_cut_s=(int)llround((x->fmt->duration-e->fmt->duration)/1e6);
     e->ext_speed=fa>0 && fb>0 && fabs(fa-fb)/fa>0.001;
     e->ext_fps_ratio=fa>0 && fb>0?fb/fa:0;
+    /* No speed asked and a known film/TV ratio that the lengths confirm
+     * (owner's log 14/11: a French 25 fps version of a 23.976 picture,
+     * 2508.9 s for 2616.0 s): played at that speed from the start, so the
+     * match only has the offset left to find, no reopening for the speed. */
+    e->ext_speed_auto=0;
+    if(e->ext_ratio<=0 && e->ext_speed && known_speed(e->ext_fps_ratio) &&
+       x->fmt->duration>0 && e->fmt->duration>0 &&
+       fabs((double)x->fmt->duration*e->ext_fps_ratio/(double)e->fmt->duration-1.0)<0.01) {
+      e->ext_ratio=e->ext_fps_ratio; e->ext_speed_auto=1;
+      printf("[ext-audio] other version at another speed (frame rates %.3f / %.3f, the lengths agree): played at ratio %.6f\n",
+             fb,fa,e->ext_ratio);
+    }
+    /* In this source's time: a sped-up version is not another cut. */
+    e->ext_cut_s=(int)llround(((double)x->fmt->duration*ext_k(e)-(double)e->fmt->duration)/1e6);
     printf("[ext-audio] main fps=%.3f duration=%.1fs, other fps=%.3f duration=%.1fs%s\n",fa,
       e->fmt->duration/1e6,fb,x->fmt->duration/1e6,
       fa>0 && fb>0 && fabs(fa-fb)>0.05?" WARNING: frame rates differ, audio will drift":"");
@@ -3096,10 +3122,7 @@ static void match_second_look(DtsEngine *e,const DtsMatchSig *sm,const DtsMatchS
    * back). Same frame rate and an odd ratio: the offset moved instead (a gap
    * longer in one release; owner's log 08/11, Chicago Fire: 0.5 s read as
    * 1645 ppm, the other version reopened at that speed and back again). */
-  { static const double known[]={24000.0/23976.0,25.0/24.0,25000.0/23976.0};
-    int std=0;
-    for(int i=0;i<3 && !std;i++)
-      std=fabs(k-known[i])<0.15*(known[i]-1.0) || fabs(k-1.0/known[i])<0.15*(known[i]-1.0);
+  { int std=known_speed(k);
     int same_fps=e->ext_fps_ratio>0 && fabs(e->ext_fps_ratio-1.0)<1e-4;
     if(same_fps && !std) {
       printf("[ext-audio] match: second look: the same frame rate, so not a speed difference: offset moved to %.3f s\n",

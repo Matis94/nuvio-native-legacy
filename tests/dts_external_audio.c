@@ -894,11 +894,17 @@ int main(int argc, char **argv) {
   assert(dts_engine_external_match_arm(e) == 0);
   r = play(e, 0, 0);
   dts_engine_destroy(e);
-  /* A PAL version (25 fps, sped up 25/23.976): found at the frame rates'
-   * ratio, then played at that speed (decoded, stretched, re-encoded). */
+  /* A PAL version (25 fps, sped up 25/23.976): the frame rates and the
+   * lengths agree, so it plays at that speed from the first open (owner's
+   * log 14/11) and the match finds the same speed; played again at the
+   * speed the match gave (decoded, stretched, re-encoded). */
   e = dts_engine_create();
   dts_engine_external_audio(e, pal_dub, HEADERS, "pl", 0);
   assert(dts_engine_open(e, cut_main, HEADERS, -1, 0, 0) == 0);
+  assert(!strcmp(dts_engine_info(e)->audio_codec, "aac"));
+  { int cut, sp, ppm; dts_engine_external_mismatch(e, &cut, &sp, &ppm);
+    fprintf(stderr, "PAL version opened: cut %d s, speed warning %d, %d ppm\n", cut, sp, ppm);
+    assert(abs(cut) <= 2 && !sp && abs(ppm - 42708) < 30); }
   { DtsMatchInfo mi; int res = 0;
     assert(dts_engine_external_match_arm(e) == 0);
     r = play(e, 0, 0);

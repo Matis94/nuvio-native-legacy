@@ -115,7 +115,7 @@ void dts_engine_external_audio_only(DtsEngine *, int on);
 void dts_engine_external_track(DtsEngine *, int stream);
 /* Worker only, after open: the other version's length minus this one's, in
  * seconds (another cut), and whether its frame rate differs (another speed). */
-void dts_engine_external_mismatch(DtsEngine *, int *cut_s, int *speed);
+void dts_engine_external_mismatch(DtsEngine *, int *cut_s, int *speed, int *ratio_ppm);
 /* Worker only, while playing: a new offset applied without a seek of this
  * source (the other file moves, timestamps stay continuous). 0 ok; on -1 the
  * caller seeks as before. */

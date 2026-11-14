@@ -4057,7 +4057,12 @@ static void bombearDts(void) {
         snprintf(sub, sizeof sub, "%.12s", st.info.audio_codec);
       snprintf(dtsSaida, sizeof dtsSaida, "Audio from another source · %s", sub);
       dtsEstado = 0;
-      if (!audioext_tocando()) audioext_diferenca(st.ext_cut_s, st.ext_speed);
+      if (!audioext_tocando()) {
+        audioext_diferenca(st.ext_cut_s, st.ext_speed);
+        // A speed the frame rates gave: the app's too, so a match finding it
+        // only sets the offset (live) instead of reopening for the speed.
+        if (st.ext_ratio_ppm && !audioext_velocidade()) audioext_velocidade_auto(st.ext_ratio_ppm);
+      }
       audioext_tocando_definir(1);
     } else if (dtsModoDv && !strcmp(st.info.audio_codec, "dts")) {
       /* DTS off, the TV decodes DTS: the stream went through untouched. */
