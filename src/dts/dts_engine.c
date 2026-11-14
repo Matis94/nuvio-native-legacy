@@ -227,6 +227,7 @@ struct DtsEngine {
    * final_seeded: this one started from a remembered address that has not
    * sent a byte yet. */
   int remember_final, final_seeded;
+  unsigned final_age_s;      /* age of the remembered address when this engine started from it */
   /* Main engine: the other version's read was woken for a pending request
    * (ext_woken, until its seek or swap) or gave up (ext_failed). Either way
    * the picture goes on without its packets. */
@@ -728,9 +729,11 @@ static int fx_long(const DtsEngine *e) { return e->source_stream || e->conv_stre
  * torrentio.strem.fun -> api.torbox.app -> TorBox CDN, 1.2-2.4 s before the
  * first byte, at every reopen, swap back, reload or track probe. Straight to
  * the CDN instead; a remembered address that fails before its first byte goes
- * back through the add-on at once and is forgotten. Kept FINAL_CACHE_MS. */
+ * back through the add-on at once and is forgotten. Kept FINAL_CACHE_MS: TorBox
+ * links lasted about an hour in 2024; today's servers are unknown, so 3 h and
+ * the log says how old a remembered address was when it failed (owner, 14/11). */
 #define FINAL_CACHE_N 16
-#define FINAL_CACHE_MS (30u*60u*1000u)
+#define FINAL_CACHE_MS (3u*60u*60u*1000u)
 static struct { char *url, *fin; uint32_t hh; int cross; uint64_t at; } g_final[FINAL_CACHE_N];
 static pthread_mutex_t g_final_lock=PTHREAD_MUTEX_INITIALIZER;
 static uint64_t fx_now_ms(void);
@@ -779,7 +782,7 @@ static void final_seed(DtsEngine *e) {
   char fin[8192]; int cross=0; unsigned age=0;
   if(!e->remember_final || !final_cache_get(e->url,e->headers,fin,&cross,&age)) return;
   pthread_mutex_lock(&e->range_lock);
-  snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross; e->final_seeded=1;
+  snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross; e->final_seeded=1; e->final_age_s=age;
   pthread_mutex_unlock(&e->range_lock);
   printf("[ext-audio] this version's server address remembered %u s ago: straight there, no add-on redirects\n",age);
   fflush(stdout);
@@ -870,8 +873,8 @@ static void *fx_worker(void *opaque) {
        * another server): through the add-on now, no retry schedule. */
       e->final_seeded=0; e->final_url[0]=0; e->fx_resolved_ms=fx_now_ms();
       final_cache_forget(e->url,e->headers);
-      printf("[ext-audio] the remembered server address failed (http=%d after %llu ms): through the add-on again\n",
-             status,(unsigned long long)ms);
+      printf("[ext-audio] the remembered server address failed (remembered %u min ago, http=%d after %llu ms): through the add-on again\n",
+             e->final_age_s/60,status,(unsigned long long)ms);
       fflush(stdout);
       continue;
     }
