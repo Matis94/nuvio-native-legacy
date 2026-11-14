@@ -3993,6 +3993,12 @@ static void bombearDts(void) {
       if (!strcmp(t->codec, "ass") || !strcmp(t->codec, "ssa"))
         snprintf(f->codec, sizeof f->codec, "S_TEXT/ASS");
       snprintf(f->idioma, sizeof f->idioma, "%.7s", t->language);
+      /* The other version's track with no language in the file ("und"):
+       * the version's own, from its name in the list (owner's log 14/11: a
+       * French HDTV version showed "UN" / "UND" instead of "FR" / French). */
+      if (t->kind == DTS_AUDIO && t->stream_index >= DTS_ENGINE_EXTERNAL_STREAM &&
+          !ling_tem_nome(f->idioma) && ling_tem_nome(audioext_idioma()))
+        snprintf(f->idioma, sizeof f->idioma, "%.7s", audioext_idioma());
       if (t->kind == DTS_AUDIO) {
         /* Language on top, readable codec line below ("DTS 5.1"); FLAC keeps
          * the file's track name ("Commentary by ...") — idiomaRotulo above. */
@@ -4008,7 +4014,7 @@ static void bombearDts(void) {
           if (t->title[0] && !nv_titulo_e_arquivo(t->title) && !nv_titulo_tecnico(t->title, ling_tem_nome))
             snprintf(sub2, sizeof sub2, "%s \xc2\xb7 %.48s", sub, t->title);
           else snprintf(sub2, sizeof sub2, "%s", sub);
-          idiomaRotulo(f->rotulo, sizeof f->rotulo, t->language, sub2);
+          idiomaRotulo(f->rotulo, sizeof f->rotulo, f->idioma, sub2);
         }
         else if (strcmp(audioinfo_codec(t->codec), "FLAC")) idiomaRotulo(f->rotulo, sizeof f->rotulo, t->language, sub);
         else nv_rotulo_faixa(f->rotulo, sizeof f->rotulo, t->title,
