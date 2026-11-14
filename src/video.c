@@ -171,6 +171,9 @@ static int fonteTocou;
 // UI only: the packet player's initial cover ends after playback and its
 // video-plane bind are ready. Keep that fact across same-source seeks.
 static int dtsImagemExibida;
+/* This source showed a converter picture once (an audio change clears
+ * dtsImagemExibida until the new picture; this one stays). */
+static int dtsImagemFonte;
 int video_dts_imagem_exibida(void) {
   return dtsImagemExibida && dtsSessao &&
          !video_falhou() && !video_terminou();
@@ -2684,7 +2687,7 @@ static int dvPodeIniciar(void) {
 int video_tocar(const char *url) {
   audioMkvNovaFonte();
 #ifdef NV_NATIVE_SEEK_TEST
-  dtsImagemExibida=0;
+  dtsImagemExibida=dtsImagemFonte=0;
   converterResumeRequested=converterResumeUsed=0;
   converterResumeSeconds=converterResumePct=0;
 #endif
@@ -2758,7 +2761,7 @@ static void dtsImagemAtualizar(void) {
   if (dtsSessao && pronto && tocando &&
       (!dtsModoDv || !strcmp(vidHdr,"DolbyVision")) &&
       !falhou && !terminou && !bindPendente && !bindAtivo())
-    dtsImagemExibida=1;
+    dtsImagemExibida=dtsImagemFonte=1;
 }
 #endif
 // Preferred languages for the other file's track: the one chosen by hand for
@@ -4453,7 +4456,7 @@ void video_dv_fase(VideoDvFase *f) {
 #ifdef NV_MP4_BD_TEST
   f->mp4Inicial=mp4TestStarted && !falhou && !terminou;
 #ifdef NV_NATIVE_SEEK_TEST
-  f->mp4Inicial=f->mp4Inicial && !dtsImagemExibida;
+  f->mp4Inicial=f->mp4Inicial && !dtsImagemFonte;
 #else
   f->mp4Inicial=f->mp4Inicial && !(nosso && tocando && f->dvConfirmado);
 #endif
