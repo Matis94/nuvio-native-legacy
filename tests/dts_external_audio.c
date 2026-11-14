@@ -559,7 +559,18 @@ int main(int argc, char **argv) {
     r = play(e, 0, 5);
     assert(r.audio > 0 && addon_hits == h0 + 3);   /* forgotten: through the add-on */
     dts_engine_destroy(e);
-    fprintf(stderr, "remembered server address: first open pays the redirects, the next goes straight, a dead one and a forgotten one go through the add-on\n");
+    /* A short clip behind the add-on (the debrid placeholder, owner's log
+     * 14/11): its address is not kept, every retry asks the add-on again. */
+    snprintf(via, sizeof via, "addon:%s", short_clip);
+    h0 = addon_hits;
+    for (int t = 0; t < 2; t++) {
+      e = dts_engine_create();
+      dts_engine_external_audio(e, via, HEADERS, "pl", 0);
+      assert(dts_engine_open(e, main60, HEADERS, -1, 0, 0) < 0);
+      dts_engine_destroy(e);
+    }
+    assert(addon_hits == h0 + 2);
+    fprintf(stderr, "remembered server address: first open pays the redirects, the next goes straight, a dead one, a forgotten one and a placeholder go through the add-on\n");
   }
   { DtsFrame f; int got, video, audio, opened;
     snprintf(hang_url, sizeof hang_url, "%s", long_idx);

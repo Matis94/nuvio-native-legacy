@@ -2091,6 +2091,7 @@ int dts_engine_probe_audio(const char *url,const char *headers,DtsTrack *out,int
     if(x->fmt->duration>0 && x->fmt->duration<120LL*AV_TIME_BASE) {
       printf("[ext-audio] tracks: %.0f s file, the debrid placeholder clip\n",x->fmt->duration/1e6);
       fflush(stdout);
+      final_cache_forget(url,headers?headers:"");   /* the clip's address: through the add-on next time */
       dts_engine_destroy(x);
       return -3;
     }
@@ -2269,8 +2270,10 @@ static int configure_external(DtsEngine *e,double start) {
     /* No audio at all, far shorter than the picture: the debrid service's
      * placeholder clip for a file it does not have ready (owner's log 07/11:
      * one 1 fps H.264 track). */
-    if(!audio && x->fmt->duration<e->fmt->duration/2)
+    if(!audio && x->fmt->duration<e->fmt->duration/2) {
+      final_cache_forget(x->url,x->headers);
       return fail(e,"External audio: this version is not ready on the debrid service yet (placeholder clip)",0);
+    }
     return fail(e,audio?"External audio: no audio track this TV can play or convert":
                         "External audio: the other version has no audio track",0);
   }
@@ -2313,6 +2316,10 @@ static int configure_external(DtsEngine *e,double start) {
   /* Under two minutes for a picture of ten or more: the same placeholder
    * clip, with an audio track (owner's log 13/11: 30 s of AAC, 25 fps, for a
    * TorBox file not ready yet, even one marked cached). */
+  /* A short clip's address is not remembered (owner's log 14/11: the three
+   * retries of a placeholder went straight back to the clip, never asking
+   * the add-on whether the file was ready). */
+  if(x->fmt->duration<e->fmt->duration/2) final_cache_forget(x->url,x->headers);
   if(x->fmt->duration>0 && x->fmt->duration<120LL*AV_TIME_BASE && e->fmt->duration>600LL*AV_TIME_BASE)
     return fail(e,"External audio: this version is not ready on the debrid service yet (placeholder clip)",0);
   if(x->fmt->duration<e->fmt->duration/2) {
