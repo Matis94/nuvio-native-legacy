@@ -183,6 +183,14 @@ int dts_engine_external_replace(DtsEngine *, const char *url, const char *header
                                 int offset_ms, int track, int audio_only, double target);
 /* Worker only: bytes the donor's reader has downloaded, and its size. */
 int64_t dts_engine_external_bytes(DtsEngine *, int64_t *total);
+/* Any thread: a request is pending while the worker waits for the other
+ * version's data; that wait stops (1 if one was stopped). Worker only:
+ * woken = that version gives no packets until its next seek or swap; failed =
+ * it stopped answering after its reconnections (the app goes back to the
+ * file's own audio), the picture goes on. */
+int dts_engine_external_wake(DtsEngine *);
+int dts_engine_external_woken(DtsEngine *);
+int dts_engine_external_failed(DtsEngine *);
 /* Language comparison for the external track choice (the app passes
  * ling_casa); NULL or unset compares case-insensitively. Set once. */
 void dts_engine_set_lang_match(int (*match)(const char *code, const char *pref));

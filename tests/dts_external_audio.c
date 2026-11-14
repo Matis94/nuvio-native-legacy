@@ -3,7 +3,12 @@
  * Local files stand in for both HTTP transports: ranges for the main source,
  * the single streaming read for the second one. */
 #include "../src/dts/dts_engine.h"
+#ifndef EXT_STALL_S
+#define EXT_STALL_S 8
+#endif
 #include <assert.h>
+#include <pthread.h>
+#include <time.h>
 #include <libavformat/avformat.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +18,8 @@
 
 static const char *HEADERS = "X-Fixture: yes";
 static unsigned streams_opened;
+static int64_t hang_at;          /* >0: the stream of hang_url stops sending there */
+static char hang_url[4096];
 
 char *rede_range_headers(const char *raw, int public_only) {
   (void)public_only; return strdup(raw ? raw : "");
@@ -32,9 +39,20 @@ int rede_fluxo64(const char *url, const char *headers, int64_t start,
   fseeko(f, 0, SEEK_END); *total = ftello(f); fseeko(f, start, SEEK_SET);
   *status = 206;
   char buf[65536];
+  int64_t at = start;
   for (;;) {
     if (__atomic_load_n(cancel, __ATOMIC_RELAXED)) { fclose(f); return -1; }
-    size_t n = fread(buf, 1, sizeof buf, f);
+    /* A connection that goes quiet past hang_at (owner's log 14/11): open,
+     * no bytes, until dropped. */
+    int64_t h = __atomic_load_n(&hang_at, __ATOMIC_RELAXED);
+    if (h > 0 && !strcmp(url, hang_url) && at >= h) {
+      while (!__atomic_load_n(cancel, __ATOMIC_RELAXED) && __atomic_load_n(&hang_at, __ATOMIC_RELAXED) > 0) usleep(10000);
+      continue;
+    }
+    size_t want = sizeof buf;
+    if (h > 0 && !strcmp(url, hang_url) && at < h && (int64_t)want > h - at) want = (size_t)(h - at);
+    size_t n = fread(buf, 1, want, f);
+    at += (int64_t)n;
     if (!n) break;
     if (!sink(opaque, buf, n)) { fclose(f); return 1; }
     *bytes += (int64_t)n;
@@ -166,6 +184,21 @@ static Run play(DtsEngine *e, int64_t offset_ns, int limit) {
   return r;
 }
 
+/* Asks for a change (dts_engine_external_wake) once the worker waits for
+ * the other version, as a track change or seek from the player would. */
+typedef struct { DtsEngine *e; double waited; } Wake;
+static void *wake_when_waiting(void *arg) {
+  Wake *w = arg;
+  struct timespec t0, t1; clock_gettime(CLOCK_MONOTONIC, &t0);
+  for (;;) {
+    usleep(300000);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    if (dts_engine_external_wake(w->e)) break;
+    assert(t1.tv_sec - t0.tv_sec < 120);
+  }
+  w->waited = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9;
+  return NULL;
+}
 int main(int argc, char **argv) {
   assert(argc == 34);
   const char *main_file = argv[1], *other = argv[2], *dts_only = argv[3], *short_clip = argv[4], *mp4 = argv[5];
@@ -457,6 +490,59 @@ int main(int argc, char **argv) {
     fprintf(stderr, "match at start: result %d offset %d ms automatic %d\n", res, off, autom);
     assert(got == 0 && res == 1 && autom && off > -740 && off < -660); }
   dts_engine_destroy(e);
+  /* The other version goes quiet mid-file (owner's log 14/11: the converter,
+   * picture included, waited on it until a track change, which waited too).
+   * A request stops that wait at once; the reader reconnects at the same
+   * place EXT_STALL_TRIES times, then gives up and the picture plays on. */
+  checkBytes = 0;
+  { DtsFrame f; int got, video, audio, opened;
+    snprintf(hang_url, sizeof hang_url, "%s", long_idx);
+    /* Woken: the read stops at once, the picture goes on without the other
+     * audio, the seek after the request reads it again. */
+    e = dts_engine_create();
+    dts_engine_external_audio(e, long_idx, HEADERS, "pl", 0);
+    assert(dts_engine_open(e, main60, HEADERS, -1, 0, 0) == 0);
+    int64_t total = 0; dts_engine_external_bytes(e, &total); assert(total > 16 * 1024 * 1024);
+    __atomic_store_n(&hang_at, total / 2, __ATOMIC_RELAXED);
+    pthread_t waker; Wake w = { e, 0 };
+    assert(pthread_create(&waker, NULL, wake_when_waiting, &w) == 0);
+    video = audio = 0;
+    while ((got = dts_engine_next(e, &f)) == 1 && !dts_engine_external_woken(e)) {}
+    pthread_join(waker, NULL);
+    assert(got == 1 && dts_engine_external_woken(e) && !dts_engine_external_failed(e));
+    double waited = w.waited;
+    for (int i = 0; i < 50 && (got = dts_engine_next(e, &f)) == 1; i++) {
+      video += f.kind == DTS_VIDEO; audio += f.kind == DTS_AUDIO;
+    }
+    assert(got == 1 && video == 50 && audio == 0);   /* the picture moves on alone */
+    __atomic_store_n(&hang_at, 0, __ATOMIC_RELAXED);
+    assert(dts_engine_seek(e, 40.0) == 0 && !dts_engine_external_woken(e));
+    r = play(e, 0, 60);
+    assert(r.audio > 5 && r.first_audio >= 39900000000LL / 1000);
+    fprintf(stderr, "quiet other version: woken after %.1f s waiting, %d video packets alone, audio back after the seek\n",
+            waited, video);
+    dts_engine_destroy(e);
+    /* Nobody asks: reconnections at the same place, then it gives up; the
+     * picture plays to the end, the failure reported for the app. */
+    e = dts_engine_create();
+    dts_engine_external_audio(e, long_idx, HEADERS, "pl", 0);
+    assert(dts_engine_open(e, main60, HEADERS, -1, 0, 0) == 0);
+    __atomic_store_n(&hang_at, total / 2, __ATOMIC_RELAXED);
+    opened = (int)__atomic_load_n(&streams_opened, __ATOMIC_RELAXED);
+    struct timespec t0, t1; clock_gettime(CLOCK_MONOTONIC, &t0);
+    video = audio = 0;
+    while ((got = dts_engine_next(e, &f)) == 1) { video += f.kind == DTS_VIDEO; audio += f.kind == DTS_AUDIO; }
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    double took = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9;
+    int reconnected = (int)__atomic_load_n(&streams_opened, __ATOMIC_RELAXED) - opened;
+    fprintf(stderr, "quiet other version, nobody asks: %d reconnections, gave up in %.1f s, %d video %d audio\n",
+            reconnected, took, video, audio);
+    assert(got == 0 && dts_engine_external_failed(e) && video == 1500 && audio > 0);
+    assert(reconnected >= 3 && took >= 3 * EXT_STALL_S && took < 6 * EXT_STALL_S);
+    __atomic_store_n(&hang_at, 0, __ATOMIC_RELAXED);
+    dts_engine_destroy(e);
+  }
+  checkBytes = 1;
   /* AVI and MPEG-TS (owner's log 07/11: a 4.3 GB AVI picture source; small
    * AVI/TS versions with other audio). The picture from an H.264 AVI, the
    * audio from an AVI (MP3) and a TS (AC-3) version; seek in both. */

@@ -3837,6 +3837,17 @@ static void bombearDts(void) {
   { static int retries;
     if (extAtivo && st.net_retries > retries) audioext_reconexao_marcar();
     retries = st.net_retries; }
+  // The other version stopped answering: its reader reconnected 3 times at
+  // the same place and gave up (dts_engine.c). The picture went on; this
+  // file's own audio again, and said.
+  { static int falhas;
+    if (!extAtivo || st.ext_failures < falhas) falhas = st.ext_failures;   // another session
+    else if (st.ext_failures > falhas && !extReabrirPend) {   // a pick already pending wins
+      printf("[ext-audio] the other version does not respond: back to this file's own audio\n"); fflush(stdout);
+      audioext_lento_marcar(3);
+      audioext_sem_resposta();
+      falhas = st.ext_failures;
+    } }
   // The other version cannot keep up: 15 s waiting for its data with under
   // 1 s of picture ahead (owner's log 14/11: a slow first connection; the
   // same file reopened played smoothly). Reopened once by itself, on a fresh

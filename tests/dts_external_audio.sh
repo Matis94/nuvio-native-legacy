@@ -10,7 +10,7 @@ trap 'rm -rf "$TMP"' EXIT
 SAN=""
 if [ "${SANITIZE:-0}" = 1 ]; then SAN="-fsanitize=address,undefined -fno-omit-frame-pointer"; fi
 # shellcheck disable=SC2086
-${CC:-gcc} $SAN -std=gnu11 -Wall -Wextra -Werror -DNV_DTS_FFMPEG -DNV_DTS_WEBOS_RECOVERY -I"$PREFIX/include" \
+${CC:-gcc} $SAN -std=gnu11 -Wall -Wextra -Werror -DNV_DTS_FFMPEG -DNV_DTS_WEBOS_RECOVERY -DEXT_STALL_S=2 -I"$PREFIX/include" \
   src/dts/dts_engine.c tests/dts_external_audio.c -o "$TMP/ext" \
   -L"$PREFIX/lib" -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lm -lpthread
 printf '1\n00:00:00,500 --> 00:00:01,500\nExternal audio fixture\n' > "$TMP/sub.srt"

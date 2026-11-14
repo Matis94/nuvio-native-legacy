@@ -69,6 +69,10 @@ void audioext_preferencias(int soAudio, int serie);
 int audioext_so_audio(void);
 // From the audio menu: back to this file's own audio, reopened the same way.
 void audioext_original(void);
+// The chosen version stopped answering while it played (the converter gave
+// up after its reconnections): this file's own audio again, the same way, but
+// the series memory stays (a CDN hiccup is not a bad pick).
+void audioext_sem_resposta(void);
 unsigned audioext_pedido_geracao(void);
 // From the audio menu while the other version plays: its audio stream
 // `stream` (demux index in that file) instead of the language pick; the webOS
@@ -162,7 +166,8 @@ double audioext_salto_previsto_consumir(void);
 void audioext_reconexao_marcar(void);
 int audioext_reconexao_consumir(void);
 // The other version cannot keep up with the picture: 1 reopened once by
-// itself, 2 still too slow after that. Once each, for a toast.
+// itself, 2 still too slow after that, 3 it stopped answering (back to this
+// file's own audio). Once each, for a toast.
 void audioext_lento_marcar(int etapa);
 int audioext_lento_consumir(void);
 // Following another cut (Settings): an event of the webOS converter. tipo 1

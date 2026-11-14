@@ -137,6 +137,12 @@ void audioext_original(void) {
   pedidoGeracao++;
   printf("[ext-audio] back to this file's own audio\n"); fflush(stdout);
 }
+void audioext_sem_resposta(void) {
+  audioext_limpar();
+  pedidoGeracao++;
+  printf("[ext-audio] the chosen version stopped answering: back to this file's own audio (series memory kept)\n");
+  fflush(stdout);
+}
 unsigned audioext_pedido_geracao(void) {
   // The try after the placeholder clip comes due here (the player asks every
   // frame): the same as picking the version again.

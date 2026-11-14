@@ -97,6 +97,10 @@ void dts_engine_external_audio(DtsEngine *e,const char *url,const char *headers,
 void dts_engine_external_offset(DtsEngine *e,int offset_ms) { (void)e;pthread_mutex_lock(&fixture);ext_offset=offset_ms;pthread_mutex_unlock(&fixture); }
 int dts_engine_external_active(DtsEngine *e) { return e->external; }
 int64_t dts_engine_external_bytes(DtsEngine *e,int64_t *t) { (void)e; if(t) *t=-1; return 0; }
+static int ext_wakes, ext_failed_fixture, ext_replace_fail;
+int dts_engine_external_wake(DtsEngine *e) { (void)e; pthread_mutex_lock(&fixture); ext_wakes++; pthread_mutex_unlock(&fixture); return 1; }
+int dts_engine_external_woken(DtsEngine *e) { (void)e; return 0; }
+int dts_engine_external_failed(DtsEngine *e) { (void)e; pthread_mutex_lock(&fixture); int f=ext_failed_fixture; pthread_mutex_unlock(&fixture); return f; }
 static int ext_only;
 void dts_engine_external_audio_only(DtsEngine *e,int on) { (void)e;pthread_mutex_lock(&fixture);ext_only=on;pthread_mutex_unlock(&fixture); }
 static int ext_track=-2;
@@ -118,7 +122,9 @@ int dts_engine_external_shift(DtsEngine *e,int o) { (void)e; pthread_mutex_lock(
 static int ext_replaces, ext_replace_track;static double ext_replace_target;static char ext_replace_url[64];
 int dts_engine_external_replace(DtsEngine *e,const char *u,const char *h,const char *l,int o,int t,int a,double target) {
  (void)h;(void)l;(void)o;(void)a;pthread_mutex_lock(&fixture);ext_replaces++;ext_replace_track=t;ext_replace_target=target;
- snprintf(ext_replace_url,sizeof ext_replace_url,"%s",u);pthread_mutex_unlock(&fixture);e->base=target;e->serial=0;return 0;
+ snprintf(ext_replace_url,sizeof ext_replace_url,"%s",u);int f=ext_replace_fail;pthread_mutex_unlock(&fixture);
+ if(f) return -1;
+ e->base=target;e->serial=0;return 0;
 }
 int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,int core,double target) {
  (void)headers;assert(!strcmp(url,expected_url));
@@ -503,6 +509,42 @@ int main(int argc,char **argv) {
   assert(!dts_playback_external_swap(p,"fixture://other","","",0,-1,0,1));   // not external
   dts_playback_close(p);assert(count(&creates)==count(&destroys));
   puts("PASS external audio: other source handed to the engine, track changes ignored, offset applied with the seek");return 0;
+ }
+ if(!strcmp(argv[1],"external-seamless")) {
+  // Seamless repositioning on: another version (or another track of it) is
+  // swapped in the engine and the TV keeps its player (flush, no new Load);
+  // the request also stops a wait for the old version's data.
+  seamless_fixture=1;scenario=NORMAL;
+  DtsTrack track={.kind=DTS_AUDIO,.channels=6};strcpy(track.codec,"dts");strcpy(track.language,"xx");
+  dts_playback_next_dv(0);dts_playback_next_seamless(1);
+  dts_playback_next_external_audio("fixture://other","","pl",0);
+  p=start(0,-1,&track,7,9);s=wait_status(p,0,0);wait_count(&plays,1);
+  for(int i=0;i<100;i++) nap();
+  assert(!s.failed && dts_playback_external(p) && count(&loads)==1);
+  int fl=count(&flushes);
+  assert(dts_playback_external_swap(p,"fixture://third","","pl",0,2,0,5));
+  for(int i=0;i<400 && count(&flushes)==fl;i++) nap();
+  pthread_mutex_lock(&fixture);
+  assert(ext_wakes>=1 && ext_replaces==1 && ext_replace_target==5 && !strcmp(ext_replace_url,"fixture://third"));
+  pthread_mutex_unlock(&fixture);
+  s=wait_status(p,0,0);
+  assert(!s.failed && count(&flushes)==fl+1 && count(&loads)==1 && count(&opens)==1);
+  // The new version stops answering: counted once for the app.
+  pthread_mutex_lock(&fixture);ext_failed_fixture=1;pthread_mutex_unlock(&fixture);
+  for(int i=0;i<400;i++){ s=wait_status(p,0,0); if(s.ext_failures) break; nap(); }
+  for(int i=0;i<50;i++) nap();
+  s=wait_status(p,0,0);assert(s.ext_failures==1);
+  pthread_mutex_lock(&fixture);ext_failed_fixture=0;pthread_mutex_unlock(&fixture);
+  // A version that cannot be opened in place of the old one: the source
+  // opens again with it, the session goes on.
+  for(int i=0;i<100;i++) nap();
+  pthread_mutex_lock(&fixture);ext_replace_fail=1;pthread_mutex_unlock(&fixture);
+  assert(dts_playback_external_swap(p,"fixture://fourth","","pl",0,-1,0,6));
+  for(int i=0;i<400 && count(&opens)==1;i++) nap();
+  pthread_mutex_lock(&fixture);ext_replace_fail=0;assert(ext_replaces==2);pthread_mutex_unlock(&fixture);
+  s=wait_status(p,0,0);assert(!s.failed && count(&opens)==2);
+  dts_playback_close(p);assert(count(&creates)==count(&destroys));
+  puts("PASS external seamless: swap without a new Load, wait stopped, failure counted once, failed swap reopens");return 0;
  }
  if(!strcmp(argv[1],"late-dv")) {
   // Small UI probe missed RPU, but the real demux output is single-layer P8.

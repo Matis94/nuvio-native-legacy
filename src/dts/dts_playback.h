@@ -16,6 +16,7 @@ typedef struct {
   int ext_cut_s, ext_speed; /* audio of another version: other cut (s) / other speed */
   int net_retries;          /* times a slow source was reconnected instead of giving up */
   int ext_starved;          /* audio of another version: 5 s windows in a row waiting for data with under 1 s of video ahead */
+  int ext_failures;         /* audio of another version: times it stopped answering after its reconnections (back to the file's own audio) */
   int follow_state;         /* another cut followed: 0 off, 1 in sync, 2 own audio (a scene the other lacks), 3 lost */
   int follow_events, follow_kind, follow_offset_ms;   /* the latest follow event (dts_engine_external_follow_poll) */
 } DtsPlaybackStatus;

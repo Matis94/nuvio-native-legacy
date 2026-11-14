@@ -97,6 +97,9 @@ void dts_engine_external_speed(DtsEngine *e,int p) { (void)e;(void)p; }
 int dts_engine_prefetch(DtsEngine *e,double s) { (void)e;(void)s; return -1; }
 void dts_engine_prefetch_tidy(DtsEngine *e) { (void)e; }
 void dts_engine_reconnect(DtsEngine *e) { (void)e; }
+int dts_engine_external_wake(DtsEngine *e) { (void)e; return 0; }
+int dts_engine_external_woken(DtsEngine *e) { (void)e; return 0; }
+int dts_engine_external_failed(DtsEngine *e) { (void)e; return 0; }
 void dts_engine_external_follow(DtsEngine *e,int on) { (void)e;(void)on; }
 void dts_engine_external_track_hint(DtsEngine *e,int s,const char *l,const char *c,int ch,const char *t) { (void)e;(void)s;(void)l;(void)c;(void)ch;(void)t; }
 void dts_engine_external_automatch(DtsEngine *e,int on) { (void)e;(void)on; }
@@ -210,6 +213,15 @@ struct DtsEngine {
   int64_t fx_req;            /* restart the read at this offset (-1: none) */
   int64_t fx_from;           /* where the current read started (read-ahead grows from it) */
   uint64_t fx_resolved_ms;   /* last time the final address was dropped for the add-on's */
+  /* Audio of another version (parent set): a wait of the reader that lasts
+   * too long reconnects at the same place (xs_tries at xs_at, a fresh link
+   * from the add-on on the second), then gives up (ext_dead). xs_waiting:
+   * the reader is waiting now (a track change or seek may wake it). */
+  int64_t xs_at; int xs_tries, ext_dead; volatile int xs_waiting;
+  /* Main engine: the other version's read was woken for a pending request
+   * (ext_woken, until its seek or swap) or gave up (ext_failed). Either way
+   * the picture goes on without its packets. */
+  int ext_woken, ext_failed;
   char final_url[8192];
   /* PREFETCH (owner's log 07/11: after an intro skip the slow source starved
    * the DV path for 20 s): the bytes at a coming jump target, fetched over a
@@ -702,6 +714,10 @@ static uint64_t fx_now_ms(void) { return clock_ns(CLOCK_MONOTONIC)/1000000u; }
  * the read-ahead buffer, and a jump outside it restarts the one request.
  * The Samsung remux keeps its short adaptive read-ahead. */
 static int fx_long(const DtsEngine *e) { return e->source_stream || e->conv_stream; }
+/* Its request can be dropped at once (source_cancel), not only once a byte
+ * arrives: the long rings and the other version's reader (owner's log 14/11:
+ * a silent connection to it held the converter, picture included). */
+static int fx_abortable(const DtsEngine *e) { return fx_long(e) || e->parent; }
 /* Read-ahead allowed past the reader: twice what was read since the request
  * started, at least 2 MiB. A probe that only needs the header and the Cues
  * then costs a few MiB, not a full ring, at each jump. */
@@ -762,19 +778,19 @@ static void *fx_worker(void *opaque) {
     direct=e->final_url[0]!=0;
     snprintf(target,sizeof target,"%s",direct?e->final_url:e->url);
     int strip=direct&&e->final_cross;
-    if(fx_long(e))__atomic_store_n(&e->source_cancel,0,__ATOMIC_RELAXED);
+    if(fx_abortable(e))__atomic_store_n(&e->source_cancel,0,__ATOMIC_RELAXED);
     pthread_mutex_unlock(&e->range_lock);
     uint64_t t0=fx_now_ms();
     e->fx_live_total=-1;
     int r=rede_fluxo64(target,strip?(e->source_stream && e->final_cross!=2?e->source_public_headers:""):e->headers,at,fx_sink,e,&e->fx_live_total,&status,
-      fx_long(e)?&e->source_cancel:&e->cancelled,fin,&cross,FX_STALL_MS,&got);
+      fx_abortable(e)?&e->source_cancel:&e->cancelled,fin,&cross,FX_STALL_MS,&got);
     uint64_t ms=fx_now_ms()-t0;
     pthread_mutex_lock(&e->range_lock);
     total=e->fx_live_total;
     e->metrics.range_requests++;
     if(total>=0) e->total=total;
     if(!direct && got>0 && fin[0]) { snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross; }
-    if(r==1 || e->fx_stop || cancelled(e) || (fx_long(e) && e->fx_req>=0)) continue; /* seek/closing */
+    if(r==1 || e->fx_stop || cancelled(e) || (fx_abortable(e) && e->fx_req>=0)) continue; /* seek/closing */
     if(r==0) {                                                /* body ended */
       e->fx_attempts=0;
       if(status==200) { e->total=e->fx_hi; e->fx_eof=1; continue; }   /* whole file, no Range */
@@ -1044,6 +1060,42 @@ int dts_engine_prefetch(DtsEngine *e,double seconds) {
   printf("[prefetch] %.1fs: fetching %lld KiB at %lld\n",seconds,(long long)(cap/1024),(long long)e->pf_lo); fflush(stdout);
   return 0;
 }
+/* The other version's reader has waited for the byte at pos since
+ * *wait_started (under range_lock). Owner's log 14/11: a connection to a
+ * TorBox CDN link that went quiet held the converter, and with it the
+ * picture, until the next track change, which itself waited behind it. After
+ * EXT_STALL_S s the request is dropped and made again at the same place; the
+ * second time through the add-on (a fresh link); after EXT_STALL_TRIES tries
+ * at that place, -1: the version gives up and the app goes back to the file's
+ * own audio. A trickle that keeps the wait under EXT_STALL_S is the slow
+ * download watchdog's case (dts_playback.c, video.c). */
+#ifndef EXT_STALL_S
+#define EXT_STALL_S 8   /* tests build with a shorter one */
+#endif
+#define EXT_STALL_TRIES 3
+static int ext_stall_guard(DtsEngine *e,uint64_t *wait_started) {
+  uint64_t now=clock_ns(CLOCK_MONOTONIC);
+  if(e->fx_req>=0 || now<*wait_started || now-*wait_started<(uint64_t)EXT_STALL_S*1000000000u) return 0;
+  if(e->xs_tries && llabs(e->pos-e->xs_at)>1024*1024) e->xs_tries=0;   /* another place: tries anew */
+  if(e->xs_tries>=EXT_STALL_TRIES) {
+    e->ext_dead=1;
+    printf("[ext-audio] waiting for the other version %d s at %lld MiB after %d reconnections: giving up\n",
+           EXT_STALL_S,(long long)(e->pos>>20),EXT_STALL_TRIES);
+    fflush(stdout);
+    return -1;
+  }
+  e->xs_tries++; e->xs_at=e->pos;
+  int fresh=e->xs_tries==2 && e->final_url[0];
+  if(fresh) { e->final_url[0]=0; e->fx_resolved_ms=fx_now_ms(); }
+  printf("[ext-audio] waiting for the other version %d s at %lld MiB: reconnecting (%d/%d)%s\n",
+         EXT_STALL_S,(long long)(e->pos>>20),e->xs_tries,EXT_STALL_TRIES,fresh?", a fresh link from the add-on":"");
+  fflush(stdout);
+  e->fx_req=e->pos;
+  __atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
+  pthread_cond_broadcast(&e->range_wake);
+  *wait_started=now;   /* the new connection gets its own EXT_STALL_S */
+  return 0;
+}
 static int read_fluxo_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
   DtsEngine *e=opaque;
   uint64_t wait_started=0;
@@ -1067,15 +1119,20 @@ static int read_fluxo_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
   for(;;) {
     struct pollfd pending={pending_fd,POLLIN,0};
     if(cancelled(e) || __atomic_load_n(&e->interrupt,__ATOMIC_RELAXED) ||
-       (pending_fd>=0 && poll(&pending,1,0)>0)) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EXIT; }
-    if(e->total>=0 && e->pos>=e->total) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EOF; }
+       (pending_fd>=0 && poll(&pending,1,0)>0)) { e->xs_waiting=0; pthread_mutex_unlock(&e->range_lock); return AVERROR_EXIT; }
+    if(e->total>=0 && e->pos>=e->total) { e->xs_waiting=0; pthread_mutex_unlock(&e->range_lock); return AVERROR_EOF; }
+    if(e->ext_dead && !(e->fx_req<0 && e->pos>=e->fx_lo && e->pos<e->fx_hi)) {   /* gave up: no new wait */
+      e->xs_waiting=0; pthread_mutex_unlock(&e->range_lock); return AVERROR(EIO);
+    }
     if(e->pf_buf && e->pos>=e->pf_lo && e->pos<e->pf_hi && !(e->fx_req<0 && e->pos>=e->fx_lo && e->pos<e->fx_hi)) {
+      e->xs_waiting=0;
       int64_t k=e->pf_hi-e->pos; if(k>n) k=n;
       memcpy(dst,e->pf_buf+(e->pos-e->pf_lo),(size_t)k); e->pos+=k; e->pf_served+=k;
       pthread_mutex_unlock(&e->range_lock);
       return (int)k;
     }
     if(e->fx_req<0 && e->pos>=e->fx_lo && e->pos<e->fx_hi) {
+      e->xs_waiting=0;
       int64_t k=e->fx_hi-e->pos; if(k>n) k=n;
       size_t at=(size_t)(e->pos%FX_CAP); if((int64_t)(FX_CAP-at)<k) k=FX_CAP-at;
       memcpy(dst,e->fx_buf+at,(size_t)k); e->pos+=k;
@@ -1084,15 +1141,22 @@ static int read_fluxo_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
       pthread_mutex_unlock(&e->range_lock);
       return (int)k;
     }
-    if(e->fx_req<0 && e->fx_eof && e->pos>=e->fx_hi) { pthread_mutex_unlock(&e->range_lock); return AVERROR_EOF; }
-    if(e->fx_req<0 && e->fx_err) { pthread_mutex_unlock(&e->range_lock); return AVERROR(EIO); }
+    if(e->fx_req<0 && e->fx_eof && e->pos>=e->fx_hi) { e->xs_waiting=0; pthread_mutex_unlock(&e->range_lock); return AVERROR_EOF; }
+    if(e->fx_req<0 && e->fx_err) {
+      if(e->parent) e->ext_dead=1;   /* the stream's own retries ran out */
+      e->xs_waiting=0; pthread_mutex_unlock(&e->range_lock); return AVERROR(EIO);
+    }
     /* Outside what the stream has or will soon have: start over there. */
     if(e->fx_req<0 && (e->pos<e->fx_lo || e->pos>e->fx_hi+(fx_long(e)?0:FX_SKIP))) {
       e->fx_req=e->pos;
-      if(fx_long(e))__atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
+      if(fx_abortable(e))__atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
       pthread_cond_broadcast(&e->range_wake);
     }
     if(!wait_started) wait_started=clock_ns(CLOCK_MONOTONIC);
+    if(e->parent && ext_stall_guard(e,&wait_started)<0) {
+      e->xs_waiting=0; pthread_mutex_unlock(&e->range_lock); return AVERROR(EIO);
+    }
+    e->xs_waiting=1;
     struct timespec ts; clock_gettime(CLOCK_REALTIME,&ts);
     if(pending_fd<0) ts.tv_sec+=1;
     else {
@@ -1130,7 +1194,7 @@ static int64_t seek_fluxo(void *opaque,int64_t offset,int whence) {
 static void fx_close(DtsEngine *e) {
   pthread_mutex_lock(&e->range_lock);
   e->fx_stop=1; pthread_cond_broadcast(&e->range_wake);
-  if(fx_long(e))__atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
+  if(fx_abortable(e))__atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
   pthread_mutex_unlock(&e->range_lock);
   if(e->fx_thread_ok) pthread_join(e->fx_thread,NULL);
   e->fx_thread_ok=0; e->fx_stop=0; e->fx_req=-1; e->fx_eof=e->fx_err=0; e->fx_lo=e->fx_hi=0;
@@ -1661,6 +1725,56 @@ int64_t dts_engine_external_bytes(DtsEngine *e,int64_t *total) {
   if(total) *total=x?x->total:-1;
   return x?(int64_t)x->metrics.range_bytes:0;
 }
+/* Any thread: a seek, track change or other version is pending while the
+ * worker waits for the other version's data (owner's log 14/11: the change
+ * itself waited behind a silent connection). That read stops; the picture
+ * goes on without the other audio until the worker's seek or swap. */
+int dts_engine_external_wake(DtsEngine *e) {
+  int woke=0;
+  if(!e) return 0;
+  pthread_mutex_lock(&e->range_lock);
+  DtsEngine *x=e->ext;
+  if(x && e->ext_stream>=0) {   /* not while it opens (a swap in progress) */
+    pthread_mutex_lock(&x->range_lock);
+    if(x->xs_waiting) {
+      __atomic_store_n(&x->interrupt,1,__ATOMIC_RELAXED);
+      __atomic_store_n(&x->source_cancel,1,__ATOMIC_RELAXED);
+      pthread_cond_broadcast(&x->range_wake);
+      woke=1;
+    }
+    pthread_mutex_unlock(&x->range_lock);
+  }
+  pthread_mutex_unlock(&e->range_lock);
+  return woke;
+}
+int dts_engine_external_woken(DtsEngine *e) { return e && e->ext && (e->ext_woken || __atomic_load_n(&e->ext->interrupt,__ATOMIC_RELAXED)); }
+int dts_engine_external_failed(DtsEngine *e) { return e && e->ext_failed; }
+/* A read of the other version came back short: woken for a pending request
+ * or given up (ext_stall_guard). 1 = so: no packet of it now, the picture
+ * goes on; 0 = an ordinary end or error. */
+static int ext_read_stopped(DtsEngine *e) {
+  DtsEngine *x=e->ext;
+  if(!x || cancelled(e)) return 0;
+  if(x->ext_dead) {
+    if(!e->ext_failed) {
+      e->ext_failed=1;
+      printf("[ext-audio] the other version does not respond: the picture goes on, back to this file's own audio\n");
+      fflush(stdout);
+    }
+    return 1;
+  }
+  if(__atomic_load_n(&x->interrupt,__ATOMIC_RELAXED)) {
+    if(!e->ext_woken) { e->ext_woken=1; printf("[ext-audio] wait for the other version stopped for a pending change\n"); fflush(stdout); }
+    return 1;
+  }
+  return 0;
+}
+/* Before the other version reads again (its seek, a live shift). */
+static void ext_unwake(DtsEngine *e) {
+  if(!e->ext_woken && !(e->ext && __atomic_load_n(&e->ext->interrupt,__ATOMIC_RELAXED))) return;
+  e->ext_woken=0;
+  if(e->ext) dts_engine_interrupt(e->ext,0);
+}
 static int reset_encoder(DtsEngine *e) {
   /* Encoders are reopened after seek; encoder flush is not supported by AAC. */
   enum AVCodecID id=e->enc->codec_id;
@@ -1936,6 +2050,7 @@ static int configure_external(DtsEngine *e,double start) {
   DtsEngine *x=dts_engine_create();
   if(!x) return fail(e,"External audio allocation",0);
   x->fx_mib=DTS_ENGINE_EXTERNAL_RING_MIB; x->parent=e;
+  e->ext_woken=e->ext_failed=0;
   pthread_mutex_lock(&e->range_lock); e->ext=x; pthread_mutex_unlock(&e->range_lock);
   if(cancelled(e)) return fail(e,"Cancelled",0);
   printf("[ext-audio] opening second source ringMiB=%d offsetMs=%lld langs=%s\n",
@@ -3390,7 +3505,9 @@ static void follow_read_ahead(DtsEngine *e) {
     double have=f->d.t0_ns!=INT64_MIN?f->d.t0_ns/1e9+(double)f->d.ev.n/DTS_MATCH_HZ:0;
     if(f->d.t0_ns!=INT64_MIN && have>=f->d_pause+f->look_s) return;
     if(match_side_full(&f->d)) return;
+    if(e->ext_woken || e->ext_failed) return;
     int r=av_read_frame(e->ext->fmt,e->ext_in);
+    if(r<0 && ext_read_stopped(e)) return;
     if(r==AVERROR_EOF) { e->ext_demux_eof=1; return; }
     if(r<0) return;
     if(e->ext_in->stream_index==f->dstream)
@@ -3431,6 +3548,7 @@ int dts_engine_external_follow_poll(DtsEngine *e,int *state,int *offset_ms) {
  * ext_fill's. Mirrors next_frame's decode loop with the donor's packets. */
 static int ext_fill_conv(DtsEngine *e) {
   if(e->fw_state==FW_FILL || e->fw_state==FW_GAVEUP) return follow_fill_conv(e);
+  if(e->ext_woken || e->ext_failed) return 0;
   while(!e->ext_have && !e->ext_eof) {
     int r;
     if(cancelled(e)) return fail(e,"Cancelled",0);
@@ -3461,6 +3579,7 @@ static int ext_fill_conv(DtsEngine *e) {
     }
     if(e->ext_demux_eof) { e->ext_eof=1; break; }
     r=av_read_frame(e->ext->fmt,e->ext_in);
+    if(r<0 && ext_read_stopped(e)) return 0;
     if(r==AVERROR_EOF) {
       e->ext_demux_eof=1;
       if((r=avcodec_send_packet(e->dec,NULL))<0) return fail(e,"External audio decoder drain",r);
@@ -3482,9 +3601,11 @@ static int ext_fill_conv(DtsEngine *e) {
 }
 static int ext_fill(DtsEngine *e) {
   if(e->ext_conv) return ext_fill_conv(e);
+  if(e->ext_woken || e->ext_failed) return 0;
   while(!e->ext_have && !e->ext_eof) {
     if(cancelled(e)) return fail(e,"Cancelled",0);
     int r=av_read_frame(e->ext->fmt,e->ext_pkt);
+    if(r<0 && ext_read_stopped(e)) return 0;
     if(r==AVERROR_EOF) { e->ext_eof=1; break; }
     if(r<0) {
       if(cancelled(e)) return fail(e,"Cancelled",0);
@@ -3653,12 +3774,16 @@ static int ext_seek(DtsEngine *e,double seconds) {
   uint64_t t0=clock_ns(CLOCK_MONOTONIC);
   int64_t b0=(int64_t)e->ext->metrics.range_bytes;
   match_cancel(e);
+  ext_unwake(e);
+  if(e->ext_failed) return ext_reset_chain(e);   /* given up: the app goes back to its own audio */
   int how=0, r=ext_donor_seek(e,t,&how);
   printf("[ext-audio] seek to %.1fs: other version %llu ms via %s, %lld KiB read\n",t,
     (unsigned long long)((clock_ns(CLOCK_MONOTONIC)-t0)/1000000u),how==1?"index":how==2?"clusters found by position":"scan",
     (long long)(((int64_t)e->ext->metrics.range_bytes-b0)/1024));
   fflush(stdout);
-  if(r<0) return fail(e,"External audio seek",r);
+  /* Woken by a newer request (it seeks again) or given up: no packets of it
+   * for now, the picture still moves. */
+  if(r<0 && !ext_read_stopped(e)) return fail(e,"External audio seek",r);
   e->ext_clock_ns=INT64_MIN; e->ext_last_end_ns=e->ext_floor_ns=INT64_MIN;
   if(e->fw) {   /* a jump: compared again from scratch, in sync until shown otherwise */
     follow_side_reset(&e->fw->m); follow_side_reset(&e->fw->d);
@@ -3688,7 +3813,9 @@ int dts_engine_external_shift(DtsEngine *e,int offset_ms) {
   if(t<0) t=0;
   int how=0;
   uint64_t t0=clock_ns(CLOCK_MONOTONIC);
-  if(ext_donor_seek(e,t,&how)<0) return -1;
+  ext_unwake(e);
+  if(e->ext_failed) return 0;
+  if(ext_donor_seek(e,t,&how)<0 && !ext_read_stopped(e)) return -1;
   if(ext_reset_chain(e)<0) return -1;
   e->ext_floor_ns=from;
   printf("[ext-audio] live offset %d ms from %.3fs (no reload): %llu ms\n",offset_ms,from/1e9,

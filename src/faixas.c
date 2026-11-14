@@ -1886,7 +1886,7 @@ static int extIndiceTocando(void) {
   return -1;
 }
 static const char *extNomeIdioma(const char *idioma) {
-  return idioma && idioma[0] ? i18n(ling_nome(idioma)) : i18n("Unknown (likely original)");
+  return idioma && idioma[0] ? i18n(ling_nome(idioma)) : i18n("Desconhecido");
 }
 
 // A row of the audio of another source: Audio sync, Match automatically,
