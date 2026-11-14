@@ -378,4 +378,4 @@
   0, /* Sync adjusted message: On */
   0, /* Match automatically at start: On */
   0, /* Hide duplicates: On */
-  0, /* Sort versions: For audio */
+  1, /* Sort like the addons: Off (V_LIGA) */

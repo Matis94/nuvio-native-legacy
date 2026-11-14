@@ -50,7 +50,7 @@ typedef struct AudioExtEntradaS {
   uint64_t bytes;                   // 0 = unknown
   char ident[64];                   // the file itself (hash, torrent:file); "" unknown
   int foraFiltro;                   // its add-on switched off in Settings > Addons
-  int ordemAddon;                   // the add-on's place (Stream.addonOrdem), for "Like the addon"
+  int ordemAddon;                   // the add-on's place (Stream.addonOrdem), for "Sort like the addons"
 } AudioExtEntrada;
 
 typedef struct {
@@ -65,7 +65,7 @@ typedef struct {
   const char *pref1, *pref2;        // "" skipped
   int ocultarForaCache, semDts;
   int ocultarCopias;                // one row per file (Settings, on by default)
-  // "Sort versions: Like the addon": inside a language, the add-ons' own order
+  // "Sort like the addons": inside a language, the add-ons' own order
   // (the add-on's place, then the list's order) instead of cache/channels/
   // codec/size. Off by default.
   int ordemAddon;

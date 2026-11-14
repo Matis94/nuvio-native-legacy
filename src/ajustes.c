@@ -752,7 +752,7 @@ typedef enum {
   AJ_EXT_AUDIO_AVISO,  // the "sync adjusted by itself" message: on
   AJ_EXT_AUDIO_AUTO,   // "Match automatically" by itself at start: on
   AJ_EXT_AUDIO_COPIAS, // "From another source": copies of one file shown once: on
-  AJ_EXT_AUDIO_ORDEM,  // "From another source": sort for audio (0) or like the addon (1)
+  AJ_EXT_AUDIO_ORDEM,  // "From another source": sort like the addons (V_LIGA, off by default)
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -788,7 +788,7 @@ static const char *V_PALCO_FUNDO[] = { "Cortina", "Como está", "Só arte", "Pre
 static const char *V_TITULO_FIL[] = { "Clássico", "Ilha", "Editorial", "Acento" };
 static const char *V_DEGRADES[] = { "Automático", "Forte", "Desligado" };
 static const char *V_BUFFER_CONNECTIONS[] = { "Standard (1)", "Parallel - 2", "Parallel - 3", "Parallel - 4" };
-static const char *V_EXT_AUDIO_CACHE[] = { "Show dimmed", "Hide" };
+static const char *V_EXT_AUDIO_CACHE[] = { "Show dimmed", "Ocultar" };
 static const char *V_EXT_AUDIO_PASSO[] = { "10 ms", "50 ms", "100 ms" };
 static const char *V_EXT_AUDIO_MODO[] = { "Whole file", "Audio only" };
 static const char *V_BUFFER_CONVERSION_CONNECTIONS[] = { "Standard (1)", "Parallel - 2", "Parallel - 3", "Parallel - 4" };
@@ -810,8 +810,6 @@ _Static_assert(sizeof V_FUNDO_DIN_COR / sizeof *V_FUNDO_DIN_COR == sizeof FUNDO_
                "V_FUNDO_DIN_COR: um nome por linha de FUNDO_DIN_TEMA");
 static const char *V_QUALIDADE[] = { "Automática", "4K", "1080p", "720p" };
 static const char *V_LIGA[]      = { "Ligado", "Desligado" };
-// "From another source" > Sort versions (owner, 14/11): audio-first is the default.
-static const char *V_EXT_ORDEM[] = { "For audio", "Like the addon" };
 static const char *V_LIGA_AUTO[] = { "Ligado", "Desligado", "Automático" };
 // Estilo da fileira de formato do player; o indice e o PLR_FMT_* de ajustes.h
 // e o gravado em "plrFormatoLocal".
@@ -1930,7 +1928,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Sync adjusted message", V_LIGA, 2),
   ESC("Match automatically at start", V_LIGA, 2),
   ESC("Hide duplicates", V_LIGA, 2),
-  ESC("Sort versions", V_EXT_ORDEM, 2),
+  ESC("Sort like the addons", V_LIGA, 2),
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2288,7 +2286,7 @@ static const char *CHAVE[] = {
   "externalAudioShiftNoticeLocal",
   "externalAudioAutoMatchLocal",
   "externalAudioHideCopiesLocal",
-  "externalAudioSortLocal",
+  "externalAudioSortAddonsLocal",   // new key: the old one held an index of another list (0 = For audio)
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -3027,7 +3025,7 @@ int ajustes_audio_externo_seguir(void) { return lig(AJ_EXT_AUDIO_SEGUIR); }
 int ajustes_audio_externo_aviso(void) { return lig(AJ_EXT_AUDIO_AVISO); }
 int ajustes_audio_externo_auto(void) { return lig(AJ_EXT_AUDIO_AUTO); }
 int ajustes_audio_externo_ocultar_copias(void) { return lig(AJ_EXT_AUDIO_COPIAS); }
-int ajustes_audio_externo_ordem_addon(void) { return valor[AJ_EXT_AUDIO_ORDEM] == 1; }
+int ajustes_audio_externo_ordem_addon(void) { return lig(AJ_EXT_AUDIO_ORDEM); }
 int ajustes_medidor_desempenho(void)  { return valor[AJ_MEDIDOR]; }
 int ajustes_fonte_manual(void)        { return lig(AJ_FONTE_MANUAL); }
 int ajustes_fonte_primeira(void)      { return ajustes_fonte_prioridade() == 3 || valor[AJ_FONTE_AUTO] == 1; }
@@ -7942,7 +7940,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_EXT_AUDIO_PASSO: return "How much one press moves the audio of another version in the player (Audio sync row, CH+/CH-).";
     case AJ_EXT_AUDIO_GRANDE: return "Say so when the chosen audio comes from a file larger than 20 GB: it is downloaded in full next to the video.";
     case AJ_EXT_AUDIO_MODO: return "Whole file reads the other version in full, picture included. Audio only fetches just its audio where the file allows it (MP4 with an index of its audio); Matroska (MKV) and finely interleaved files are still read in full. The log says which way each file went.";
-    case AJ_EXT_AUDIO_ORDEM: return "For audio: smaller files with DD+ 5.1 first, which the TV plays without converting. Like the addon: the order the addon sends (its own sort, e.g. cached first in AIOStreams), mostly picked for the picture.";
+    case AJ_EXT_AUDIO_ORDEM: return "Off: smaller files with DD+ 5.1 first, which the TV plays without converting. On: the order the addons send (their own sort, e.g. cached first in AIOStreams), mostly picked for the picture.";
     case AJ_EXT_AUDIO_COPIAS: return "The same file from several add-ons shows once (the cached copy first). The other copies stay as backups: if the chosen link fails, the next one is tried.";
     case AJ_EXT_AUDIO_AUTO: return "When the audio of another version starts, both audios are compared for 40 s by themselves and the sync is set if the find is sure (the same as Match automatically in the audio menu).";
     case AJ_EXT_AUDIO_AVISO: return "A short message when the sync corrects itself (a gap a little longer in one version). Off: it still corrects, without the message.";
