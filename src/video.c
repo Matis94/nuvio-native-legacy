@@ -2788,6 +2788,7 @@ static void extReabrir(void) {
       char langs[64];
       extIdiomas(langs, sizeof langs);
       dts_playback_external_speed(dtsSessao, audioext_velocidade());
+      dts_engine_set_external_ring_mib(ajustes_audio_externo_bufor_mib());
       if (dts_playback_external_swap(dtsSessao, audioext_url(), audioext_cabecalhos(), langs,
                                      audioext_offset_ms(), audioext_faixa(), audioext_so_audio(), posSeg)) {
         extGenAplicada = extGenVista = audioext_offset_geracao(); extGenEm = 0;
@@ -3695,6 +3696,7 @@ static int iniciarDts(int stream) {
   dts_engine_set_http_workers(ajustes_buffer_conversion_connections());
   dts_engine_set_conversion_stream(ajustes_buffer_conversion_stream());
   dts_engine_set_ahead_mib(cacheboost_backend_buffer_mb());   // #338: Settings > Buffer size
+  dts_engine_set_external_ring_mib(ajustes_audio_externo_bufor_mib());   // Other version buffer
   dts_playback_next_dv(dtsModoDv);
 #ifdef NV_DV7_MAPPING_TEST
   dts_playback_next_p7_mapping(ajustes_dv7_mapping());
@@ -3861,7 +3863,8 @@ static void bombearDts(void) {
              etapa == 1 ? "opening it again" : "too slow, said");
       fflush(stdout);
       audioext_lento_marcar(etapa);
-      if (etapa == 1) extReabrirPend = 1;
+      // Reopened on a new server address, not the remembered slow one.
+      if (etapa == 1) { dts_engine_forget_final(audioext_url(), audioext_cabecalhos()); extReabrirPend = 1; }
     } }
   /* A seek/track reconfiguration can clear refill before metadata is ready.
    * Update even during preroll, before draining any fresh native starvation

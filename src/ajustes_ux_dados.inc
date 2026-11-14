@@ -253,6 +253,7 @@ static const char *uxSinonimos(int op) {
     case AJ_EXT_AUDIO_MODO: return "audio another version download whole file audio only tylko dzwiek caly plik transfer";
     case AJ_EXT_AUDIO_SERIE: return "audio another version series next episodes remember pamietaj serial odcinki";
     case AJ_EXT_AUDIO_SEGUIR: return "audio another version cut extended theatrical follow track whole film sledzenie montaz kinowa";
+    case AJ_EXT_AUDIO_BUFOR: return "audio another source other version buffer memory ram mb bufor drugiej wersji pamiec";
     case AJ_EXT_AUDIO_ORDEM: return "audio another source sort like the addons order versions sortuj tak jak dodatki kolejnosc";
     case AJ_EXT_AUDIO_COPIAS: return "audio another source duplicates copies hide same file duplikaty kopie ukryj";
     case AJ_EXT_AUDIO_AUTO: return "audio another version match automatically start auto sync dopasuj automatycznie start";

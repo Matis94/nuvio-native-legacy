@@ -98,6 +98,8 @@ const char *dts_engine_error(DtsEngine *);
  * later (positive) or earlier (negative). url NULL/"" turns it off. */
 #define DTS_ENGINE_EXTERNAL_STREAM 4096
 #define DTS_ENGINE_EXTERNAL_RING_MIB 8
+/* Its ring for the next one opened (Settings: 8, 16 or 32 MiB; else 8). */
+void dts_engine_set_external_ring_mib(int mib);
 void dts_engine_external_audio(DtsEngine *, const char *url, const char *headers,
                                const char *langs, int offset_ms);
 /* Worker only: new offset for the next seek (applied by dts_engine_seek). */
@@ -191,6 +193,10 @@ int64_t dts_engine_external_bytes(DtsEngine *, int64_t *total);
 int dts_engine_external_wake(DtsEngine *);
 int dts_engine_external_woken(DtsEngine *);
 int dts_engine_external_failed(DtsEngine *);
+/* Another source's version remembers its server address (behind the add-on's
+ * redirects) for 30 min between engines; forget it before reopening that
+ * version because its server was slow. */
+void dts_engine_forget_final(const char *url, const char *headers);
 /* Language comparison for the external track choice (the app passes
  * ling_casa); NULL or unset compares case-insensitively. Set once. */
 void dts_engine_set_lang_match(int (*match)(const char *code, const char *pref));

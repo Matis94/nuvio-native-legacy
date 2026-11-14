@@ -20,6 +20,11 @@ static const char *HEADERS = "X-Fixture: yes";
 static unsigned streams_opened;
 static int64_t hang_at;          /* >0: the stream of hang_url stops sending there */
 static char hang_url[4096];
+/* "addon:<file>" stands for an add-on link that redirects to <file> (the CDN):
+ * addon_hits counts the trips through it; cdn_dead fails the next direct
+ * request (an expired or gone server address). */
+static unsigned addon_hits;
+static int cdn_dead;
 
 char *rede_range_headers(const char *raw, int public_only) {
   (void)public_only; return strdup(raw ? raw : "");
@@ -33,6 +38,11 @@ int rede_fluxo64(const char *url, const char *headers, int64_t start,
   if (final) final[0] = 0;
   if (cross) *cross = 0;
   *bytes = 0; *status = 0;
+  if (!strncmp(url, "addon:", 6)) {
+    __atomic_add_fetch(&addon_hits, 1, __ATOMIC_RELAXED);
+    url += 6;
+    if (final) snprintf(final, 8192, "%s", url);
+  } else if (__atomic_exchange_n(&cdn_dead, 0, __ATOMIC_RELAXED)) { *status = 410; return -1; }
   FILE *f = fopen(url, "rb");
   if (!f) return -1;
   __atomic_add_fetch(&streams_opened, 1, __ATOMIC_RELAXED);
@@ -494,7 +504,43 @@ int main(int argc, char **argv) {
    * picture included, waited on it until a track change, which waited too).
    * A request stops that wait at once; the reader reconnects at the same
    * place EXT_STALL_TRIES times, then gives up and the picture plays on. */
+  /* A Torrentio link (owner, 14/11): three redirects before the CDN at every
+   * open. The probe's or the first reader's final address serves the next
+   * engines of that version; a dead one goes back through the add-on; a slow
+   * reopen forgets it. */
   checkBytes = 0;
+  { char via[4200]; DtsTrack tr[4];
+    snprintf(via, sizeof via, "addon:%s", long_idx);
+    unsigned h0 = addon_hits;
+    (void)tr;   /* the probe opens the same way; the fixtures are under its 2 min */
+    e = dts_engine_create();
+    dts_engine_external_audio(e, via, HEADERS, "pl", 0);
+    assert(dts_engine_open(e, main60, HEADERS, -1, 0, 0) == 0);
+    r = play(e, 0, 5);
+    assert(r.audio > 0 && addon_hits == h0 + 1);   /* the first open pays the redirects */
+    dts_engine_destroy(e);
+    e = dts_engine_create();
+    dts_engine_external_audio(e, via, HEADERS, "pl", 0);
+    assert(dts_engine_open(e, main60, HEADERS, -1, 0, 0) == 0);
+    r = play(e, 0, 5);
+    assert(r.audio > 0 && addon_hits == h0 + 1);   /* straight to the server */
+    dts_engine_destroy(e);
+    cdn_dead = 1;
+    e = dts_engine_create();
+    dts_engine_external_audio(e, via, HEADERS, "pl", 0);
+    assert(dts_engine_open(e, main60, HEADERS, -1, 0, 0) == 0);
+    r = play(e, 0, 5);
+    assert(r.audio > 0 && addon_hits == h0 + 2 && !cdn_dead);   /* gone: the add-on again */
+    dts_engine_destroy(e);
+    dts_engine_forget_final(via, HEADERS);
+    e = dts_engine_create();
+    dts_engine_external_audio(e, via, HEADERS, "pl", 0);
+    assert(dts_engine_open(e, main60, HEADERS, -1, 0, 0) == 0);
+    r = play(e, 0, 5);
+    assert(r.audio > 0 && addon_hits == h0 + 3);   /* forgotten: through the add-on */
+    dts_engine_destroy(e);
+    fprintf(stderr, "remembered server address: first open pays the redirects, the next goes straight, a dead one and a forgotten one go through the add-on\n");
+  }
   { DtsFrame f; int got, video, audio, opened;
     snprintf(hang_url, sizeof hang_url, "%s", long_idx);
     /* Woken: the read stops at once, the picture goes on without the other

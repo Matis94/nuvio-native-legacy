@@ -379,3 +379,4 @@
   0, /* Match automatically at start: On */
   0, /* Hide duplicates: On */
   1, /* Sort like the addons: Off (V_LIGA) */
+  0, /* Other version buffer: 8 MB */
