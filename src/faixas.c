@@ -18,6 +18,7 @@
 #include "ajustes.h"
 #include "catalogo.h"
 #include "linguas.h"
+#include "video_faixa_rotulo.h"
 #include "audioescolha.h"
 #include "plrui.h"
 #include "plrilha.h"

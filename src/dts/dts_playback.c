@@ -77,6 +77,7 @@ struct DtsPlayback {
   /* External audio (test): the session plays the audio of another file.
    * Fixed at start; a new offset waits for the seek that applies it. */
   int external, ext_offset_ms, ext_offset_dirty;
+  int64_t ext_bytes_prev;   /* the other version's bytes at the last rate window (worker only) */
   /* Another version requested (main thread, under lock) and the one the
    * worker is applying now (worker only). */
   int ext_swap, ext_swap_now, ext_swap_track, ext_swap_only;
@@ -539,6 +540,26 @@ static void reportRate(DtsPlayback *p, DtsRate *rate, double presented,
   if (p->dv && complete && clock_seen && !pause && !preroll &&
       video_pts - presented < 1.0 && rate->read_wall > 0.5 * (now - rate->start)) p->starved++;
   else if (!pause) p->starved = 0;
+  /* Audio of another version: the same signs, read nearly the whole window
+   * (owner's log 14/11: a slow first connection to the other file; reopened,
+   * it played smoothly). The app reopens it, then says so (video.c). */
+  if (p->external) {
+    int faminto = complete && clock_seen && !pause && !preroll &&
+                  video_pts - presented < 1.0 && rate->read_wall > 0.8 * (now - rate->start);
+    int64_t total = -1, lidos = dts_engine_external_bytes(p->engine, &total);
+    int seguidas;
+    pthread_mutex_lock(&p->lock);
+    if (faminto) p->status.ext_starved++;
+    else if (!pause) p->status.ext_starved = 0;
+    seguidas = p->status.ext_starved;
+    pthread_mutex_unlock(&p->lock);
+    /* Which file is slow: the other version's own download rate and size. */
+    printf("[ext-audio] other version: %.0f KiB/s, %.1f of %.1f MiB read, starved windows %d\n",
+           lidos >= p->ext_bytes_prev ? (double)(lidos - p->ext_bytes_prev) / 1024.0 / (now - rate->start) : 0.0,
+           (double)lidos / 1048576.0, total > 0 ? (double)total / 1048576.0 : -1.0, seguidas);
+    fflush(stdout);
+    p->ext_bytes_prev = lidos;
+  }
   memset(rate, 0, sizeof *rate); rate->start = now;
 }
 static void reportBuffer(DtsPlayback *p, double audio_pts, double video_pts) {
@@ -1241,6 +1262,7 @@ int dts_playback_external_swap(DtsPlayback *p, const char *url, const char *head
   p->ext_swap_track = track; p->ext_swap_only = !!audio_only;
   p->ext_offset_ms = offset_ms;
   p->ext_swap = 1;
+  p->status.ext_starved = 0;
   /* Applied like a track change: same stream id, fresh native Load. */
   if (!p->seek_dirty) p->target = seconds < 0 ? 0 : seconds;
   p->audio_stream = DTS_ENGINE_EXTERNAL_STREAM; p->audio_dirty = 1;

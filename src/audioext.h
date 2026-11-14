@@ -157,6 +157,10 @@ double audioext_salto_previsto_consumir(void);
 // The converter reconnected a slow source instead of giving up (once, for a toast).
 void audioext_reconexao_marcar(void);
 int audioext_reconexao_consumir(void);
+// The other version cannot keep up with the picture: 1 reopened once by
+// itself, 2 still too slow after that. Once each, for a toast.
+void audioext_lento_marcar(int etapa);
+int audioext_lento_consumir(void);
 // Following another cut (Settings): an event of the webOS converter. tipo 1
 // this file's own audio (a scene the other lacks), 2 the other resumed at
 // `ms` (the offset is taken), 3 lost it. Once, for a toast.

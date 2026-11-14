@@ -96,6 +96,7 @@ void dts_engine_external_audio(DtsEngine *e,const char *url,const char *headers,
 }
 void dts_engine_external_offset(DtsEngine *e,int offset_ms) { (void)e;pthread_mutex_lock(&fixture);ext_offset=offset_ms;pthread_mutex_unlock(&fixture); }
 int dts_engine_external_active(DtsEngine *e) { return e->external; }
+int64_t dts_engine_external_bytes(DtsEngine *e,int64_t *t) { (void)e; if(t) *t=-1; return 0; }
 static int ext_only;
 void dts_engine_external_audio_only(DtsEngine *e,int on) { (void)e;pthread_mutex_lock(&fixture);ext_only=on;pthread_mutex_unlock(&fixture); }
 static int ext_track=-2;

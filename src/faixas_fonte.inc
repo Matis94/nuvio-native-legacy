@@ -123,7 +123,8 @@ static void exMontarFaixas(void) {
     if (f->canais == 8) snprintf(ch, sizeof ch, " 7.1");
     else if (f->canais == 6) snprintf(ch, sizeof ch, " 5.1");
     else if (f->canais > 0) snprintf(ch, sizeof ch, " %d.0", f->canais);
-    if (f->titulo[0] && strlen(f->titulo) < 40)
+    // The track's name only when it says more than language and codec.
+    if (f->titulo[0] && strlen(f->titulo) < 40 && !nv_titulo_e_arquivo(f->titulo) && !nv_titulo_tecnico(f->titulo, ling_tem_nome))
       snprintf(exFxRot[k], sizeof exFxRot[k], "%s \xc2\xb7 %s%s \xc2\xb7 %s", lg, cd, ch, f->titulo);
     else snprintf(exFxRot[k], sizeof exFxRot[k], "%s \xc2\xb7 %s%s", lg, cd, ch);
     { const char *ip = audioext_idioma_principal();

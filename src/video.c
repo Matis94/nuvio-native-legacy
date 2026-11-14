@@ -3837,6 +3837,21 @@ static void bombearDts(void) {
   { static int retries;
     if (extAtivo && st.net_retries > retries) audioext_reconexao_marcar();
     retries = st.net_retries; }
+  // The other version cannot keep up: 15 s waiting for its data with under
+  // 1 s of picture ahead (owner's log 14/11: a slow first connection; the
+  // same file reopened played smoothly). Reopened once by itself, on a fresh
+  // connection where the picture is; still slow: said, the pick stays.
+  { static unsigned ger;
+    static int etapa;
+    if (ger != audioext_pedido_geracao()) { ger = audioext_pedido_geracao(); etapa = 0; }
+    if (extAtivo && st.ext_starved >= 3 && etapa < 2 && !extReabrirPend) {
+      etapa++;
+      printf("[ext-audio] the other version cannot keep up (%d windows): %s\n", st.ext_starved,
+             etapa == 1 ? "opening it again" : "too slow, said");
+      fflush(stdout);
+      audioext_lento_marcar(etapa);
+      if (etapa == 1) extReabrirPend = 1;
+    } }
   /* A seek/track reconfiguration can clear refill before metadata is ready.
    * Update even during preroll, before draining any fresh native starvation
    * events, so ending an old refill cannot erase a new bufferingStart. */
@@ -3940,11 +3955,17 @@ static void bombearDts(void) {
         char sub[40];
         if (!audioinfo_texto(t->codec, t->channels, 0, sub, sizeof sub)) snprintf(sub, sizeof sub, "%.12s", t->codec);
         snprintf(f->nome, sizeof f->nome, "%s", t->title);
-        /* The other version's tracks keep their names ("Dubbing", "Lektor"):
-         * two Polish tracks are told apart only by them. */
-        if (t->stream_index >= DTS_ENGINE_EXTERNAL_STREAM)
-          nv_rotulo_faixa(f->rotulo, sizeof f->rotulo, t->title,
-                          t->language[0] ? i18n(ling_nome(t->language)) : i18n("Faixa"), sub);
+        /* The other version's tracks: the language on top like the file's own,
+         * and the track's name below when it says more ("Dubbing", "Lektor":
+         * two Polish tracks are told apart only by them); a name that only
+         * repeats language and codec ("FR AC3 5.1") is left out. */
+        if (t->stream_index >= DTS_ENGINE_EXTERNAL_STREAM) {
+          char sub2[sizeof sub + 64];
+          if (t->title[0] && !nv_titulo_e_arquivo(t->title) && !nv_titulo_tecnico(t->title, ling_tem_nome))
+            snprintf(sub2, sizeof sub2, "%s \xc2\xb7 %.48s", sub, t->title);
+          else snprintf(sub2, sizeof sub2, "%s", sub);
+          idiomaRotulo(f->rotulo, sizeof f->rotulo, t->language, sub2);
+        }
         else if (strcmp(audioinfo_codec(t->codec), "FLAC")) idiomaRotulo(f->rotulo, sizeof f->rotulo, t->language, sub);
         else nv_rotulo_faixa(f->rotulo, sizeof f->rotulo, t->title,
                              t->language[0] ? i18n(ling_nome(t->language)) : i18n("Faixa"), sub);

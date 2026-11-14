@@ -341,6 +341,9 @@ void audioext_seguir_evento(int tipo, int ms) {
 }
 int audioext_seguir_aviso_consumir(int *ms) { int a = seguirAviso; seguirAviso = 0; *ms = seguirMs; return a; }
 int audioext_reconexao_consumir(void) { int r = reconexao; reconexao = 0; return r; }
+static int lento;
+void audioext_lento_marcar(int etapa) { lento = etapa; }
+int audioext_lento_consumir(void) { int r = lento; lento = 0; return r; }
 void audioext_idioma_principal_definir(const char *idioma) {
   snprintf(idiomaPrincipal, sizeof idiomaPrincipal, "%s", idioma ? idioma : "");
 }

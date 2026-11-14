@@ -4684,6 +4684,9 @@ void player_atualizar(float dt, Uint32 agora) {
         snprintf(t, sizeof t, i18n("Audio sync adjusted by itself (%s)."), v); player_toast(t, 3000); } }
     if (audioext_reconexao_consumir())
       player_toast(i18n("The source slowed down: reconnecting…"), 3500);
+    { int l = audioext_lento_consumir();
+      if (l == 1) player_toast(i18n("The other version downloads slowly: opening it again…"), 3500);
+      else if (l == 2) player_toast_ex(i18n("This version downloads too slowly. Pick another one in the audio menu (From another source)."), 7000, "aj_triangle-alert", 1); }
     if (audioext_voltou_padrao_consumir())
       player_toast(i18n("The other version's audio did not start last time. Playing this file's own audio."), 5000);
     if (audioext_tocando() && !extVisto) {
