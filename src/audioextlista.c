@@ -62,11 +62,6 @@ int audioext_mesmo_arquivo(const AudioExtEntrada *a, const AudioExtEntrada *b) {
          mesmasLinguas(a, b);
 }
 
-static int limiteDe(int modo, int grupo) {
-  if (modo == AEXT_MODO_TODOS) return 1 << 30;
-  return grupo == AEXT_G_SEM ? AUDIOEXT_BEST_DESC : grupo == AEXT_G_OUTRA ? AUDIOEXT_BEST_OUTRA : AUDIOEXT_BEST_PREF;
-}
-
 int audioext_lista(const AudioExtEntrada *e, int n, const AudioExtOpcoes *o, AudioExtCand *out, int max) {
   Item *it;
   int m = 0, k = 0, *mantido;
@@ -119,7 +114,7 @@ int audioext_lista(const AudioExtEntrada *e, int n, const AudioExtOpcoes *o, Aud
          casa(it[i].c.idioma, it[ant].c.idioma))) porIdioma++;
     else porIdioma = 0;
     ant = i;
-    if (porIdioma < limiteDe(o->modo, it[i].c.grupo)) out[k++] = it[i].c;
+    if (porIdioma < AUDIOEXT_POR_IDIOMA) out[k++] = it[i].c;
   }
   free(it); free(mantido);
   casaFn = NULL;

@@ -1,4 +1,4 @@
-// "From another source" candidates: filters, language grouping, order, copies, limits.
+// "From another source" candidates: filters, language grouping, order, copies, the per-language cap.
 #include "../src/audioextlista.h"
 #include <assert.h>
 #include <stdio.h>
@@ -22,16 +22,16 @@ static int casa(const char *code, const char *pref) {
          (!strcasecmp(pref, "en") && !strcasecmp(code, "eng"));
 }
 
-static AudioExtOpcoes opc(const char *p1, const char *p2, int modo) {
+static AudioExtOpcoes opc(const char *p1, const char *p2) {
   AudioExtOpcoes o;
   memset(&o, 0, sizeof o);
-  o.pref1 = p1; o.pref2 = p2; o.semDts = 1; o.ocultarCopias = 1; o.modo = modo; o.casa = casa;
+  o.pref1 = p1; o.pref2 = p2; o.semDts = 1; o.ocultarCopias = 1; o.casa = casa;
   return o;
 }
 
 int main(void) {
-  static AudioExtEntrada e[64];
-  static AudioExtCand c[64];
+  static AudioExtEntrada e[256];
+  static AudioExtCand c[256];
   AudioExtOpcoes o;
   int n = 0, k;
   e[n++] = fonte("en", AEXT_DDP, 6, 1, 8);            // 0 English
@@ -49,7 +49,7 @@ int main(void) {
   e[n++] = fonte("pl", AEXT_DESCONHECIDO, 0, 1, 7);  // 12 Polish, codec and channels not declared
   e[n++] = fonte("pl", AEXT_DDP, 2, 1, 0.5);          // 13 Polish DD+ stereo, cached, smallest
 
-  o = opc("pl", "en", AEXT_MODO_BEST);
+  o = opc("pl", "en");
   k = audioext_lista(e, n, &o, c, 64);
   // Polish first: cached 5.1 (DD+ 6 GB, DD 3 GB), cached channels unknown
   // (12), cached stereo (13, smaller but stereo), then cache unknown, then not cached.
@@ -78,7 +78,7 @@ int main(void) {
   assert(c[0].indice == 2 && c[1].indice == 1 && c[2].indice == 4);
   o.semDts = 1;
   // No preference: the one without a language still comes before the others.
-  o = opc("", "", AEXT_MODO_BEST);
+  o = opc("", "");
   k = audioext_lista(e, n, &o, c, 64);
   assert(c[0].grupo == AEXT_G_SEM && c[0].indice == 8);
   assert(!strcmp(c[1].idioma, "cs") && !strcmp(c[2].idioma, "de"));
@@ -88,10 +88,10 @@ int main(void) {
   for (int i = 0; i < k; i++) assert(c[i].indice != 7);
   e[7].foraFiltro = 0;
   // Total limit.
-  o = opc("pl", "en", AEXT_MODO_BEST);
+  o = opc("pl", "en");
   assert(audioext_lista(e, n, &o, c, 2) == 2);
 
-  // "Sort versions: Like the addon": inside a language, the add-on's place
+  // "Sort like the addons": inside a language, the add-on's place
   // then the list's order; the language groups stay.
   { AudioExtEntrada f[5];
     memset(f, 0, sizeof f);
@@ -100,7 +100,7 @@ int main(void) {
     f[2] = fonte("pl", AEXT_DDP, 6, 1, 2);  f[2].ordemAddon = 1;     // a smaller one from add-on 1
     f[3] = fonte("en", AEXT_DDP, 6, 1, 3);  f[3].ordemAddon = 0;
     f[4] = fonte("pl", AEXT_DD, 6, -1, 1);  f[4].ordemAddon = 0;     // not cached, still in the add-on's place
-    o = opc("pl", "en", AEXT_MODO_TODOS); o.semDts = 0; o.ordemAddon = 1;
+    o = opc("pl", "en"); o.semDts = 0; o.ordemAddon = 1;
     k = audioext_lista(f, 5, &o, c, 64);
     assert(k == 5 && c[0].indice == 0 && c[1].indice == 1 && c[2].indice == 4 && c[3].indice == 2 && c[4].indice == 3);
     o.ordemAddon = 0;
@@ -118,7 +118,7 @@ int main(void) {
   e[n++] = fonte("pol", AEXT_DD, 6, -1, 3.1);                                                       // 4 copy of 3 (no hash)
   e[n++] = fonte("pl", AEXT_DD, 2, 1, 3.1);                                                         // 5 stereo: not a copy
   e[n++] = fonte("pl", AEXT_DD, 6, 1, 3.1); snprintf(e[n - 1].ident, sizeof e[0].ident, "v:ffff");  // 6 hash vs none: by size
-  o = opc("pl", "en", AEXT_MODO_TODOS);
+  o = opc("pl", "en");
   k = audioext_lista(e, n, &o, c, 64);
   assert(k == 4);
   assert(c[0].indice == 1 && c[0].nReservas == 1 && c[0].reservas[0] == 0);
@@ -129,24 +129,24 @@ int main(void) {
   o.ocultarCopias = 0;
   assert(audioext_lista(e, n, &o, c, 64) == n);
 
-  // LIMITS: Best keeps 10 of each preferred language, 5 without a language
-  // and 10 of each other language; All keeps everything (up to max).
+  // THE CAP: every version is listed, AUDIOEXT_POR_IDIOMA per language at
+  // most (the smallest kept), the next languages still in; `max` in all.
   n = 0;
-  for (int i = 0; i < 12; i++) e[n++] = fonte("pl", AEXT_DDP, 6, 1, 1 + i);
+  for (int i = 0; i < AUDIOEXT_POR_IDIOMA + 5; i++) e[n++] = fonte("pl", AEXT_DDP, 6, 1, 1 + i);
   for (int i = 0; i < 7; i++) e[n++] = fonte("", AEXT_DDP, 6, 1, 1 + i);
   for (int i = 0; i < 11; i++) e[n++] = fonte("fr", AEXT_DDP, 6, 1, 1 + i);
   for (int i = 0; i < 3; i++) e[n++] = fonte("de", AEXT_DDP, 6, 1, 1 + i);
-  o = opc("pl", "en", AEXT_MODO_BEST);
-  k = audioext_lista(e, n, &o, c, 64);
+  assert(n <= 256);
+  o = opc("pl", "en");
+  k = audioext_lista(e, n, &o, c, 256);
   { int g[4] = { 0 }, de = 0, fr = 0;
     for (int i = 0; i < k; i++) { g[c[i].grupo]++; if (!strcmp(c[i].idioma, "de")) de++; if (!strcmp(c[i].idioma, "fr")) fr++; }
-    assert(g[AEXT_G_PREF1] == AUDIOEXT_BEST_PREF && g[AEXT_G_SEM] == AUDIOEXT_BEST_DESC);
-    assert(de == 3 && fr == AUDIOEXT_BEST_OUTRA);
-    // Other languages alphabetically: German before French? "de" < "fr".
+    assert(g[AEXT_G_PREF1] == AUDIOEXT_POR_IDIOMA && g[AEXT_G_SEM] == 7 && de == 3 && fr == 11);
+    assert(k == AUDIOEXT_POR_IDIOMA + 7 + 11 + 3);
+    for (int i = 0; i < AUDIOEXT_POR_IDIOMA; i++) assert(c[i].indice == i);
+    // Other languages alphabetically: German before French.
     for (int i = 1; i < k; i++) if (c[i].grupo == AEXT_G_OUTRA && c[i - 1].grupo == AEXT_G_OUTRA)
       assert(strcmp(c[i - 1].idioma, c[i].idioma) <= 0); }
-  o.modo = AEXT_MODO_TODOS;
-  assert(audioext_lista(e, n, &o, c, 64) == n);
   assert(audioext_lista(e, n, &o, c, 20) == 20);
 
   assert(audioext_converte(AEXT_DTS) && audioext_converte(AEXT_TRUEHD) && !audioext_converte(AEXT_DDP));
@@ -158,6 +158,6 @@ int main(void) {
   audioext_tamanho_texto(6100000000ULL, t, sizeof t); assert(!strcmp(t, "6.1 GB"));
   audioext_tamanho_texto(850000000ULL, t, sizeof t); assert(!strcmp(t, "850 MB"));
   audioext_tamanho_texto(0, t, sizeof t); assert(!t[0]);
-  puts("audioextlista: filters, language groups (unknown 3rd), cache/channels/codec/size order, copies and Best/All limits passed");
+  puts("audioextlista: filters, language groups (unknown 3rd), cache/channels/codec/size order, copies and the per-language cap passed");
   return 0;
 }

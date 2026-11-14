@@ -8,7 +8,7 @@
 // and gets back the indexes to show. Nothing here reads the network or the
 // files; the real tracks are only known when the converter opens the file.
 //
-// Rules (owner, 06/11/2026, reworked 13/11/2026 for "From another source"):
+// Rules (owner, 06/11/2026, reworked 13-14/11/2026 for "From another source"):
 //  - only sources with a direct link, not HLS, not a warning page, not the
 //    one playing;
 //  - any audio: Dolby Digital Plus, Dolby Digital and AAC play as they are,
@@ -23,21 +23,17 @@
 //    smaller files first (size unknown last); then the list's own order;
 //  - copies of the same file (same hash, or same size, codec, channels and
 //    languages) show once, the best one; the others stay as its fallbacks;
-//  - "Best": at most AUDIOEXT_BEST_PREF of each preferred language,
-//    AUDIOEXT_BEST_DESC without a language and AUDIOEXT_BEST_OUTRA of each
-//    other language; "All": everything, up to `max`.
+//  - every version is listed (the screen shows one language at a time),
+//    at most AUDIOEXT_POR_IDIOMA per language and `max` in all.
 #include <stdint.h>
 
 enum { AEXT_DDP = 0, AEXT_DD, AEXT_AAC, AEXT_DESCONHECIDO, AEXT_DTS, AEXT_TRUEHD, AEXT_OUTRO };
 #define AUDIOEXT_IDIOMAS 6
-#define AUDIOEXT_BEST_PREF 10
-#define AUDIOEXT_BEST_DESC 5
-#define AUDIOEXT_BEST_OUTRA 10
-#define AUDIOEXT_TODOS_MAX 200
+#define AUDIOEXT_POR_IDIOMA 200
+#define AUDIOEXT_LISTA_MAX 600
 #define AUDIOEXT_RESERVAS 3
 // Groups, in this order on screen.
 enum { AEXT_G_PREF1 = 0, AEXT_G_PREF2, AEXT_G_SEM, AEXT_G_OUTRA };
-enum { AEXT_MODO_BEST = 0, AEXT_MODO_TODOS };
 
 typedef struct AudioExtEntradaS {
   int temUrl;                       // direct link (not a torrent hash only)
@@ -69,7 +65,6 @@ typedef struct {
   // (the add-on's place, then the list's order) instead of cache/channels/
   // codec/size. Off by default.
   int ordemAddon;
-  int modo;                         // AEXT_MODO_*
   // compares languages (the app passes ling_casa); NULL: case-insensitive.
   int (*casa)(const char *, const char *);
 } AudioExtOpcoes;

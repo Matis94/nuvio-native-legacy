@@ -610,15 +610,15 @@ static int linhaDaLeg(int i) {
 
 // FROM ANOTHER SOURCE (audioext.h): the audio sheet ends with one row that
 // opens the other sources of the same title able to lend their audio
-// (audioextlista.h), on pages inside the same island while the picture plays
-// on: "Best" (the preferred languages, then the ones without a language,
-// then "Other languages" with a language bar) and "All". While such audio
+// (audioextlista.h), on a page inside the same island while the picture plays
+// on: a language bar (the preferred language first) and every version of the
+// language on it, the most likely to play well first. While such audio
 // plays, three rows come after the file's tracks: Audio sync (LEFT/RIGHT),
 // Match automatically and this file's own audio. Only the webOS converter
 // plays it; the list is the source list on hand.
 enum { FXA_FAIXA = 0, FXA_SINC, FXA_DOPASUJ, FXA_ORIGINAL, FXA_ENTRADA };
-static AudioExtCand extBest[AUDIOEXT_TODOS_MAX], extAll[AUDIOEXT_TODOS_MAX];
-static int extBestN, extAllN;
+static AudioExtCand extAll[AUDIOEXT_LISTA_MAX];
+static int extAllN;
 // Per source of the list (by its index): what the add-on declared, and the
 // release label ("WEB-DL 1080p").
 static AudioExtEntrada *extEnt;
@@ -637,14 +637,13 @@ static void extMontar(int forcar) {
   int n = stream_n(), atual = stream_atual();
   const char *urlVideo = video_url_atual();
   AudioExtOpcoes o;
-  if (!extMenu() || !stream_lista_do_alvo_atual()) { extBestN = extAllN = 0; extListaN = -1; return; }
-  // A source's state changed too (marked not cached after a debrid placeholder).
+  if (!extMenu() || !stream_lista_do_alvo_atual()) { extAllN = 0; extListaN = -1; return; }
   // A source's state changed too (marked not cached after a debrid
   // placeholder), or Settings > Addons.
   if (!forcar && extGeracao == stream_lista_geracao() && extListaN == n && extRevisao == stream_revisao() &&
       extAddonsVer == audioext_addons_versao()) return;
   extGeracao = stream_lista_geracao(); extRevisao = stream_revisao(); extAddonsVer = audioext_addons_versao();
-  extListaN = n; extBestN = extAllN = 0;
+  extListaN = n; extAllN = 0;
   if (n <= 0) return;
   if (n > extEntN) {
     AudioExtEntrada *e2 = realloc(extEnt, (size_t)n * sizeof *e2);
@@ -673,10 +672,7 @@ static void extMontar(int forcar) {
   o.ocultarCopias = ajustes_audio_externo_ocultar_copias();
   o.ordemAddon = ajustes_audio_externo_ordem_addon();
   o.casa = ling_casa;
-  o.modo = AEXT_MODO_BEST;
-  extBestN = audioext_lista(extEnt, n, &o, extBest, AUDIOEXT_TODOS_MAX);
-  o.modo = AEXT_MODO_TODOS;
-  extAllN = audioext_lista(extEnt, n, &o, extAll, AUDIOEXT_TODOS_MAX);
+  extAllN = audioext_lista(extEnt, n, &o, extAll, AUDIOEXT_LISTA_MAX);
   exReconstruir();
 }
 static int extEntradaVisivel(void) {

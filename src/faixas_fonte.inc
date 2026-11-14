@@ -1,29 +1,26 @@
 // FROM ANOTHER SOURCE: the pages inside the audio island (included by faixas.c).
 //
-//  EXP_LISTA   "Best" / "All" (LEFT/RIGHT from any row). Best: the preferred
-//              language, the second one, the versions without a language
-//              ("Unknown (likely original)"), then one "Other languages" row;
-//              All: every version under a header per language.
-//  EXP_OUTRAS  Best's "Other languages": a language bar (LEFT/RIGHT) and the
-//              versions of the language on it.
+//  EXP_LISTA   a language bar (LEFT/RIGHT): the preferred language, the second
+//              one, "Unknown" (versions without a language), then the others,
+//              most versions first; under it every version of the language on
+//              the bar, the most likely to play well first (audioextlista.h).
 //  EXP_FAIXAS  the audio tracks of one version (hold OK on it), read from its
 //              header like the source list's "Choose audio track…".
 //
 // OK uses the version (audioext_escolher) and closes the sheet; Back goes one
 // page up. The picture keeps playing all along.
-enum { EXP_NADA = 0, EXP_LISTA, EXP_OUTRAS, EXP_FAIXAS };
-enum { EXL_CAND = 0, EXL_CAB, EXL_OUTRAS };
-#define EX_LIN_MAX (AUDIOEXT_TODOS_MAX * 2 + 4)
-#define EX_OUT_MAX 32
-#define EX_CAB_H   44.0f
+enum { EXP_NADA = 0, EXP_LISTA, EXP_FAIXAS };
+#define EX_BAL_MAX 48
 #define EX_SEG_H   54.0f   /* plrui_seg: SEG_IH + 2 * SEG_PAD */
-// Other languages with at most this many versions in all show on Best itself.
-#define EX_OUTRAS_JUNTO 2
-typedef struct { unsigned char tipo; short k; } ExLinha;   // k: index into the page's candidates
-static int exPag, exVista, exFoco, exRol, exLingua, exVoltar;
-static ExLinha exLin[EX_LIN_MAX];
-static int exLinN;
-static int exOutIni[EX_OUT_MAX], exOutCont[EX_OUT_MAX], exOutN;   // Best's other languages
+// One language of the bar: its versions are extAll[ini .. ini + cont - 1].
+typedef struct { short ini, cont; } ExBalde;
+static int exPag, exFoco, exRol, exLingua, exVoltar;
+static ExBalde exBal[EX_BAL_MAX];
+static int exBalN, exLinN;
+// The language on the bar, found again when the list is rebuilt (add-ons
+// arriving late add languages before it). -1: the first one.
+static int exLingGrupo = -1;
+static char exLingCod[8];
 static CtxHold exHold;
 static unsigned exFxGer;
 static int exFxN = -2, exFxFoco;
@@ -35,105 +32,83 @@ static AudioExtFaixa exFx[AUDIOEXT_FAIXAS_MAX];
 static char exFxRot[AUDIOEXT_FAIXAS_MAX][120];
 static AudioExtCand exFxCand;
 
-static const AudioExtCand *exVetor(int *n) {
-  if (exPag == EXP_LISTA && exVista == 1) { *n = extAllN; return extAll; }
-  *n = extBestN; return extBest;
-}
 static int exMesmoBalde(const AudioExtCand *a, const AudioExtCand *b) {
   if (a->grupo != b->grupo) return 0;
   return a->grupo != AEXT_G_OUTRA || !strcasecmp(a->idioma, b->idioma) || ling_casa(a->idioma, b->idioma);
 }
-static int exFocavel(int i) { return i >= 0 && i < exLinN && exLin[i].tipo != EXL_CAB; }
+static int exFocavel(int i) { return i >= 0 && i < exLinN; }
 static const AudioExtCand *exCandDaLinha(int i) {
-  int n;
-  const AudioExtCand *v = exVetor(&n);
-  if (i < 0 || i >= exLinN || exLin[i].tipo != EXL_CAND || exLin[i].k < 0 || exLin[i].k >= n) return NULL;
-  return &v[exLin[i].k];
+  if (!exFocavel(i) || exLingua < 0 || exLingua >= exBalN) return NULL;
+  return &extAll[exBal[exLingua].ini + i];
 }
-static void exLinha(int tipo, int k) {
-  if (exLinN >= EX_LIN_MAX) return;
-  exLin[exLinN].tipo = (unsigned char)tipo; exLin[exLinN].k = (short)k; exLinN++;
-}
-static void exContarOutras(void) {
-  exOutN = 0;
-  for (int i = 0; i < extBestN; i++) {
-    if (extBest[i].grupo != AEXT_G_OUTRA) continue;
-    if (exOutN && exMesmoBalde(&extBest[i], &extBest[exOutIni[exOutN - 1]])) { exOutCont[exOutN - 1]++; continue; }
-    if (exOutN >= EX_OUT_MAX) break;
-    exOutIni[exOutN] = i; exOutCont[exOutN] = 1; exOutN++;
+// The languages of the list, in bar order: the list's own (preferred,
+// second, unknown) then the other languages by their count, the list's
+// (alphabetical) order on a tie.
+static void exContarBaldes(void) {
+  int p = 0;
+  exBalN = 0;
+  for (int i = 0; i < extAllN; i++) {
+    if (exBalN && exMesmoBalde(&extAll[i], &extAll[exBal[exBalN - 1].ini])) { exBal[exBalN - 1].cont++; continue; }
+    if (exBalN >= EX_BAL_MAX) break;
+    exBal[exBalN].ini = (short)i; exBal[exBalN].cont = 1; exBalN++;
+  }
+  while (p < exBalN && extAll[exBal[p].ini].grupo != AEXT_G_OUTRA) p++;
+  for (int i = p + 1; i < exBalN; i++) {
+    ExBalde b = exBal[i];
+    int j = i;
+    while (j > p && exBal[j - 1].cont < b.cont) { exBal[j] = exBal[j - 1]; j--; }
+    exBal[j] = b;
   }
 }
-// The rows of the page on screen, from the candidate lists (extMontar). The
-// focus stays on the same version when the list grows (add-ons arrive late).
-static void exMontarLinhas(int focIdx, int focOutras) {
-  exLinN = 0;
-  exContarOutras();
-  if (exPag == EXP_LISTA && exVista == 0) {
-    int principais = 0, outras = 0;
-    for (int i = 0; i < extBestN; i++) {
-      if (extBest[i].grupo == AEXT_G_OUTRA) { outras++; continue; }
-      exLinha(EXL_CAND, i); principais++;
+static void exGuardarLingua(void) {
+  if (exLingua < 0 || exLingua >= exBalN) { exLingGrupo = -1; exLingCod[0] = 0; return; }
+  exLingGrupo = extAll[exBal[exLingua].ini].grupo;
+  snprintf(exLingCod, sizeof exLingCod, "%s", extAll[exBal[exLingua].ini].idioma);
+}
+// The rows of the page, from the candidate list (extMontar). The language on
+// the bar and the focus stay on the same version when the list grows.
+static void exMontarLinhas(int focIdx) {
+  exContarBaldes();
+  exLingua = 0;
+  for (int b = 0; b < exBalN && exLingGrupo >= 0; b++) {
+    const AudioExtCand *c = &extAll[exBal[b].ini];
+    if (c->grupo == exLingGrupo && (c->grupo != AEXT_G_OUTRA || !strcasecmp(c->idioma, exLingCod) || ling_casa(c->idioma, exLingCod))) {
+      exLingua = b; break;
     }
-    if (outras && (outras <= EX_OUTRAS_JUNTO || !principais)) {
-      for (int i = 0; i < extBestN; i++) if (extBest[i].grupo == AEXT_G_OUTRA) exLinha(EXL_CAND, i);
-    } else if (outras) exLinha(EXL_OUTRAS, 0);
-  } else if (exPag == EXP_LISTA) {
-    for (int i = 0; i < extAllN; i++) {
-      if (!i || !exMesmoBalde(&extAll[i], &extAll[i - 1])) exLinha(EXL_CAB, i);
-      exLinha(EXL_CAND, i);
-    }
-  } else if (exPag == EXP_OUTRAS) {
-    if (exLingua >= exOutN) exLingua = exOutN - 1;
-    if (exLingua < 0) exLingua = 0;
-    if (exOutN) for (int i = 0; i < exOutCont[exLingua]; i++) exLinha(EXL_CAND, exOutIni[exLingua] + i);
   }
-  // Back on the same version, else the first row that takes the focus.
-  exFoco = -1;
-  for (int i = 0; i < exLinN && exFoco < 0; i++) {
-    const AudioExtCand *c = exCandDaLinha(i);
-    if ((c && c->indice == focIdx) || (focOutras && exLin[i].tipo == EXL_OUTRAS)) exFoco = i;
-  }
-  for (int i = 0; i < exLinN && exFoco < 0; i++) if (exFocavel(i)) exFoco = i;
-  if (exFoco < 0) exFoco = 0;
+  exLinN = exBalN ? exBal[exLingua].cont : 0;
+  exFoco = 0;
+  for (int i = 0; i < exLinN; i++) { const AudioExtCand *c = exCandDaLinha(i); if (c && c->indice == focIdx) { exFoco = i; break; } }
   if (exRol > exFoco) exRol = exFoco;
 }
 // The version in focus (-1 none), to find it again after a rebuild.
 static int exFocoIndice(void) { const AudioExtCand *c = exCandDaLinha(exFoco); return c ? c->indice : -1; }
-static int exFocoOutras(void) { return exFoco >= 0 && exFoco < exLinN && exLin[exFoco].tipo == EXL_OUTRAS; }
-static void exReconstruir(void) { exMontarLinhas(exFocoIndice(), exFocoOutras()); }
+static void exReconstruir(void) { exMontarLinhas(exFocoIndice()); }
 static int exPagAtiva(void) { return exPag != EXP_NADA; }
 static float exAreaMax(void) { return IL_VIS * (IL_LN_H + IL_LN_VAO) - IL_LN_VAO; }
-static float exAltLinha(int i) { return (exLin[i].tipo == EXL_CAB ? EX_CAB_H : IL_LN_H) + IL_LN_VAO; }
 static void exAjustar(void) {
-  float area = exAreaMax();
   if (exRol > exFoco) exRol = exFoco;
-  // The first row of a language shows its header too.
-  if (exRol > 0 && exRol == exFoco && exLin[exRol - 1].tipo == EXL_CAB) exRol--;
-  for (;;) {
-    float h = 0;
-    for (int i = exRol; i <= exFoco && i < exLinN; i++) h += exAltLinha(i);
-    if (h - IL_LN_VAO <= area || exRol >= exFoco) break;
-    exRol++;
-  }
+  if (exFoco - exRol >= IL_VIS) exRol = exFoco - IL_VIS + 1;
   if (exRol < 0) exRol = 0;
 }
 static void exIr(int pag) {
   exPag = pag; exRol = 0; exFoco = 0;
   ctxhold_cancelar(&exHold);
-  exMontarLinhas(-1, 0);
+  exMontarLinhas(-1);
 }
 static void exAbrir(void) {
-  exVista = 0; exLingua = 0;
+  exLingGrupo = -1; exLingCod[0] = 0;
   extMontar(1);
   exIr(EXP_LISTA);
-  printf("[ext-audio] from another source: opened, best %d, all %d\n", extBestN, extAllN); fflush(stdout);
+  exGuardarLingua();
+  printf("[ext-audio] from another source: opened, %d versions in %d languages\n", extAllN, exBalN); fflush(stdout);
 }
 static void exFechar(void) {
   exPag = EXP_NADA;
   ctxhold_cancelar(&exHold);
 }
 static int exAceitaSegurar(void) {
-  return (exPag == EXP_LISTA || exPag == EXP_OUTRAS) && exCandDaLinha(exFoco) && audioext_sonda_disponivel();
+  return exPag == EXP_LISTA && exCandDaLinha(exFoco) && audioext_sonda_disponivel();
 }
 // "Polski · E-AC-3 5.1 · Dubbing": language, codec and channels, the track
 // name when short; "used for sync" on this file's language.
@@ -176,8 +151,6 @@ static void exOk(void) {
     } else if (exFxN != -2) exPag = exVoltar;
     return;
   }
-  if (exFoco < 0 || exFoco >= exLinN) return;
-  if (exLin[exFoco].tipo == EXL_OUTRAS) { exLingua = 0; exIr(EXP_OUTRAS); return; }
   { const AudioExtCand *c = exCandDaLinha(exFoco);
     if (!c) return;
     extUsar(c, NULL);
@@ -185,11 +158,16 @@ static void exOk(void) {
 }
 static void exVoltarPagina(void) {
   if (exPag == EXP_FAIXAS) { exPag = exVoltar; return; }
-  if (exPag == EXP_OUTRAS) { exPag = EXP_LISTA; exRol = 0; exMontarLinhas(-1, 1); exAjustar(); return; }
   // Back on the audio list, on the "From another source" row.
   exFechar();
   foco[0] = nLinhas(0) - 1;
   ajustarRolagem();
+}
+static void exMudarLingua(int d) {
+  int l = exLingua + d;
+  if (l < 0 || l >= exBalN) return;
+  exLingua = l; exGuardarLingua();
+  exRol = 0; exMontarLinhas(-1); exAjustar();
 }
 static void exTecla(SDL_Keycode k) {
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE) { exVoltarPagina(); return; }
@@ -200,23 +178,13 @@ static void exTecla(SDL_Keycode k) {
     else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) exOk();
     return;
   }
-  if (k == SDLK_LEFT || k == SDLK_RIGHT) {
-    int d = k == SDLK_RIGHT ? 1 : -1;
-    if (exPag == EXP_LISTA) {
-      int v = d > 0 ? 1 : 0;
-      if (v != exVista) { int idx = exFocoIndice(); exVista = v; exRol = 0; exMontarLinhas(idx, 0); exAjustar(); }
-    } else if (exPag == EXP_OUTRAS) {
-      int l = exLingua + d;
-      if (l >= 0 && l < exOutN) { exLingua = l; exRol = 0; exMontarLinhas(-1, 0); exAjustar(); }
-    }
-    return;
-  }
-  if (k == SDLK_UP) { for (int i = exFoco - 1; i >= 0; i--) if (exFocavel(i)) { exFoco = i; break; } exAjustar(); return; }
-  if (k == SDLK_DOWN) { for (int i = exFoco + 1; i < exLinN; i++) if (exFocavel(i)) { exFoco = i; break; } exAjustar(); return; }
+  if (k == SDLK_LEFT || k == SDLK_RIGHT) { exMudarLingua(k == SDLK_RIGHT ? 1 : -1); return; }
+  if (k == SDLK_UP) { if (exFoco > 0) exFoco--; exAjustar(); return; }
+  if (k == SDLK_DOWN) { if (exFoco < exLinN - 1) exFoco++; exAjustar(); return; }
   if (k == SDLK_RETURN || k == SDLK_KP_ENTER) exOk();
 }
 static void exEvento(const SDL_Event *e) {
-  if (exPag == EXP_LISTA || exPag == EXP_OUTRAS) {
+  if (exPag == EXP_LISTA) {
     switch (ctxhold_evento(&exHold, e, exAceitaSegurar())) {
       case CTXH_CONSUMIDO: return;
       case CTXH_TOQUE: exOk(); return;
@@ -230,7 +198,7 @@ static void exEvento(const SDL_Event *e) {
 // Per frame: the hold crossing its threshold, and the header read coming back.
 static void exPasso(Uint32 agora) {
   if (!aberta) { if (exPag) exFechar(); return; }
-  if ((exPag == EXP_LISTA || exPag == EXP_OUTRAS) && ctxhold_passo(&exHold, agora, 1)) exAbrirFaixas();
+  if (exPag == EXP_LISTA && ctxhold_passo(&exHold, agora, 1)) exAbrirFaixas();
   if (exPag == EXP_FAIXAS && exFxN == -2 && exFxDe && agora - exFxDe >= AUDIOEXT_ESPERA_MS) {
     const Stream *st = extFonteIdx(exFxCand.indice);
     exFxDe = 0;
@@ -253,25 +221,23 @@ static void exPasso(Uint32 agora) {
       }
     } else if (r != -2) { exFxN = r; exMontarFaixas(); }
   }
-  if (exPag == EXP_OUTRAS && !exOutN) exIr(EXP_LISTA);
 }
 
 // --- Drawing ------------------------------------------------------------------
 static float exConteudoH(void) {
-  float h = 0;
+  int n;
   if (exPag == EXP_FAIXAS) {
-    int n = exFxN > 0 ? exFxN : 1;
+    n = exFxN > 0 ? exFxN : 1;
     if (n > IL_VIS) n = IL_VIS;
     return n * IL_LN_H + (n - 1) * IL_LN_VAO;
   }
   if (!exLinN) return 60.0f;
-  for (int i = 0; i < exLinN; i++) h += exAltLinha(i);
-  h -= IL_LN_VAO;
-  return h < exAreaMax() ? h : exAreaMax();
+  n = exLinN < IL_VIS ? exLinN : IL_VIS;
+  return n * IL_LN_H + (n - 1) * IL_LN_VAO;
 }
 static float alturaExt(void) {
   float h = IL_PAD_Y + IL_TIT_H + 14.0f;
-  if (exPag == EXP_LISTA || exPag == EXP_OUTRAS) h += EX_SEG_H + 12.0f;
+  if (exPag == EXP_LISTA && exBalN) h += EX_SEG_H + 12.0f;
   return h + exConteudoH() + 14.0f + IL_PE_H + IL_PAD_Y;
 }
 static void exLinhaCand(const AudioExtCand *c, float x, float y, float w, int sel, float a) {
@@ -308,91 +274,46 @@ static void exLinhaCand(const AudioExtCand *c, float x, float y, float w, int se
     gfx_icone((GfxRect){ x + w - 22.0f - 28.0f, y + (IL_LN_H - 28.0f) * 0.5f, 28.0f, 28.0f }, "pl_check", ar, ag, ab, a);
   }
 }
-// The header of a language on All: its name, and the count on the right.
-static void exLinhaCab(int k, float x, float y, float w, float a) {
-  int n, cont = 0;
-  const AudioExtCand *v = exVetor(&n);
-  char nome[96];
-  if (k < 0 || k >= n) return;
-  for (int i = k; i < n && exMesmoBalde(&v[i], &v[k]); i++) cont++;
-  if (v[k].grupo == AEXT_G_SEM) snprintf(nome, sizeof nome, "%s", i18n("Unknown (likely original)"));
-  else snprintf(nome, sizeof nome, "%s", i18n(ling_nome(v[k].idioma)));
-  { TxtLinha l = txt_linha(TXT_ILHA_APOIO, nome, 243, 242, 239, 140);
-    txt_desenhar_alpha(l, x + 22.0f, y + EX_CAB_H - (float)l.h - 8.0f, a); }
-  { char q[16]; snprintf(q, sizeof q, "%d", cont);
-    TxtLinha l = txt_linha(TXT_ILHA_APOIO, q, 243, 242, 239, 115);
-    txt_desenhar_alpha(l, x + w - 22.0f - (float)l.w, y + EX_CAB_H - (float)l.h - 8.0f, a); }
-}
-static void exLinhaOutras(float x, float y, float w, int sel, float a) {
-  char sub[128] = "", q[16];
-  int total = 0, cc = sel ? 255 : 219, cs = 122;
-  float yc = y + IL_LN_H * 0.5f, dir = x + w - 22.0f;
-  for (int i = 0; i < exOutN; i++) {
-    total += exOutCont[i];
-    if (i < 6) extJuntar(sub, sizeof sub, ling_selo(extBest[exOutIni[i]].idioma));
-  }
-  if (exOutN > 6) extJuntar(sub, sizeof sub, "\xe2\x80\xa6");
-  if (sel) plrui_linha_foco((GfxRect){ x, y, w, IL_LN_H }, 22.0f, a);
-  rostoIdioma((GfxRect){ x + 22.0f, y + (IL_LN_H - 52.0f) * 0.5f, 52.0f, 52.0f }, NULL, "aj_languages", sel, a);
-  gfx_icone((GfxRect){ dir - 24.0f, yc - 12.0f, 24.0f, 24.0f }, "pl_chevron-right", 1, 1, 1, (sel ? 1.0f : 0.55f) * a);
-  dir -= 24.0f + 10.0f;
-  snprintf(q, sizeof q, "%d", total);
-  { TxtLinha lv = txt_linha(TXT_G18R, q, 243, 242, 239, 115);
-    txt_desenhar_alpha(lv, dir - (float)lv.w, yc - (float)lv.h * 0.5f, a);
-    dir -= (float)lv.w + 14.0f; }
-  { float tx = x + 22.0f + 52.0f + 18.0f, tw = dir - tx;
-    TxtLinha ln = txt_linha_corta(TXT_ILHA_FORTE, i18n("Other languages"), cc, cc, cc - 2, 255, tw);
-    TxtLinha ls = txt_linha_corta(TXT_ILHA_GENERO, sub, cs, cs, cs - 2, 255, tw);
-    float th = (float)ln.h + 5.0f + (float)ls.h, ty = y + (IL_LN_H - th) * 0.5f;
-    txt_desenhar_alpha(ln, tx, ty, a);
-    txt_desenhar_alpha(ls, tx, ty + (float)ln.h + 5.0f, a); }
+// The name of a language on the bar ("Unknown" for the versions without one).
+static const char *exNomeBalde(int b) {
+  const AudioExtCand *c = &extAll[exBal[b].ini];
+  return c->grupo == AEXT_G_SEM ? i18n("Desconhecido") : i18n(ling_nome(c->idioma));
 }
 // The language bar: the window of languages around the one picked that fits.
 static void exBarraLinguas(float x, float y, float w, float a) {
   const char *rot[8];
   int cont[8], ini = exLingua, fim = exLingua + 1;
-  if (!exOutN) return;
+  if (!exBalN) return;
   // Grow the window around the pick while it fits (8 at most, plrui_seg).
   for (int cresceu = 1; cresceu;) {
     cresceu = 0;
     for (int lado = 0; lado < 2; lado++) {
       int a0 = ini - (lado == 0), a1 = fim + (lado == 1);
-      if (a0 < 0 || a1 > exOutN || a1 - a0 > 8) continue;
-      for (int i = a0; i < a1; i++) { rot[i - a0] = i18n(ling_nome(extBest[exOutIni[i]].idioma)); cont[i - a0] = exOutCont[i]; }
+      if (a0 < 0 || a1 > exBalN || a1 - a0 > 8) continue;
+      for (int i = a0; i < a1; i++) { rot[i - a0] = exNomeBalde(i); cont[i - a0] = exBal[i].cont; }
       if (plrui_seg(rot, cont, a1 - a0, (float)(exLingua - a0), 0, -1.0f, 0, a) <= w) { ini = a0; fim = a1; cresceu = 1; }
     }
   }
-  for (int i = ini; i < fim; i++) { rot[i - ini] = i18n(ling_nome(extBest[exOutIni[i]].idioma)); cont[i - ini] = exOutCont[i]; }
+  for (int i = ini; i < fim; i++) { rot[i - ini] = exNomeBalde(i); cont[i - ini] = exBal[i].cont; }
   plrui_seg(rot, cont, fim - ini, (float)(exLingua - ini), 0, x, y, a);
 }
 static void corpoExt(GfxRect c, float a) {
   float x0 = c.x + IL_PAD_X, w = c.w - IL_PAD_X * 2.0f, y = c.y + IL_PAD_Y;
   char q[96];
-  const char *titulo = exPag == EXP_OUTRAS ? "Other languages" : exPag == EXP_FAIXAS ? "Choose audio track…" : "From another source";
+  const char *titulo = exPag == EXP_FAIXAS ? "Choose audio track…" : "From another source";
   { TxtLinha t = txt_linha(TXT_ILHA_PERGUNTA, titulo, 243, 242, 239, 255);
+    int on = 0, tot = 0, filtro = exPag != EXP_FAIXAS && audioext_addons_resumo(&on, &tot);
     txt_desenhar_alpha(t, x0 + 10.0f, y, a);
-    if (exPag == EXP_OUTRAS) snprintf(q, sizeof q, i18n("%d languages"), exOutN);
-    else if (exPag == EXP_FAIXAS) snprintf(q, sizeof q, "%s", extNomeIdioma(exFxCand.idioma));
+    // Settings > Addons leaves some out: said here, or versions seem missing.
+    if (exPag == EXP_FAIXAS) snprintf(q, sizeof q, "%s", extNomeIdioma(exFxCand.idioma));
+    else if (filtro) snprintf(q, sizeof q, i18n("Addons: %d of %d"), on, tot);
     else snprintf(q, sizeof q, i18n("%d versions"), extAllN);
     { TxtLinha l = txt_linha_corta(TXT_G18R, q, 243, 242, 239, 115, w * 0.45f);
-      txt_desenhar_alpha(l, x0 + w - 10.0f - l.w, y + (float)t.h - (float)l.h - 8.0f, a); } }
+      float lx = x0 + w - 10.0f - l.w, ly = y + (float)t.h - (float)l.h - 8.0f;
+      txt_desenhar_alpha(l, lx, ly, a);
+      if (filtro) gfx_icone((GfxRect){ lx - 26.0f, ly + ((float)l.h - 20.0f) * 0.5f, 20.0f, 20.0f }, "aj_funnel", 1, 1, 1, 0.6f * a); } }
   y += IL_TIT_H + 14.0f;
-  if (exPag == EXP_LISTA) {
-    const char *rot[2] = { "Best", "All" };
-    int cont[2] = { extBestN, extAllN };
-    plrui_seg(rot, cont, 2, (float)exVista, 0, x0 + 10.0f, y, a);
-    // Settings > Addons leaves some out: said here, or versions seem missing.
-    { int on = 0, tot = 0;
-      if (audioext_addons_resumo(&on, &tot)) {
-        char f[64];
-        snprintf(f, sizeof f, i18n("Addons: %d of %d"), on, tot);
-        TxtLinha l = txt_linha(TXT_ILHA_APOIO, f, 243, 242, 239, 150);
-        float lx = x0 + w - 10.0f - (float)l.w;
-        gfx_icone((GfxRect){ lx - 26.0f, y + (EX_SEG_H - 20.0f) * 0.5f, 20.0f, 20.0f }, "aj_funnel", 1, 1, 1, 0.6f * a);
-        txt_desenhar_alpha(l, lx, y + (EX_SEG_H - (float)l.h) * 0.5f, a);
-      } }
-    y += EX_SEG_H + 12.0f;
-  } else if (exPag == EXP_OUTRAS) {
+  if (exPag == EXP_LISTA && exBalN) {
     exBarraLinguas(x0 + 10.0f, y, w - 20.0f, a);
     y += EX_SEG_H + 12.0f;
   }
@@ -421,15 +342,9 @@ static void corpoExt(GfxRect c, float a) {
                 x0 + 10.0f, y + 12.0f, w - 20.0f, 28, a, 2);
     } else {
       exAjustar();
-      for (int i = exRol; i < exLinN; i++) {
-        float h = exAltLinha(i) - IL_LN_VAO;
-        if (y + h > y0 + area + 0.5f) break;
-        // A header goes with its first row: not alone at the bottom.
-        if (exLin[i].tipo == EXL_CAB && i + 1 < exLinN && y + h + IL_LN_VAO + IL_LN_H > y0 + area + 0.5f) break;
-        if (exLin[i].tipo == EXL_CAB) exLinhaCab(exLin[i].k, x0, y, w, a);
-        else if (exLin[i].tipo == EXL_OUTRAS) exLinhaOutras(x0, y, w, i == exFoco, a);
-        else { const AudioExtCand *cd = exCandDaLinha(i); if (cd) exLinhaCand(cd, x0, y, w, i == exFoco, a); }
-        y += h + IL_LN_VAO;
+      for (int i = exRol; i < exLinN && i < exRol + IL_VIS; i++, y += IL_LN_H + IL_LN_VAO) {
+        const AudioExtCand *cd = exCandDaLinha(i);
+        if (cd) exLinhaCand(cd, x0, y, w, i == exFoco, a);
       }
     }
     y = y0 + area + 14.0f; }
@@ -438,7 +353,7 @@ static void corpoExt(GfxRect c, float a) {
   { float yc = y + 16.0f + 15.0f;
     int pos = 0, tot = 0;
     if (exPag == EXP_FAIXAS) { pos = exFxFoco + 1; tot = exFxN > 0 ? exFxN : 0; }
-    else for (int i = 0; i < exLinN; i++) if (exFocavel(i)) { tot++; if (i <= exFoco) pos = tot; }
+    else { pos = exFoco + 1; tot = exLinN; }
     snprintf(q, sizeof q, i18n("%d de %d"), tot ? pos : 0, tot);
     { TxtLinha l = txt_linha(TXT_ILHA_APOIO, q, 243, 242, 239, 115);
       txt_desenhar_alpha(l, x0 + 10.0f, yc - (float)l.h * 0.5f, a); }
@@ -446,22 +361,19 @@ static void corpoExt(GfxRect c, float a) {
       const char *k[2] = { "OK", "Voltar" }, *rt[2] = { "Use", "Cancel" };
       plrui_dicas(k, rt, 2, x0 + w - 10.0f, yc, 1, a);
     } else {
-      // Back (one page up) is the remote's own: the three keys of this page.
-      const char *lado = exPag == EXP_OUTRAS ? "Language" : "Best / All";
-      if (exFocoOutras() || !exCandDaLinha(exFoco) || !audioext_sonda_disponivel()) {
-        const char *k[2] = { "\xe2\x86\x90 \xe2\x86\x92", "OK" };
-        const char *rt[2] = { lado, exFocoOutras() ? "Open" : "Use" };
-        plrui_dicas(k, rt, 2, x0 + w - 10.0f, yc, 1, a);
-      } else {
-        // Long languages do not fit the three: the bar above already shows
-        // LEFT/RIGHT's views, so that hint goes first, then the hold's.
-        const char *k[3] = { "\xe2\x86\x90 \xe2\x86\x92", "OK", "Hold OK" };
-        const char *rt[3] = { lado, "Use", "Pick track" };
-        float livre = w - 20.0f - (float)txt_largura(TXT_ILHA_APOIO, q) - 24.0f;
-        int ini = 0, n = 3;
-        if (plrui_dicas(k, rt, 3, -1.0f, yc, 1, a) > livre) { ini = 1; n = 2; }   /* x < 0: measured only */
-        if (n == 2 && plrui_dicas(k + 1, rt + 1, 2, -1.0f, yc, 1, a) > livre) n = 1;
-        plrui_dicas(k + ini, rt + ini, n, x0 + w - 10.0f, yc, 1, a);
+      // Back (one page up) is the remote's own. LEFT/RIGHT only with more than
+      // one language; when long words do not fit, the bar above already says
+      // what LEFT/RIGHT does, so that hint goes first, then the hold's.
+      const char *k[3], *rt[3];
+      int n = 0, ini = 0;
+      float livre = w - 20.0f - (float)txt_largura(TXT_ILHA_APOIO, q) - 24.0f;
+      if (exBalN > 1) { k[n] = "\xe2\x86\x90 \xe2\x86\x92"; rt[n] = "Language"; n++; }
+      if (exCandDaLinha(exFoco)) { k[n] = "OK"; rt[n] = "Use"; n++; }
+      if (exCandDaLinha(exFoco) && audioext_sonda_disponivel()) { k[n] = "Hold OK"; rt[n] = "Pick track"; n++; }
+      /* x < 0: measured only */
+      while (n - ini > 1 && plrui_dicas(k + ini, rt + ini, n - ini, -1.0f, yc, 1, a) > livre) {
+        if (ini == 0 && exBalN > 1) ini = 1; else n--;
       }
+      if (n - ini > 0) plrui_dicas(k + ini, rt + ini, n - ini, x0 + w - 10.0f, yc, 1, a);
     } }
 }

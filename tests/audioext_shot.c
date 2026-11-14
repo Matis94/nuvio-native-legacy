@@ -195,26 +195,21 @@ int main(int argc, char **argv) {
   assert(!strcmp(audioext_idioma_principal(), "en") && stream_audio_tem(&lista[1], "en") && !stream_audio_tem(&lista[2], "en"));
   tecla(SDLK_DOWN); tecla(SDLK_DOWN); estado(); quadros(20);
   salvar("audio-from-another-source");
-  // 2. OK: the page in the same island, Best first (Polish, then the version
-  // without a language, then Other languages).
+  // 2. OK: the page in the same island: the language bar on the preferred
+  // language (Polish), every Polish version under it.
   tecla(SDLK_RETURN); estado(); quadros(30);
   assert(faixas_aberta());
-  salvar("audio-source-best");
-  // 2a. RIGHT: All, every version under its language.
-  tecla(SDLK_RIGHT); estado(); quadros(20);
-  salvar("audio-source-all");
+  salvar("audio-source-list");
   for (int i = 0; i < 6; i++) tecla(SDLK_DOWN);
   estado(); quadros(20);
-  salvar("audio-source-all-scrolled");
-  // 2b. LEFT: Best again; down to Other languages, OK: the language bar.
-  tecla(SDLK_LEFT);
-  for (int i = 0; i < 20; i++) tecla(SDLK_DOWN);
-  tecla(SDLK_RETURN); estado(); quadros(20);
-  salvar("audio-source-other-languages");
+  salvar("audio-source-list-scrolled");
+  // 2a. RIGHT: the next languages on the bar (English, Unknown, the others).
   tecla(SDLK_RIGHT); estado(); quadros(20);
-  salvar("audio-source-other-languages-next");
-  // 2c. Back: Best; hold OK on the first version: its tracks.
-  tecla(SDLK_ESCAPE);
+  salvar("audio-source-next-language");
+  tecla(SDLK_RIGHT); tecla(SDLK_RIGHT); estado(); quadros(20);
+  salvar("audio-source-other-language");
+  // 2b. Back to Polish; hold OK on the first version: its tracks.
+  for (int i = 0; i < 8; i++) tecla(SDLK_LEFT);
   audioext_definir_sonda(sondaFalsa);
   for (int i = 0; i < 20; i++) tecla(SDLK_UP);
   { SDL_Event ev; memset(&ev, 0, sizeof ev);
@@ -228,7 +223,7 @@ int main(int argc, char **argv) {
     tecla(SDLK_DOWN); tecla(SDLK_ESCAPE);    /* Back: nothing picked */
     assert(audioext_pedido_geracao() == g && faixas_aberta()); }
   estado(); quadros(40);
-  salvar("audio-source-best-hold-hints");
+  salvar("audio-source-list-hold-hints");
   // 2d. Back: the audio list, on the row.
   tecla(SDLK_ESCAPE);
   assert(faixas_aberta());
