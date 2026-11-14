@@ -286,7 +286,14 @@ void audioext_dopasuj_resultado(int ok, const AudioExtDopasuj *r) {
     int ms = r->ms;
     if (ms > AUDIOEXT_OFFSET_MAX) ms = AUDIOEXT_OFFSET_MAX;
     if (ms < -AUDIOEXT_OFFSET_MAX) ms = -AUDIOEXT_OFFSET_MAX;
-    offsetMs = ms; offsetGeracao++;
+    // Automatic, same speed, a few ms away: kept as it is (AUDIOEXT_AUTO_MIN_MS).
+    if (r->automatico && r->ppm == velocidadePpm && ms - offsetMs < AUDIOEXT_AUTO_MIN_MS &&
+        offsetMs - ms < AUDIOEXT_AUTO_MIN_MS) {
+      printf("[ext-audio] match: %d ms is %d ms from the current offset, kept\n", ms, ms - offsetMs);
+      fflush(stdout);
+      ms = offsetMs;
+    }
+    if (ms != offsetMs) { offsetMs = ms; offsetGeracao++; }
     // Another speed: the other version is opened again at it (the swap).
     if (r->ppm != velocidadePpm) { velocidadePpm = r->ppm; pedidoGeracao++; }
     { char sr[64]; serieDe(alvoMarca, sr, sizeof sr);

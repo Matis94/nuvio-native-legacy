@@ -272,6 +272,21 @@ int main(void) {
              audioext_offset_geracao() == g2 + 1);
       assert(audioext_seguir_aviso_consumir(&ms) == 0);
       audioext_offset_definir(-39500); }
+    // An automatic match a few ms away keeps the offset (no new connection);
+    // 40 ms or more, or a click, moves it.
+    { AudioExtDopasuj au = { 0 };
+      unsigned g3 = audioext_offset_geracao();
+      au.ms = -39500 + 39; au.automatico = 1; au.como = 1;
+      audioext_dopasuj_resultado(1, &au);
+      assert(audioext_offset_ms() == -39500 && audioext_offset_geracao() == g3);
+      au.ms = -39500 - 40;
+      audioext_dopasuj_resultado(1, &au);
+      assert(audioext_offset_ms() == -39540 && audioext_offset_geracao() == g3 + 1);
+      audioext_dopasuj_pedir();
+      r.ms = -39530; r.ppm = 250; r.como = 1; r.automatico = 0;
+      audioext_dopasuj_resultado(1, &r);
+      assert(audioext_offset_ms() == -39530);
+      audioext_offset_definir(-39500); }
     // A coming jump and a reconnection: each consumed once.
     audioext_salto_previsto(825.25);
     assert(audioext_salto_previsto_consumir() == 825.25 && audioext_salto_previsto_consumir() == 0);

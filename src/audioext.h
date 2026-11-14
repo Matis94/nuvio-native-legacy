@@ -110,6 +110,10 @@ int audioext_offset_ms(void);
 // Adds `ms` / sets it, bounded to +-60 min (an extended cut against the
 // theatrical one); returns the new offset.
 #define AUDIOEXT_OFFSET_MAX 3600000
+// An automatic match that moves the offset by less than this keeps the
+// current one: nobody notices it, and applying it means a new connection to
+// the other file (owner's log 14/11: a 1 ms correction landed on a slow one).
+#define AUDIOEXT_AUTO_MIN_MS 40
 #define AUDIOEXT_DICA_MAX 600000   /* the lengths' hint: within 10 min only */
 int audioext_offset_somar(int ms);
 int audioext_offset_definir(int ms);
