@@ -193,10 +193,6 @@ int64_t dts_engine_external_bytes(DtsEngine *, int64_t *total);
 int dts_engine_external_wake(DtsEngine *);
 int dts_engine_external_woken(DtsEngine *);
 int dts_engine_external_failed(DtsEngine *);
-/* Another source's version remembers its server address (behind the add-on's
- * redirects) for 30 min between engines; forget it before reopening that
- * version because its server was slow. */
-void dts_engine_forget_final(const char *url, const char *headers);
 /* Language comparison for the external track choice (the app passes
  * ling_casa); NULL or unset compares case-insensitively. Set once. */
 void dts_engine_set_lang_match(int (*match)(const char *code, const char *pref));

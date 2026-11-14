@@ -103,7 +103,6 @@ void dts_engine_reconnect(DtsEngine *e) { (void)e; }
 int dts_engine_external_wake(DtsEngine *e) { (void)e; return 0; }
 int dts_engine_external_woken(DtsEngine *e) { (void)e; return 0; }
 int dts_engine_external_failed(DtsEngine *e) { (void)e; return 0; }
-void dts_engine_forget_final(const char *u,const char *h) { (void)u; (void)h; }
 void dts_engine_external_follow(DtsEngine *e,int on) { (void)e;(void)on; }
 void dts_engine_external_track_hint(DtsEngine *e,int s,const char *l,const char *c,int ch,const char *t) { (void)e;(void)s;(void)l;(void)c;(void)ch;(void)t; }
 void dts_engine_external_automatch(DtsEngine *e,int on) { (void)e;(void)on; }
@@ -222,12 +221,6 @@ struct DtsEngine {
    * from the add-on on the second), then gives up (ext_dead). xs_waiting:
    * the reader is waiting now (a track change or seek may wake it). */
   int64_t xs_at; int xs_tries, ext_dead; volatile int xs_waiting;
-  /* Versions of another source (its reader and the track probe): the final
-   * address behind the add-on is remembered between engines (final_cache);
-   * final_seeded: this one started from a remembered address that has not
-   * sent a byte yet. */
-  int remember_final, final_seeded;
-  unsigned final_age_s;      /* age of the remembered address when this engine started from it */
   /* Main engine: the other version's read was woken for a pending request
    * (ext_woken, until its seek or swap) or gave up (ext_failed). Either way
    * the picture goes on without its packets. */
@@ -724,69 +717,6 @@ static uint64_t fx_now_ms(void) { return clock_ns(CLOCK_MONOTONIC)/1000000u; }
  * the read-ahead buffer, and a jump outside it restarts the one request.
  * The Samsung remux keeps its short adaptive read-ahead. */
 static int fx_long(const DtsEngine *e) { return e->source_stream || e->conv_stream; }
-/* Final addresses of another source's versions, remembered for the next
- * engine of the same version (owner, 14/11): a Torrentio link goes
- * torrentio.strem.fun -> api.torbox.app -> TorBox CDN, 1.2-2.4 s before the
- * first byte, at every reopen, swap back, reload or track probe. Straight to
- * the CDN instead; a remembered address that fails before its first byte goes
- * back through the add-on at once and is forgotten. Kept FINAL_CACHE_MS: TorBox
- * links lasted about an hour in 2024; today's servers are unknown, so 3 h and
- * the log says how old a remembered address was when it failed (owner, 14/11). */
-#define FINAL_CACHE_N 16
-#define FINAL_CACHE_MS (3u*60u*60u*1000u)
-static struct { char *url, *fin; uint32_t hh; int cross; uint64_t at; } g_final[FINAL_CACHE_N];
-static pthread_mutex_t g_final_lock=PTHREAD_MUTEX_INITIALIZER;
-static uint64_t fx_now_ms(void);
-static uint32_t final_hash(const char *h) { uint32_t x=2166136261u; for(;h&&*h;h++){ x^=(unsigned char)*h; x*=16777619u; } return x; }
-static int final_slot(const char *url,uint32_t hh) {
-  for(int i=0;i<FINAL_CACHE_N;i++) if(g_final[i].url && g_final[i].hh==hh && !strcmp(g_final[i].url,url)) return i;
-  return -1;
-}
-static void final_cache_put(const char *url,const char *headers,const char *fin,int cross) {
-  if(!url || !*url || !fin || !*fin || !strcmp(url,fin)) return;   /* no redirect: nothing to save */
-  uint32_t hh=final_hash(headers);
-  pthread_mutex_lock(&g_final_lock);
-  int i=final_slot(url,hh);
-  if(i<0) {   /* a free slot, else the oldest */
-    i=0;
-    for(int k=0;k<FINAL_CACHE_N;k++) { if(!g_final[k].url) { i=k; break; } if(g_final[k].at<g_final[i].at) i=k; }
-    free(g_final[i].url); g_final[i].url=strdup(url); g_final[i].hh=hh;
-  }
-  free(g_final[i].fin); g_final[i].fin=strdup(fin); g_final[i].cross=cross; g_final[i].at=fx_now_ms();
-  if(!g_final[i].url || !g_final[i].fin) { free(g_final[i].url); free(g_final[i].fin); g_final[i].url=g_final[i].fin=NULL; }
-  pthread_mutex_unlock(&g_final_lock);
-}
-/* 1 and the address when one younger than FINAL_CACHE_MS is remembered. */
-static int final_cache_get(const char *url,const char *headers,char fin[8192],int *cross,unsigned *age_s) {
-  int ok=0;
-  if(!url || !*url) return 0;
-  pthread_mutex_lock(&g_final_lock);
-  int i=final_slot(url,final_hash(headers));
-  if(i>=0) {
-    uint64_t age=fx_now_ms()-g_final[i].at;
-    if(age<FINAL_CACHE_MS) { snprintf(fin,8192,"%s",g_final[i].fin); *cross=g_final[i].cross; *age_s=(unsigned)(age/1000); ok=1; }
-    else { free(g_final[i].url); free(g_final[i].fin); g_final[i].url=g_final[i].fin=NULL; }
-  }
-  pthread_mutex_unlock(&g_final_lock);
-  return ok;
-}
-static void final_cache_forget(const char *url,const char *headers) {
-  if(!url) return;
-  pthread_mutex_lock(&g_final_lock);
-  int i=final_slot(url,final_hash(headers));
-  if(i>=0) { free(g_final[i].url); free(g_final[i].fin); g_final[i].url=g_final[i].fin=NULL; }
-  pthread_mutex_unlock(&g_final_lock);
-}
-/* An engine of another source's version starts at the remembered address. */
-static void final_seed(DtsEngine *e) {
-  char fin[8192]; int cross=0; unsigned age=0;
-  if(!e->remember_final || !final_cache_get(e->url,e->headers,fin,&cross,&age)) return;
-  pthread_mutex_lock(&e->range_lock);
-  snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross; e->final_seeded=1; e->final_age_s=age;
-  pthread_mutex_unlock(&e->range_lock);
-  printf("[ext-audio] this version's server address remembered %u s ago: straight there, no add-on redirects\n",age);
-  fflush(stdout);
-}
 /* Its request can be dropped at once (source_cancel), not only once a byte
  * arrives: the long rings and the other version's reader (owner's log 14/11:
  * a silent connection to it held the converter, picture included). */
@@ -862,22 +792,8 @@ static void *fx_worker(void *opaque) {
     total=e->fx_live_total;
     e->metrics.range_requests++;
     if(total>=0) e->total=total;
-    if(!direct && got>0 && fin[0]) {
-      snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross;
-      if(e->remember_final) final_cache_put(e->url,e->headers,fin,cross);
-    }
-    if(direct && got>0) e->final_seeded=0;   /* the remembered address answers */
+    if(!direct && got>0 && fin[0]) { snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross; }
     if(r==1 || e->fx_stop || cancelled(e) || (fx_abortable(e) && e->fx_req>=0)) continue; /* seek/closing */
-    if(r!=0 && direct && e->final_seeded && got==0) {
-      /* A remembered address that fails before its first byte (expired,
-       * another server): through the add-on now, no retry schedule. */
-      e->final_seeded=0; e->final_url[0]=0; e->fx_resolved_ms=fx_now_ms();
-      final_cache_forget(e->url,e->headers);
-      printf("[ext-audio] the remembered server address failed (remembered %u min ago, http=%d after %llu ms): through the add-on again\n",
-             e->final_age_s/60,status,(unsigned long long)ms);
-      fflush(stdout);
-      continue;
-    }
     if(r==0) {                                                /* body ended */
       e->fx_attempts=0;
       if(status==200) { e->total=e->fx_hi; e->fx_eof=1; continue; }   /* whole file, no Range */
@@ -943,14 +859,7 @@ static char *sp_fetch(DtsEngine *e,int64_t start,int64_t end,long *got) {
   pthread_mutex_lock(&e->range_lock);
   e->metrics.range_requests++;
   if(d) { e->metrics.range_bytes+=(uint64_t)*got; e->sp_bytes+=*got; }
-  if(!direct && d && fin[0]) {
-    snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross;
-    if(e->remember_final) final_cache_put(e->url,e->headers,fin,cross);
-  }
-  if(direct && d) e->final_seeded=0;
-  if(direct && !d && e->final_seeded && !cancelled(e)) {   /* remembered address gone: the add-on's next time */
-    e->final_seeded=0; e->final_url[0]=0; final_cache_forget(e->url,e->headers);
-  }
+  if(!direct && d && fin[0]) { snprintf(e->final_url,sizeof e->final_url,"%s",fin); e->final_cross=cross; }
   pthread_mutex_unlock(&e->range_lock);
   if(!d && !cancelled(e)) {
     printf("[ext-audio] audio only: range %lld-%lld failed http=%d direct=%d\n",(long long)start,(long long)end,status,direct);
@@ -1179,11 +1088,8 @@ static int ext_stall_guard(DtsEngine *e,uint64_t *wait_started) {
     return -1;
   }
   e->xs_tries++; e->xs_at=e->pos;
-  int fresh=(e->xs_tries==2 || e->final_seeded) && e->final_url[0];
-  if(fresh) {
-    e->final_url[0]=0; e->final_seeded=0; e->fx_resolved_ms=fx_now_ms();
-    final_cache_forget(e->url,e->headers);   /* not this server again next time */
-  }
+  int fresh=e->xs_tries==2 && e->final_url[0];
+  if(fresh) { e->final_url[0]=0; e->fx_resolved_ms=fx_now_ms(); }
   printf("[ext-audio] waiting for the other version %d s at %lld MiB: reconnecting (%d/%d)%s\n",
          EXT_STALL_S,(long long)(e->pos>>20),e->xs_tries,EXT_STALL_TRIES,fresh?", a fresh link from the add-on":"");
   fflush(stdout);
@@ -1846,7 +1752,6 @@ int dts_engine_external_wake(DtsEngine *e) {
 }
 int dts_engine_external_woken(DtsEngine *e) { return e && e->ext && (e->ext_woken || __atomic_load_n(&e->ext->interrupt,__ATOMIC_RELAXED)); }
 int dts_engine_external_failed(DtsEngine *e) { return e && e->ext_failed; }
-void dts_engine_forget_final(const char *url,const char *headers) { final_cache_forget(url,headers?headers:""); }
 /* A read of the other version came back short: woken for a pending request
  * or given up (ext_stall_guard). 1 = so: no packet of it now, the picture
  * goes on; 0 = an ordinary end or error. */
@@ -1998,7 +1903,7 @@ int dts_engine_probe_audio(const char *url,const char *headers,DtsTrack *out,int
   DtsEngine *x=dts_engine_create();
   int n=-1;
   if(!x) return -1;
-  x->fx_mib=DTS_ENGINE_EXTERNAL_RING_MIB; x->remember_final=1;
+  x->fx_mib=DTS_ENGINE_EXTERNAL_RING_MIB;
   if(dts_engine_open_demux(x,url,headers)==0) {
     n=0;
     /* Under two minutes: no version of a film or an episode, the debrid
@@ -2147,7 +2052,7 @@ static double ext_fps(const AVStream *s) {
 static int configure_external(DtsEngine *e,double start) {
   DtsEngine *x=dts_engine_create();
   if(!x) return fail(e,"External audio allocation",0);
-  x->fx_mib=g_ext_ring_mib; x->parent=e; x->remember_final=1;
+  x->fx_mib=g_ext_ring_mib; x->parent=e;
   e->ext_woken=e->ext_failed=0;
   pthread_mutex_lock(&e->range_lock); e->ext=x; pthread_mutex_unlock(&e->range_lock);
   if(cancelled(e)) return fail(e,"Cancelled",0);
@@ -2520,8 +2425,6 @@ int dts_engine_open_demux(DtsEngine *e,const char *url,const char *headers) {
   e->fmt=avformat_alloc_context();
   unsigned char *buffer=av_malloc(65536);
   if (!e->url || !e->headers || !e->fmt || !buffer) { av_free(buffer); return fail(e,"Demux allocation",0); }
-  e->final_seeded=0;
-  final_seed(e);
   e->fx_req=-1;
   e->io=avio_alloc_context(buffer,65536,0,e,read_fluxo,NULL,seek_fluxo);
   if (!e->io) { av_free(buffer); return fail(e,"IO allocation",0); }

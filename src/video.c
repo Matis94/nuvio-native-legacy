@@ -3881,8 +3881,7 @@ static void bombearDts(void) {
              etapa == 1 ? "opening it again" : "too slow, said");
       fflush(stdout);
       audioext_lento_marcar(etapa);
-      // Reopened on a new server address, not the remembered slow one.
-      if (etapa == 1) { dts_engine_forget_final(audioext_url(), audioext_cabecalhos()); extReabrirPend = 1; }
+      if (etapa == 1) extReabrirPend = 1;
     } }
   /* A seek/track reconfiguration can clear refill before metadata is ready.
    * Update even during preroll, before draining any fresh native starvation
