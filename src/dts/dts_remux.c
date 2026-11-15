@@ -74,6 +74,7 @@ void dts_remux_gen_free(DtsRemuxGen *g) { (void)g; }
 void dts_remux_gen_interrupt(DtsRemuxGen *g) { (void)g; }
 double dts_remux_gen_start_s(const DtsRemuxGen *g) { (void)g; return 0; }
 void dts_remux_set_queue_budget_mib(int mib) { (void)mib; }
+void dts_remux_set_tap(DtsRemuxTap fn, void *op, int stream) { (void)fn; (void)op; (void)stream; }
 #else
 
 #include <math.h>
@@ -252,6 +253,34 @@ static void fail(char *err, size_t n, const char *what, int code) {
 /* VIDEO CODECS THE CONVERTER TAKES: HEVC and H.264 only. VC-1 and MPEG-2 do
  * not play from the converted TS/HLS on the TV (tested on the S95C), so those
  * files stay on the original, as on master. */
+// The automatic match's tap (dts_remux.h).
+static pthread_mutex_t tapLock = PTHREAD_MUTEX_INITIALIZER;
+static DtsRemuxTap tapFn;
+static void *tapOp;
+static atomic_int tapStream = -1;
+void dts_remux_set_tap(DtsRemuxTap fn, void *op, int stream) {
+  pthread_mutex_lock(&tapLock);
+  if (fn || !op || op == tapOp) {   // clearing: only the tap `op` set (another session's stays)
+    tapFn = fn; tapOp = fn ? op : NULL;
+    atomic_store(&tapStream, fn ? stream : -1);
+  }
+  pthread_mutex_unlock(&tapLock);
+}
+// Video-only reader: the tapped stream is read (not discarded) while the tap
+// is on, and discarded again after. Then its packets go to the tap.
+static void tapDiscard(AVFormatContext *ic, int vs, int as) {
+  int t = atomic_load(&tapStream);
+  for (unsigned i = 0; i < ic->nb_streams; i++) {
+    enum AVDiscard d = ((int)i == vs || (int)i == as || (as < 0 && (int)i == t)) ? AVDISCARD_DEFAULT : AVDISCARD_ALL;
+    if (ic->streams[i]->discard != d) ic->streams[i]->discard = d;
+  }
+}
+static void tapPacket(AVFormatContext *ic, const AVPacket *p) {
+  pthread_mutex_lock(&tapLock);
+  if (tapFn && p->stream_index == atomic_load(&tapStream) && (unsigned)p->stream_index < ic->nb_streams)
+    tapFn(tapOp, p, ic->streams[p->stream_index]);
+  pthread_mutex_unlock(&tapLock);
+}
 static int videoOk(enum AVCodecID id) { return id == AV_CODEC_ID_HEVC || id == AV_CODEC_ID_H264; }
 
 /* HEVC NAL types of one packet (hvcC length prefix or Annex B), for the GOP
@@ -1265,7 +1294,9 @@ int dts_remux_gen_run(DtsRemuxGen *g, int seg, double startS, const char *fmt,
     }
     if (g->pk->stream_index == r->vs) rr = videoPacket(g, g->pk, err, errn);
     else if (g->pk->stream_index == r->as) rr = audioPacket(g, g->pk, err, errn);
+    else if (r->as < 0) tapPacket(g->ic, g->pk);
     av_packet_unref(g->pk);
+    if (r->as < 0) tapDiscard(g->ic, r->vs, r->as);
     if (rr < 0) break;
   }
   if (rr >= 0) {

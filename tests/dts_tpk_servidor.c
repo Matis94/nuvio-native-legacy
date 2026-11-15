@@ -288,6 +288,29 @@ static void testeDoador(int origem, const char *dir) {
     CONFERE(doaComeca(&o, url, sizeof url) == 0 && doa_estado(m, sizeof m) == -1 && strstr(m, "lasts 12 s"),
             "donor: 12 s against 30 s refused (%s)", m); }
   doa_fechar();
+  // A PAL donor (25 fps, 4.2 % faster): at its speed, asked and by itself.
+  snprintf(doador, sizeof doador, "http://127.0.0.1:%d/pal.mkv", origem);
+  o.doador = doador; o.doador_ms = 0; o.doador_ppm = 41667; o.doador_lingua = "pol";
+  { int pt;
+    char pp[64];
+    CONFERE(doaComeca(&o, url, sizeof url) == DOA_DOADOR(0) && partes(url, &pt, pp, sizeof pp), "PAL donor: session at +41667 ppm");
+    n = doa_rendicoes(rd, 8);
+    for (i = 0, iD = -1; i < n; i++) if (rd[i].chave == DOA_DOADOR(0)) iD = i;
+    CONFERE(iD >= 0 && !strcmp(rd[iD].codec, "ac3"), "PAL donor: its E-AC3 offered as AC3 (converted at its speed)");
+    snprintf(nome, sizeof nome, "a%d_4.ts", iD);
+    CONFERE(salvarPedido(pt, pp, nome, dir, "p4.ts"), "PAL donor: segment 4");
+    snprintf(nome, sizeof nome, "a%d_10.ts", iD);
+    CONFERE(salvarPedido(pt, pp, nome, dir, "p10.ts"), "PAL donor: segment 10"); }
+  o.doador_ppm = 0;
+  { int pt, corte = 0, vel = 0, ppm = 0;
+    char pp[64];
+    CONFERE(doaComeca(&o, url, sizeof url) == DOA_DOADOR(0) && partes(url, &pt, pp, sizeof pp), "PAL donor: session, no speed asked");
+    CONFERE(doa_diferenca(&corte, &vel, &ppm) && vel && ppm > 41600 && ppm < 41700 && abs(corte) <= 1,
+            "PAL donor: the frame rates and lengths name 25/24 (speed %d, %d ppm, cut %d s)", vel, ppm, corte);
+    for (i = 0, iD = -1, n = doa_rendicoes(rd, 8); i < n; i++) if (rd[i].chave == DOA_DOADOR(0)) iD = i;
+    snprintf(nome, sizeof nome, "a%d_4.ts", iD);
+    CONFERE(iD >= 0 && salvarPedido(pt, pp, nome, dir, "p4a.ts"), "PAL donor: segment 4 at the speed it took"); }
+  doa_fechar();
   // The audio menu's track list of another version.
   { DoaSonda t[8];
     snprintf(doador, sizeof doador, "http://127.0.0.1:%d/doador.mkv", origem);
@@ -304,6 +327,68 @@ static void testeDoador(int origem, const char *dir) {
   sleep(1);
 }
 
+// THE AUTOMATIC MATCH: m.mkv's DTS against md.mkv's AC3 (the same audio 3 s
+// later). Opened 1 s off (-2000 ms); the converter's segments and the donor's
+// are asked like a player would, which fills the two captures.
+static void testeDopasuj(int origem, const char *dir) {
+  char fonte[200], doador[200], conv[300], url[300], pref[64], c[200], nome[40], vpref[64];
+  int porta, vporta, i, iD = -1, n, r = 0, au = -1;
+  DoaAbrir o;
+  DoaRendicao rd[8];
+  DoaDopasuj res;
+  Resp rp;
+  char *v = NULL;
+  snprintf(fonte, sizeof fonte, "http://127.0.0.1:%d/m.mkv", origem);
+  snprintf(doador, sizeof doador, "http://127.0.0.1:%d/md.mkv", origem);
+  CONFERE(dts_tpk_abrir(fonte, "", DTS_REMUX_NO_AUDIO, 0, DTSTPK_HLS, 0, conv, sizeof conv), "match: the converter opens video only");
+  memset(&o, 0, sizeof o);
+  o.video = conv; o.orig = fonte; o.cab = ""; o.doador = doador; o.doador_cab = ""; o.doador_nome = "Match donor";
+  o.doador_lingua = "eng"; o.doador_padrao = 1; o.doador_ms = -2000; o.seguir = 1;
+  CONFERE(doa_abrir(&o, url, sizeof url) && partes(url, &porta, pref, sizeof pref), "match: session opens");
+  snprintf(c, sizeof c, "%smaster.m3u8", pref);
+  CONFERE(!pedir(porta, c, NULL, &rp) && rp.status == 200, "match: master 200");
+  if (rp.corpo) v = strstr((char *)rp.corpo, "\nhttp://127.0.0.1:");
+  CONFERE(v && partes(v + 1, &vporta, vpref, sizeof vpref), "match: the converter's playlist in the master");
+  free(rp.corpo);
+  n = doa_rendicoes(rd, 8);
+  for (i = 0; i < n; i++) if (rd[i].chave == DOA_DOADOR(0)) iD = i;
+  CONFERE(iD >= 0 && doa_audio() == DOA_DOADOR(0), "match: the donor's AC3 plays");
+  doa_dopasuj(0);
+  CONFERE(doa_dopasuj_ativo(), "match: capturing");
+  for (i = 0; i < 40 && !(r = doa_dopasuj_resultado(&res, &au)); i++) {
+    snprintf(nome, sizeof nome, "seg%d.ts", i);
+    salvarPedido(vporta, vpref, nome, dir, "v.ts");
+    snprintf(nome, sizeof nome, "a%d_%d.ts", iD, i);
+    salvarPedido(porta, pref, nome, dir, "a.ts");
+  }
+  for (i = 0; i < 300 && !r; i++) { usleep(100000); r = doa_dopasuj_resultado(&res, &au); }
+  CONFERE(r == 1 && res.ms > -3060 && res.ms < -2940 && res.ppm == 0 && res.como == 1 && au == 0,
+          "match: found near, offset %d ms (right: -3000), speed %d ppm, how %d", r == 1 ? res.ms : 0, res.ppm, res.como);
+  CONFERE(!doa_dopasuj_ativo(), "match: done");
+  // 22 s off: not near; the donor read on its own, +-60 s.
+  o.doador_ms = -25000;
+  CONFERE(doa_abrir(&o, url, sizeof url) && partes(url, &porta, pref, sizeof pref), "match: session 22 s off");
+  snprintf(c, sizeof c, "%smaster.m3u8", pref);
+  CONFERE(!pedir(porta, c, NULL, &rp) && rp.status == 200, "match: master 200 again");
+  free(rp.corpo);
+  doa_dopasuj(1);
+  r = 0;
+  for (i = 0; i < 40 && !(r = doa_dopasuj_resultado(&res, &au)); i++) {
+    snprintf(nome, sizeof nome, "seg%d.ts", i);
+    salvarPedido(vporta, vpref, nome, dir, "v.ts");
+    snprintf(nome, sizeof nome, "a%d_%d.ts", iD, i);
+    salvarPedido(porta, pref, nome, dir, "a.ts");
+  }
+  for (i = 0; i < 600 && !r; i++) { usleep(100000); r = doa_dopasuj_resultado(&res, &au); }
+  CONFERE(r == 1 && res.ms > -3060 && res.ms < -2940 && res.como == 3 && au == 1,
+          "match: found by the +-60 s search, offset %d ms, how %d, by itself %d", r == 1 ? res.ms : 0, res.como, au);
+  doa_dopasuj(0);
+  CONFERE(doa_dopasuj_ativo(), "match: a second request runs");
+  doa_fechar();
+  CONFERE(1, "match: closed while capturing (the tap and the job let go)");
+  dts_tpk_fechar();
+  sleep(1);
+}
 static double agora(void) {
   struct timespec t;
   clock_gettime(CLOCK_MONOTONIC, &t);
@@ -518,6 +603,7 @@ int main(int argc, char **argv) {
   else if (!strcmp(t, "faixa")) testeFaixa(origem);
   else if (!strcmp(t, "sovideo")) testeSoVideo(origem, argv[3]);
   else if (!strcmp(t, "doador")) testeDoador(origem, argv[3]);
+  else if (!strcmp(t, "dopasuj")) testeDopasuj(origem, argv[3]);
   else { fprintf(stderr, "unknown test %s\n", t); return 2; }
   printf("%s: %d failure(s)\n", t, falhas);
   return falhas ? 1 : 0;

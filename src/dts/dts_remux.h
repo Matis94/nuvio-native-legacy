@@ -56,6 +56,16 @@ typedef int (*DtsRemuxWrite)(void *opaque, const unsigned char *data, int n);
  * timeline below): what another server's audio is stamped against. */
 #define DTS_REMUX_TS_OFFSET_S 10
 
+/* A TAP on the video-only reader (the automatic match, doador_tpk.c): the
+ * packets of the file's audio stream `stream` (container index) that the
+ * reader downloads anyway go to fn as they are read, in the reader's thread
+ * (fn decodes and returns quickly). fn NULL / stream -1 = off. Set and cleared
+ * under a lock the reader also takes, so after it returns fn is not called.
+ * Clearing (fn NULL) with op set clears only the tap that op set. */
+struct AVPacket; struct AVStream;
+typedef void (*DtsRemuxTap)(void *op, const struct AVPacket *pkt, const struct AVStream *st);
+void dts_remux_set_tap(DtsRemuxTap fn, void *op, int stream);
+
 int dts_remux_available(void);
 /* Shared packet budget across generators: 192 MiB, 128 MiB on older TVs. */
 void dts_remux_set_queue_budget_mib(int mib);

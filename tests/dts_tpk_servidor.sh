@@ -32,6 +32,23 @@ ffmpeg -v error -f lavfi -i testsrc2=s=320x180:r=24 -f lavfi -i "aevalsrc='if(be
   -filter_complex "[1:a]pan=5.1|FL=c0|FR=c0|FC=c0|LFE=c0|BL=c0|BR=c0[e]" -map 0:v -map "[e]" -map 2:a \
   -c:v libx264 -preset ultrafast -g 48 -keyint_min 48 -sc_threshold 0 -pix_fmt yuv420p \
   -c:a:0 eac3 -c:a:1 aac -ac:a:1 2 -metadata:s:a:0 language=pol -metadata:s:a:1 language=eng "$work/src/doador.mkv"
+# A PAL donor: the same 30 s at 25 fps, played 25/24 faster (28.8 s), its
+# beep at 8.64 s of its own time (= 9.0 s of fx.mkv's at the file's speed).
+ffmpeg -v error -f lavfi -i testsrc2=s=320x180:r=25 -f lavfi -i "aevalsrc='if(between(t,8.64,8.832),sin(2*PI*1000*t),0)':s=48000" -t 28.8 \
+  -filter_complex "[1:a]pan=5.1|FL=c0|FR=c0|FC=c0|LFE=c0|BL=c0|BR=c0[e]" -map 0:v -map "[e]" \
+  -c:v libx264 -preset ultrafast -g 50 -keyint_min 50 -sc_threshold 0 -pix_fmt yuv420p \
+  -c:a eac3 -metadata:s:a:0 language=pol "$work/src/pal.mkv"
+# The automatic match: 90 s whose audio is tones gated at irregular times
+# (onsets, as hits and cuts), DTS; and a donor with the same audio 3 s later
+# (3 s more at its start), AC3 stereo: the right offset is -3000 ms.
+som='0.5*sin(2*PI*(300+150*sin(0.3*T))*T)*gt(sin(0.05*T*T+1.3*T),0.55)+0.4*sin(2*PI*90*T)*gt(sin(2.3*T+3*sin(0.21*T)),0.85)'
+ffmpeg -v error -f lavfi -i testsrc2=s=320x180:r=24 -f lavfi -i "aevalsrc='$(echo "$som" | sed 's/T/t/g')':s=48000" -t 90 \
+  -filter_complex "[1:a]pan=5.1|FL=c0|FR=c0|FC=c0|LFE=c0|BL=c0|BR=c0[a]" -map 0:v -map "[a]" \
+  -c:v libx264 -preset ultrafast -g 48 -keyint_min 48 -sc_threshold 0 -pix_fmt yuv420p \
+  -c:a dca -strict -2 -b:a 768k "$work/src/m.mkv"
+ffmpeg -v error -f lavfi -i testsrc2=s=320x180:r=24 -f lavfi -i "aevalsrc='$(echo "$som" | sed 's/T/(t-3)/g')':s=48000" -t 93 \
+  -map 0:v -map 1:a -c:v libx264 -preset ultrafast -g 48 -keyint_min 48 -sc_threshold 0 -pix_fmt yuv420p \
+  -c:a ac3 -ac 2 -metadata:s:a:0 language=eng "$work/src/md.mkv"
 # 150 s at 64x64 for the audio-queue cap: the test binary moves the audio 70 s
 # ahead of its video below, so up to 80 s of AC3 wait for their video.
 ffmpeg -v error -f lavfi -i testsrc2=s=64x64:r=24 -f lavfi -i "sine=f=440:r=48000" -t 150 \
@@ -131,7 +148,18 @@ check "the 10 s line: connections, reader rings, each source's state, the offset
 check "donor missing: the master offers the file's track alone" "[ \$(grep -c '^#EXT-X-MEDIA:TYPE=AUDIO' '$d/dx.m3u8') = 1 ] && grep -q 'donor not offered' '$work/t8.log'"
 check "donor missing: dropped after 10 s, not the reader's 30 s of retries ($(sed -n 's/.*ready in \([0-9]*\) ms: .*audio file 0$/\1/p' "$work/t8.log" | tail -1) ms)" \
   "grep -q 'donor not offered: donor: no answer in 10 s' '$work/t8.log' && [ \"\$(sed -n 's/.*ready in \([0-9]*\) ms: .*audio file 0\$/\1/p' '$work/t8.log' | tail -1)\" -lt 13000 ]"
-check "donor: no URL of either file in the log" "! grep -q 'token=secret\\|doador.mkv\\|nothere.mkv\\|fx.mkv' '$work/t8.log'"
+check "PAL donor at its speed: converted to AC3 ($(cod "$d/p4.ts")), the beep at 19.0 s ($(bipe "$d/p4.ts"))" \
+  "[ '$(cod "$d/p4.ts")' = 'ac3,6' ] && perto $(bipe "$d/p4.ts" || echo 0) 19.0 0.06"
+check "PAL donor, speed from the frame rates by itself: the beep at 19.0 s ($(bipe "$d/p4a.ts"))" \
+  "perto $(bipe "$d/p4a.ts" || echo 0) 19.0 0.06"
+check "PAL donor further on: still in place, segment 10's audio at 30 s ($(ini "$d/p10.ts" a))" "perto $(ini "$d/p10.ts" a || echo 0) 30 0.06"
+check "donor: no URL of either file in the log" "! grep -q 'token=secret\\|doador.mkv\\|nothere.mkv\\|fx.mkv\\|pal.mkv\\|md.mkv\\|/m.mkv' '$work/t8.log'"
+
+# 8. The automatic match over the converter's tap and the donor's segments.
+mkdir -p "$work/t9"
+"$work/test" "$port" dopasuj "$work/t9" > "$work/t9.log" 2>&1 || fail=1
+grep -E '^(ok|FAIL)' "$work/t9.log"
+check "match: no URL of either file in the log" "! grep -q 'md.mkv\\|/m.mkv' '$work/t9.log'"
 
 cp "$work/t1.log" "$work/t3.log" "$work/t4.log" "$work/t5.log" "$work/t6.log" "${DTS_TPK_LOGS:-$work}/" 2>/dev/null || true
 if [ "$fail" != 0 ]; then echo "--- t1.log"; grep '\[dts-tpk\]' "$work/t1.log" | tail -30; echo "--- t3.log"; tail -20 "$work/t3.log"; echo "--- t4.log"; grep -v '^\[dts-tpk\] #' "$work/t4.log" | tail -20; fi

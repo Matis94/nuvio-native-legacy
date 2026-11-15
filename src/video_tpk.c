@@ -260,6 +260,7 @@ static struct {
   DoaRendicao r[MAX_FAIXAS];   // the renditions behind the menu entries
   int nR;
   int difFeita;          // audioext_diferenca said for this session
+  int autoFeito;         // "Match automatically when it starts" asked for this session
   char conv[256];        // the converter's URL (kept when only the donor changes)
 } dv;
 // The audio menu's picks (audioext_escolher / _original / _escolher_faixa, a
@@ -1312,6 +1313,8 @@ static void doadorOpcoes(DoaAbrir *o, AudioExtFaixa *h, char *langs, size_t nl) 
   o->doador = audioext_url(); o->doador_cab = audioext_cabecalhos(); o->doador_nome = audioext_nome();
   o->doador_lingua = langs; o->doador_padrao = 1; o->doador_ms = audioext_offset_ms();
   o->doador_faixa = audioext_faixa() >= 0 ? audioext_faixa() + 1 : 0;
+  o->doador_ppm = audioext_velocidade();
+  o->seguir = ajustes_audio_externo_seguir();
   if (audioext_faixa_dica(h)) {
     o->dica_lingua = h->idioma; o->dica_codec = h->codec; o->dica_titulo = h->titulo; o->dica_canais = h->canais;
   }
@@ -1435,7 +1438,28 @@ static void doadorBombear(void) {
       audioext_diferenca(corte, vel);
       if (ppm && !audioext_velocidade()) audioext_velocidade_auto(ppm);
     }
+    // Settings: match by itself when the other version starts.
+    if (!dv.autoFeito && ajustes_audio_externo_auto()) { dv.autoFeito = 1; doa_dopasuj(1); }
   }
+  // The automatic match's outcome, and the follow's corrections (already
+  // applied by the server: the live apply below must not seek for them).
+  { DoaDopasuj r;
+    int au = 0, mr = doa_dopasuj_resultado(&r, &au), ms = 0, ev;
+    if (mr) {
+      AudioExtDopasuj a;
+      int c;
+      memset(&a, 0, sizeof a);
+      a.ms = r.ms; a.ppm = r.ppm; a.como = r.como; a.dica_ms = r.dica_ms; a.pesado = r.pesado; a.nkand = r.ncand; a.automatico = au;
+      for (c = 0; c < r.ncand && c < 3; c++) { a.kand_ms[c] = r.cand_ms[c]; a.kand_pct[c] = r.cand_pct[c]; }
+      printf("[doador] match result %d: offset %d ms speed %d ppm how %d hint %d ms heavy %d%s\n", mr, r.ms, r.ppm, r.como,
+             r.dica_ms, r.pesado, au ? " (by itself)" : "");
+      fflush(stdout);
+      audioext_dopasuj_resultado(mr > 0, &a);
+    }
+    if ((ev = doa_seguir_evento(&ms)) != 0) {
+      audioext_seguir_evento(ev, ms);
+      if (ev == 4) { dv.gerVista = audioext_offset_geracao(); dv.mudouEm = 0; }
+    } }
   // Playing the file's own track (the donor's failed, or picked in the TV's
   // menu): not loading any more.
   if (cv.jaTocou && audioext_carregando() && doa_audio() >= 0 && doa_audio() < DOA_DOADOR(0) && doa_estado(NULL, 0) != 0)
@@ -1935,6 +1959,12 @@ void video_bombear(void) {
   { unsigned g = audioext_pedido_geracao();
     if (g != extPedidoVisto) { extPedidoVisto = g; extReabrirPend = 1; } }
   if (extReabrirPend) extReabrir();
+  // "Match automatically" (audio menu): while the donor's track plays.
+  if (audioext_dopasuj_pedido_consumir()) {
+    if (dv.ativo && doa_audio() >= DOA_DOADOR(0)) doa_dopasuj(0);
+    else audioext_dopasuj_resultado(0, NULL);
+  }
+  if (!dv.ativo && audioext_dopasuj_ativo()) audioext_dopasuj_resultado(0, NULL);
   doadorBombear();
   reabrindoVigiar();
   escolhasPendentes();

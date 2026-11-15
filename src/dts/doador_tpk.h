@@ -52,6 +52,13 @@ typedef struct {
   int doador_padrao;          /* 1: start on the donor's track; 0: on `audio` */
   int doador_ms;              /* the donor's offset, ms, positive = later */
   int duas_conexoes;          /* test: both audio sources keep their connections */
+  /* The donor's speed against the file, ppm (0 the same; a PAL version
+   * +42708): its audio is played slower or faster to match (pitch follows,
+   * as a PAL slowdown) and so always converted (AC3 / AAC), never copied.
+   * 0 with frame rates that name a known film/TV ratio and lengths that agree
+   * within 1 %: that speed by itself (doa_diferenca's ppm says it). */
+  int doador_ppm;
+  int seguir;                 /* another cut: follow it through the film after a find (doa_seguir_evento) */
 } DoaAbrir;
 /* New session (replaces any previous one): writes the URL the TV player opens.
  * The sources are read in a thread; the player's requests wait for it. 0 =
@@ -95,4 +102,23 @@ int  doa_diferenca(int *corte, int *velocidade, int *ppm);
  * debrid's placeholder clip (under two minutes). */
 typedef struct { int si, canais; char codec[24], lingua[16], titulo[64]; } DoaSonda;
 int  doa_sondar(const char *url, const char *cab, DoaSonda *out, int max);
+/* MATCH AUTOMATICALLY (as the webOS engine, dts_match.inc): ~40 s of the
+ * file's audio (taken from what the picture's reader downloads anyway, the
+ * converter's tap) and of the donor's playing track (what its segments read)
+ * become band envelopes; the offset is where their onsets correlate best,
+ * first near the current offset, then (reading the donor on its own) where
+ * the lengths suggest, +-60 s and +-5 min. Only while the donor's track
+ * plays. Result: ms the donor offset (doa_desloc's), ppm its speed, como 1
+ * near / 2 lengths / 3 +-60 s / 4 +-5 min, dica_ms the lengths' hint and
+ * pesado a wide search skipped for its download (not found). */
+typedef struct { int ms, ppm, como, dica_ms, pesado, ncand, cand_ms[3], cand_pct[3]; } DoaDopasuj;
+void doa_dopasuj(int automatico);
+/* 0 nothing new, 1 found, -1 not found (once per request). */
+int  doa_dopasuj_resultado(DoaDopasuj *out, int *automatico);
+int  doa_dopasuj_ativo(void);
+/* FOLLOWING ANOTHER CUT (DoaAbrir.seguir, lengths over 10 s apart): after a
+ * find, the same near search every 2 minutes of playback; a shift over
+ * 250 ms is applied by itself (4, the new offset in ms), two misses in a row
+ * say it is lost (3, once). 0 nothing new. */
+int  doa_seguir_evento(int *ms);
 #endif
