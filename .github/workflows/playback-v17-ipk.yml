@@ -226,6 +226,7 @@ jobs:
           /tmp/seek-view-test
           SANITIZE=1 bash tests/video_audio_mkv.sh
           cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -Isrc tests/mkv_dts.c -o /tmp/mkv_dts && /tmp/mkv_dts
+          bash tests/lg_missing_subtitles.sh
           bash tests/dvaudio.sh
           bash tests/dvaudio_lg.sh
           bash tests/dts_pipeline.sh
