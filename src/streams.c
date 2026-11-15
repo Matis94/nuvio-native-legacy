@@ -912,13 +912,15 @@ static int cabeNaAltura(const Stream *s) {
   return !teto || !s->altura || s->altura <= teto;
 }
 
-#ifdef NV_VIDAA
-// TABELA DE REGRAS DA VIDAA (Hisense) -----------------------------------------
+// 1 when the list on hand has a source from add-on `k` (audioextaddons.c).
 int stream_lista_tem_addon(const char *k) {
   if (!k || !*k) return 0;
   for (int i = 0; i < n; i++) if (!strcmp(lista[i].addonChave, k)) return 1;
   return 0;
 }
+
+#ifdef NV_VIDAA
+// TABELA DE REGRAS DA VIDAA (Hisense) -----------------------------------------
 
 //
 // Fonte: medicoes de TERCEIROS contra o navegador dela (NoobyGains /
@@ -4097,7 +4099,7 @@ void stream_audioext_entrada(const Stream *s, AudioExtEntrada *e) {
     if (cod && faixaIdiomaInformado(raw, len) && strcasecmp(cod, "mul")) {
       int dup = 0;
       for (int j = 0; j < e->nIdiomas; j++) if (!strcasecmp(e->idiomas[j], cod)) dup = 1;
-      if (!dup) snprintf(e->idiomas[e->nIdiomas++], sizeof e->idiomas[0], "%s", cod);
+      if (!dup) snprintf(e->idiomas[e->nIdiomas++], sizeof e->idiomas[0], "%.7s", cod);
     }
     p = f ? f + 1 : fim;
   }
@@ -5227,7 +5229,7 @@ static void fmMontarFaixas(void) {
   for (int k = 0; k < fmSondaN && k < AUDIOEXT_FAIXAS_MAX; k++) {
     const AudioExtFaixa *f = &fmFaixas[k];
     const char *lg = f->idioma[0] ? i18n(ling_nome(f->idioma)) : i18n("Faixa");
-    char ch[8] = "";
+    char ch[16] = "";
     if (f->canais == 8) snprintf(ch, sizeof ch, " 7.1");
     else if (f->canais == 6) snprintf(ch, sizeof ch, " 5.1");
     else if (f->canais > 0) snprintf(ch, sizeof ch, " %d.0", f->canais);

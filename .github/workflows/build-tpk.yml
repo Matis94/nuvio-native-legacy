@@ -45,6 +45,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Audio from another source: the app state, the version list, the
+      # add-on filter and the automatic match's pure part (seconds, no FFmpeg).
+      - name: Unit tests (audio from another source)
+        run: bash tests/audioext.sh
+
       # tools/tpk.sh compiles libnuvio.so inside a linux/arm/v5 container.
       - name: Enable ARM emulation for Docker
         uses: docker/setup-qemu-action@v3

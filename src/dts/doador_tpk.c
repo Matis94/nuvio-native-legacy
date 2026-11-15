@@ -31,6 +31,7 @@ int  doa_sondar(const char *u, const char *c, DoaSonda *o, int m) { (void)u; (vo
 void doa_dopasuj(int a) { (void)a; }
 int  doa_dopasuj_resultado(DoaDopasuj *o, int *a) { (void)o; (void)a; return 0; }
 int  doa_dopasuj_ativo(void) { return 0; }
+int  doa_doador_saude(int *l) { if (l) *l = 0; return 0; }
 int  doa_seguir_evento(int *ms) { (void)ms; return 0; }
 #else
 
@@ -253,6 +254,7 @@ typedef struct Sessao {
   DoaDopasuj mRes;
   // following another cut
   int seguir, segAtivo, segFalhas, segPerdido, segEvento, segMs;
+  int dFalhas, dSemResposta, dLento, dLentoDito;   // the donor's segments: failures in a row, slow ones
   double segProx;                      // the file's time of the next look (s)
   int doadorPadrao;                    // start on the donor's track (else on `audio`)
   int doadorMs;                        // the donor's offset the app set (ms, positive = later)
@@ -1408,7 +1410,20 @@ static int gerarAudio(Sessao *s, int fi, int seg, Resp *r, char *err, size_t en,
     snprintf(err, en, "%s after %.0f ms", ab == 1 ? "the player hung up" : "the player asked for another segment", tl - t0);
     return -2;
   }
-  if (rr < 0) { muxFechar(&m); s->gOk = 0; return -1; }
+  if (rr < 0) {
+    muxFechar(&m); s->gOk = 0;
+    // The donor stopped answering: three of its segments failed in a row.
+    if (f->fonte == 1 && ++s->dFalhas >= 3 && !s->dSemResposta) {
+      s->dSemResposta = 1;
+      printf("[doador] the donor does not respond (3 segments failed in a row)\n");
+    }
+    return -1;
+  }
+  if (f->fonte == 1) {
+    s->dFalhas = 0;
+    // Slower than the picture: a 2 s segment over 10 s, twice.
+    if (tl - t0 > 10000.0 && ++s->dLento == 2) printf("[doador] the donor downloads too slowly (two segments over 10 s)\n");
+  }
   r->b = muxFim(&m, mp4, mp4, &r->n);
   if (!r->b) { snprintf(err, en, "out of memory"); return -1; }
   snprintf(r->tipo, sizeof r->tipo, mp4 ? "audio/mp4" : "video/mp2t");
@@ -1889,6 +1904,19 @@ int doa_dopasuj_resultado(DoaDopasuj *out, int *automatico) {
       if (automatico) *automatico = s->mAuto;
       s->mEstado = 0;
     }
+    pthread_mutex_unlock(&s->m);
+  }
+  soltar(s);
+  return v;
+}
+int doa_doador_saude(int *lento) {
+  Sessao *s = pegar();
+  int v = 0;
+  if (lento) *lento = 0;
+  if (s) {
+    pthread_mutex_lock(&s->m);
+    v = s->dSemResposta == 1; if (v) s->dSemResposta = 2;
+    if (lento && s->dLento >= 2 && !s->dLentoDito) { *lento = 1; s->dLentoDito = 1; }
     pthread_mutex_unlock(&s->m);
   }
   soltar(s);

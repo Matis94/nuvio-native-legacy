@@ -85,7 +85,6 @@ static void exMontarLinhas(int focIdx) {
 static int exFocoIndice(void) { const AudioExtCand *c = exCandDaLinha(exFoco); return c ? c->indice : -1; }
 static void exReconstruir(void) { exMontarLinhas(exFocoIndice()); }
 static int exPagAtiva(void) { return exPag != EXP_NADA; }
-static float exAreaMax(void) { return IL_VIS * (IL_LN_H + IL_LN_VAO) - IL_LN_VAO; }
 static void exAjustar(void) {
   if (exRol > exFoco) exRol = exFoco;
   if (exFoco - exRol >= IL_VIS) exRol = exFoco - IL_VIS + 1;
@@ -120,7 +119,7 @@ static void exMontarFaixas(void) {
     /* No language in the file ("und"): the version's own from the list. */
     const char *li = !ling_tem_nome(f->idioma) && ling_tem_nome(exFxCand.idioma) ? exFxCand.idioma : f->idioma;
     const char *lg = li[0] ? i18n(ling_nome(li)) : i18n("Faixa"), *cd = f->codec;
-    char ch[8] = "";
+    char ch[16] = "";
     for (size_t j = 0; j < sizeof m / sizeof *m; j++) if (!strcmp(f->codec, m[j][0])) cd = m[j][1];
     if (f->canais == 8) snprintf(ch, sizeof ch, " 7.1");
     else if (f->canais == 6) snprintf(ch, sizeof ch, " 5.1");

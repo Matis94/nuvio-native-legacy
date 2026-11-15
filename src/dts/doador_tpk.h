@@ -121,4 +121,9 @@ int  doa_dopasuj_ativo(void);
  * 250 ms is applied by itself (4, the new offset in ms), two misses in a row
  * say it is lost (3, once). 0 nothing new. */
 int  doa_seguir_evento(int *ms);
+/* The donor's health, each said once: 1 it stopped answering (three of its
+ * segments failed in a row: the app goes back to the file's own audio);
+ * *lento = 1 it downloads slower than the picture plays (two 2 s segments
+ * that took over 10 s). */
+int  doa_doador_saude(int *lento);
 #endif

@@ -1456,6 +1456,13 @@ static void doadorBombear(void) {
       fflush(stdout);
       audioext_dopasuj_resultado(mr > 0, &a);
     }
+    { int lento = 0;
+      if (doa_doador_saude(&lento) && !extReabrirPend) {
+        printf("[doador] the other version does not respond: back to this file's own audio\n"); fflush(stdout);
+        audioext_lento_marcar(3);
+        audioext_sem_resposta();
+      } else if (lento) audioext_lento_marcar(2);
+    }
     if ((ev = doa_seguir_evento(&ms)) != 0) {
       audioext_seguir_evento(ev, ms);
       if (ev == 4) { dv.gerVista = audioext_offset_geracao(); dv.mudouEm = 0; }
