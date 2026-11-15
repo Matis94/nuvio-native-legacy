@@ -87,6 +87,19 @@ int audioext_lista(const AudioExtEntrada *e, int n, const AudioExtOpcoes *o, Aud
     it[m].ordemAddon = s->ordemAddon;
     m++;
   }
+  // One spelling per language among the other languages, the first met: the
+  // sort and the bar's tabs go by it (owner's log 15/11: "de" and "ger"
+  // sorted apart, two German tabs with 5 and 1 versions).
+  { char rep[64][sizeof it[0].c.idioma];
+    int nr = 0;
+    for (int i = 0; i < m; i++) {
+      int r = 0;
+      if (it[i].c.grupo != AEXT_G_OUTRA) continue;
+      while (r < nr && strcasecmp(it[i].c.idioma, rep[r]) && !casa(it[i].c.idioma, rep[r]) && !casa(rep[r], it[i].c.idioma)) r++;
+      if (r < nr) snprintf(it[i].c.idioma, sizeof it[i].c.idioma, "%s", rep[r]);
+      else if (nr < 64) snprintf(rep[nr++], sizeof rep[0], "%s", it[i].c.idioma);
+    }
+  }
   ordemDoAddon = o->ordemAddon;
   qsort(it, (size_t)m, sizeof *it, cmpItem);
   ordemDoAddon = 0;

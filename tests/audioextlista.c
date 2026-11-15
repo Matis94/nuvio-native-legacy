@@ -19,7 +19,8 @@ static AudioExtEntrada fonte(const char *langs, int codec, int canais, int cache
 static int casa(const char *code, const char *pref) {
   if (!strcasecmp(code, pref)) return 1;
   return (!strcasecmp(pref, "pl") && !strcasecmp(code, "pol")) ||
-         (!strcasecmp(pref, "en") && !strcasecmp(code, "eng"));
+         (!strcasecmp(pref, "en") && !strcasecmp(code, "eng")) ||
+         (!strcasecmp(pref, "de") && !strcasecmp(code, "ger"));
 }
 
 static AudioExtOpcoes opc(const char *p1, const char *p2) {
@@ -147,6 +148,20 @@ int main(void) {
     for (int i = 1; i < k; i++) if (c[i].grupo == AEXT_G_OUTRA && c[i - 1].grupo == AEXT_G_OUTRA)
       assert(strcmp(c[i - 1].idioma, c[i].idioma) <= 0); }
   assert(audioext_lista(e, n, &o, c, 20) == 20);
+
+  // One language written two ways ("de" and "ger") with another between them
+  // alphabetically: one run, one tab on the bar (owner's log 15/11).
+  n = 0;
+  e[n++] = fonte("de", AEXT_DDP, 6, 1, 4);
+  e[n++] = fonte("es", AEXT_DDP, 6, 1, 4);
+  e[n++] = fonte("ger", AEXT_DDP, 6, 1, 3);
+  e[n++] = fonte("de", AEXT_AAC, 2, 1, 1);
+  o = opc("pl", "en");
+  k = audioext_lista(e, n, &o, c, 64);
+  assert(k == 4);
+  { int runs = 1;
+    for (int i = 1; i < k; i++) runs += strcasecmp(c[i - 1].idioma, c[i].idioma) != 0;
+    assert(runs == 2 && !strcmp(c[0].idioma, "de") && !strcmp(c[2].idioma, "de") && !strcmp(c[3].idioma, "es")); }
 
   assert(audioext_converte(AEXT_DTS) && audioext_converte(AEXT_TRUEHD) && !audioext_converte(AEXT_DDP));
   char t[32];
