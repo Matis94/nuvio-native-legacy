@@ -42,7 +42,13 @@ typedef struct {
   int audio;                  /* the file's audio track to start on (its ordinal) */
   int flac;                   /* 1: convert FLAC (else copied into fMP4) */
   const char *doador, *doador_cab, *doador_nome;   /* NULL/"": no donor; nome: the source's label (no URL) */
-  const char *doador_lingua;  /* the donor track to start on: this language first ("": its first) */
+  const char *doador_lingua;  /* the donor track to start on: these languages in order, comma-separated ("": its first) */
+  int doador_faixa;           /* the donor's audio stream picked by hand (container stream index + 1; 0 none): first */
+  /* Series memory: the donor track picked in the last episode. The donor's
+   * track in that language most like it (title, codec, channels) wins over
+   * the language list. NULL/"" none. */
+  const char *dica_lingua, *dica_codec, *dica_titulo;
+  int dica_canais;
   int doador_padrao;          /* 1: start on the donor's track; 0: on `audio` */
   int doador_ms;              /* the donor's offset, ms, positive = later */
   int duas_conexoes;          /* test: both audio sources keep their connections */
@@ -57,7 +63,9 @@ int  doa_pronto(void);
 /* The session failed to prepare (the playing file did not open): 1 with the reason (no URL). */
 int  doa_falhou(char *motivo, size_t n);
 /* The renditions in the master's order (= the TV's audio list): count, up to max. */
-typedef struct { int chave, fonte, ord, canais; char lingua[16], nome[96], codec[24]; } DoaRendicao;
+typedef struct { int chave, fonte, ord, si, canais; char lingua[16], nome[96], codec[24], codecFonte[24]; } DoaRendicao;
+/* si: the track's stream index in its container; codecFonte: its codec there
+ * (codec is what the rendition carries: "ac3" for a converted DTS). */
 int  doa_rendicoes(DoaRendicao *out, int max);
 /* The rendition of a key (index in the master's list), -1 not offered. */
 int  doa_rendicao_de(int chave);
@@ -77,4 +85,14 @@ void doa_log(void);
 /* Language comparison for the donor track to start on (the app passes
  * ling_casa: "pl" matches "pol"); NULL or unset compares case-insensitively. */
 void doa_definir_casa(int (*casa)(const char *codigo, const char *pref));
+/* The donor against the file, once both opened (1; 0 not yet / no donor):
+ * corte = the donor's length minus the file's (s, another cut when large),
+ * velocidade = 1 when their frame rates differ (a sped-up version), ppm =
+ * the donor's speed against the file's from the frame rates (0 unknown). */
+int  doa_diferenca(int *corte, int *velocidade, int *ppm);
+/* The audio tracks of a file (the audio menu's list for another version):
+ * blocking, opens its header. Returns the count, -1 it did not open, -3 the
+ * debrid's placeholder clip (under two minutes). */
+typedef struct { int si, canais; char codec[24], lingua[16], titulo[64]; } DoaSonda;
+int  doa_sondar(const char *url, const char *cab, DoaSonda *out, int max);
 #endif

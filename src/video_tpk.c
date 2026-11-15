@@ -244,6 +244,7 @@ static Uint32 resgateAte;
 int video_faixa_dts(const VideoFaixa *f);
 static int convIniciar(int track, double pos, const char *motivo);
 static int doadorPossivel(void);
+static int doadorFonteServe(void);
 static int doadorIniciar(double pos, const char *motivo);
 // AUDIO FROM ANOTHER SOURCE (audioext.h, doador_tpk.h): the converter in
 // video-only mode is the picture, the donor server serves the master with the
@@ -256,14 +257,22 @@ static struct {
   unsigned gerVista;     // audioext_offset_geracao applied
   Uint32 mudouEm;        // last CH+/CH- press not applied yet (0 none)
   int chave[MAX_FAIXAS]; // menu entry -> rendition key (DOA_DOADOR(k) or the file's ordinal)
+  DoaRendicao r[MAX_FAIXAS];   // the renditions behind the menu entries
+  int nR;
+  int difFeita;          // audioext_diferenca said for this session
+  char conv[256];        // the converter's URL (kept when only the donor changes)
 } dv;
+// The audio menu's picks (audioext_escolher / _original / _escolher_faixa, a
+// backup copy, the placeholder retry): each bumps audioext_pedido_geracao.
+static unsigned extPedidoVisto;
+static int extReabrirPend;
 // Every close of the converter also closes the donor server's session.
 static void convFechar(void) {
   dts_tpk_fechar();
   if (dv.ativo) {
     doa_fechar();
     dv.ativo = 0;
-    audioext_tocando_definir(0);
+    audioext_tocando_definir(0); audioext_carregando_definir(0);
   }
 }
 static void convDesistir(const char *motivo);
@@ -558,14 +567,29 @@ static void legendaVigiarSilencio(Uint32 agora) {
   fflush(stdout);
 }
 
+// The audio menu's track list for another version (hold OK): the donor
+// server reads the version's header (blocking; audioext runs it in a thread).
+static int extSondaFaixas(const char *url, const char *cab, AudioExtFaixa *out, int max) {
+  DoaSonda t[AUDIOEXT_FAIXAS_MAX];
+  int n = doa_sondar(url, cab, t, max < AUDIOEXT_FAIXAS_MAX ? max : AUDIOEXT_FAIXAS_MAX), i;
+  for (i = 0; i < n; i++) {
+    memset(&out[i], 0, sizeof out[i]);
+    out[i].stream = t[i].si; out[i].canais = t[i].canais;
+    snprintf(out[i].codec, sizeof out[i].codec, "%s", t[i].codec);
+    snprintf(out[i].idioma, sizeof out[i].idioma, "%s", t[i].lingua);
+    snprintf(out[i].titulo, sizeof out[i].titulo, "%s", t[i].titulo);
+  }
+  return n;
+}
 int  video_iniciar(void) {
   if (!travaLeg) travaLeg = SDL_CreateMutex();
+  if (doa_disponivel()) audioext_definir_sonda(extSondaFaixas);
   // #269: legenda de texto simples do MKV pelo overlay (ver faixas.c).
   mkvass_aceitar_texto(1);
   mkvass_aceitar_imagem(1);
   return hAbrir != NULL;
 }
-int  video_iniciar_auto(void) { return hAbrir != NULL; }
+int  video_iniciar_auto(void) { if (doa_disponivel()) audioext_definir_sonda(extSondaFaixas); return hAbrir != NULL; }
 int  video_registro_negado(void) { return 0; }
 
 // LINK DO CDN (cdnlink.h). O player recebe o endereco final no CDN em vez do
@@ -913,7 +937,9 @@ int video_tocar(const char *u) {
   // Audio from another source marked for this title: the picture of this one
   // through the converter (video only), the audio from the donor server.
   memset(&dv, 0, sizeof dv);
-  audioext_tocando_definir(0);
+  audioext_tocando_definir(0); audioext_carregando_definir(0);
+  audioext_inicio_reproducao(urlAtual);
+  extPedidoVisto = audioext_pedido_geracao(); extReabrirPend = 0;
   if (doadorPossivel() && doadorIniciar(0.0, "a donor is marked for this title")) return 1;
   // CABECALHO JA LIDO (pre-busca do mkvass, sem rede): um MKV so com DTS/TrueHD
   // ja abre convertido, sem o original mudo antes.
@@ -1252,9 +1278,10 @@ static int montarListaDoador(VideoFaixa *a, int *sel) {
     snprintf(c, sizeof c, "%s", r[i].canais == 6 ? "5.1" : r[i].canais == 8 ? "7.1" : r[i].canais == 2 ? "2.0" : r[i].canais == 1 ? "1.0" : "");
     snprintf(f->rotulo, sizeof f->rotulo, "%s · %s%s%s%s%.40s", r[i].lingua[0] ? i18n(ling_nome(r[i].lingua)) : (r[i].nome[0] ? r[i].nome : i18n("Áudio")),
              cod, c[0] ? " " : "", c, r[i].fonte ? " · " : "", r[i].fonte ? audioext_nome() : "");
-    dv.chave[i] = r[i].chave;
+    dv.chave[i] = r[i].chave; dv.r[i] = r[i];
     if (r[i].chave == atual) *sel = i;
   }
+  dv.nR = n;
   if (n > 0) {
     printf("[doador] menu: %d rendition(s) (the TV listed %d%s); playing %s\n", n, dv.nTv,
            dv.nTv == n ? ", a choice switches in place" : dv.nTv ? ", NOT 1:1: a choice reopens" : "", a[*sel].rotulo);
@@ -1267,37 +1294,108 @@ static int montarListaDoador(VideoFaixa *a, int *sel) {
 // another source of it: its picture, the donor's audio.
 static int doadorPossivel(void) {
   if (!reconPermitida || emTrailer || parado || !urlAtual[0] || !audioext_pedido(urlAtual)) return 0;
+  return doadorFonteServe();
+}
+static int doadorFonteServe(void) {
   if (strncmp(urlAtual, "http://", 7) && strncmp(urlAtual, "https://", 8)) return 0;
   if (strstr(urlAtual, ".m3u8") || proxyts_e_url(urlAtual) || dts_tpk_e_url(urlAtual)) return 0;
   return doa_disponivel() && dts_tpk_disponivel();
 }
 static int convAbrirSessao(int ordinal, int modo, double pos, char *url, size_t n);
 static void convTrocar(int track, int modo, double pos, const char *url);
-static int doadorIniciar(double pos, const char *motivo) {
-  char conv[256], url[256];
+// The donor's opening options from the pick: its track picked by hand, the
+// series memory's track, the languages (the one picked for this title, the
+// one remembered by hand, the account's first and second audio languages).
+static void doadorOpcoes(DoaAbrir *o, AudioExtFaixa *h, char *langs, size_t nl) {
+  const AudioLembrada *lem = audioesc_tem_lembrada() ? audioesc_lembrada() : NULL;
+  snprintf(langs, nl, "%s,%s,%s,%s", audioext_idioma(), lem && lem->idioma[0] ? lem->idioma : "", ling_audio(), ling_audio2());
+  o->doador = audioext_url(); o->doador_cab = audioext_cabecalhos(); o->doador_nome = audioext_nome();
+  o->doador_lingua = langs; o->doador_padrao = 1; o->doador_ms = audioext_offset_ms();
+  o->doador_faixa = audioext_faixa() >= 0 ? audioext_faixa() + 1 : 0;
+  if (audioext_faixa_dica(h)) {
+    o->dica_lingua = h->idioma; o->dica_codec = h->codec; o->dica_titulo = h->titulo; o->dica_canais = h->canais;
+  }
+}
+// Opens the donor server's session on `conv` (the converter in video-only
+// mode, already open) and switches the player to it at `pos`.
+static int doadorSessao(const char *conv, double pos, const char *motivo) {
+  char url[256], langs[64];
+  AudioExtFaixa h;
   DoaAbrir o;
+  memset(&o, 0, sizeof o); memset(&h, 0, sizeof h);
+  o.video = conv; o.orig = urlAtual; o.cab = cabecalhos; o.audio = 0;
+  doadorOpcoes(&o, &h, langs, sizeof langs);
+  doa_definir_casa(ling_casa);
+  if (!doa_abrir(&o, url, sizeof url)) return 0;
+  memset(&dv, 0, sizeof dv);
+  snprintf(dv.conv, sizeof dv.conv, "%s", conv);
+  dv.ativo = 1; dv.gerVista = audioext_offset_geracao();
+  audioext_tocando_definir(0);
+  audioext_carregando_definir(1);
+  printf("[doador] this source's picture with the audio of \"%.80s\" (offset %+d ms, track %d%s, languages %s) from %.1f s; why: %s\n",
+         audioext_nome(), audioext_offset_ms(), audioext_faixa(), o.dica_lingua ? ", series hint" : "", langs, pos, motivo);
+  fflush(stdout);
+  convTrocar(0, DTSTPK_HLS, pos, url);
+  return 1;
+}
+static int doadorIniciar(double pos, const char *motivo) {
+  char conv[256];
   if (!convAbrirSessao(DTS_REMUX_NO_AUDIO, DTSTPK_HLS, pos, conv, sizeof conv)) {
     audioext_falhou(i18n("the converter is not available"));
     return 0;
   }
-  memset(&o, 0, sizeof o);
-  o.video = conv; o.orig = urlAtual; o.cab = cabecalhos; o.audio = 0;
-  o.doador = audioext_url(); o.doador_cab = audioext_cabecalhos(); o.doador_nome = audioext_nome();
-  o.doador_lingua = ling_audio(); o.doador_padrao = 1; o.doador_ms = audioext_offset_ms();
-  doa_definir_casa(ling_casa);
-  if (!doa_abrir(&o, url, sizeof url)) {
+  if (!doadorSessao(conv, pos, motivo)) {
     dts_tpk_fechar(); cv.desistiu = 1;
     audioext_falhou(i18n("the audio server did not start"));
     return 0;
   }
-  memset(&dv, 0, sizeof dv);
-  dv.ativo = 1; dv.gerVista = audioext_offset_geracao();
-  audioext_tocando_definir(0);
-  printf("[doador] this source's picture with the audio of \"%.80s\" (offset %+d ms) from %.1f s; why: %s\n", audioext_nome(),
-         audioext_offset_ms(), pos, motivo);
-  fflush(stdout);
-  convTrocar(0, DTSTPK_HLS, pos, url);
   return 1;
+}
+// A pick in the audio menu (another version, another track of it, a backup
+// copy, the placeholder's retry, or this file's own audio again): applied
+// where the picture is. Another donor while one plays: only the donor
+// server's session is new, the converter (the picture) stays open.
+static void extReabrir(void) {
+  int quer;
+  double p;
+  if (!urlAtual[0] || parado || emTrailer || terminou) { extReabrirPend = 0; return; }
+  if (!dv.ativo && !pronto) return;   // the TV player is still loading this source
+  if (cv.reabrindo) return;           // a reopen in flight: next tick
+  extReabrirPend = 0;
+  quer = audioext_pedido(urlAtual) && reconPermitida && doadorFonteServe();
+  p = video_pos();
+  if (dv.ativo && quer) {
+    char conv[256];
+    snprintf(conv, sizeof conv, "%s", dv.conv);
+    printf("[doador] another pick at %.1f s: new donor session, the converter stays\n", p);
+    fflush(stdout);
+    if (doadorSessao(conv, p, "picked in the audio menu")) return;
+    audioext_falhou(i18n("the audio server did not start"));
+    convDesistir("the audio server did not start");
+    return;
+  }
+  if (dv.ativo) {
+    // This file's own audio: the TV player again (a DTS file converts as
+    // before, the converter's own logic decides).
+    printf("[doador] back to this file's own audio at %.1f s\n", p);
+    fflush(stdout);
+    convFechar();
+    cv.ativo = 0; cv.prog = 0; cv.deslocOk = 1;
+    cv.buscarMs = p > 1.0 ? (int)(p * 1000.0) : -1;
+    convReabrir(p, i18n("volta ao audio da TV"));
+    abrirSessao();
+    return;
+  }
+  if (!quer) return;
+  if (cv.ativo || cv.sondando) {
+    // The file's DTS was being converted: the donor session replaces it (the
+    // file's own tracks are offered there too).
+    printf("[doador] the DTS conversion gives way to the donor at %.1f s\n", p);
+    fflush(stdout);
+    convFechar();
+    cv.ativo = cv.sondando = 0;
+  }
+  doadorIniciar(p, "picked in the audio menu");
 }
 static void convDesistir(const char *motivo);
 // Each tick while the donor plays: the menu, "it plays" for the player screen,
@@ -1317,6 +1415,10 @@ static void doadorBombear(void) {
     char t[220];
     dv.avisos = 1;
     snprintf(t, sizeof t, i18n("the other source did not open (%s): this source's own audio"), m);
+    printf("[doador] the donor did not open (%s): %s\n", m,
+           audioext_motivo_placeholder(m) ? "the debrid's placeholder clip, tried again" : "a backup copy, or this file's own audio");
+    fflush(stdout);
+    audioext_carregando_definir(0);
     audioext_falhou(t);
   }
   if (!dv.menuFeito && faixasLidas && doa_pronto()) { dv.menuFeito = 1; montarListaConvertida(); }
@@ -1324,7 +1426,20 @@ static void doadorBombear(void) {
   // memory, which source holds a connection, the last reconnection.
   { static Uint32 logEm;
     if ((int)(agora - logEm) >= 10000) { logEm = agora; doa_log(); } }
-  if (cv.jaTocou && !audioext_tocando()) audioext_tocando_definir(1);
+  if (cv.jaTocou && !audioext_tocando() && doa_audio() >= DOA_DOADOR(0)) {
+    int corte = 0, vel = 0, ppm = 0;
+    audioext_tocando_definir(1); audioext_carregando_definir(0);
+    // Another cut or another speed: said once, when it plays.
+    if (!dv.difFeita && doa_diferenca(&corte, &vel, &ppm)) {
+      dv.difFeita = 1;
+      audioext_diferenca(corte, vel);
+      if (ppm && !audioext_velocidade()) audioext_velocidade_auto(ppm);
+    }
+  }
+  // Playing the file's own track (the donor's failed, or picked in the TV's
+  // menu): not loading any more.
+  if (cv.jaTocou && audioext_carregando() && doa_audio() >= 0 && doa_audio() < DOA_DOADOR(0) && doa_estado(NULL, 0) != 0)
+    audioext_carregando_definir(0);
   { unsigned g = audioext_offset_geracao();
     if (g != dv.gerVista) { dv.gerVista = g; dv.mudouEm = agora ? agora : 1; } }
   if (dv.mudouEm && (int)(agora - dv.mudouEm) >= 700 && pronto) {
@@ -1817,6 +1932,9 @@ void video_bombear(void) {
   cdnBombear();
   mfBombear();
   convBombear();
+  { unsigned g = audioext_pedido_geracao();
+    if (g != extPedidoVisto) { extPedidoVisto = g; extReabrirPend = 1; } }
+  if (extReabrirPend) extReabrir();
   doadorBombear();
   reabrindoVigiar();
   escolhasPendentes();
@@ -2399,6 +2517,17 @@ void video_escolher_audio(int i) {
   if (dv.ativo && faixaAudio[i].stream_id < 0 && faixaAudio[i].numero == i) {
     if (i == audioAtual) return;
     doa_definir_audio(dv.chave[i]);
+    if (i < dv.nR && dv.r[i].fonte == 1) {
+      // The donor's track picked by hand: this title's, and the series'.
+      AudioExtFaixa f;
+      memset(&f, 0, sizeof f);
+      f.stream = dv.r[i].si; f.canais = dv.r[i].canais;
+      snprintf(f.codec, sizeof f.codec, "%s", dv.r[i].codecFonte);
+      snprintf(f.idioma, sizeof f.idioma, "%s", dv.r[i].lingua);
+      snprintf(f.titulo, sizeof f.titulo, "%.63s", dv.r[i].nome);
+      audioext_definir_faixa(f.stream);
+      audioext_lembrar_faixa_serie(&f);
+    }
     printf("[doador] audio: %s (key %d)%s\n", faixaAudio[i].rotulo, dv.chave[i],
            dv.nTv == nAudio ? ": the TV switches in place" : ": the TV's list is not the master's, reopening");
     fflush(stdout);

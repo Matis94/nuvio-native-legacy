@@ -26,6 +26,8 @@ int  doa_desloc_ms(void) { return 0; }
 int  doa_estado(char *m, size_t n) { if (m && n) m[0] = 0; return 0; }
 void doa_log(void) {}
 void doa_definir_casa(int (*casa)(const char *, const char *)) { (void)casa; }
+int  doa_diferenca(int *c, int *v, int *p) { (void)c; (void)v; (void)p; return 0; }
+int  doa_sondar(const char *u, const char *c, DoaSonda *o, int m) { (void)u; (void)c; (void)o; (void)m; return -1; }
 #else
 
 #include "dts_engine.h"
@@ -220,7 +222,10 @@ typedef struct Sessao {
   char *video;                         // the local converter's media playlist (absolute URL)
   Fonte fo[TBA_FONTES]; int nfo;
   int umaConexao;                      // one audio connection: the source not playing gives its connection back
-  char doadorLingua[16];               // the donor track to start on: this language first
+  char doadorLingua[64];               // the donor track to start on: these languages in order (comma-separated)
+  int doadorFaixa;                     // the donor stream picked by hand (+1; 0 none)
+  char dicaLingua[16], dicaCodec[24], dicaTitulo[96]; int dicaCanais;   // series memory's track
+  int difOk, difCorte, difVel, difPpm; // doa_diferenca
   int doadorPadrao;                    // start on the donor's track (else on `audio`)
   int doadorMs;                        // the donor's offset the app set (ms, positive = later)
   int doadorFeito;                     // its preparation ended (the watchdog stops); under m
@@ -428,17 +433,38 @@ static int prepFonte(Sessao *s, int k) {
 // The track the session starts on (the DEFAULT rendition): the donor's in the
 // asked language (else its first offered track) when the donor leads, else
 // the file's asked track, else its first offered one.
+static int casa(const char *a, const char *b) {
+  return a[0] && b[0] && (casaLingua ? casaLingua(a, b) : !strcasecmp(a, b));
+}
 static void escolherInicial(Sessao *s, int ordPedido) {
-  int i, k;
+  int i;
   s->audio = -1;
   if (s->doadorPadrao && s->nfo > 1 && !s->fo[1].falhou) {
-    for (k = 0; k < 2 && s->audio < 0; k++)
-      for (i = 0; i < s->nfx && s->audio < 0; i++) {
+    // 1. The track picked by hand for this title.
+    for (i = 0; i < s->nfx && s->audio < 0 && s->doadorFaixa > 0; i++)
+      if (s->fx[i].fonte == 1 && s->fx[i].modo != M_FORA && s->fx[i].si == s->doadorFaixa - 1) s->audio = i;
+    // 2. The series memory: in its language, the most like it.
+    if (s->audio < 0 && s->dicaLingua[0]) {
+      int melhor = -1;
+      for (i = 0; i < s->nfx; i++) {
         const Faixa *f = &s->fx[i];
-        if (f->fonte != 1 || f->modo == M_FORA) continue;
-        if (k == 1 || (s->doadorLingua[0] && f->lingua[0] &&
-                       (casaLingua ? casaLingua(f->lingua, s->doadorLingua) : !strcasecmp(f->lingua, s->doadorLingua)))) s->audio = i;
+        int p;
+        if (f->fonte != 1 || f->modo == M_FORA || !casa(f->lingua, s->dicaLingua)) continue;
+        p = 1 + (s->dicaTitulo[0] && !strcasecmp(f->nome, s->dicaTitulo) ? 8 : 0) +
+            (s->dicaCodec[0] && !strcmp(f->codec, s->dicaCodec) ? 4 : 0) + (s->dicaCanais && f->canais == s->dicaCanais ? 2 : 0);
+        if (p > melhor) { melhor = p; s->audio = i; }
       }
+    }
+    // 3. The languages in order, then its first offered track.
+    { const char *l = s->doadorLingua;
+      while (s->audio < 0 && *l) {
+        char um[16]; size_t k = strcspn(l, ",");
+        snprintf(um, sizeof um, "%.*s", (int)(k < sizeof um ? k : sizeof um - 1), l);
+        for (i = 0; i < s->nfx && s->audio < 0 && um[0]; i++)
+          if (s->fx[i].fonte == 1 && s->fx[i].modo != M_FORA && casa(s->fx[i].lingua, um)) s->audio = i;
+        l += k; if (*l == ',') l++;
+      } }
+    for (i = 0; i < s->nfx && s->audio < 0; i++) if (s->fx[i].fonte == 1 && s->fx[i].modo != M_FORA) s->audio = i;
   }
   for (i = 0; i < s->nfx && s->audio < 0; i++)
     if (s->fx[i].fonte == 0 && s->fx[i].chave == ordPedido && s->fx[i].modo != M_FORA) s->audio = i;
@@ -518,6 +544,52 @@ static void *vigiaDoador(void *u) {
   return NULL;
 }
 
+// The donor against the file (as the webOS engine, dts_engine.c): a debrid
+// file not ready yet answers with a short clip that plays normally. Under two
+// minutes for a picture of ten or more, or no audio and far shorter: the
+// placeholder clip (the app retries it). Under half the file: not this title.
+static double fpsDe(AVFormatContext *ic) {
+  int i;
+  for (i = 0; ic && i < (int)ic->nb_streams; i++) {
+    AVStream *st = ic->streams[i];
+    AVRational r;
+    if (st->codecpar->codec_type != AVMEDIA_TYPE_VIDEO || (st->disposition & AV_DISPOSITION_ATTACHED_PIC)) continue;
+    r = st->avg_frame_rate.num > 0 ? st->avg_frame_rate : st->r_frame_rate;
+    return r.num > 0 && r.den > 0 ? av_q2d(r) : 0;
+  }
+  return 0;
+}
+// Shorter than this (s) in the menu's track list: the placeholder clip. The
+// host test's fixtures are short, it lowers it.
+#ifndef DOA_CLIP_S
+#define DOA_CLIP_S 120
+#endif
+static int conferirDoador(Sessao *s) {
+  Fonte *a = &s->fo[0], *b = &s->fo[1];
+  int i, audio = 0;
+  double fa = fpsDe(a->ic), fb = fpsDe(b->ic);
+  for (i = 0; i < s->nfx; i++) audio += s->fx[i].fonte == 1;
+  if ((!audio && b->dur > 0 && b->dur < a->dur / 2) || (b->dur > 0 && b->dur < 120 && a->dur > 600)) {
+    snprintf(b->motivo, sizeof b->motivo, "%s", "External audio: this version is not ready on the debrid service yet (placeholder clip)");
+    b->falhou = 1; return 0;
+  }
+  if (!audio) { snprintf(b->motivo, sizeof b->motivo, "%s", "External audio: the other version has no audio track"); b->falhou = 1; return 0; }
+  if (b->dur > 0 && b->dur < a->dur / 2) {
+    snprintf(b->motivo, sizeof b->motivo, "External audio: the other version lasts %.0f s, this one %.0f s (not cached?)", b->dur, a->dur);
+    b->falhou = 1; return 0;
+  }
+  pthread_mutex_lock(&s->m);
+  s->difVel = fa > 0 && fb > 0 && fabs(fa - fb) / fa > 0.001;
+  s->difPpm = s->difVel ? (int)lround((fb / fa - 1.0) * 1e6) : 0;
+  // In the file's time: a sped-up version is not another cut.
+  s->difCorte = (int)lround(b->dur * (s->difVel ? fb / fa : 1.0) - a->dur);
+  s->difOk = 1;
+  pthread_mutex_unlock(&s->m);
+  printf("[doador] file fps %.3f %.1f s, donor fps %.3f %.1f s%s\n", fa, a->dur, fb, b->dur,
+         s->difVel ? ": frame rates differ, its audio would drift" : "");
+  return 1;
+}
+
 static void *preparar(void *u) {
   Sessao *s = u;
   double t0 = agoraMs();
@@ -535,6 +607,7 @@ static void *preparar(void *u) {
       if (s->doadorVencido) { ok = 0; s->fo[1].falhou = 1; snprintf(s->fo[1].motivo, sizeof s->fo[1].motivo, "donor: no answer in %d s", DOADOR_PRAZO_MS / 1000); }
       pthread_cond_broadcast(&s->c);
       pthread_mutex_unlock(&s->m);
+      if (ok) ok = conferirDoador(s);
       if (ok) {
         s->fo[1].desloc = s->fo[0].v0 - s->fo[1].v0 + s->fo[1].desloc;   // desloc held the offset (ms / 1000) until here
         printf("[doador] donor \"%s\": %.1f s against the file's %.1f s (%+.1f s), starts %.3f vs %.3f s; its time %+.3f s = the file's\n",
@@ -1188,6 +1261,11 @@ int doa_abrir(const DoaAbrir *o, char *out, size_t n) {
     snprintf(s->fo[1].nome, sizeof s->fo[1].nome, "%s", o->doador_nome ? o->doador_nome : "");
     s->fo[1].desloc = o->doador_ms / 1000.0; s->doadorMs = o->doador_ms;
     snprintf(s->doadorLingua, sizeof s->doadorLingua, "%s", o->doador_lingua ? o->doador_lingua : "");
+    s->doadorFaixa = o->doador_faixa > 0 ? o->doador_faixa : 0;
+    snprintf(s->dicaLingua, sizeof s->dicaLingua, "%s", o->dica_lingua ? o->dica_lingua : "");
+    snprintf(s->dicaCodec, sizeof s->dicaCodec, "%s", o->dica_codec ? o->dica_codec : "");
+    snprintf(s->dicaTitulo, sizeof s->dicaTitulo, "%s", o->dica_titulo ? o->dica_titulo : "");
+    s->dicaCanais = o->dica_canais;
     s->doadorPadrao = o->doador_padrao;
   }
   gerarToken(s->tok, 28);
@@ -1268,7 +1346,8 @@ int doa_rendicoes(DoaRendicao *out, int max) {
       if (out) {
         DoaRendicao *r = &out[k];
         memset(r, 0, sizeof *r);
-        r->chave = f->chave; r->fonte = f->fonte; r->ord = f->ord;
+        r->chave = f->chave; r->fonte = f->fonte; r->ord = f->ord; r->si = f->si;
+        snprintf(r->codecFonte, sizeof r->codecFonte, "%s", f->codec);
         r->canais = f->modo == M_AC3 ? (f->canais > 2 ? 6 : 2) : f->modo == M_AAC ? 2 : f->canais;
         snprintf(r->lingua, sizeof r->lingua, "%s", f->lingua);
         snprintf(r->nome, sizeof r->nome, "%s", f->nome);
@@ -1306,6 +1385,57 @@ int doa_estado(char *m, size_t n) {
   }
   soltar(s);
   return v;
+}
+int doa_diferenca(int *corte, int *velocidade, int *ppm) {
+  Sessao *s = pegar();
+  int v = 0;
+  if (s) {
+    pthread_mutex_lock(&s->m);
+    if (s->difOk && !s->fo[1].falhou) {
+      v = 1;
+      if (corte) *corte = s->difCorte;
+      if (velocidade) *velocidade = s->difVel;
+      if (ppm) *ppm = s->difPpm;
+    }
+    pthread_mutex_unlock(&s->m);
+  }
+  soltar(s);
+  return v;
+}
+int doa_sondar(const char *url, const char *cab, DoaSonda *out, int max) {
+  DtsEngine *e;
+  AVFormatContext *ic;
+  int i, n = 0;
+  if (!url || !*url || !out || max <= 0 || !(e = dts_engine_create())) return -1;
+  if (dts_engine_open_demux(e, url, cab ? cab : "") < 0) { dts_engine_destroy(e); return -1; }
+  ic = dts_engine_avformat(e);
+  if (ic->duration > 0 && ic->duration < (int64_t)DOA_CLIP_S * AV_TIME_BASE) {
+    printf("[doador] tracks: %.0f s file, the debrid placeholder clip\n", ic->duration / 1e6);
+    fflush(stdout);
+    dts_engine_destroy(e);
+    return -3;
+  }
+  for (i = 0; i < (int)ic->nb_streams && n < max; i++) {
+    AVStream *st = ic->streams[i];
+    AVDictionaryEntry *l, *t;
+    Faixa f;
+    if (st->codecpar->codec_type != AVMEDIA_TYPE_AUDIO) continue;
+    memset(&f, 0, sizeof f);
+    f.id = st->codecpar->codec_id; f.canais = st->codecpar->ch_layout.nb_channels;
+    if (modoDe(&f, 0) == M_FORA) continue;   // not offered by the server either
+    l = av_dict_get(st->metadata, "language", NULL, 0);
+    t = av_dict_get(st->metadata, "title", NULL, 0);
+    memset(&out[n], 0, sizeof out[n]);
+    out[n].si = i; out[n].canais = f.canais;
+    snprintf(out[n].codec, sizeof out[n].codec, "%s", avcodec_get_name(f.id));
+    snprintf(out[n].lingua, sizeof out[n].lingua, "%s", l && strcmp(l->value, "und") ? l->value : "");
+    snprintf(out[n].titulo, sizeof out[n].titulo, "%s", t ? t->value : "");
+    n++;
+  }
+  printf("[doador] tracks of another version: %d audio track(s) offered\n", n);
+  fflush(stdout);
+  dts_engine_destroy(e);
+  return n;
 }
 void doa_log(void) {
   Sessao *s = pegar();

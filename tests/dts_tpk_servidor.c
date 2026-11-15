@@ -190,6 +190,18 @@ static int salvarPedido(int porta, const char *pref, const char *nome, const cha
   free(r.corpo);
   return ok;
 }
+// Opens a session, waits for the master (the preparation), and says the
+// track it starts on.
+static int doaComeca(const DoaAbrir *o, char *url, size_t n) {
+  int porta;
+  char pref[64], c[200];
+  Resp r;
+  if (!doa_abrir(o, url, n) || !partes(url, &porta, pref, sizeof pref)) return -2;
+  snprintf(c, sizeof c, "%smaster.m3u8", pref);
+  if (pedir(porta, c, NULL, &r)) return -2;
+  free(r.corpo);
+  return doa_audio();
+}
 static void testeDoador(int origem, const char *dir) {
   char fonte[200], doador[200], conv[300], url[300], pref[64], c[200], nome[40];
   int porta, iD = -1, iF = -1, iE = -1, n, i;
@@ -257,6 +269,37 @@ static void testeDoador(int origem, const char *dir) {
     CONFERE(doa_estado(m, sizeof m) == -1 && doa_rendicoes(NULL, 8) == 1 && doa_audio() == 0,
             "donor missing: reported (%s), the file's track plays", m); }
   doa_fechar();
+  // The track the session starts on: by hand, the series memory, the languages.
+  snprintf(doador, sizeof doador, "http://127.0.0.1:%d/doador.mkv", origem);
+  o.doador = doador; o.doador_lingua = "fre,eng";
+  CONFERE(doaComeca(&o, url, sizeof url) == DOA_DOADOR(1), "donor: the language list in order (fre absent, eng: its AAC)");
+  o.doador_faixa = 1 + 1;   // stream 1: the E-AC3, picked by hand
+  CONFERE(doaComeca(&o, url, sizeof url) == DOA_DOADOR(0), "donor: the track picked by hand wins over the languages");
+  { int corte = 99, vel = 9, ppm = 9;
+    CONFERE(doa_diferenca(&corte, &vel, &ppm) && corte == 2 && !vel && !ppm,
+            "donor: against the file 1.5 s longer, same frame rate (cut %d s, speed %d, %d ppm)", corte, vel, ppm); }
+  o.doador_faixa = 0; o.doador_lingua = "pol";
+  o.dica_lingua = "eng"; o.dica_codec = "aac"; o.dica_canais = 2; o.dica_titulo = "";
+  CONFERE(doaComeca(&o, url, sizeof url) == DOA_DOADOR(1), "donor: the series memory's track wins over the languages");
+  o.dica_lingua = o.dica_codec = o.dica_titulo = NULL; o.dica_canais = 0;
+  // A donor far shorter than the file: not this title, the file's own track.
+  snprintf(doador, sizeof doador, "http://127.0.0.1:%d/aac.mkv", origem);
+  { char m[200];
+    CONFERE(doaComeca(&o, url, sizeof url) == 0 && doa_estado(m, sizeof m) == -1 && strstr(m, "lasts 12 s"),
+            "donor: 12 s against 30 s refused (%s)", m); }
+  doa_fechar();
+  // The audio menu's track list of another version.
+  { DoaSonda t[8];
+    snprintf(doador, sizeof doador, "http://127.0.0.1:%d/doador.mkv", origem);
+    n = doa_sondar(doador, "", t, 8);
+    CONFERE(n == 2 && t[0].si == 1 && !strcmp(t[0].codec, "eac3") && t[0].canais == 6 && !strcmp(t[0].lingua, "pol") &&
+            t[1].si == 2 && !strcmp(t[1].codec, "aac") && !strcmp(t[1].lingua, "eng"),
+            "donor: its tracks for the menu (%d: stream %d %s, stream %d %s)", n, n > 0 ? t[0].si : -1, n > 0 ? t[0].codec : "",
+            n > 1 ? t[1].si : -1, n > 1 ? t[1].codec : "");
+    snprintf(doador, sizeof doador, "http://127.0.0.1:%d/aac.mkv", origem);
+    CONFERE(doa_sondar(doador, "", t, 8) == -3, "donor: a 12 s file is the debrid's placeholder clip for the menu");
+    snprintf(doador, sizeof doador, "http://127.0.0.1:%d/nothere.mkv", origem);
+    CONFERE(doa_sondar(doador, "", t, 8) == -1, "donor: a file that does not open"); }
   dts_tpk_fechar();
   sleep(1);
 }
