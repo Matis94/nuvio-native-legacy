@@ -53,6 +53,8 @@
 #include "player.h"
 #include "audioext.h"
 #include "dts/doador_tpk.h"
+#include "audioextlista.h"
+#include "faixas.h"
 #include "plrilha.h"
 #include "partes.h"
 #include "ctxlista.h"
@@ -360,6 +362,8 @@ int stream_lista_do_alvo(const char *id) {
   if (!id || !*id || !alvoLista[0] || n < 1) return 0;
   return !strcmp(alvoLista, id);
 }
+// The list on hand is the one asked for the title/episode on screen.
+int stream_lista_do_alvo_atual(void) { return alvoPedido[0] && stream_lista_do_alvo(alvoPedido); }
 void stream_definir_atual(int i) { atual = i >= 0 && i < n ? i : -1; }
 int stream_atual(void) { return atual; }
 
@@ -691,6 +695,40 @@ void stream_definir_lista(const Stream *l, int qtd) {
   stream_definir_lista_idade(l, qtd, 0);
 }
 
+// SERIES MEMORY OF THE AUDIO FROM ANOTHER VERSION (audioext.h): the list of a
+// later episode arrives (whole or add-on by add-on); the remembered version
+// is looked for in it. Same binge group and language first; without a group,
+// the same add-on, language, resolution and audio codec.
+static int (*filtroAddonAudioext)(const char *chave);
+void stream_audioext_filtro_addon(int (*fn)(const char *chave)) { filtroAddonAudioext = fn; }
+static void audioextSerie(void) {
+  AudioExtIdent id;
+#if defined(NV_TPK)   /* the donor server (dts/doador_tpk.h) */
+  if (!doa_disponivel() || !ajustes_audio_externo() || !alvoLista[0] || strcmp(alvoLista, alvoPedido)) return;
+  if (!audioext_serie_procura(alvoPedido, &id)) return;
+  int achou = -1, nivel = 0;
+  for (int i = 0; i < n; i++) {
+    AudioExtEntrada e;
+    int lingua = 0, k;
+    stream_audioext_entrada(&lista[i], &e);
+    if (!e.temUrl || e.hls || e.naoVideo) continue;
+    if (filtroAddonAudioext && !filtroAddonAudioext(lista[i].addonChave)) continue;
+    for (int j = 0; j < e.nIdiomas; j++) if (ling_casa(e.idiomas[j], id.idioma)) lingua = 1;
+    // A version picked without a declared language ("Unknown"): the same kind.
+    if (!id.idioma[0]) lingua = e.nIdiomas == 0;
+    if (!lingua) continue;
+    if (id.grupo[0] && !strcmp(lista[i].bingeGroup, id.grupo)) k = 3;
+    else if (!strcmp(lista[i].provedor, id.addon) && lista[i].altura == id.altura && e.codec == id.codec) k = 2;
+    else continue;
+    if (e.cache > 0) k += 4;   // the cached copy of the same release wins
+    if (k > nivel) { nivel = k; achou = i; }
+  }
+  if (achou >= 0) audioext_serie_achou(lista[achou].url, lista[achou].cabecalhos, lista[achou].rotulo);
+#else
+  (void)id;
+#endif
+}
+
 static int selosPacoteDa(Stream *s);
 static void selosAgendar(int ini, int qtd);
 static void textoAddonLimpar(void);
@@ -750,6 +788,7 @@ void stream_invalidar(const char *porque) {
   if (n > 0) {
     printf("[fonte] %d fontes de %s descartadas: %s\n", n,
            alvoLista[0] ? alvoLista : "(sem alvo)", porque ? porque : "");
+  audioextSerie();
     fflush(stdout);
   }
   stream_definir_lista(NULL, 0);
@@ -860,6 +899,7 @@ static int alturaMax(void) {
   if (!q || !q[0]) return 0;
   if (!strcmp(q, "4K"))    return 2160;
   if (!strcmp(q, "1080p")) return 1080;
+  audioextSerie();
   if (!strcmp(q, "720p"))  return 720;
   return 0;                                  // "Automatica"
 }
@@ -874,6 +914,12 @@ static int cabeNaAltura(const Stream *s) {
 
 #ifdef NV_VIDAA
 // TABELA DE REGRAS DA VIDAA (Hisense) -----------------------------------------
+int stream_lista_tem_addon(const char *k) {
+  if (!k || !*k) return 0;
+  for (int i = 0; i < n; i++) if (!strcmp(lista[i].addonChave, k)) return 1;
+  return 0;
+}
+
 //
 // Fonte: medicoes de TERCEIROS contra o navegador dela (NoobyGains /
 // stremio-vidaa-tv), NAO VERIFICADAS neste aparelho — trocar os pesos aqui
@@ -1955,6 +2001,32 @@ static int dicaTorrents(char *texto, size_t tam) {
       : i18n("Conecte uma conta de debrid."));
   return 1;
 }
+
+// "From another source" found this link not ready on the debrid service (its
+// placeholder clip, even after the tries): the same as a debrid "still
+// downloading" answer here: not cached from now on, in this list and in the
+// audio pages. 1 when a source of the list had it.
+int stream_marcar_fora_cache_url(const char *url) {
+  int achou = 0;
+  if (!url || !*url) return 0;
+  pthread_mutex_lock(&verTrava);
+  for (int i = 0; i < n; i++) {
+    if (strcmp(lista[i].url, url)) continue;
+    lista[i].emCache = 0;
+    lista[i].cacheNativo = 0;
+    lista[i].cacheNegado = 1;
+    lista[i].foraCache = 1;
+    achou = 1;
+  }
+  pthread_mutex_unlock(&verTrava);
+  if (achou) {
+    atomic_fetch_add(&folhaRevisao, 1);
+    printf("[fonte] marked not cached by the audio of another source: %.80s\n", url);
+    fflush(stdout);
+  }
+  return achou;
+}
+unsigned stream_revisao(void) { return atomic_load(&folhaRevisao); }
 
 unsigned stream_lista_geracao(void) {
   unsigned g;
@@ -3980,6 +4052,133 @@ static float desenharFaixas(const Stream *s, float x, float y, float w, int sel,
   }
   return altura;
 }
+// AUDIO FROM ANOTHER VERSION (audioextlista.h): what the add-on declared for
+// this source, as the candidate list reads it. Languages come from the
+// declared audio list, or from the label hints when none was declared.
+static int filtroTem(const Stream *s, int cat, const char *nome) {
+  for (int i = 0; i < fontefiltro_opcoes_n(cat); i++)
+    if (!strcmp(fontefiltro_opcao(cat, i), nome)) return (s->filtro.valores[cat] & fontefiltro_bit(cat, i)) != 0;
+  return 0;
+}
+void stream_audioext_entrada(const Stream *s, AudioExtEntrada *e) {
+  const char *lista, *p, *fim;
+  size_t limite;
+  memset(e, 0, sizeof *e);
+  if (!s) return;
+  e->temUrl = s->url[0] != 0 && !s->notWebReady;
+  e->hls = s->tsContinuo || strstr(s->url, ".m3u8") != NULL;
+  // The converter opens MKV, WebM, MP4, AVI and TS: a file name that says WMV,
+  // FLV, MPG or VOB is left out instead of failing after the choice.
+  { static const char *const fora[] = { ".wmv", ".flv", ".mpg", ".vob" };
+    const char *nome = s->arquivo[0] ? s->arquivo : s->url;
+    size_t ln = strlen(nome);
+    for (size_t k = 0; k < sizeof fora / sizeof *fora; k++) {
+      size_t le = strlen(fora[k]);
+      if (ln > le && !strcasecmp(nome + ln - le, fora[k])) e->hls = 1;
+    } }
+  e->naoVideo = s->naoVideo;
+  // (The webOS branch also reads languages hinted by the labels; master has
+  // only the declared list.)
+  lista = s->audioIdiomas;
+  limite = sizeof s->audioIdiomas;
+  p = lista; fim = p + strnlen(p, limite);
+  while (p < fim && e->nIdiomas < AUDIOEXT_IDIOMAS) {
+    const char *f = memchr(p, ',', (size_t)(fim - p)), *ate = f ? f : fim;
+    char raw[513], codigo[32];
+    const char *cod;
+    while (p < ate && isspace((unsigned char)*p)) p++;
+    while (ate > p && isspace((unsigned char)ate[-1])) ate--;
+    size_t len = (size_t)(ate - p);
+    if (len >= sizeof raw) len = sizeof raw - 1;
+    memcpy(raw, p, len); raw[len] = 0;
+    cod = len <= 3 && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo) ? codigo : NULL;
+    if (!cod) cod = faixaIdiomaDoNome(raw);
+    if (!cod && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo)) cod = codigo;
+    if (cod && faixaIdiomaInformado(raw, len) && strcasecmp(cod, "mul")) {
+      int dup = 0;
+      for (int j = 0; j < e->nIdiomas; j++) if (!strcasecmp(e->idiomas[j], cod)) dup = 1;
+      if (!dup) snprintf(e->idiomas[e->nIdiomas++], sizeof e->idiomas[0], "%s", cod);
+    }
+    p = f ? f + 1 : fim;
+  }
+  // Several audio tags (a Polish DD and an English DTS-HD): the one the TV
+  // takes as it is decides; DTS/TrueHD only when nothing else was declared.
+  if (filtroTem(s, FONTEFILTRO_AUDIO, "DD+")) e->codec = AEXT_DDP;
+  else if (filtroTem(s, FONTEFILTRO_AUDIO, "DD")) e->codec = AEXT_DD;
+  else if (filtroTem(s, FONTEFILTRO_AUDIO, "AAC")) e->codec = AEXT_AAC;
+  else if (filtroTem(s, FONTEFILTRO_AUDIO, "TrueHD")) e->codec = AEXT_TRUEHD;
+  else if (filtroTem(s, FONTEFILTRO_AUDIO, "DTS:X") || filtroTem(s, FONTEFILTRO_AUDIO, "DTS-HD MA") ||
+           filtroTem(s, FONTEFILTRO_AUDIO, "DTS-HD") || filtroTem(s, FONTEFILTRO_AUDIO, "DTS-ES") ||
+           filtroTem(s, FONTEFILTRO_AUDIO, "DTS")) e->codec = AEXT_DTS;
+  else if (filtroTem(s, FONTEFILTRO_AUDIO, "OPUS") || filtroTem(s, FONTEFILTRO_AUDIO, "FLAC")) e->codec = AEXT_OUTRO;
+  else e->codec = AEXT_DESCONHECIDO;
+  e->canais = filtroTem(s, FONTEFILTRO_CANAIS, "7.1") ? 8 : filtroTem(s, FONTEFILTRO_CANAIS, "6.1") ? 7 :
+              filtroTem(s, FONTEFILTRO_CANAIS, "5.1") ? 6 : filtroTem(s, FONTEFILTRO_CANAIS, "2.0") ? 2 : 0;
+  e->cache = s->emCache || s->cacheNativo ? 1 : (s->foraCache || s->cacheNegado) ? -1 : 0;
+  e->bytes = s->tamanhoBytes ? s->tamanhoBytes : s->tamanhoMB > 0 ? (uint64_t)s->tamanhoMB * 1000000u : 0;
+  e->ordemAddon = s->addonOrdem;
+  // The file itself, for the copies of one release reached through several
+  // add-ons: the OpenSubtitles hash, or the torrent and the file in it.
+  { const char *h = s->infoHash[0] ? s->infoHash : s->hashTorrent;
+    if (s->videoHash[0]) snprintf(e->ident, sizeof e->ident, "v:%.24s", s->videoHash);
+    else if (h[0] && s->fileIdx >= 0) {
+      snprintf(e->ident, sizeof e->ident, "t:%.48s:%d", h, s->fileIdx);
+      for (char *c = e->ident; *c; c++) *c = (char)tolower((unsigned char)*c);
+    } }
+}
+// The release label of this source for the audio menu ("WEB-DL 1080p").
+// THE CUT OF A VERSION, from its name (owner, 07/11: an Extended picture
+// with Theatrical audio cannot be matched). Words joined by space, dot,
+// underscore or dash ("Directors.Cut").
+static int temFrase(const Stream *s, const char *a, const char *b) {
+  static const char sep[] = " ._-";
+  char f[48];
+  if (!b) return temNoTexto(s, a);
+  for (int i = 0; sep[i]; i++) {
+    snprintf(f, sizeof f, "%s%c%s", a, sep[i], b);
+    if (temNoTexto(s, f)) return 1;
+  }
+  return 0;
+}
+static const struct { const char *a, *b, *nome; int corte; } EDICOES[] = {
+  { "extended", NULL, "Extended", 1 }, { "theatrical", NULL, "Theatrical", 1 },
+  { "director's", "cut", "Director's Cut", 1 }, { "directors", "cut", "Director's Cut", 1 },
+  { "director", "cut", "Director's Cut", 1 }, { "final", "cut", "Final Cut", 1 },
+  { "ultimate", "cut", "Ultimate Cut", 1 }, { "unrated", NULL, "Unrated", 1 }, { "uncut", NULL, "Uncut", 1 },
+  { "imax", NULL, "IMAX", 0 }, { "remastered", NULL, "Remastered", 0 },
+};
+static int edicaoDe(const Stream *s) {
+  if (!s) return -1;
+  for (int i = 0; i < (int)(sizeof EDICOES / sizeof *EDICOES); i++)
+    if (temFrase(s, EDICOES[i].a, EDICOES[i].b)) return i;
+  return -1;
+}
+const char *stream_edicao(const Stream *s) { int i = edicaoDe(s); return i >= 0 ? EDICOES[i].nome : NULL; }
+// 1 when the two are likely different cuts: a cut name on one side that the
+// other does not share (no name at all reads as the theatrical cut).
+int stream_outro_corte(const Stream *a, const Stream *b) {
+  int ea = edicaoDe(a), eb = edicaoDe(b);
+  if (!a || !b) return 0;
+  const char *na = ea >= 0 && EDICOES[ea].corte ? EDICOES[ea].nome : "Theatrical";
+  const char *nb = eb >= 0 && EDICOES[eb].corte ? EDICOES[eb].nome : "Theatrical";
+  return strcmp(na, nb) != 0;
+}
+void stream_audioext_versao(const Stream *s, char *out, unsigned tam) {
+  const char *q = "";
+  if (!out || !tam) return;
+  out[0] = 0;
+  if (!s) return;
+  for (int i = 0; i + 1 < fontefiltro_opcoes_n(FONTEFILTRO_QUALIDADE); i++)
+    if (s->filtro.valores[FONTEFILTRO_QUALIDADE] & fontefiltro_bit(FONTEFILTRO_QUALIDADE, i)) {
+      q = fontefiltro_opcao(FONTEFILTRO_QUALIDADE, i); break;
+    }
+  if (q[0] && s->altura > 0) snprintf(out, tam, "%s %dp", q, s->altura);
+  else if (q[0]) snprintf(out, tam, "%s", q);
+  else if (s->altura > 0) snprintf(out, tam, "%dp", s->altura);
+  { const char *ed = stream_edicao(s);
+    size_t n = strlen(out);
+    if (ed && n + 4 < tam) snprintf(out + n, tam - n, "%s%s", n ? " \xc2\xb7 " : "", ed); }
+}
 static int audioDeclaradoEm(const Stream *s, const char *pref) {
   const char *p = s->audioIdiomas;
   const char *fim = p + strnlen(p, sizeof s->audioIdiomas);
@@ -3998,6 +4197,9 @@ static int audioDeclaradoEm(const Stream *s, const char *pref) {
     p = f ? f + 1 : fim;
   }
   return 0;
+}
+int stream_audio_tem(const Stream *s, const char *idioma) {
+  return s && idioma && idioma[0] && audioDeclaradoEm(s, idioma);
 }
 // O IDIOMA nao tem logo no pacote de selos, entao vai como texto no fim da
 // fileira. Os rotulos antigos continuam onde o addon nao informa audio;
@@ -4919,6 +5121,222 @@ int stream_partes_escolheu(int *fonte, PartesLista *l, int *k) {
   ptEscolhaFonte = -1;
   return 1;
 }
+// HOLD OK ON A SOURCE = a small source menu (test build, webOS only, and only
+// with "Audio from another version" on): "Use as audio" (what the BLUE key
+// does) and, where TorBox lists the files, "Files of this version". With the
+// setting off, or on a source the converter cannot read, the hold opens the
+// files list exactly as before.
+enum { FM_AUDIO = 0, FM_FAIXAS, FM_ARQUIVOS };
+static int fmAberto, fmN, fmFoco, fmAcoes[3], fmMarcada;   // labels frozen at open (they fade out unchanged)
+static int fmIndice = -1;   // the source the menu is for
+// "Choose audio track…": the version's header is read on a thread
+// (audioext_sondar); its tracks become the menu's rows.
+static int fmModoFaixas, fmSondaN = -2;
+static unsigned fmSondaGer;
+static AudioExtFaixa fmFaixas[AUDIOEXT_FAIXAS_MAX];
+static char fmRotFaixa[AUDIOEXT_FAIXAS_MAX][120];
+static float fmAnim;
+static char fmUrl[NV_MEDIA_URL_MAX];   // the source by its link: the list can grow while the menu is open
+
+static int fonteAceitaAudio(int i) {
+#if defined(NV_TPK)   /* the donor server (dts/doador_tpk.h) */
+  AudioExtEntrada e;
+  if (!doa_disponivel() || !ajustes_audio_externo() || canalFolha || i < 0 || i >= n) return 0;
+  stream_audioext_entrada(&lista[i], &e);
+  return e.temUrl && !e.hls && !e.naoVideo;
+#else
+  (void)i;
+  return 0;
+#endif
+}
+static int fonteSegurarAceita(int i) { return linhaAceitaPartes(i) || fonteAceitaAudio(i); }
+
+// Mark (or unmark) source `i` as the audio source. While a video of this title
+// plays, the choice applies at once (same as picking it in the audio menu) and
+// the sheet closes back to the picture; otherwise it waits for the next source
+// played for this title.
+static void fonteMarcarAudio(int i) {
+  const Stream *s;
+  if (i < 0 || i >= n) return;
+  s = &lista[i];
+  if (!fonteAceitaAudio(i)) {
+    if (player_aberto()) player_toast(i18n("This source can't be used as audio."), 2600);
+    return;
+  }
+  if (audioext_marcada(s->url)) {
+    if (player_aberto() && audioext_tocando()) {
+      audioext_original();
+      player_toast(i18n("Back to this file's own audio…"), 2500);
+      aberta = 0;
+    } else {
+      audioext_alternar(s->url, s->cabecalhos, s->rotulo);
+      if (player_aberto()) player_toast(i18n("Audio source cleared."), 2600);
+    }
+    return;
+  }
+  audioext_alternar(s->url, s->cabecalhos, s->rotulo);
+  { AudioExtEntrada e;
+    AudioExtIdent id;
+    stream_audioext_entrada(s, &e);
+    memset(&id, 0, sizeof id);
+    snprintf(id.grupo, sizeof id.grupo, "%s", s->bingeGroup);
+    snprintf(id.addon, sizeof id.addon, "%s", s->provedor);
+    if (e.nIdiomas > 0) snprintf(id.idioma, sizeof id.idioma, "%s", e.idiomas[0]);
+    id.altura = s->altura; id.codec = e.codec;
+    audioext_lembrar_serie(&id); }
+  if (player_aberto() && audioext_pedido(video_url_atual())) {
+    audioext_escolher(s->url, s->cabecalhos, s->rotulo, "");
+    player_toast(i18n("Loading the audio of the other version…"), 2500);
+    aberta = 0;
+  } else if (player_aberto())
+    player_toast(i18n("Audio source set. Play another source of this title."), 2600);
+}
+
+static void fonteMenuAbrir(int i) {
+  fmAberto = 1; fmFoco = 0; fmN = 0; fmAnim = 0;
+  snprintf(fmUrl, sizeof fmUrl, "%s", lista[i].url);
+  fmMarcada = audioext_marcada(lista[i].url);
+  fmIndice = i;
+  faixas_idioma_principal_atualizar();
+  fmModoFaixas = 0; fmSondaN = -2;
+  fmAcoes[fmN++] = FM_AUDIO;
+  if (audioext_sonda_disponivel()) fmAcoes[fmN++] = FM_FAIXAS;
+  if (linhaAceitaPartes(i)) fmAcoes[fmN++] = FM_ARQUIVOS;
+  printf("[ext-audio] hold OK on source #%d (%s): source menu, %d option%s\n", i,
+         lista[i].provedor[0] ? lista[i].provedor : "-", fmN, fmN == 1 ? "" : "s");
+  fflush(stdout);
+}
+// The hold crossed its threshold on source `i`.
+static void fonteSegurou(int i) {
+  if (fonteAceitaAudio(i)) fonteMenuAbrir(i);
+  else if (linhaAceitaPartes(i)) partesAbrirPainel(i);
+}
+static int fonteMenuIndice(void) {
+  for (int i = 0; i < n; i++) if (!strcmp(lista[i].url, fmUrl)) return i;
+  return -1;
+}
+static const char *fmCodecTexto(const char *c) {
+  static const char *const m[][2] = { {"eac3","E-AC-3"}, {"ac3","AC-3"}, {"aac","AAC"}, {"dts","DTS"},
+    {"truehd","TrueHD"}, {"opus","Opus"}, {"flac","FLAC"}, {"vorbis","Vorbis"}, {"mp3","MP3"} };
+  for (size_t k = 0; k < sizeof m / sizeof *m; k++) if (!strcmp(c, m[k][0])) return m[k][1];
+  return c;
+}
+// "Polski · E-AC-3 5.1 · Dubbing": the language, the codec and channels, and
+// the file's track name when it says more than the release.
+static void fmMontarFaixas(void) {
+  for (int k = 0; k < fmSondaN && k < AUDIOEXT_FAIXAS_MAX; k++) {
+    const AudioExtFaixa *f = &fmFaixas[k];
+    const char *lg = f->idioma[0] ? i18n(ling_nome(f->idioma)) : i18n("Faixa");
+    char ch[8] = "";
+    if (f->canais == 8) snprintf(ch, sizeof ch, " 7.1");
+    else if (f->canais == 6) snprintf(ch, sizeof ch, " 5.1");
+    else if (f->canais > 0) snprintf(ch, sizeof ch, " %d.0", f->canais);
+    if (f->titulo[0] && strlen(f->titulo) < 40)
+      snprintf(fmRotFaixa[k], sizeof fmRotFaixa[k], "%s \xc2\xb7 %s%s \xc2\xb7 %s", lg, fmCodecTexto(f->codec), ch, f->titulo);
+    else snprintf(fmRotFaixa[k], sizeof fmRotFaixa[k], "%s \xc2\xb7 %s%s", lg, fmCodecTexto(f->codec), ch);
+    // This file's language: "Match automatically" compares this track.
+    { const char *ip = audioext_idioma_principal();
+      size_t u = strlen(fmRotFaixa[k]);
+      if (ip[0] && f->idioma[0] && ling_casa(f->idioma, ip) && u + 4 < sizeof fmRotFaixa[k])
+        snprintf(fmRotFaixa[k] + u, sizeof fmRotFaixa[k] - u, " \xc2\xb7 %s", i18n("used for sync")); }
+  }
+}
+static int fmLinhas(void) {
+  if (!fmModoFaixas) return fmN;
+  return fmSondaN > 0 ? fmSondaN : 1;   /* "Reading…" or "Could not read" */
+}
+// The version with one of its tracks: marked like "Use as audio", the track
+// set on the mark; while this title plays it switches now.
+static void fonteMarcarFaixa(int i, const AudioExtFaixa *f) {
+  const Stream *s = &lista[i];
+  if (!fonteAceitaAudio(i)) return;
+  if (!audioext_marcada(s->url)) audioext_alternar(s->url, s->cabecalhos, s->rotulo);
+  { AudioExtEntrada e;
+    AudioExtIdent id;
+    stream_audioext_entrada(s, &e);
+    memset(&id, 0, sizeof id);
+    snprintf(id.grupo, sizeof id.grupo, "%s", s->bingeGroup);
+    snprintf(id.addon, sizeof id.addon, "%s", s->provedor);
+    snprintf(id.idioma, sizeof id.idioma, "%.7s", f->idioma);
+    id.altura = s->altura; id.codec = e.codec;
+    audioext_lembrar_serie(&id);
+    audioext_lembrar_faixa_serie(f); }   // and this very track, for the next episodes
+  if (player_aberto() && audioext_pedido(video_url_atual())) {
+    audioext_escolher(s->url, s->cabecalhos, s->rotulo, "");
+    audioext_definir_faixa(f->stream);
+    player_toast(i18n("Loading the audio of the other version…"), 2500);
+    aberta = 0;
+  } else {
+    audioext_definir_faixa(f->stream);
+    if (player_aberto()) player_toast(i18n("Audio source set. Play another source of this title."), 2600);
+  }
+}
+static void fonteMenuEscolher(void) {
+  int i = fonteMenuIndice();
+  if (fmModoFaixas) {
+    if (fmSondaN > 0 && fmFoco >= 0 && fmFoco < fmSondaN && i >= 0) { fmAberto = 0; fonteMarcarFaixa(i, &fmFaixas[fmFoco]); }
+    else if (fmSondaN == -1) fmAberto = 0;
+    return;
+  }
+  int acao = fmFoco >= 0 && fmFoco < fmN ? fmAcoes[fmFoco] : -1;
+  if (acao == FM_FAIXAS && i >= 0) {
+    fmModoFaixas = 1; fmFoco = 0; fmSondaN = -2;
+    fmSondaGer = audioext_sondar(lista[i].url, lista[i].cabecalhos);
+    return;
+  }
+  fmAberto = 0;
+  if (i < 0) return;
+  if (acao == FM_AUDIO) fonteMarcarAudio(i);
+  else if (acao == FM_ARQUIVOS && linhaAceitaPartes(i)) partesAbrirPainel(i);
+}
+static const char *fonteMenuRotulo(int r, const char **icone) {
+  if (fmModoFaixas) {
+    *icone = "pl_audio-lines";
+    if (fmSondaN == -2) return "Reading the audio tracks…";
+    if (fmSondaN <= 0) { *icone = "aj_triangle-alert"; return fmSondaN == 0 ? "No audio track this TV can play" : "Could not read the audio tracks"; }
+    return fmRotFaixa[r];
+  }
+  if (fmAcoes[r] == FM_FAIXAS) { *icone = "aj_list-video"; return "Choose audio track…"; }
+  if (fmAcoes[r] == FM_ARQUIVOS) { *icone = "aj_folders"; return "Files of this version"; }
+  if (fmMarcada) { *icone = "pl_eye-off"; return "Stop using as audio"; }
+  *icone = "pl_audio-lines";
+  // Another cut than the source playing: said before it is picked.
+  { const Stream *v = fmIndice >= 0 && fmIndice < n ? &lista[fmIndice] : NULL;
+    const Stream *at = atual >= 0 && atual < n ? &lista[atual] : NULL;
+    static char rot[160];
+    if (v && at && v != at && stream_outro_corte(v, at)) {
+      const char *ed = stream_edicao(v);
+      char c[96];
+      snprintf(c, sizeof c, i18n("%s: another cut"), ed ? ed : i18n("Theatrical"));
+      snprintf(rot, sizeof rot, "%s \xc2\xb7 %s", i18n("Use as audio"), c);
+      *icone = "aj_triangle-alert";
+      return rot;
+    } }
+  return "Use as audio";
+}
+static int fonteMenuEvento(const SDL_Event *e) {
+  SDL_Keycode k;
+  if (!fmAberto) return 0;
+  if (e->type != SDL_KEYDOWN) return 1;   // the KEYUP of the hold that opened it, too
+  k = e->key.keysym.sym;
+  if (k == SDLK_ESCAPE || k == SDLK_AC_BACK || k == SDLK_BACKSPACE || k == SDLK_DELETE) {
+    if (fmModoFaixas) { fmModoFaixas = 0; fmFoco = 0; return 1; }   /* back to the actions */
+    fmAberto = 0; return 1;
+  }
+  // The held OK that opened the menu keeps repeating: not a choice.
+  if (e->key.repeat && (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE)) return 1;
+  if (k == SDLK_UP && fmFoco > 0) fmFoco--;
+  else if (k == SDLK_DOWN && fmFoco < fmLinhas() - 1) fmFoco++;
+  else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) fonteMenuEscolher();
+#if defined(NV_TPK)   /* the donor server (dts/doador_tpk.h) */
+  else if (!fmModoFaixas && ((int)e->key.keysym.scancode == NV_SCANCODE_BLUE || k == SDLK_F4)) { fmFoco = 0; fonteMenuEscolher(); }
+#endif
+  return 1;
+}
+static void ponteiroFonteMenu(int r, int b) { (void)b; if (fmAberto) fmFoco = r; }
+static void ponteiroFonteMenuEscolher(int r, int b) { (void)b; if (fmAberto) { fmFoco = r; fonteMenuEscolher(); } }
+static void ponteiroFonteMenuFora(int a, int b) { (void)a; (void)b; fmAberto = 0; }
+
 // O toque curto (ou o OK de sempre) numa linha da lista: a mesma acao de antes.
 static void okNaLinha(void) {
   int i = filtrado(foco);
@@ -4943,11 +5361,12 @@ void stream_folha_evento(const SDL_Event *e) {
   }
   if(aberta && detalheEvento(e)) return;
   if(aberta && partesEvento(e)) return;
+  if(aberta && fonteMenuEvento(e)) return;
   // SEGURAR OK NUMA FONTE (so onde partes_disponivel): o OK arma no KEYDOWN e
   // so age no KEYUP. Linha que nao aceita (canal, "Onde ver", cabecalho) segue
   // o caminho de antes, com o OK no KEYDOWN.
   if (aberta && grupo == 1 && (e->type == SDL_KEYDOWN || e->type == SDL_KEYUP)) {
-    switch (ctxhold_evento(&folhaHold, e, linhaAceitaPartes(filtrado(foco)))) {
+    switch (ctxhold_evento(&folhaHold, e, fonteSegurarAceita(filtrado(foco)))) {
       case CTXH_CONSUMIDO:
         // OK afundou numa fonte: a busca comeca ja, na lista da memoria, para a
         // modal abrir pronta se o dedo segurar.
@@ -4957,7 +5376,7 @@ void stream_folha_evento(const SDL_Event *e) {
         }
         return;
       case CTXH_TOQUE: okNaLinha(); return;
-      case CTXH_LONGO: { int i = filtrado(foco); if (linhaAceitaPartes(i)) partesAbrirPainel(i); } return;
+      case CTXH_LONGO: fonteSegurou(filtrado(foco)); return;
       default: break;
     }
   }
@@ -4970,20 +5389,16 @@ void stream_folha_evento(const SDL_Event *e) {
     recarregarFonteConfirmacao = 0;
   if(k==SDLK_ESCAPE || k==SDLK_AC_BACK || k==SDLK_BACKSPACE || k==SDLK_DELETE) {aberta=0;return;}
   if(k==SDLK_r) {recarregar=1;return;}
-  // Test build: BLUE marks the source in focus as the audio source of the next
-  // source played for this title (audioext.h). Only the .tpk with FFmpeg plays
-  // it (doador_tpk.h); elsewhere BLUE keeps its meaning.
-  if(grupo==1 && !canalFolha && !e->key.repeat && doa_disponivel() &&
-     (int)e->key.keysym.scancode==NV_SCANCODE_BLUE) {
+  // Test build: BLUE (or F4) = "Use as audio" of the hold-OK menu on the
+  // source in focus (fonteMarcarAudio). Only the webOS converter plays it.
+#if defined(NV_TPK)   /* the donor server (dts/doador_tpk.h) */
+  if(grupo==1 && !canalFolha && !e->key.repeat && doa_disponivel() && ajustes_audio_externo() &&
+     ((int)e->key.keysym.scancode==NV_SCANCODE_BLUE || k==SDLK_F4)) {
     int i=filtrado(foco);
-    if(i>=0) {
-      int r=audioext_alternar(lista[i].url,lista[i].cabecalhos,lista[i].rotulo);
-      if(player_aberto())
-        player_toast(r>0?i18n("Audio source set. Play another source of this title."):
-                     r==0?i18n("Audio source cleared."):i18n("This source has no direct link."),2600);
-    }
+    if(i>=0) fonteMarcarAudio(i);
     return;
   }
+#endif
   montar(automaticaDaFolha());
   int nf=nOrdem;
   if(grupo==1 && stream_detalhe_tecla_abre(e)) {
@@ -5051,8 +5466,13 @@ void stream_folha_atualizar(float dt, Uint32 agora) {
   medirCabecalho();
   if (aberta || anim > 0.001f) folhaGeometria();
   anim=anim_mola(anim,aberta?1:0,dt,NV_MOLA_TELA);
-  if(!aberta) { detAberto=0; if (ptAberto) partes_cancelar(); ptAberto=0; ctxhold_cancelar(&folhaHold); }
+  if(!aberta) { detAberto=0; if (ptAberto) partes_cancelar(); ptAberto=0; fmAberto=0; ctxhold_cancelar(&folhaHold); }
   ptAnim=anim_mola(ptAnim,ptAberto?1:0,dt,NV_MOLA_TELA);
+  fmAnim=anim_mola(fmAnim,fmAberto?1:0,dt,NV_MOLA_TELA);
+  if (fmAberto && fmModoFaixas && fmSondaN == -2) {
+    int nf = audioext_sonda_resultado(fmSondaGer, fmFaixas, AUDIOEXT_FAIXAS_MAX);
+    if (nf != -2) { fmSondaN = nf; fmFoco = 0; fmMontarFaixas(); }
+  }
   if (ptAberto) {
     int e = partes_resultado(NULL);
     if (e != ptL.estado) {
@@ -5097,9 +5517,8 @@ void stream_folha_atualizar(float dt, Uint32 agora) {
       ptRol = fabsf(d) < .5f ? ptRolAlvo : ptRol + d * (dt * 16 > 1 ? 1 : dt * 16); }
   }
   // O dedo ainda segura OK numa fonte: no limiar abre a lista de arquivos.
-  if (aberta && !ptAberto && grupo == 1 && ctxhold_passo(&folhaHold, agora, 1)) {
-    int i = filtrado(foco);
-    if (linhaAceitaPartes(i)) partesAbrirPainel(i);
+  if (aberta && !ptAberto && !fmAberto && grupo == 1 && ctxhold_passo(&folhaHold, agora, 1)) {
+    fonteSegurou(filtrado(foco));
     ctxhold_cancelar(&folhaHold);
   }
   detAnim=anim_mola(detAnim,detAberto?1:0,dt,NV_MOLA_TELA);
@@ -5574,6 +5993,50 @@ static void ptTamanho(uint64_t bytes, int sel, float ix, float iw, float ry, flo
   txt_desenhar_alpha(lu, ix + iw - lu.w, ry + 14 + (lg.h - lu.h) - 3, a);
   txt_desenhar_alpha(lg, ix + iw - lu.w - 6 - lg.w, ry + 14, a);
 }
+// The hold-OK source menu: a dropdown under the source row (above it when
+// there is no room), right-aligned in the list, over a light veil.
+static void desenhaFonteMenu(float x, float w, float direita, int ptr) {
+  float a = fmAnim, lh = 64.0f, vao = 6.0f, pad = 14.0f, mw = 0.0f, mh, mx, my;
+  float ry = FOLHA_TOPO + linhaTopo(foco) - rolagem, rh = linhaAltura(foco);
+  if (a < .01f || fmN <= 0) return;
+  int nl = fmLinhas();
+  for (int r = 0; r < nl; r++) {
+    const char *ic, *rot = fonteMenuRotulo(r, &ic);
+    TxtLinha tl = txt_linha(TXT_PAINEL_ITEM, rot, 250, 250, 248, 255);
+    if (tl.w > mw) mw = tl.w;
+  }
+  mw += pad * 2 + 24.0f + 26.0f + 18.0f + 24.0f;
+  if (mw < 440.0f) mw = 440.0f;
+  if (mw > 1100.0f) mw = 1100.0f;
+  mh = pad * 2 + nl * lh + (nl - 1) * vao;
+  mx = direita - mw - 24.0f;
+  my = ry + rh + 6.0f;
+  if (my + mh > NV_TELA_H - 24.0f) my = ry - 6.0f - mh;
+  if (my < 24.0f) my = 24.0f;
+  my += (1.0f - a) * -10.0f;
+  gfx_cor((GfxRect){x, 0, w, NV_TELA_H}, 0, 0, 0, 0, .35f * a);
+  // Opaque base: the rows of the list must not show through the glass.
+  gfx_cor((GfxRect){mx, my, mw, mh}, FOLHA_RAIO_IL * .6f / mh, .071f, .075f, .086f, a);
+  ajustes_ui_ilha_a((GfxRect){mx, my, mw, mh}, FOLHA_RAIO_IL * .6f, 1, a);
+  if (ptr) {
+    ponteiro_alvo(0, 0, NV_TELA_W, NV_TELA_H, NULL, ponteiroFonteMenuFora, 0, 0);
+    ponteiro_alvo(mx, my, mw, mh, NULL, NULL, 0, 0);
+  }
+  for (int r = 0; r < nl; r++) {
+    const char *ic, *rot = fonteMenuRotulo(r, &ic);
+    GfxRect rr = {mx + pad, my + pad + r * (lh + vao), mw - pad * 2, lh};
+    int sel = r == fmFoco;
+    if (sel && !gfx_foco_placa(rr, FOLHA_RAIO / rr.h, 1, a)) {
+      if (ajustes_vidro()) gfx_cor(rr, FOLHA_RAIO / rr.h, 1, 1, 1, .12f * a);
+      else gfx_cor(rr, FOLHA_RAIO / rr.h, .17f, .176f, .204f, a);
+    }
+    if (ptr) ponteiro_alvo(rr.x, rr.y, rr.w, rr.h, ponteiroFonteMenu, ponteiroFonteMenuEscolher, r, 0);
+    gfx_icone((GfxRect){rr.x + 24.0f, rr.y + (lh - 26.0f) * .5f, 26, 26}, ic, sel ? .98f : .86f, sel ? .98f : .86f, sel ? .97f : .85f, a);
+    { TxtLinha tl = txt_linha_corta(TXT_PAINEL_ITEM, rot, sel ? 250 : 220, sel ? 250 : 220, sel ? 248 : 218, 255,
+                                    rr.w - 24.0f - 26.0f - 18.0f - 24.0f);
+      txt_desenhar_alpha(tl, rr.x + 24.0f + 26.0f + 18.0f, rr.y + (lh - tl.h) * .5f, a); }
+  }
+}
 static void desenhaPartes(float x, float w, int ptr, Uint32 agora) {
   float a = ptAnim;
   const char *msg;
@@ -5837,10 +6300,11 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     if (n > 0 && addons_ocupado() && rw-360-cw > 80) {
       if (cw > 0) gfx_cor((GfxRect){tx+cw-13.5f,oy+74+ch*.5f-2.5f,5,5},.5f,.5f,.5f,.49f,anim);
       txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,"Buscando mais fontes…",ai,(int)(ag*255),(int)(ab*255),255,rw-360-cw),tx+cw,oy+72,anim);
-    } else if (grupo == 1 && linhaAceitaPartes(filtrado(foco)) && rw-360-cw > 80) {
+    } else if (grupo == 1 && fonteSegurarAceita(filtrado(foco)) && rw-360-cw > 80) {
       // O GESTO NAO SE ADIVINHA: a dica fica no lugar do "Buscando mais fontes".
+      const char *dica = fonteAceitaAudio(filtrado(foco)) ? "Hold OK: source options" : "Segure OK: todos os arquivos";
       if (cw > 0) gfx_cor((GfxRect){tx+cw-13.5f,oy+74+ch*.5f-2.5f,5,5},.5f,.5f,.5f,.49f,anim);
-      txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,"Segure OK: todos os arquivos",130,130,128,255,rw-360-cw),tx+cw,oy+72,anim);
+      txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,dica,130,130,128,255,rw-360-cw),tx+cw,oy+72,anim);
     } }
   medirCabecalho();
   txt_desenhar_alpha(txt_linha_corta(TXT_ILHA_TITULO,"Fontes",243,242,239,255,titMaxCab),tx,oy+94,anim);
@@ -6273,6 +6737,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     if (!s) s = addons_estado()==ADD_BUSCANDO?"Buscando fontes nos addons…":"Nenhuma fonte direta disponível. Use Recarregar para tentar novamente.";
     if (!canalFolha && addons_estado()!=ADD_BUSCANDO && folhaBloqueada)
       s = "Nenhuma fonte passa pelos filtros";
+  if (fmAnim > .01f) desenhaFonteMenu(x,w,lx+rw,ptr && fmAberto);
     if (addons_estado()!=ADD_BUSCANDO && fraseVazioChips()) s = fraseVazioChips();
     if (addons_estado()!=ADD_BUSCANDO && n==0) {
       int tem = 0, p2p = stream_torrents_para_p2p();
