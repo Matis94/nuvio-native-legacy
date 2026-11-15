@@ -48,7 +48,9 @@ jobs:
       # Audio from another source: the app state, the version list, the
       # add-on filter and the automatic match's pure part (seconds, no FFmpeg).
       - name: Unit tests (audio from another source)
-        run: bash tests/audioext.sh
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq libsdl2-dev >/dev/null
+          bash tests/audioext.sh
 
       # tools/tpk.sh compiles libnuvio.so inside a linux/arm/v5 container.
       - name: Enable ARM emulation for Docker
