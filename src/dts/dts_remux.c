@@ -94,7 +94,7 @@ void dts_remux_set_queue_budget_mib(int mib) { (void)mib; }
 #define PREROLL 2                /* encoder frames before the first one sent */
 #define WIN_MIN_SRC 2048         /* source samples seen before the anchor locks */
 #define MAX_GAP_S 5              /* longer audio holes skip ahead instead of padding */
-#define TS_OFFSET_S 10           /* fixed output offset (design 2.2-4) */
+#define TS_OFFSET_S DTS_REMUX_TS_OFFSET_S /* fixed output offset (design 2.2-4) */
 #define VQ_MAX_BYTES (192u << 20)
 #define AQ_MAX_BYTES (16u << 20)
 #define AQ_MAX_PKTS 16384
@@ -489,13 +489,14 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
            ordPedido >= 0 ? avcodec_get_name(ic->streams[ordPedido]->codecpar->codec_id) : "ausente", nAudio, primeiroOrd);
     fflush(stdout);
   }
-  r->as = ordAs >= 0 ? ordAs : primeiro;
-  if (r->as < 0) { fail(err, errn, "No DTS/TrueHD track", 0); goto bad; }
-  { int k = 0;
+  r->as = ordinal == DTS_REMUX_NO_AUDIO ? -1 : ordAs >= 0 ? ordAs : primeiro;
+  if (r->as < 0 && ordinal != DTS_REMUX_NO_AUDIO) { fail(err, errn, "No DTS/TrueHD track", 0); goto bad; }
+  if (r->as < 0) r->info.audio_ordinal = -1;
+  else { int k = 0;
     for (unsigned i = 0; i < ic->nb_streams && (int)i < r->as; i++) if (ic->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) k++;
     r->info.audio_ordinal = k; }
   {
-    AVStream *V = ic->streams[r->vs], *A = ic->streams[r->as];
+    AVStream *V = ic->streams[r->vs], *A = r->as >= 0 ? ic->streams[r->as] : NULL;
     if (!videoOk(V->codecpar->codec_id)) {
       fail(err, errn, "Video codec not HEVC/H.264", 0); goto bad;
     }
@@ -505,12 +506,12 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
     }
     for (unsigned i = 0; i < ic->nb_streams; i++)
       if ((int)i != r->vs && (int)i != r->as) ic->streams[i]->discard = AVDISCARD_ALL;
-    r->vpar = avcodec_parameters_alloc(); r->apar = avcodec_parameters_alloc();
-    if (!r->vpar || !r->apar || avcodec_parameters_copy(r->vpar, V->codecpar) < 0 ||
-        avcodec_parameters_copy(r->apar, A->codecpar) < 0) { fail(err, errn, "Out of memory", 0); goto bad; }
-    r->vtb = V->time_base; r->atb = A->time_base;
+    r->vpar = avcodec_parameters_alloc(); r->apar = A ? avcodec_parameters_alloc() : NULL;
+    if (!r->vpar || (A && !r->apar) || avcodec_parameters_copy(r->vpar, V->codecpar) < 0 ||
+        (A && avcodec_parameters_copy(r->apar, A->codecpar) < 0)) { fail(err, errn, "Out of memory", 0); goto bad; }
+    r->vtb = V->time_base; r->atb = A ? A->time_base : (AVRational){1, 48000};
     r->vfps = V->avg_frame_rate.num > 0 ? V->avg_frame_rate : V->r_frame_rate;
-    { AVDictionaryEntry *l = av_dict_get(A->metadata, "language", NULL, 0);
+    { AVDictionaryEntry *l = A ? av_dict_get(A->metadata, "language", NULL, 0) : NULL;
       snprintf(r->lang, sizeof r->lang, "%s", l ? l->value : ""); }
     DtsRemuxInfo *in = &r->info;
     in->duration_s = ic->duration / (double)AV_TIME_BASE;
@@ -523,7 +524,7 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
       in->dv_profile = c ? c->dv_profile : -1;
       in->dv_el = c ? c->el_present_flag : 0; in->dv_compat = c ? c->dv_bl_signal_compatibility_id : 0; }
     snprintf(in->video_codec, sizeof in->video_codec, "%s", avcodec_get_name(V->codecpar->codec_id));
-    snprintf(in->audio_codec, sizeof in->audio_codec, "%s", avcodec_get_name(A->codecpar->codec_id));
+    snprintf(in->audio_codec, sizeof in->audio_codec, "%s", A ? avcodec_get_name(A->codecpar->codec_id) : "none");
     /* Container flag only (no probe): many MKVs leave it to the bitstream. */
     snprintf(in->hdr, sizeof in->hdr, "%s", V->codecpar->color_trc == AVCOL_TRC_SMPTE2084 ? "PQ" :
              V->codecpar->color_trc == AVCOL_TRC_ARIB_STD_B67 ? "HLG" :
@@ -532,12 +533,13 @@ int dts_remux_probe(DtsRemux *r, const char *url, const char *headers, int ordin
                                      AV_PKT_DATA_MASTERING_DISPLAY_METADATA) ? "PQ (HDR10 metadata)" :
              "not in the container (bitstream decides)");
     in->stream_index = r->as;
-    in->in_channels = A->codecpar->ch_layout.nb_channels; in->in_rate = A->codecpar->sample_rate;
+    in->in_channels = A ? A->codecpar->ch_layout.nb_channels : 0; in->in_rate = A ? A->codecpar->sample_rate : 0;
     int ic2 = in->in_channels;
-    in->out_channels = stereoAac ? 2 : ic2 == 1 ? 1 : ic2 == 2 ? 2 : 6;
-    snprintf(in->out_codec, sizeof in->out_codec, "%s", stereoAac ? "aac" : "ac3");
-    in->out_bitrate = in->out_channels > 2 ? 640000 : in->out_channels == 2 ? 192000 : 96000;
-    if (A->codecpar->codec_id == AV_CODEC_ID_DTS) snprintf(in->decoder_path, sizeof in->decoder_path, "DTS core only");
+    in->out_channels = !A ? 0 : stereoAac ? 2 : ic2 == 1 ? 1 : ic2 == 2 ? 2 : 6;
+    snprintf(in->out_codec, sizeof in->out_codec, "%s", !A ? "none" : stereoAac ? "aac" : "ac3");
+    in->out_bitrate = !A ? 0 : in->out_channels > 2 ? 640000 : in->out_channels == 2 ? 192000 : 96000;
+    if (!A) snprintf(in->decoder_path, sizeof in->decoder_path, "video only");
+    else if (A->codecpar->codec_id == AV_CODEC_ID_DTS) snprintf(in->decoder_path, sizeof in->decoder_path, "DTS core only");
     else if (ic2 > in->out_channels || ic2 == 0)
       snprintf(in->decoder_path, sizeof in->decoder_path, "TrueHD %s presentation", in->out_channels == 6 ? "5.1" : "2.0");
     else snprintf(in->decoder_path, sizeof in->decoder_path, "TrueHD full decode");
@@ -677,7 +679,7 @@ DtsRemuxGen *dts_remux_gen_new(DtsRemux *r, char *err, size_t errn) {
       fail(err, errn, dts_engine_error(g->eng), 0); dts_remux_gen_free(g); return NULL;
     }
     AVFormatContext *ic = dts_engine_avformat(g->eng);
-    if ((unsigned)r->vs >= ic->nb_streams || (unsigned)r->as >= ic->nb_streams) {
+    if ((unsigned)r->vs >= ic->nb_streams || (r->as >= 0 && (unsigned)r->as >= ic->nb_streams)) {
       fail(err, errn, "Source changed between opens", 0); dts_remux_gen_free(g); return NULL;
     }
     for (unsigned i = 0; i < ic->nb_streams; i++)
@@ -687,10 +689,11 @@ DtsRemuxGen *dts_remux_gen_new(DtsRemux *r, char *err, size_t errn) {
     fflush(stdout);
   }
   g->ic = dts_engine_avformat(g->eng);
-  g->V = g->ic->streams[r->vs]; g->A = g->ic->streams[r->as];
+  g->V = g->ic->streams[r->vs]; g->A = r->as >= 0 ? g->ic->streams[r->as] : NULL;
   g->pk = av_packet_alloc(); g->op = av_packet_alloc(); g->fr = av_frame_alloc(); g->ef = av_frame_alloc();
   if (!g->pk || !g->op || !g->fr || !g->ef) { fail(err, errn, "Out of memory", 0); dts_remux_gen_free(g); return NULL; }
-  if (openAudio(g, err, errn) < 0) { dts_remux_gen_free(g); return NULL; }
+  if (g->A && openAudio(g, err, errn) < 0) { dts_remux_gen_free(g); return NULL; }
+  if (!g->A) g->frame = 1536;   /* video only: the audio grid below is never used */
   g->vdur = r->vfps.num > 0 ? av_rescale_q(1, av_inv_q(r->vfps), r->vtb) : 0;
   if (g->vdur <= 0) g->vdur = av_rescale_q(40, (AVRational){1, 1000}, r->vtb);
   if (g->vdur <= 0) g->vdur = 1;
@@ -747,8 +750,8 @@ static int openMux(DtsRemuxGen *g, const char *fmt, char *err, size_t errn) {
   if ((rr = avformat_alloc_output_context2(&g->oc, NULL, fmt, NULL)) < 0 || !g->oc) {
     fail(err, errn, "Muxer not in this build", rr); return -1;
   }
-  g->ov = avformat_new_stream(g->oc, NULL); g->oa = avformat_new_stream(g->oc, NULL);
-  if (!g->ov || !g->oa) { fail(err, errn, "Out of memory", 0); return -1; }
+  g->ov = avformat_new_stream(g->oc, NULL); g->oa = g->A ? avformat_new_stream(g->oc, NULL) : NULL;
+  if (!g->ov || (g->A && !g->oa)) { fail(err, errn, "Out of memory", 0); return -1; }
   avcodec_parameters_copy(g->ov->codecpar, r->vpar);
   g->ov->codecpar->codec_tag = 0;
   /* Only HDR10 static metadata goes along. No Dolby Vision configuration: the
@@ -762,9 +765,11 @@ static int openMux(DtsRemuxGen *g, const char *fmt, char *err, size_t errn) {
                                       sd->type, c, sd->size, 0)) av_free(c);
   }
   g->ov->time_base = r->vtb;
-  avcodec_parameters_from_context(g->oa->codecpar, g->enc);
-  g->oa->time_base = (AVRational){1, 48000};
-  if (r->lang[0]) av_dict_set(&g->oa->metadata, "language", r->lang, 0);
+  if (g->oa) {
+    avcodec_parameters_from_context(g->oa->codecpar, g->enc);
+    g->oa->time_base = (AVRational){1, 48000};
+    if (r->lang[0]) av_dict_set(&g->oa->metadata, "language", r->lang, 0);
+  }
   buf = av_malloc(65536);
   g->oc->pb = buf ? avio_alloc_context(buf, 65536, 1, g, NULL, sinkWrite, NULL) : NULL;
   if (!g->oc->pb) { av_free(buf); fail(err, errn, "Out of memory", 0); return -1; }
@@ -793,6 +798,7 @@ static int tagAudio(DtsRemuxGen *g, int64_t pts48) {
 
 static int resetAudio(DtsRemuxGen *g, char *err, size_t errn) {
   /* Fresh decoder and encoder: AC3/AAC encoders cannot flush. */
+  if (!g->A) { g->encEof = 1; return 0; }   /* video only: the audio side is done before it starts */
   if (openAudio(g, err, errn) < 0) return -1;
   g->lo = INT64_MIN; g->hi = INT64_MAX; g->cum = 0; g->off = UNSET; g->win = 0;
   g->warm = 0; g->encEof = 0;

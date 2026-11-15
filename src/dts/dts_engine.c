@@ -53,6 +53,8 @@ int dts_engine_open_demux(DtsEngine *e,const char *u,const char *h) { (void)e;(v
 void *dts_engine_avformat(DtsEngine *e) { (void)e; return NULL; }
 int64_t dts_engine_size(DtsEngine *e) { (void)e; return -1; }
 void dts_engine_interrupt(DtsEngine *e,int on) { (void)e; (void)on; }
+void dts_engine_release(DtsEngine *e) { (void)e; }
+void dts_engine_final_host(DtsEngine *e, char *h, int n) { (void)e; if (h && n > 0) h[0] = 0; }
 #else
 #include "../rede.h"
 #include <limits.h>
@@ -1017,6 +1019,25 @@ void dts_engine_interrupt(DtsEngine *e,int on) {
    * tries, from the run's own seek. */
   if(!on && e->fx_err) { e->fx_err=0; e->fx_attempts=0; e->fx_req=e->pos; }
   pthread_cond_broadcast(&e->range_wake);
+  pthread_mutex_unlock(&e->range_lock);
+}
+void dts_engine_release(DtsEngine *e) {
+  if(!e || !e->remux) return;
+  fx_close(e);                        /* joins the stream thread: its connection ends with it */
+}
+void dts_engine_final_host(DtsEngine *e,char *h,int n) {
+  if(!h || n<=0) return;
+  h[0]=0;
+  if(!e) return;
+  pthread_mutex_lock(&e->range_lock);
+  const char *p=strstr(e->final_url[0]?e->final_url:(e->url?e->url:""),"://");
+  if(p) {
+    p+=3;
+    size_t k=strcspn(p,"/?#:");
+    const char *at=memchr(p,'@',k);
+    if(at) { k-=(size_t)(at+1-p); p=at+1; }
+    snprintf(h,(size_t)n,"%.*s",(int)k,p);
+  }
   pthread_mutex_unlock(&e->range_lock);
 }
 /* Total size of the source, -1 while unknown (first range not answered). */

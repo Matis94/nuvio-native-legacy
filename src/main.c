@@ -86,6 +86,7 @@
 #include "traktauth.h"
 #include "simklauth.h"
 #include "app.h"
+#include "audioext.h"
 #include "registro.h"
 #include "desempenho.h"
 #include "atualizacao.h"
@@ -269,7 +270,8 @@ static void remapCanal(SDL_Event *e) {
   if ((e->type == SDL_KEYDOWN || e->type == SDL_KEYUP) &&
       (e->key.keysym.sym == SDLK_F7 || e->key.keysym.sym == SDLK_F8)) {
     int sobe = e->key.keysym.sym == SDLK_F7;
-    if (app_zap_ativo()) {
+    // Audio from another source playing (audioext.h): CH+/CH- move its sync.
+    if (app_zap_ativo() || audioext_tocando()) {
       e->key.keysym.scancode = (SDL_Scancode)(sobe ? NV_SCANCODE_CH_UP : NV_SCANCODE_CH_DOWN);
       e->key.keysym.sym = sobe ? SDLK_PAGEUP : SDLK_PAGEDOWN;
     } else {
@@ -1998,7 +2000,8 @@ int main(int argc, char **argv) {
 #endif
       // CH+ segurado x tocado (central.h). Com canal na tela (zap) ele segue
       // direto, sem atraso.
-      if (teclaCh(&e) && central_tecla(&e, !app_zap_ativo() && app_central_pode())) continue;
+      // Audio from another source playing: CH+ moves its sync, straight too.
+      if (teclaCh(&e) && central_tecla(&e, !app_zap_ativo() && !audioext_tocando() && app_central_pode())) continue;
       remapCanal(&e);
       // TECLA DESCONHECIDA, UMA LINHA CADA, UMA VEZ SO.
       //

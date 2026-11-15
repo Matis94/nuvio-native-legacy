@@ -37,6 +37,7 @@
 #include "trailer.h"
 #include "linguas.h"
 #include "audioescolha.h"
+#include "audioext.h"
 #include "idioma.h"
 #include "fontesonda.h"
 #include "posplay.h"
@@ -4404,6 +4405,20 @@ void player_evento(const SDL_Event *e) {
   // Tizen o CH+ ja chega aqui como "s" pela casca (tizen-shell.html).
   // CIMA/BAIXO NAO zapeiam: BAIXO ja era o guia (decisao do dono) e CIMA acorda
   // o OSD; trocar isso quebraria o gesto que a mao ja sabe.
+  // TEST BUILD, AUDIO FROM ANOTHER SOURCE (audioext.h): while the donor's audio
+  // plays, CH+/CH- (PgUp/PgDn) move it 50 ms later/earlier. The player applies
+  // the latest offset 700 ms after the last press (video_tpk.c).
+  if (!ehCanal() && audioext_tocando()) {
+    int sc = e->key.keysym.scancode, d = 0;
+    if (sc == NV_SCANCODE_CH_UP || k == SDLK_PAGEUP) d = 50;
+    else if (sc == NV_SCANCODE_CH_DOWN || k == SDLK_PAGEDOWN) d = -50;
+    if (d) {
+      char t[64];
+      snprintf(t, sizeof t, i18n("Audio offset %+d ms"), audioext_offset_somar(d));
+      player_toast(t, 1800);
+      return;
+    }
+  }
   if (ehCanal()) {
     int sc = e->key.keysym.scancode;
     if (sc == NV_SCANCODE_CH_UP   || k == SDLK_PAGEUP)   { avZap(1);  return; }
@@ -4564,6 +4579,18 @@ static void introTmdbTardio(Uint32 agora) {
 }
 
 void player_atualizar(float dt, Uint32 agora) {
+  { // Test build: say when the audio of another source starts, and why not.
+    static int extVisto;
+    char falha[200], t[260];
+    if (audioext_falha_consumir(falha, sizeof falha)) {
+      snprintf(t, sizeof t, i18n("Audio from the other source: %.180s"), falha);
+      player_toast(t, 5000);
+    }
+    if (audioext_tocando() && !extVisto) {
+      snprintf(t, sizeof t, i18n("Audio from: %.120s · CH+/CH- to sync"), audioext_nome());
+      player_toast(t, 4000);
+    }
+    extVisto = audioext_tocando(); }
 #ifdef NV_TOUCH_UI
   playerTelaAtualizar();
 #endif

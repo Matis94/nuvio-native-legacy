@@ -47,6 +47,15 @@ typedef struct {
 /* Writes n bytes; returns n, or < 0 to stop the run (client gone). */
 typedef int (*DtsRemuxWrite)(void *opaque, const unsigned char *data, int n);
 
+/* audio_ordinal for a VIDEO-ONLY source (audio from another source, owner
+ * 15/11): the file's video copied as always, no audio stream in the output,
+ * whatever audio the file has (none at all is fine too). The audio comes as
+ * HLS renditions from src/dts/doador_tpk.c. */
+#define DTS_REMUX_NO_AUDIO (-2)
+/* Every output packet's timestamp = its source time + this (the fixed
+ * timeline below): what another server's audio is stamped against. */
+#define DTS_REMUX_TS_OFFSET_S 10
+
 int dts_remux_available(void);
 /* Shared packet budget across generators: 192 MiB, 128 MiB on older TVs. */
 void dts_remux_set_queue_budget_mib(int mib);
