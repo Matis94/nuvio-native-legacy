@@ -30,4 +30,6 @@ int dts_tpk_e_url(const char *u) { (void)u; return 0; }
 int video_faixa_dts(const VideoFaixa *f) { (void)f; return 0; }
 // video_tpk.c passes audio offset to remuxer (convAbrirSessao).
 int  ajustes_audio_offset_ms(void) { return 0; }
+int  ajustes_audio_externo_auto(void) { return 1; }
+int  ajustes_audio_externo_seguir(void) { return 0; }
 void dts_remux_set_audio_offset_ms(int ms) { (void)ms; }
