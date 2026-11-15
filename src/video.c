@@ -1129,13 +1129,17 @@ static int eventoPayload(const char *p, unsigned minhaSessao) {
   // cobriam so ~4 minutos de filme — o que aconteceu antes do problema ja
   // tinha saido. Um de cada tipo a cada 30 s basta para saber que o video
   // andava; estado, erro, sourceInfo e o resto continuam inteiros.
-  { static Uint32 ultimoRel[4];
-    static const char *const RELOGIO[4] = {
-      "\"currentTime\"", "\"bufferRange\"", "\"streamingInfo\"", "subtitlePosition"
+  // The converter's TV player sends event 45 with value 0 and no text over
+  // and over (owner's log 15/11: 26033 of 39748 lines); nothing reads it,
+  // so it is sampled too. With another value or a text it is logged whole.
+  { static Uint32 ultimoRel[5];
+    static const char *const RELOGIO[5] = {
+      "\"currentTime\"", "\"bufferRange\"", "\"streamingInfo\"", "subtitlePosition",
+      "\"dtsEvent\":{\"type\":45,\"value\":0,\"detail\":\"\"}"
     };
     size_t n = strlen(p);
     int k, logar = 1;
-    for (k = 0; k < 4; k++)
+    for (k = 0; k < 5; k++)
       if (strstr(p, RELOGIO[k])) {
         Uint32 agora = SDL_GetTicks();
         if (ultimoRel[k] && agora - ultimoRel[k] < 30000) logar = 0;
