@@ -123,6 +123,14 @@ int audioext_offset_somar(int ms);
 int audioext_offset_definir(int ms);
 // Bumped by every offset change; the webOS player applies the latest one.
 unsigned audioext_offset_geracao(void);
+// 1 when the last offset change came from a check made while playing: the
+// converter makes it at a quiet moment of the other version's audio.
+int audioext_offset_suave(void);
+// The playback position (s), so the series memory keeps the offset of the
+// start of an episode: one found later (versions whose gaps differ) would put
+// the next episode's start off.
+void audioext_posicao(double segundos);
+#define AUDIOEXT_SERIE_INICIO_S 600
 // The webOS player says whether the session on screen plays the external
 // audio (the player screen uses it for CH+/CH-), and why it could not.
 void audioext_tocando_definir(int sim);
@@ -141,7 +149,10 @@ int audioext_dopasuj_ativo(void);
 // 2 length hint, 3 +-60 s, 4 +-5 min, 5 speed, measured later on its own),
 // dica_ms the offset the lengths suggest and pesado the wide search skipped
 // for its download (not found).
-typedef struct { int ms, ppm, como, dica_ms, pesado, nkand, kand_ms[3], kand_pct[3], automatico; } AudioExtDopasuj;
+// pozniej: found by a check made while playing (the sync checked all through,
+// DtsMatchInfo.later): applied at a quiet moment, said nothing, and it does not
+// become the series memory's offset.
+typedef struct { int ms, ppm, como, dica_ms, pesado, nkand, kand_ms[3], kand_pct[3], automatico, pozniej; } AudioExtDopasuj;
 void audioext_dopasuj_resultado(int ok, const AudioExtDopasuj *r);
 // Once, for a toast: 1 found, -1 not trusted, 0 nothing.
 int audioext_dopasuj_aviso_consumir(AudioExtDopasuj *out);

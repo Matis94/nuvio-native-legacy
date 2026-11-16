@@ -58,6 +58,9 @@ void dts_playback_external_offset(DtsPlayback *p, int offset_ms);
 /* Main thread: a new offset applied at once without a seek or reload (only the
  * other file moves); falls back to a seek if that fails. */
 void dts_playback_external_offset_live(DtsPlayback *p, int offset_ms);
+/* The same, made at a quiet moment of the other version's audio (a change
+ * from an automatic check while playing; dts_engine_external_shift_quiet). */
+void dts_playback_external_offset_quiet(DtsPlayback *p, int offset_ms);
 /* Main thread: "Match automatically" (about 30 s of playback, longer when it
  * searches further). The result, once: 0 still working, 1 found, -1 not
  * trusted or failed (details in DtsMatchInfo, dts_engine.h). A find can also

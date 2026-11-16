@@ -120,6 +120,11 @@ void dts_engine_external_mismatch(DtsEngine *, int *cut_s, int *speed, int *rati
  * source (the other file moves, timestamps stay continuous). 0 ok; on -1 the
  * caller seeks as before. */
 int dts_engine_external_shift(DtsEngine *, int offset_ms);
+/* The same for a change from an automatic check made while playing
+ * (DtsMatchInfo.later): made at the next quiet moment of the other version's
+ * audio, within a minute. Asked again with the same value it keeps waiting;
+ * dts_engine_external_shift with another value, or a seek, replaces it. */
+int dts_engine_external_shift_quiet(DtsEngine *, int offset_ms);
 /* Blocking (a worker thread): the audio tracks of a file this TV can play or
  * convert, read from its container header only. Count, -1, or -3 for the
  * debrid placeholder clip (a file under two minutes). */
@@ -144,6 +149,8 @@ typedef struct {
   int hint_ms;      /* not found: offset the lengths suggest (0: none) */
   int too_heavy;    /* not found: the wide search was skipped (too much to download) */
   int automatic;    /* started by the engine (following another cut), not by a click */
+  int later;        /* found by a check made while playing (the sync checked all through):
+                     * no toast, the change at a quiet moment, not the series memory */
   int ncand;        /* the best places found, for the person to try (offset ms, score %) */
   int cand_ms[3], cand_score[3];
 } DtsMatchInfo;

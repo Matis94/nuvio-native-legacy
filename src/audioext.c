@@ -14,6 +14,8 @@ static char alvoAtual[64], alvoMarca[64];
 static char urlMarca[NV_MEDIA_URL_MAX], cabMarca[512], nomeMarca[192];
 static int offsetMs, tocando;
 static unsigned offsetGeracao;
+static int offsetSuave;      // the last change came from a check while playing
+static double posAtual = -1; // playback position (audioext_posicao), -1 unknown
 static char falha[160], idiomaMarca[8];
 // Fallback copies of the marked file (audioext_reserva).
 static char resUrl[3][NV_MEDIA_URL_MAX], resCab[3][512];
@@ -71,7 +73,7 @@ void audioext_limpar(void) {
   resN = resProx = 0;
   tentativas = tentativa = 0; retryEm = 0; preparandoAviso = 0;
   urlMarca[0] = cabMarca[0] = nomeMarca[0] = alvoMarca[0] = idiomaMarca[0] = 0;
-  offsetMs = 0; offsetGeracao++; velocidadePpm = 0; kandN = 0;
+  offsetMs = 0; offsetGeracao++; offsetSuave = 0; posAtual = -1; velocidadePpm = 0; kandN = 0;
   pendente = 0; faixaMarca = -1; carregando = 0; dicaAtiva = 0; offsetLembrado = 0;
   dopasujPedido = dopasujAtivo = 0;
 }
@@ -104,7 +106,7 @@ int audioext_alternar(const char *url, const char *cabecalhos, const char *nome)
   snprintf(nomeMarca, sizeof nomeMarca, "%s", nome ? nome : "");
   snprintf(alvoMarca, sizeof alvoMarca, "%s", alvoAtual);
   idiomaMarca[0] = 0;
-  offsetMs = 0; offsetGeracao++; velocidadePpm = 0; kandN = 0;
+  offsetMs = 0; offsetGeracao++; offsetSuave = 0; posAtual = -1; velocidadePpm = 0; kandN = 0;
   pendente = 0; faixaMarca = -1; dicaAtiva = 0; offsetLembrado = 0;
   // The name is the add-on's label, never the URL (signed links stay out of logs).
   printf("[ext-audio] audio source marked: %.80s (target %s)\n", nomeMarca, alvoMarca);
@@ -122,7 +124,7 @@ void audioext_escolher(const char *url, const char *cabecalhos, const char *nome
     snprintf(cabMarca, sizeof cabMarca, "%s", cabecalhos ? cabecalhos : "");
     snprintf(nomeMarca, sizeof nomeMarca, "%s", nome ? nome : "");
     snprintf(alvoMarca, sizeof alvoMarca, "%s", alvoAtual);
-    offsetMs = 0; offsetGeracao++; velocidadePpm = 0; kandN = 0; kandN = 0; velocidadePpm = 0;
+    offsetMs = 0; offsetGeracao++; offsetSuave = 0; posAtual = -1; velocidadePpm = 0; kandN = 0; kandN = 0; velocidadePpm = 0;
     faixaMarca = -1; dicaAtiva = 0; offsetLembrado = 0;
   }
   snprintf(idiomaMarca, sizeof idiomaMarca, "%s", idioma ? idioma : "");
@@ -250,6 +252,11 @@ int audioext_pedido(const char *urlVideo) {
 const char *audioext_url(void) { return urlMarca; }
 const char *audioext_cabecalhos(void) { return cabMarca; }
 const char *audioext_nome(void) { return nomeMarca; }
+// The series memory keeps the offset of an episode's start (owner's log 16/11,
+// Chicago Fire: 3 s from the end of one episode put the next one's start off).
+static int memoAceita(void) { return posAtual < 0 || posAtual < AUDIOEXT_SERIE_INICIO_S; }
+void audioext_posicao(double segundos) { posAtual = segundos; }
+int audioext_offset_suave(void) { return offsetSuave; }
 int audioext_offset_ms(void) { return offsetMs; }
 int audioext_offset_somar(int ms) {
   return audioext_offset_definir(offsetMs + ms);
@@ -259,9 +266,9 @@ int audioext_offset_definir(int ms) {
   offsetMs = ms;
   if (offsetMs > AUDIOEXT_OFFSET_MAX) offsetMs = AUDIOEXT_OFFSET_MAX;
   if (offsetMs < -AUDIOEXT_OFFSET_MAX) offsetMs = -AUDIOEXT_OFFSET_MAX;
-  offsetGeracao++;
+  offsetGeracao++; offsetSuave = 0;
   { char sr[64]; serieDe(alvoMarca, sr, sizeof sr);
-    if (memo.ativo && sr[0] && !strcmp(sr, memo.serie)) memo.offset = offsetMs; }
+    if (memo.ativo && sr[0] && !strcmp(sr, memo.serie) && memoAceita()) memo.offset = offsetMs; }
   return offsetMs;
 }
 unsigned audioext_offset_geracao(void) { return offsetGeracao; }
@@ -281,7 +288,8 @@ void audioext_dopasuj_resultado(int ok, const AudioExtDopasuj *r) {
   AudioExtDopasuj z = { 0 };
   if (!r) r = &z;
   // A second look (como 5) or the follow's own match arrive without a click.
-  if (!dopasujAtivo && !(ok && r->como == 5) && !r->automatico) return;
+  // ...and so does a check made while playing (pozniej).
+  if (!dopasujAtivo && !(ok && r->como == 5) && !r->automatico && !r->pozniej) return;
   dopasujAtivo = 0; dopasujPedido = 0;
   dopasujInfo = *r;
   if (r->como != 5) {   // a second look keeps the click's candidates
@@ -293,17 +301,20 @@ void audioext_dopasuj_resultado(int ok, const AudioExtDopasuj *r) {
     if (ms > AUDIOEXT_OFFSET_MAX) ms = AUDIOEXT_OFFSET_MAX;
     if (ms < -AUDIOEXT_OFFSET_MAX) ms = -AUDIOEXT_OFFSET_MAX;
     // Automatic, same speed, a few ms away: kept as it is (AUDIOEXT_AUTO_MIN_MS).
-    if (r->automatico && r->ppm == velocidadePpm && ms - offsetMs < AUDIOEXT_AUTO_MIN_MS &&
+    if ((r->automatico || r->pozniej) && r->ppm == velocidadePpm && ms - offsetMs < AUDIOEXT_AUTO_MIN_MS &&
         offsetMs - ms < AUDIOEXT_AUTO_MIN_MS) {
       printf("[ext-audio] match: %d ms is %d ms from the current offset, kept\n", ms, ms - offsetMs);
       fflush(stdout);
       ms = offsetMs;
     }
-    if (ms != offsetMs) { offsetMs = ms; offsetGeracao++; }
+    if (ms != offsetMs) { offsetMs = ms; offsetGeracao++; offsetSuave = r->pozniej != 0; }
     // Another speed: the other version is opened again at it (the swap).
     if (r->ppm != velocidadePpm) { velocidadePpm = r->ppm; pedidoGeracao++; }
     { char sr[64]; serieDe(alvoMarca, sr, sizeof sr);
-      if (memo.ativo && sr[0] && !strcmp(sr, memo.serie)) { memo.offset = offsetMs; memo.velocidade = velocidadePpm; } }
+      if (memo.ativo && sr[0] && !strcmp(sr, memo.serie)) {
+        if (!r->pozniej && memoAceita()) memo.offset = offsetMs;
+        memo.velocidade = velocidadePpm;
+      } }
   }
   dopasujInfo.ms = offsetMs;
   dopasujAviso = ok ? 1 : -1;
@@ -354,7 +365,7 @@ void audioext_seguir_evento(int tipo, int ms) {
   if (!urlMarca[0]) return;
   if (tipo == 2 || tipo == 4) {   // resumed / a small shift corrected: the converter's new offset
     offsetMs = ms > AUDIOEXT_OFFSET_MAX ? AUDIOEXT_OFFSET_MAX : ms < -AUDIOEXT_OFFSET_MAX ? -AUDIOEXT_OFFSET_MAX : ms;
-    offsetGeracao++;   // the converter already moved: the live apply finds it equal
+    offsetGeracao++; offsetSuave = 0;   // the converter already moved: the live apply finds it equal
   }
   seguirAviso = tipo; seguirMs = offsetMs;
 }
@@ -489,7 +500,7 @@ void audioext_serie_achou(const char *url, const char *cabecalhos, const char *n
   snprintf(alvoMarca, sizeof alvoMarca, "%s", alvoAtual);
   snprintf(idiomaMarca, sizeof idiomaMarca, "%s", memo.id.idioma);
   snprintf(memo.episodio, sizeof memo.episodio, "%s", alvoAtual);
-  offsetMs = memo.offset; offsetGeracao++; velocidadePpm = memo.velocidade;
+  offsetMs = memo.offset; offsetGeracao++; offsetSuave = 0; velocidadePpm = memo.velocidade;
   faixaMarca = -1;
   dicaAtiva = memo.temFaixa; if (dicaAtiva) dica = memo.faixa;
   offsetLembrado = 1;

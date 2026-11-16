@@ -2896,23 +2896,28 @@ void video_bombear(void) {
     DtsMatchInfo mi;
     int mr = dts_playback_external_match_result(dtsSessao, &mi);
     if (mr) {
-      AudioExtDopasuj r = { mi.offset_ms, mi.ratio_ppm, mi.how, mi.hint_ms, mi.too_heavy, mi.ncand, { 0 }, { 0 }, mi.automatic };
+      // A check made while playing says nothing (automatico) and waits for a quiet moment (pozniej).
+      AudioExtDopasuj r = { mi.offset_ms, mi.ratio_ppm, mi.how, mi.hint_ms, mi.too_heavy, mi.ncand, { 0 }, { 0 },
+                            mi.automatic || mi.later, mi.later };
       for (int c = 0; c < mi.ncand && c < 3; c++) { r.kand_ms[c] = mi.cand_ms[c]; r.kand_pct[c] = mi.cand_score[c]; }
-      printf("[ext-audio] match result %d: offset %d ms speed %d ppm how %d hint %d ms heavy %d\n",
-             mr, mi.offset_ms, mi.ratio_ppm, mi.how, mi.hint_ms, mi.too_heavy);
+      printf("[ext-audio] match result %d: offset %d ms speed %d ppm how %d hint %d ms heavy %d%s\n",
+             mr, mi.offset_ms, mi.ratio_ppm, mi.how, mi.hint_ms, mi.too_heavy, mi.later ? " (check while playing)" : "");
       fflush(stdout);
       audioext_dopasuj_resultado(mr > 0, &r);
     }
   } else if (audioext_dopasuj_ativo()) audioext_dopasuj_resultado(0, NULL);
   if (dtsSessao && extAtivo) {
+    audioext_posicao(posSeg);
     unsigned g = audioext_offset_geracao();
     if (g != extGenVista) { extGenVista = g; extGenEm = SDL_GetTicks(); }
     if (g != extGenAplicada && extGenEm && SDL_GetTicks() - extGenEm >= 700) {
       extGenAplicada = g; extGenEm = 0;
       // Applied live (owner, 07/11: every change used to reload the picture):
       // only the other file moves; the worker seeks only if that fails.
-      printf("[ext-audio] offset %d ms: live at %.3f\n", audioext_offset_ms(), posSeg); fflush(stdout);
-      dts_playback_external_offset_live(dtsSessao, audioext_offset_ms());
+      printf("[ext-audio] offset %d ms: live at %.3f%s\n", audioext_offset_ms(), posSeg,
+             audioext_offset_suave() ? " (at a quiet moment)" : ""); fflush(stdout);
+      if (audioext_offset_suave()) dts_playback_external_offset_quiet(dtsSessao, audioext_offset_ms());
+      else dts_playback_external_offset_live(dtsSessao, audioext_offset_ms());
     }
   }
   if (dtsSessao) bombearDts();

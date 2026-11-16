@@ -230,7 +230,7 @@ static void *wake_when_waiting(void *arg) {
   return NULL;
 }
 int main(int argc, char **argv) {
-  assert(argc == 34);
+  assert(argc == 36);
   const char *main_file = argv[1], *other = argv[2], *dts_only = argv[3], *short_clip = argv[4], *mp4 = argv[5];
   const char *aac44 = argv[6], *main60 = argv[7], *long_idx = argv[8], *long_noidx = argv[9];
   const char *match_main = argv[10], *match_dub = argv[11];
@@ -239,6 +239,7 @@ int main(int argc, char **argv) {
   const char *follow_ext = argv[21], *follow_th = argv[22], *lang_main = argv[23], *lang_pl = argv[24];
   const char *dub_ru = argv[25], *dub_pl = argv[26], *follow_ext_ru = argv[27], *follow_th_pl = argv[28];
   const char *shift_main = argv[29], *shift_dub = argv[30], *gap_main = argv[31], *gap_dub = argv[32], *two_en = argv[33];
+  const char *step_main = argv[34], *step_dub = argv[35];
   dts_engine_set_lang_match(lang_match);
   load_refs(other, "pol");
 
@@ -855,6 +856,32 @@ int main(int argc, char **argv) {
     }
     fprintf(stderr, "second look, same frame rate: %d result(s), speed %d, moved to %d ms\n", results, speed, moved_ms);
     assert(got == 0 && !speed && moved && moved_ms < -450 && moved_ms > -550); }
+  dts_engine_destroy(e);
+  /* Versions whose gaps differ at each break (owner's log 16/11, Chicago
+   * Fire): the lengths 1 s apart, so the sync is checked all through. Each
+   * move is found by a check made while playing (later), asked as a quiet
+   * change and made in a pause; the next check measures from it, so the
+   * second move is reported at -1000 ms, not the first one again. */
+  e = dts_engine_create();
+  dts_engine_external_audio(e, step_dub, HEADERS, "en", 0);
+  assert(dts_engine_open(e, step_main, HEADERS, -1, 0, 0) == 0);
+  { DtsFrame f; int got, first = 0, nm = 0, moves[4] = { 0 }; int64_t at[4] = { 0 }, last = INT64_MIN; DtsMatchInfo mi;
+    assert(dts_engine_external_match_arm(e) == 0);
+    while ((got = dts_engine_next(e, &f)) == 1) {
+      if (f.kind == DTS_VIDEO) last = f.pts_ns;
+      int r = dts_engine_external_match_poll(e, &mi);
+      if (r == 1 && !mi.later) { first++; assert(dts_engine_external_shift(e, mi.offset_ms) == 0); }
+      if (r == 1 && mi.later && nm < 4) {
+        at[nm] = last; moves[nm++] = mi.offset_ms;
+        assert(dts_engine_external_shift_quiet(e, mi.offset_ms) == 0);
+        assert(dts_engine_external_shift_quiet(e, mi.offset_ms) == 0);   /* asked again: still waiting */
+      }
+    }
+    fprintf(stderr, "checked all through: first find %d, moves %d (%d ms at %.0f s, %d ms at %.0f s)\n",
+            first, nm, moves[0], at[0] / 1e9, moves[1], at[1] / 1e9);
+    assert(got == 0 && first == 1 && nm == 2);
+    assert(moves[0] < -450 && moves[0] > -550 && at[0] > 200e9 && at[0] < 400e9);
+    assert(moves[1] < -950 && moves[1] > -1050 && at[1] > 470e9); }
   dts_engine_destroy(e);
   /* A real missing scene between two languages: found later (the slower
    * check), and the other version still resumes 25 s on. */

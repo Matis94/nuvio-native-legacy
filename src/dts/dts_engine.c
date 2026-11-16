@@ -93,6 +93,7 @@ void dts_engine_external_audio_only(DtsEngine *e,int on) { (void)e;(void)on; }
 void dts_engine_external_track(DtsEngine *e,int s) { (void)e;(void)s; }
 void dts_engine_external_mismatch(DtsEngine *e,int *c,int *s,int *r) { (void)e; *c=0; *s=0; if(r) *r=0; }
 int dts_engine_external_shift(DtsEngine *e,int o) { (void)e;(void)o; return -1; }
+int dts_engine_external_shift_quiet(DtsEngine *e,int o) { (void)e;(void)o; return -1; }
 int dts_engine_probe_audio(const char *u,const char *h,DtsTrack *t,int m) { (void)u;(void)h;(void)t;(void)m; return -1; }
 int dts_engine_external_match_arm(DtsEngine *e) { (void)e; return -1; }
 int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) { (void)e; memset(o,0,sizeof *o); return -1; }
@@ -298,6 +299,14 @@ struct DtsEngine {
   uint64_t mt_started_ms;
   struct MatchJob *mj;   /* background search over a reader of its own */
   int mt_check;          /* the capture in progress is the second look (speed) */
+  /* The sync checked all through the episode (owner's log 16/11, Chicago
+   * Fire: a version 2.2 s shorter, its offset growing in steps at the
+   * breaks): every 3 minutes, 6 once it held twice. mt_later marks a find of
+   * such a check for the app (DtsMatchInfo.later). */
+  int mt_watch, mt_same, mt_later;
+  /* A sync change from such a check waits for a quiet moment of the other
+   * version's audio (struct Quiet), up to QUIET_MAX_MS. */
+  struct Quiet *qs; int qs_offset_ms; uint64_t qs_since_ms;
   double mt_t1, mt_o1;   /* first find: this file's time and raw offset, s (mt_t1 < 0: none) */
   int64_t mt_o1_user_ns; /* the offset that find reported (a manual change forgets it) */
   double ext_ratio;      /* other version's speed (0 or 1: the same; dts_engine_external_speed) */
@@ -1603,6 +1612,9 @@ static int packet_read_error(DtsEngine *e,int code) {
   return fail(e,"Container read",code);
 }
 static void match_disarm(DtsEngine *e);
+static void quiet_free(DtsEngine *e);
+static void quiet_reset(struct Quiet *q);
+static void quiet_poll(DtsEngine *e);
 static void match_cancel(DtsEngine *e);
 static void match_stop(DtsEngine *e);
 static void pf_stop(DtsEngine *e);
@@ -1829,6 +1841,7 @@ void dts_engine_external_audio(DtsEngine *e,const char *url,const char *headers,
 }
 void dts_engine_external_offset(DtsEngine *e,int offset_ms) {
   if(!e) return;
+  quiet_free(e);   /* set directly (a seek): nothing left to wait for */
   if(offset_ms>DTS_ENGINE_EXTERNAL_OFFSET_MAX_MS) offset_ms=DTS_ENGINE_EXTERNAL_OFFSET_MAX_MS;
   if(offset_ms<-DTS_ENGINE_EXTERNAL_OFFSET_MAX_MS) offset_ms=-DTS_ENGINE_EXTERNAL_OFFSET_MAX_MS;
   e->ext_offset_ns=(int64_t)offset_ms*1000000;
@@ -2301,6 +2314,16 @@ static int configure_external(DtsEngine *e,double start) {
     }
     /* In this source's time: a sped-up version is not another cut. */
     e->ext_cut_s=(int)llround(((double)x->fmt->duration*ext_k(e)-(double)e->fmt->duration)/1e6);
+    /* Lengths half a second or more apart, the same cut otherwise: the gaps
+     * differ somewhere, so the sync is checked all through. */
+    e->mt_watch=e->mt_same=0;
+    if(x->fmt->duration>0 && e->fmt->duration>0) {
+      double d=((double)x->fmt->duration*ext_k(e)-(double)e->fmt->duration)/1e6;
+      if(fabs(d)>=0.5 && fabs(d)<=10.0) {
+        e->mt_watch=1;
+        printf("[ext-audio] the lengths differ by %.1f s: the sync is checked all through\n",d);
+      }
+    }
     printf("[ext-audio] main fps=%.3f duration=%.1fs, other fps=%.3f duration=%.1fs%s\n",fa,
       e->fmt->duration/1e6,fb,x->fmt->duration/1e6,
       fa>0 && fb>0 && fabs(fa-fb)>0.05?" WARNING: frame rates differ, audio will drift":"");
@@ -2961,7 +2984,8 @@ static void match_job_stop(DtsEngine *e) {
 /* Session closed or another version: nothing of the match survives. */
 static void follow_free(DtsEngine *e);
 static void match_stop(DtsEngine *e) {
-  match_disarm(e); match_job_stop(e); e->mt_t1=-1;
+  match_disarm(e); match_job_stop(e); e->mt_t1=-1; e->mt_later=0;
+  quiet_free(e);
   follow_free(e); e->fw_autoarm=0;
 }
 /* A fresh reader of the other version, `seconds` of its chosen track from
@@ -3105,41 +3129,73 @@ static void match_set_cands(DtsEngine *e,int n,const double *off,const double *s
     e->mt_cand_ms[e->mt_ncand]=(int)u; e->mt_cand_sc[e->mt_ncand++]=(int)lround(sc[i]*100.0);
   }
 }
+/* A find of a later check: reported like any other, marked for the app
+ * (no toast, a quiet moment for the change, not the series memory). */
+static void match_report_later(DtsEngine *e,double off_raw,double score) {
+  match_report(e,off_raw,0,score,1);
+  if(e->mt_state==2) { e->mt_later=1; e->mt_o1_user_ns=(int64_t)e->mt_offset_ms*1000000; }
+}
+/* Checking all through: the find of this check against the offset playing
+ * now. A move of 40 ms or more (the app's AUDIOEXT_AUTO_MIN_MS) is applied. */
+static void match_watch_step(DtsEngine *e,double t2,const DtsMatchResult *r) {
+  double step=r->offset_s-(e->ext_offset_ns+e->ext_base_ns)/1e9;
+  e->mt_t1=t2; e->mt_o1=r->offset_s;
+  if(fabs(step)>=0.040) {
+    e->mt_same=0;
+    printf("[ext-audio] match: check at %.0f s: the offset moved by %+d ms to %d ms\n",t2,(int)lround(step*1000.0),
+           (int)llround((r->offset_s*1e9-e->ext_base_ns)/1e6));
+    fflush(stdout);
+    match_report_later(e,r->offset_s,r->score);
+    if(e->mt_state==2) e->mt_o1_user_ns=(int64_t)e->mt_offset_ms*1000000;
+    return;
+  }
+  e->mt_same++;
+  printf("[ext-audio] match: check at %.0f s: offset unchanged (%+d ms), next check in %d min\n",t2,
+         (int)lround(step*1000.0),e->mt_same>=2?6:3);
+  fflush(stdout);
+}
 /* A find at the same speed is looked at again 5 minutes later: a drift
  * between the two means another speed (owner's log 07/11: 23.970 vs 23.976
- * fps, or a PAL version). */
+ * fps, or a PAL version). With the sync checked all through (mt_watch) it
+ * is looked at again every few minutes to the end. */
 static void match_second_look(DtsEngine *e,const DtsMatchSig *sm,const DtsMatchSig *sd) {
   DtsMatchResult r;
   double t2=sm->t0+sm->n/2.0/DTS_MATCH_HZ, center=(e->ext_offset_ns+e->ext_base_ns)/1e9;
   int got=dts_match_search(sm,sd,1.0,center,3.0,&r);
   double span=t2-e->mt_t1;
-  e->mt_t1=-1;
   if(!got || !r.confident || fabs(span)<120.0) {
     printf("[ext-audio] match: second look %s\n",got && r.confident?"too close to the first":"not trusted");
-    fflush(stdout); return;
+    fflush(stdout);
+    /* Checking all through: tried again at the next turn. */
+    if(!e->mt_watch) e->mt_t1=-1;
+    else if(fabs(span)>=120.0) e->mt_t1=t2;
+    return;
   }
   double drift=(r.offset_s-e->mt_o1)/span;
   printf("[ext-audio] match: second look %.0f s later: offset %.3f s (first %.3f s), drift %.1f ppm\n",
     span,r.offset_s-e->ext_base_ns/1e9,e->mt_o1-e->ext_base_ns/1e9,drift*1e6);
   fflush(stdout);
-  if(fabs(drift)<0.0002) return;   /* the same speed: 0.7 s an hour at most */
   double k=1.0/(1.0-drift);
   /* A speed change is only believed when the frame rates differ, or the
    * measure lands on a known film/TV ratio (24/23.976, 25/24, 25/23.976 and
    * back). Same frame rate and an odd ratio: the offset moved instead (a gap
    * longer in one release; owner's log 08/11, Chicago Fire: 0.5 s read as
    * 1645 ppm, the other version reopened at that speed and back again). */
-  { int std=known_speed(k);
-    int same_fps=e->ext_fps_ratio>0 && fabs(e->ext_fps_ratio-1.0)<1e-4;
-    if(same_fps && !std) {
-      printf("[ext-audio] match: second look: the same frame rate, so not a speed difference: offset moved to %.3f s\n",
-             r.offset_s-e->ext_base_ns/1e9);
-      fflush(stdout);
-      match_report(e,r.offset_s,0,r.score,1);
-      /* and looked at again 5 minutes on from here */
-      e->mt_t1=t2; e->mt_o1=r.offset_s; e->mt_o1_user_ns=(int64_t)e->mt_offset_ms*1000000;
-      return;
-    }
+  int std=known_speed(k), same_fps=e->ext_fps_ratio>0 && fabs(e->ext_fps_ratio-1.0)<1e-4;
+  if(e->mt_watch && (fabs(drift)<0.0002 || (same_fps && !std))) { match_watch_step(e,t2,&r); return; }
+  e->mt_t1=-1;
+  if(fabs(drift)<0.0002) return;   /* the same speed: 0.7 s an hour at most */
+  if(same_fps && !std) {
+    printf("[ext-audio] match: second look: the same frame rate, so not a speed difference: offset moved to %.3f s\n",
+           r.offset_s-e->ext_base_ns/1e9);
+    /* A version whose gaps differ: checked all through from here (owner's
+     * log 16/11: this find was dropped and the offset stayed 0.85 s off). */
+    e->mt_watch=1; e->mt_same=0;
+    printf("[ext-audio] match: the offset moved, so the sync is checked all through from now on\n");
+    fflush(stdout);
+    match_report_later(e,r.offset_s,r.score);
+    e->mt_t1=t2; e->mt_o1=r.offset_s;
+    return;
   }
   /* The frame rates name the exact ratio when they agree with the measure. */
   if(e->ext_fps_ratio>0 && fabs(e->ext_fps_ratio-1.0)>1e-5 && fabs((e->ext_fps_ratio-k)/(k-1.0))<0.3) k=e->ext_fps_ratio;
@@ -3379,7 +3435,8 @@ int dts_engine_external_match_arm(DtsEngine *e) {
  * the first find (called with this file's picture time). */
 static void match_second_look_due(DtsEngine *e,int64_t t_ns) {
   if(e->mt_t1<0 || e->mt || e->mj || t_ns==INT64_MIN) return;
-  if(fabs(t_ns/1e9-e->mt_t1)<300.0) return;
+  double gap=e->mt_watch?(e->mt_same>=2?360.0:180.0):300.0;
+  if(fabs(t_ns/1e9-e->mt_t1)<gap) return;
   if(match_arm(e,1)<0) e->mt_t1=-1;
 }
 int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) {
@@ -3410,9 +3467,11 @@ int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) {
   }
   if(e->mt_state==2) {
     o->offset_ms=e->mt_offset_ms; o->score=e->mt_score; o->ratio_ppm=e->mt_ratio_ppm; o->how=e->mt_how;
+    o->later=e->mt_later; e->mt_later=0;
     e->mt_state=0; return 1;
   }
   if(e->mt_state==3) {
+    e->mt_later=0;
     o->score=e->mt_score; o->hint_ms=e->mt_hint_ms; o->too_heavy=e->mt_heavy;
     e->mt_state=0; return -1;
   }
@@ -3835,6 +3894,7 @@ static int ext_emit(DtsEngine *e,DtsFrame *f) {
   f->pts_ns=f->dts_ns=e->ext_pts;
   f->duration_ns=e->out->duration>0?ns(e->out->duration,tb):0;
   e->ext_last_end_ns=f->pts_ns+f->duration_ns;
+  if(e->qs) quiet_poll(e);
   return 1;
 }
 /* 1 = an external packet is due (emitted into f), 0 = not yet, -1 error. */
@@ -3977,6 +4037,7 @@ static int ext_seek(DtsEngine *e,double seconds) {
   int64_t b0=(int64_t)e->ext->metrics.range_bytes;
   match_cancel(e);
   ext_unwake(e);
+  quiet_reset(e->qs);
   if(e->ext_failed) return ext_reset_chain(e);   /* given up: the app goes back to its own audio */
   int how=0, r=ext_donor_seek(e,t,&how);
   printf("[ext-audio] seek to %.1fs: other version %llu ms via %s, %lld KiB read\n",t,
@@ -3994,12 +4055,137 @@ static int ext_seek(DtsEngine *e,double seconds) {
   }
   return ext_reset_chain(e);
 }
+/* A QUIET MOMENT FOR AN AUTOMATIC SYNC CHANGE (owner 16/11): the live
+ * change repeats or skips |change| of the other version's sound at the
+ * moment it is made. Made at the end of a pause, the repeated part is the
+ * pause itself (an offset growing) or the skip lands inside it (shrinking).
+ * The other version's audio is decoded as it is given out (energy per
+ * 10 ms); "quiet" is 11 dB or more under the median of the last 10 s. */
+#define QUIET_MAX_MS 60000u
+#define QUIET_RING 1000
+struct Quiet {
+  AVCodecContext *dec; SwrContext *swr; AVFrame *fr;
+  int blk, accn, rn, rp, since_med, run, need;
+  double acc; float med;
+  float ring[QUIET_RING], tmp[QUIET_RING];
+};
+static int quiet_cmp(const void *a,const void *b) { float x=*(const float *)a, y=*(const float *)b; return x<y?-1:x>y; }
+static void quiet_free(DtsEngine *e) {
+  struct Quiet *q=e->qs;
+  if(!q) return;
+  avcodec_free_context(&q->dec); swr_free(&q->swr); av_frame_free(&q->fr);
+  free(q); e->qs=NULL;
+}
+/* Its history starts over (a jump of either file). */
+static void quiet_reset(struct Quiet *q) {
+  if(!q) return;
+  if(q->dec) avcodec_flush_buffers(q->dec);
+  q->rn=q->rp=q->since_med=q->run=q->accn=0; q->acc=0; q->med=0;
+}
+static int quiet_open(DtsEngine *e) {
+  AVCodecParameters *par=avcodec_parameters_alloc();
+  struct Quiet *q=calloc(1,sizeof *q);
+  const AVCodec *c=NULL;
+  int ok=par && q;
+  if(ok) {
+    if(e->ext_conv) ok=e->enc && avcodec_parameters_from_context(par,e->enc)>=0;
+    else ok=e->ext && e->ext->fmt && e->ext_stream>=0 && avcodec_parameters_copy(par,e->ext->fmt->streams[e->ext_stream]->codecpar)>=0;
+  }
+  if(ok) ok=(c=avcodec_find_decoder(par->codec_id))!=NULL && (q->dec=avcodec_alloc_context3(c))!=NULL && (q->fr=av_frame_alloc())!=NULL;
+  if(ok) ok=avcodec_parameters_to_context(q->dec,par)>=0;
+  if(ok && par->codec_id==AV_CODEC_ID_DTS) av_opt_set_int(q->dec->priv_data,"core_only",1,0);
+  if(ok) ok=avcodec_open2(q->dec,c,NULL)>=0;
+  avcodec_parameters_free(&par);
+  if(!ok) { if(q) { avcodec_free_context(&q->dec); av_frame_free(&q->fr); free(q); } return -1; }
+  quiet_free(e); e->qs=q;
+  return 0;
+}
+static void quiet_block(struct Quiet *q,float v) {
+  q->ring[q->rp]=v; q->rp=(q->rp+1)%QUIET_RING; if(q->rn<QUIET_RING) q->rn++;
+  if(++q->since_med>=100 && q->rn>=300) {   /* the median once a second */
+    memcpy(q->tmp,q->ring,sizeof(float)*(size_t)q->rn);
+    qsort(q->tmp,(size_t)q->rn,sizeof(float),quiet_cmp);
+    q->med=q->tmp[q->rn/2]; q->since_med=0;
+  }
+  if(q->rn>=300 && (v<1e-8f || v<=q->med*0.08f)) q->run++; else q->run=0;
+}
+static void quiet_feed(struct Quiet *q,AVPacket *pkt) {
+  if(!q || !q->dec || !pkt || !pkt->data || avcodec_send_packet(q->dec,pkt)<0) return;
+  while(avcodec_receive_frame(q->dec,q->fr)==0) {
+    AVFrame *fr=q->fr;
+    if(!q->swr) {
+      AVChannelLayout mono=AV_CHANNEL_LAYOUT_MONO;
+      if(swr_alloc_set_opts2(&q->swr,&mono,AV_SAMPLE_FMT_FLT,fr->sample_rate,&fr->ch_layout,fr->format,fr->sample_rate,0,NULL)<0 ||
+         swr_init(q->swr)<0) { swr_free(&q->swr); av_frame_unref(fr); return; }
+      q->blk=fr->sample_rate/100; if(q->blk<1) q->blk=1;
+    }
+    float buf[4096]; uint8_t *out=(uint8_t *)buf;
+    const uint8_t **in=(const uint8_t **)fr->extended_data; int left=fr->nb_samples;
+    for(;;) {
+      int got=swr_convert(q->swr,&out,4096,in,left);
+      in=NULL; left=0;
+      if(got<=0) break;
+      for(int i=0;i<got;i++) {
+        q->acc+=(double)buf[i]*buf[i];
+        if(++q->accn==q->blk) { quiet_block(q,(float)(q->acc/q->blk)); q->acc=0; q->accn=0; }
+      }
+    }
+    av_frame_unref(fr);
+  }
+}
+static int external_shift_now(DtsEngine *e,int offset_ms);
+/* After each packet of the other version given out: is this the moment? */
+static void quiet_poll(DtsEngine *e) {
+  struct Quiet *q=e->qs;
+  if(!q) return;
+  quiet_feed(q,e->out);
+  uint64_t waited=fx_now_ms()-e->qs_since_ms;
+  int ok=q->rn>=300 && q->run*10>=q->need;
+  if(!ok && waited<QUIET_MAX_MS) return;
+  int ms=e->qs_offset_ms, run=q->run*10;
+  quiet_free(e);
+  if(ok) printf("[ext-audio] sync change to %d ms at a quiet moment (%.1f s after the check, %d ms of quiet)\n",ms,waited/1000.0,run);
+  else printf("[ext-audio] sync change to %d ms: no quiet moment in %u s, made now\n",ms,QUIET_MAX_MS/1000u);
+  fflush(stdout);
+  /* The other file could not move by itself: the offset is kept for the
+   * next seek (the app shows it already). */
+  if(external_shift_now(e,ms)<0) {
+    dts_engine_external_offset(e,ms);
+    printf("[ext-audio] sync change to %d ms: the other version could not move now, kept for the next seek\n",ms);
+    fflush(stdout);
+  }
+}
 /* Live sync change (CH+/CH-, owner 07/11: every change reloaded the TV
  * player): only the other file moves. It restarts a second before where its
  * audio must continue, and what lands before the end of the audio already
  * given out is dropped, so the timestamps stay continuous and the content
  * jumps by the change. Heard once the audio queued in the TV has played. */
 int dts_engine_external_shift(DtsEngine *e,int offset_ms) {
+  if(!e) return -1;
+  /* The change waiting for a quiet moment, asked again: it goes on waiting.
+   * Another value (a press of CH+/CH-) is made at once. */
+  if(e->qs) { if(offset_ms==e->qs_offset_ms) return 0; quiet_free(e); }
+  return external_shift_now(e,offset_ms);
+}
+int dts_engine_external_shift_quiet(DtsEngine *e,int offset_ms) {
+  if(!e || !e->ext || !e->ext->fmt) return -1;
+  if(e->fw_state==FW_FILL || e->fw_state==FW_GAVEUP || e->ext_failed) return dts_engine_external_shift(e,offset_ms);
+  if(e->qs) { if(offset_ms==e->qs_offset_ms) return 0; quiet_free(e); }
+  int cur=(int)(e->ext_offset_ns/1000000);
+  if(offset_ms==cur) return 0;
+  if(quiet_open(e)<0) return external_shift_now(e,offset_ms);
+  /* Growing: the repeated part must fit in the pause. Shrinking: the skip
+   * starts in a pause of a third of a second. */
+  int d=offset_ms-cur, need=d>0?d+50:350;
+  if(need<150) need=150;
+  if(need>900) need=900;
+  e->qs->need=need; e->qs_offset_ms=offset_ms; e->qs_since_ms=fx_now_ms();
+  printf("[ext-audio] sync change %d -> %d ms: waiting for a quiet moment (%d ms of quiet, up to %u s)\n",
+         cur,offset_ms,need,QUIET_MAX_MS/1000u);
+  fflush(stdout);
+  return 0;
+}
+static int external_shift_now(DtsEngine *e,int offset_ms) {
   if(!e || !e->ext || !e->ext->fmt) return -1;
   /* Own audio playing (a scene the other lacks): a new offset resumes it. */
   if(e->fw_state==FW_FILL || e->fw_state==FW_GAVEUP) {

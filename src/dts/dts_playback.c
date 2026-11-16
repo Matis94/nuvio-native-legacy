@@ -82,6 +82,7 @@ struct DtsPlayback {
    * worker is applying now (worker only). */
   int ext_swap, ext_swap_now, ext_swap_track, ext_swap_only, ext_failed_said;
   int ext_offset_live;   /* the pending offset applies without a seek */
+  int ext_offset_quiet;  /* ...at a quiet moment (an automatic check while playing) */
   int match_req, match_result;   /* "Match automatically" */
   double prefetch_req;           /* a coming jump target (dts_playback_prefetch) */
   DtsMatchInfo match_info;
@@ -637,7 +638,8 @@ static void *run(void *user) {
     seek = p->seek_dirty; p->seek_dirty = 0;
     int ext_offset = 0, ext_dirty = seek && p->ext_offset_dirty;
     int ext_live = !seek && p->ext_offset_dirty && p->ext_offset_live;
-    if (ext_dirty || ext_live) { ext_offset = p->ext_offset_ms; p->ext_offset_dirty = 0; p->ext_offset_live = 0; }
+    int ext_quiet = ext_live && p->ext_offset_quiet;
+    if (ext_dirty || ext_live) { ext_offset = p->ext_offset_ms; p->ext_offset_dirty = 0; p->ext_offset_live = 0; p->ext_offset_quiet = 0; }
     audio = p->audio_dirty; p->audio_dirty = 0;
     new_stream = p->audio_stream; target = p->target;
     if (p->ext_swap) {
@@ -671,7 +673,8 @@ static void *run(void *user) {
       pthread_mutex_unlock(&p->lock); }
     { DtsMatchInfo mi; int mr = dts_engine_external_match_poll(p->engine, &mi);
       if (mr) { pthread_mutex_lock(&p->lock); p->match_result = mr; p->match_info = mi; pthread_mutex_unlock(&p->lock); } }
-    if (ext_live && dts_engine_external_shift(p->engine, ext_offset) < 0) {
+    if (ext_live && (ext_quiet ? dts_engine_external_shift_quiet(p->engine, ext_offset)
+                               : dts_engine_external_shift(p->engine, ext_offset)) < 0) {
       /* The other file could not move by itself: the seek of before. */
       printf("[ext-audio] live offset failed: seek at %.3f\n", presented); fflush(stdout);
       dts_engine_external_offset(p->engine, ext_offset);
@@ -1226,7 +1229,7 @@ void dts_playback_next_external_audio(const char *url, const char *headers,
 void dts_playback_external_offset(DtsPlayback *p, int offset_ms) {
   if (!p || !p->external) return;
   pthread_mutex_lock(&p->lock);
-  p->ext_offset_ms = offset_ms; p->ext_offset_dirty = 1; p->ext_offset_live = 0;
+  p->ext_offset_ms = offset_ms; p->ext_offset_dirty = 1; p->ext_offset_live = 0; p->ext_offset_quiet = 0;
   pthread_mutex_unlock(&p->lock);
 }
 void dts_playback_external_match(DtsPlayback *p) {
@@ -1257,9 +1260,15 @@ void dts_playback_external_speed(DtsPlayback *p, int ratio_ppm) {
 void dts_playback_external_offset_live(DtsPlayback *p, int offset_ms) {
   if (!p || !p->external) return;
   pthread_mutex_lock(&p->lock);
-  p->ext_offset_ms = offset_ms; p->ext_offset_dirty = 1; p->ext_offset_live = 1;
+  p->ext_offset_ms = offset_ms; p->ext_offset_dirty = 1; p->ext_offset_live = 1; p->ext_offset_quiet = 0;
   pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
   wakeExternal(p, "sync change");
+}
+void dts_playback_external_offset_quiet(DtsPlayback *p, int offset_ms) {
+  if (!p || !p->external) return;
+  pthread_mutex_lock(&p->lock);
+  p->ext_offset_ms = offset_ms; p->ext_offset_dirty = 1; p->ext_offset_live = 1; p->ext_offset_quiet = 1;
+  pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
 }
 int dts_playback_external(DtsPlayback *p) { return p && p->external; }
 /* A change asked while the worker waits for the other version's data: that

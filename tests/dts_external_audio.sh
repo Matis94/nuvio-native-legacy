@@ -181,6 +181,21 @@ render(sys.argv[1] + '/s_dub.wav', 135, [(ep, lambda t: t if t < 70 else t + 0.6
 lg = bursts(43, 400, 2600, 1.0)
 render(sys.argv[1] + '/l_main.wav', 380, [(lg, lambda t: t)])
 render(sys.argv[1] + '/l_dub.wav', 380, [(lg, lambda t: t if t < 200 else t + 0.5), (bursts(44, 380, 300, 0.2), lambda t: t)])
+# Versions whose gaps differ at each break (owner's log 16/11, Chicago Fire):
+# 0.5 s more at 200 s and again at 470 s, the other version 1 s longer.
+# Phrases with pauses between them, as dialogue: the moves wait for a pause.
+def phrases(seed, seconds, amp):
+    rnd = random.Random(seed); ev = []
+    t = 0.0
+    while t < seconds:
+        ln = rnd.uniform(1.5, 3.0)
+        for _ in range(int(ln * 7)):
+            ev.append((t + rnd.random() * ln, amp * (0.4 + rnd.random()), rnd.uniform(0.05, 0.2), rnd.random()))
+        t += ln + rnd.uniform(0.8, 1.4)
+    return ev
+st = phrases(47, 720, 1.0)
+render(sys.argv[1] + '/w_main.wav', 700, [(st, lambda t: t)])
+render(sys.argv[1] + '/w_dub.wav', 701, [(st, lambda t: t if t < 200 else t + 0.5 if t < 470 else t + 1.0)])
 PY
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=32x32:rate=24000/1001:duration=120' -i "$TMP/c_main.wav" \
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 24 -c:a ac3 -ar 48000 -b:a 96k -metadata:s:a:0 language=eng -shortest "$TMP/cut_main.mkv"
@@ -216,6 +231,10 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=16x16:rate=24000/100
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 48 -c:a ac3 -ar 48000 -b:a 64k -metadata:s:a:0 language=eng -shortest "$TMP/gap_main.mkv"
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=16x16:rate=24000/1001:duration=380' -i "$TMP/l_dub.wav" \
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 48 -c:a ac3 -ar 48000 -b:a 64k -metadata:s:a:0 language=eng -shortest "$TMP/gap_dub.mkv"
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=16x16:rate=24000/1001:duration=700' -i "$TMP/w_main.wav" \
+  -map 0:v -map 1:a -c:v libx264 -bf 0 -g 48 -c:a ac3 -ar 48000 -b:a 64k -metadata:s:a:0 language=eng -shortest "$TMP/step_main.mkv"
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=16x16:rate=24000/1001:duration=701' -i "$TMP/w_dub.wav" \
+  -map 0:v -map 1:a -c:v libx264 -bf 0 -g 48 -c:a ac3 -ar 48000 -b:a 64k -metadata:s:a:0 language=eng -shortest "$TMP/step_dub.mkv"
 # Two English tracks (owner 09/11): the series memory keeps the chosen one.
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=32x32:rate=25:duration=20' -i "$TMP/x_en.wav" -i "$TMP/x_ru.wav" \
   -map 0:v -map 1:a -map 2:a -t 20 -c:v libx264 -bf 0 -g 25 -c:a ac3 -ac 2 -ar 48000 -b:a 96k \
@@ -227,4 +246,4 @@ ffmpeg -hide_banner -loglevel error -i "$TMP/follow_th.mkv" -map 0 -c copy -meta
   "$TMP/main60.mkv" "$TMP/long.mkv" "$TMP/long_nocues.mkv" "$TMP/match_main.mkv" "$TMP/match_dub.mkv" \
   "$TMP/main.avi" "$TMP/other.avi" "$TMP/other.ts" "$TMP/xvid.avi" "$TMP/film.mkv" \
   "$TMP/cut_main.mkv" "$TMP/cut_dub.mkv" "$TMP/pal_dub.mkv" "$TMP/pair_dub.mkv" \
-  "$TMP/follow_ext.mkv" "$TMP/follow_th.mkv" "$TMP/lang_main.mkv" "$TMP/lang_pl.mkv" "$TMP/dub_ru.mkv" "$TMP/dub_pl.mkv" "$TMP/follow_ext_ru.mkv" "$TMP/follow_th_pl.mkv" "$TMP/shift_main.mkv" "$TMP/shift_dub.mkv" "$TMP/gap_main.mkv" "$TMP/gap_dub.mkv" "$TMP/two_en.mkv"
+  "$TMP/follow_ext.mkv" "$TMP/follow_th.mkv" "$TMP/lang_main.mkv" "$TMP/lang_pl.mkv" "$TMP/dub_ru.mkv" "$TMP/dub_pl.mkv" "$TMP/follow_ext_ru.mkv" "$TMP/follow_th_pl.mkv" "$TMP/shift_main.mkv" "$TMP/shift_dub.mkv" "$TMP/gap_main.mkv" "$TMP/gap_dub.mkv" "$TMP/two_en.mkv" "$TMP/step_main.mkv" "$TMP/step_dub.mkv"

@@ -119,6 +119,8 @@ int dts_engine_external_follow_poll(DtsEngine *e,int *s,int *o) { (void)e; *s=0;
 void dts_engine_external_speed(DtsEngine *e,int p) { (void)e; pthread_mutex_lock(&fixture); ext_speed_set=p; pthread_mutex_unlock(&fixture); }
 static int ext_shifts, ext_shift_fail;
 int dts_engine_external_shift(DtsEngine *e,int o) { (void)e; pthread_mutex_lock(&fixture); ext_shifts++; ext_offset=o; int f=ext_shift_fail; pthread_mutex_unlock(&fixture); return f?-1:0; }
+static int ext_quiet_shifts;
+int dts_engine_external_shift_quiet(DtsEngine *e,int o) { (void)e; pthread_mutex_lock(&fixture); ext_quiet_shifts++; ext_offset=o; int f=ext_shift_fail; pthread_mutex_unlock(&fixture); return f?-1:0; }
 static int ext_replaces, ext_replace_track;static double ext_replace_target;static char ext_replace_url[64];
 int dts_engine_external_replace(DtsEngine *e,const char *u,const char *h,const char *l,int o,int t,int a,double target) {
  (void)h;(void)l;(void)o;(void)a;pthread_mutex_lock(&fixture);ext_replaces++;ext_replace_track=t;ext_replace_target=target;
@@ -486,7 +488,16 @@ int main(int argc,char **argv) {
     dts_playback_external_offset_live(p,-60);
     for(int i=0;i<400 && count(&seeks)==sk;i++) nap();
     assert(count(&seeks)==sk+1);
-    pthread_mutex_lock(&fixture);ext_shift_fail=0;pthread_mutex_unlock(&fixture); }
+    pthread_mutex_lock(&fixture);ext_shift_fail=0;pthread_mutex_unlock(&fixture);
+    // A change from a check while playing goes to the quiet shift; a press after it, to the plain one.
+    sk=count(&seeks); int sh=count(&ext_shifts);
+    dts_playback_external_offset_quiet(p,500);
+    for(int i=0;i<400 && count(&ext_quiet_shifts)==0;i++) nap();
+    pthread_mutex_lock(&fixture);assert(ext_quiet_shifts==1 && ext_offset==500 && ext_shifts==sh);pthread_mutex_unlock(&fixture);
+    dts_playback_external_offset_live(p,520);
+    for(int i=0;i<400 && count(&ext_shifts)==sh;i++) nap();
+    pthread_mutex_lock(&fixture);assert(ext_shifts==sh+1 && ext_quiet_shifts==1 && ext_offset==520);pthread_mutex_unlock(&fixture);
+    assert(count(&seeks)==sk); }
   // The session's own URL is never a swap target.
   assert(!dts_playback_external_swap(p,"fixture://movie","","",0,-1,0,1));
   dts_playback_close(p);

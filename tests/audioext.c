@@ -87,6 +87,31 @@ int main(void) {
   audioext_alvo("tt4:2:5");
   audioext_lembrar_serie(&id);
   assert(audioext_serie_procura("tt4:2:6", NULL) && !audioext_serie_procura("tt4:2:5", NULL));
+  // Versions whose gaps differ (owner's log 16/11, Chicago Fire): the next
+  // episode starts with the offset of this one's start, not one set after its
+  // first 10 minutes or found by a check made while playing.
+  audioext_preferencias(0, 1);
+  audioext_limpar();
+  audioext_alvo("tt6:10:9");
+  audioext_escolher("https://f/pl-e9.mkv", "", "PL E9", "pl");
+  audioext_lembrar_serie(&id);
+  audioext_posicao(70.0);
+  audioext_offset_definir(640);                         // set near the start: remembered
+  { AudioExtDopasuj la = { 0 };
+    audioext_tocando_definir(1);
+    audioext_posicao(400.0);
+    la.ms = 1500; la.como = 1; la.automatico = 1; la.pozniej = 1;
+    audioext_dopasuj_resultado(1, &la);                 // a check while playing: applied, not remembered
+    assert(audioext_offset_ms() == 1500 && audioext_offset_suave());
+    la.ms = 1530; audioext_dopasuj_resultado(1, &la);   // under 40 ms: kept
+    assert(audioext_offset_ms() == 1500);
+    audioext_posicao(2445.0);
+    audioext_offset_definir(3500);                      // set late: not remembered either
+    assert(!audioext_offset_suave()); }
+  audioext_alvo("tt6:10:10");
+  assert(audioext_serie_procura("tt6:10:10", NULL));
+  audioext_serie_achou("https://f/pl-e10.mkv", "", "PL E10");
+  assert(audioext_offset_ms() == 640 && !audioext_offset_suave());
   // Movies (no episode) are never remembered as a series.
   audioext_preferencias(0, 1);
   audioext_alvo("tt9");
@@ -251,7 +276,7 @@ int main(void) {
     assert(audioext_offset_ms() == -39500);
     // Not found, with the lengths' hint, for the toast.
     audioext_dopasuj_pedir();
-    AudioExtDopasuj f = { 0, 0, 0, -100000, 0, 2, { -350, 41900 }, { 13, 12 }, 0 };
+    AudioExtDopasuj f = { 0, 0, 0, -100000, 0, 2, { -350, 41900 }, { 13, 12 }, 0, 0 };
     audioext_dopasuj_resultado(0, &f);
     assert(audioext_dopasuj_aviso_consumir(&got) == -1 && got.dica_ms == -100000 && audioext_offset_ms() == -39500);
     { int km[3], kp[3];   // its candidates stay for the sync editor
