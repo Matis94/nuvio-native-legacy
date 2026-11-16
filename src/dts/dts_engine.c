@@ -3193,7 +3193,9 @@ static void match_second_look(DtsEngine *e,const DtsMatchSig *sm,const DtsMatchS
    * longer in one release; owner's log 08/11, Chicago Fire: 0.5 s read as
    * 1645 ppm, the other version reopened at that speed and back again). */
   int std=known_speed(k), same_fps=e->ext_fps_ratio>0 && fabs(e->ext_fps_ratio-1.0)<1e-4;
-  if(e->mt_watch && (fabs(drift)<0.0002 || (same_fps && !std))) { match_watch_step(e,t2,&r); return; }
+  /* The same frame rate with the follow on: whatever is left is a gap, even
+   * when it lands near a known ratio (the follow keeps the sync meanwhile). */
+  if(e->mt_watch && (fabs(drift)<0.0002 || (same_fps && (!std || e->fw_small)))) { match_watch_step(e,t2,&r); return; }
   e->mt_t1=-1;
   if(fabs(drift)<0.0002) return;   /* the same speed: 0.7 s an hour at most */
   if(same_fps && !std) {
@@ -3669,10 +3671,15 @@ static void follow_resume(DtsEngine *e,int64_t offset_ns) {
 /* A small shift the follow found: at once, or at a pause in small mode.
  * The same aim asked again while waiting goes on waiting. */
 static int follow_shift(DtsEngine *e,int ms) {
-  if(e->fw_small) {
-    if(e->qs && abs(e->qs_offset_ms-ms)<40) return 1;   /* already on its way: no new event */
-    return dts_engine_external_shift_quiet(e,ms);
-  }
+  if(e->fw_small && e->qs && abs(e->qs_offset_ms-ms)<40) return 1;   /* already on its way: no new event */
+  /* The checks' first find moves with the follow: a shift it made is no
+   * drift (owner's log 16/11: a +420 ms shift between two checks read as
+   * 1083 ppm, close to 24/23.976, and the other version was reopened at that
+   * speed and back again: two reloads). Moved before the shift, so the
+   * manual-change test in external_offset_set sees it as ours. */
+  int from=e->qs?e->qs_offset_ms:(int)(e->ext_offset_ns/1000000);
+  if(e->mt_t1>=0) { e->mt_o1+=(ms-from)/1000.0; e->mt_o1_user_ns+=(int64_t)(ms-from)*1000000; }
+  if(e->fw_small) return dts_engine_external_shift_quiet(e,ms);
   return dts_engine_external_shift(e,ms);
 }
 static void follow_check(DtsEngine *e) {
