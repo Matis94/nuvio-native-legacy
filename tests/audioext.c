@@ -257,6 +257,11 @@ int main(void) {
     assert(audioext_dica_ms() == -100000);
     audioext_diferenca(-4, 0);
     assert(audioext_dica_ms() == 0);
+    { int c, v;   // a few seconds apart: said once too (the sync is followed)
+      assert(audioext_diferenca_consumir(&c, &v) == 1 && c == -4 && v == 0);
+      assert(audioext_diferenca_consumir(&c, &v) == 0);
+      audioext_diferenca(0, 0);
+      assert(audioext_diferenca_consumir(&c, &v) == 0); }
     audioext_tocando_definir(1);
     audioext_dopasuj_pedir();
     assert(audioext_dopasuj_ativo() && audioext_dopasuj_pedido_consumir());

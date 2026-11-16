@@ -312,6 +312,11 @@ struct DtsEngine {
   double ext_ratio;      /* other version's speed (0 or 1: the same; dts_engine_external_speed) */
   /* FOLLOW ANOTHER CUT (Settings, off by default): struct Follow below. */
   int fw_on, fw_state, fw_autoarm, mt_auto;
+  /* The follow started by itself for versions whose gaps differ (mt_watch):
+   * small shifts only, each made at a pause; never this file's own audio,
+   * so it needs no conversion path (owner 16/11: checks minutes apart left
+   * each break's 0.6 s heard for minutes). */
+  int fw_small;
   int mt_main_pref;      /* this file's track that compared best, +1 (0: none; see match_alt) */
   int ext_automatch;     /* Settings: "Match automatically" by itself when the other version starts */
   int mt_retry;          /* automatic captures started again after a jump cut them short */
@@ -2990,7 +2995,7 @@ static void follow_free(DtsEngine *e);
 static void match_stop(DtsEngine *e) {
   match_disarm(e); match_job_stop(e); e->mt_t1=-1; e->mt_later=0;
   quiet_free(e);
-  follow_free(e); e->fw_autoarm=0;
+  follow_free(e); e->fw_autoarm=0; e->fw_small=0;
 }
 /* A fresh reader of the other version, `seconds` of its chosen track from
  * `from` (its own timeline) into `out`. 0 ok. */
@@ -3118,6 +3123,8 @@ static void match_report(DtsEngine *e,double off_raw,double ratio,double score,i
   e->mt_ratio_ppm=ratio>0?(int)llrint((ratio-1.0)*1e6):0; e->mt_how=how;
   /* Another cut, with "Follow through the whole film" on: from this find on. */
   if(how!=5 && e->fw_on && abs(e->ext_cut_s)>10) follow_start(e,score);
+  /* Versions whose gaps differ: the small-shift follow, by itself. */
+  else if(how!=5 && e->mt_watch && !e->fw && abs(e->ext_cut_s)<=10) { e->fw_small=1; follow_start(e,score); if(!e->fw) e->fw_small=0; }
 }
 static void match_fail(DtsEngine *e,int heavy) {
   e->mt_state=3; e->mt_how=0; e->mt_heavy=heavy;
@@ -3543,7 +3550,7 @@ static void follow_free(DtsEngine *e) {
   free(f); e->fw=NULL; e->fw_state=FW_OFF;
 }
 static void follow_start(DtsEngine *e,double score) {
-  if(!e->ext_conv || !e->ext || !e->ext->fmt) { printf("[ext-audio] follow: needs the conversion path, off\n"); fflush(stdout); return; }
+  if((!e->ext_conv && !e->fw_small) || !e->ext || !e->ext->fmt) { printf("[ext-audio] follow: needs the conversion path, off\n"); fflush(stdout); return; }
   struct Follow *f=e->fw;
   if(!f) {
     int ms=-1, ds=-1;
@@ -3573,7 +3580,8 @@ static void follow_start(DtsEngine *e,double score) {
     f->need=(other || score<0.20?5:2)<<(f->strict>2?2:f->strict); }
   f->bad=0; f->good_since_seek=1; f->t_good=-1;
   if(e->fw_state!=FW_FILL) e->fw_state=FW_SYNC;
-  printf("[ext-audio] follow: on (in sync from score %.2f, this file's track %d, the other's %d)\n",f->thr,f->mstream,f->dstream);
+  printf("[ext-audio] follow: on%s (in sync from score %.2f, this file's track %d, the other's %d)\n",
+         e->fw_small?", small shifts only":"",f->thr,f->mstream,f->dstream);
   fflush(stdout);
 }
 /* This file's decoded frame into the encoder's queue, in FILL: on the
@@ -3658,6 +3666,15 @@ static void follow_resume(DtsEngine *e,int64_t offset_ns) {
   follow_event(e,2,(int)(offset_ns/1000000));
 }
 /* Every 3 s of this file: still in sync? (SYNC) / back in shared scenes? (FILL) */
+/* A small shift the follow found: at once, or at a pause in small mode.
+ * The same aim asked again while waiting goes on waiting. */
+static int follow_shift(DtsEngine *e,int ms) {
+  if(e->fw_small) {
+    if(e->qs && abs(e->qs_offset_ms-ms)<40) return 1;   /* already on its way: no new event */
+    return dts_engine_external_shift_quiet(e,ms);
+  }
+  return dts_engine_external_shift(e,ms);
+}
 static void follow_check(DtsEngine *e) {
   struct Follow *f=e->fw;
   DtsMatchSig sm, sd;
@@ -3684,7 +3701,7 @@ static void follow_check(DtsEngine *e) {
         int ms=(int)lround((r.offset_s*1e9-e->ext_base_ns)/1e6);
         f->shift_n=0;
         printf("[ext-audio] follow: shifted %+d ms (score %.2f): offset %d ms\n",(int)lround(dd*1000.0),r.score,ms);
-        if(dts_engine_external_shift(e,ms)==0) { f->good_since_seek=1; f->t_good=-1; follow_event(e,4,ms); }
+        if(follow_shift(e,ms)==0) { f->good_since_seek=1; f->t_good=-1; follow_event(e,4,ms); }
       }
       return;
     }
@@ -3715,12 +3732,14 @@ static void follow_check(DtsEngine *e) {
           printf("[ext-audio] follow: shifted %+d ms over %.0f s (score %.2f): offset %d ms\n",
                  (int)lround((c.offset_s-off)*1000.0),cw,c.score,ms);
           f->bad=0; f->shift_n=0;
-          if(dts_engine_external_shift(e,ms)==0) { f->good_since_seek=1; f->t_good=-1; follow_event(e,4,ms); }
+          if(follow_shift(e,ms)==0) { f->good_since_seek=1; f->t_good=-1; follow_event(e,4,ms); }
           return;
         }
         if(!got && f->bad<f->need*2) return;   /* not covered: look again */
       }
     }
+    /* Small shifts only: no own audio; the checks minutes apart still run. */
+    if(e->fw_small) { f->bad=0; return; }
     printf("[ext-audio] follow: no longer in sync (score %.2f, needs %.2f)\n",r.score,f->thr); fflush(stdout);
     if(!f->good_since_seek || f->t_good<0) {
       /* Lost right after a jump: the place is unknown, search it all. */
@@ -3883,6 +3902,9 @@ static int ext_fill(DtsEngine *e) {
      * language this file has, owner's log 07/11). */
     if(e->mt && k->stream_index==e->mt->donor_stream)
       match_feed(e,1,k,e->ext->fmt->streams[k->stream_index]->time_base);
+    /* The small-shift follow compares here too (no conversion path). */
+    if(e->fw && k->stream_index==e->fw->dstream)
+      follow_feed_donor(e,k,e->ext->fmt->streams[k->stream_index]->time_base);
     if(k->stream_index!=e->ext_stream || k->pts==AV_NOPTS_VALUE) { av_packet_unref(k); continue; }
     AVRational tb=e->ext->fmt->streams[e->ext_stream]->time_base;
     int64_t pts=ns(k->pts,tb)+e->ext_offset_ns+e->ext_base_ns, dur=k->duration>0?ns(k->duration,tb):0;

@@ -398,7 +398,9 @@ void audioext_inicio_reproducao(const char *urlVideo) {
 }
 void audioext_diferenca(int corteSeg, int velocidade) {
   avisoCorte = corteSeg; avisoVelocidade = velocidade;
-  avisoPendente = (corteSeg > 10 || corteSeg < -10 || velocidade);
+  // Another cut or speed; or a few seconds apart (versions whose gaps differ,
+  // owner 16/11): said too, the sync is followed while it plays.
+  avisoPendente = (corteSeg != 0 || velocidade);
 }
 int audioext_diferenca_consumir(int *corteSeg, int *velocidade) {
   if (!avisoPendente) return 0;
