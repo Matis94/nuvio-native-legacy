@@ -2871,7 +2871,7 @@ typedef struct {
 } MatchSide;
 /* s[2]: a second track of this file captured with the first when the two
  * files share no language (alt_stream, -1 none); the better one is kept. */
-struct MatchCap { int main_stream, donor_stream, alt_stream; MatchSide s[3]; };
+struct MatchCap { int main_stream, donor_stream, alt_stream, early; MatchSide s[3]; };
 struct MatchJob {
   pthread_t th; pthread_mutex_t lock; int started, done, cancel;
   DtsEngine *holder;                       /* the capture in progress, to cancel its reads */
@@ -3282,10 +3282,44 @@ static void match_finish(DtsEngine *e) {
   if(!e->mj) match_fail(e,0);
   match_disarm(e);
 }
+/* A first look at 25 s of the 40 (owner 16/11: after a new episode or the
+ * intro skip the sync came late). A 12 s window in the middle of what is
+ * captured reaches +-6 s around the current offset; taken only when very
+ * clear (the window is shorter, a lucky peak likelier), else the capture goes
+ * on to 40 s as before. Only for versions at most 10 s apart (another cut
+ * keeps the 40 s: its follow takes its bar from this score, and a dub's
+ * 12 s can score far above its 40 s), and not for a second look, two tracks
+ * of this file to choose from, or two speeds to try. */
+#define MATCH_EARLY_S 25
+static int match_early(DtsEngine *e) {
+  struct MatchCap *mc=e->mt;
+  DtsMatchSig sm, sd; DtsMatchResult r;
+  double base=e->ext_base_ns/1e9, center=e->ext_offset_ns/1e9+base, k0=ext_k(e);
+  if(e->ext_fps_ratio>0 && fabs(e->ext_fps_ratio-k0)>0.0005) return 0;
+  match_side_sig(&mc->s[0],&sm); match_side_sig(&mc->s[1],&sd);
+  if(!dts_match_search_at(&sm,&sd,k0,center,6.0,12.0,0.5,&r)) return 0;
+  int ok=r.score>=0.55 && r.margin>=0.35;
+  printf("[ext-audio] match: early look at %d s: %s offset %d ms (was %d) score %.2f margin %.2f\n",MATCH_EARLY_S,
+         ok?"found":"not sure yet,",(int)lround(r.offset_s*1000.0-base*1000.0),(int)(e->ext_offset_ns/1000000),r.score,r.margin);
+  fflush(stdout);
+  if(!ok) return 0;
+  e->mt_ncand=0;
+  match_report(e,r.offset_s,k0==1.0?0:k0,r.score,1);
+  if(k0==1.0) { e->mt_t1=sm.t0+sm.n/2.0/DTS_MATCH_HZ; e->mt_o1=r.offset_s;
+                e->mt_o1_user_ns=(int64_t)e->mt_offset_ms*1000000; }
+  match_disarm(e);
+  return 1;
+}
 static void match_feed(DtsEngine *e,int side,AVPacket *pkt,AVRational tb) {
   struct MatchCap *mc=e->mt;
   if(!mc || match_side_full(&mc->s[side])) return;
   if(match_side_feed(&mc->s[side],pkt,tb)<0) { mc->s[side].ev.max=mc->s[side].ev.n=1; }
+  if(!mc->early && !e->mt_check && mc->alt_stream<0 && abs(e->ext_cut_s)<=10 &&
+     mc->s[0].ev.n>=MATCH_EARLY_S*DTS_MATCH_HZ && mc->s[1].ev.n>=MATCH_EARLY_S*DTS_MATCH_HZ &&
+     !match_side_full(&mc->s[0]) && !match_side_full(&mc->s[1])) {
+    mc->early=1;
+    if(match_early(e)) return;
+  }
   if(match_side_full(&mc->s[0]) && match_side_full(&mc->s[1]) && (mc->alt_stream<0 || match_side_full(&mc->s[2])))
     match_finish(e);
 }
