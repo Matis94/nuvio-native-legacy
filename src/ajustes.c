@@ -749,7 +749,7 @@ typedef enum {
   AJ_EXT_AUDIO_MODO,  // download of the audio file: whole file (default) / audio only
   AJ_EXT_AUDIO_SERIE, // remember the chosen version for the next episodes: on
   AJ_EXT_AUDIO_SEGUIR, // another cut: follow it through the whole film: off
-  AJ_EXT_AUDIO_AVISO,  // the "sync adjusted by itself" message: on
+  AJ_EXT_AUDIO_AVISO,  // the "sync adjusted by itself" message: off
   AJ_EXT_AUDIO_AUTO,   // "Match automatically" by itself at start: on
   AJ_EXT_AUDIO_COPIAS, // "From another source": copies of one file shown once: on
   AJ_EXT_AUDIO_ORDEM,  // "From another source": sort like the addons (V_LIGA, off by default)
@@ -2286,7 +2286,7 @@ static const char *CHAVE[] = {
   "externalAudioDownloadLocal",
   "externalAudioSeriesLocal",
   "externalAudioFollowLocal",
-  "externalAudioShiftNoticeLocal",
+  "externalAudioShiftNotice2Local", // new key: the default is now Off (the old key saved On for everyone)
   "externalAudioAutoMatchLocal",
   "externalAudioHideCopiesLocal",
   "externalAudioSortAddonsLocal",   // new key: the old one held an index of another list (0 = For audio)

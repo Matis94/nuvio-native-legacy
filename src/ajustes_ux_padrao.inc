@@ -375,7 +375,7 @@
   0, /* Download of the audio file: Whole file */
   0, /* Remember for the next episodes: On */
   1, /* Follow through the whole movie (another cut): Off */
-  0, /* Sync adjusted message: On */
+  1, /* Sync adjusted message: Off (owner, 16/11) */
   0, /* Match automatically at start: On */
   0, /* Hide duplicates: On */
   1, /* Sort like the addons: Off (V_LIGA) */
