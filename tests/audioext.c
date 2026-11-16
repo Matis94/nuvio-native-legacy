@@ -22,6 +22,22 @@ static uint64_t relogioTeste(void) { return agoraTeste; }
 
 int main(void) {
   AudioExtIdent id, got;
+  // Version names as the series memory compares them (owner's log 16/11).
+  { char v[96];
+    audioext_nome_versao("\xf0\x9f\x87\xb5\xf0\x9f\x87\xb1 \xe2\x98\x81\xef\xb8\x8f [TB\xe2\x9a\xa1\xef\xb8\x8f] ST Store 1080p", v, sizeof v);
+    assert(!strcmp(v, "tb st store 1080p"));
+    audioext_nome_versao("\xf0\x9f\x87\xb5\xf0\x9f\x87\xb1 [TB\xe2\x9a\xa1\xef\xb8\x8f] ST Store 1080p", v, sizeof v);
+    assert(!strcmp(v, "tb st store 1080p"));   // the cache mark gone: the same name
+    audioext_nome_versao("\xf0\x9f\x87\xb5\xf0\x9f\x87\xb1 [TB\xe2\x9a\xa1\xef\xb8\x8f] MF|Midnight 1080p", v, sizeof v);
+    assert(!strcmp(v, "tb mf midnight 1080p"));
+    audioext_nome_versao("Chicago.Fire.S10E12.PL.1080p E12 10x12 S10", v, sizeof v);
+    assert(!strcmp(v, "chicago fire pl 1080p"));
+    audioext_nome_versao("Seventies x264 E", v, sizeof v);
+    assert(!strcmp(v, "seventies x264 e"));
+    audioext_nome_versao("abcdefghij klmnop", v, 12);
+    assert(!strcmp(v, "abcdefghij"));
+    audioext_nome_versao(NULL, v, sizeof v);
+    assert(!v[0]); }
   audioext_preferencias(0, 1);
   audioext_alvo("tt1:1:1");
   unsigned g = audioext_pedido_geracao();

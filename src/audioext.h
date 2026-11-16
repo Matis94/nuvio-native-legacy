@@ -49,11 +49,18 @@ int audioext_negada_consumir(char *url, size_t n);
 void audioext_definir_relogio(uint64_t (*fn)(void));
 // SERIES MEMORY (Settings > Remember for the next episodes): what identifies
 // the chosen version across episodes. The add-on's binge group when it sends
-// one ("the same release"), else add-on + language + resolution + codec.
+// one ("the same release"), else the same add-on and version name (nome:
+// the source row's name, simplified by audioext_nome_versao), else add-on +
+// language + resolution + codec.
 typedef struct {
-  char grupo[128], addon[96], idioma[8];
+  char grupo[128], addon[96], idioma[8], nome[96];
   int altura, codec;
 } AudioExtIdent;
+// A source row's name as the series memory compares it across episodes:
+// lowercase letters and digits, one space between words; emoji (cache marks
+// change between episodes), brackets and episode tags (S10E12, E12, 10x12)
+// left out. "🇵🇱 ☁️ [TB⚡️] ST Store 1080p" -> "tb st store 1080p".
+void audioext_nome_versao(const char *rotulo, char *dst, size_t n);
 // Called with the identity right after audioext_escolher, in a series
 // episode ("tt123:1:2"): the next episodes look for that version.
 void audioext_lembrar_serie(const AudioExtIdent *id);

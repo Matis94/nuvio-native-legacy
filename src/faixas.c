@@ -1106,6 +1106,7 @@ static void extUsar(const AudioExtCand *c, const AudioExtFaixa *faixa) {
     memset(&id, 0, sizeof id);
     snprintf(id.grupo, sizeof id.grupo, "%s", st->bingeGroup);
     snprintf(id.addon, sizeof id.addon, "%s", st->provedor);
+    audioext_nome_versao(st->rotulo, id.nome, sizeof id.nome);
     snprintf(id.idioma, sizeof id.idioma, "%.7s", faixa && faixa->idioma[0] ? faixa->idioma : c->idioma);
     id.altura = st->altura; id.codec = en->codec;
     audioext_lembrar_serie(&id);

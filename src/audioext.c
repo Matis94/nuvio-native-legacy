@@ -470,6 +470,48 @@ void audioext_preferencias(int soAudio, int serie) {
   if (!prefSerie) memo.ativo = 0;
 }
 int audioext_so_audio(void) { return prefSoAudio; }
+static int nomeTagEpisodio(const char *w, size_t n) {
+  size_t i = 0;
+  if (n < 2) return 0;
+  if (w[0] == 's') {   /* s10e12, s10 */
+    for (i = 1; i < n && w[i] >= '0' && w[i] <= '9'; i++) {}
+    if (i == 1) return 0;
+    if (i == n) return 1;
+    if (w[i] != 'e') return 0;
+    size_t j = ++i;
+    for (; i < n && w[i] >= '0' && w[i] <= '9'; i++) {}
+    return i == n && i > j;
+  }
+  if (w[0] == 'e') {   /* e12 */
+    for (i = 1; i < n && w[i] >= '0' && w[i] <= '9'; i++) {}
+    return i == n && i > 1;
+  }
+  for (; i < n && w[i] >= '0' && w[i] <= '9'; i++) {}   /* 10x12 */
+  if (i == 0 || i >= n || w[i] != 'x') return 0;
+  size_t j = ++i;
+  for (; i < n && w[i] >= '0' && w[i] <= '9'; i++) {}
+  return i == n && i > j;
+}
+void audioext_nome_versao(const char *rotulo, char *dst, size_t n) {
+  char w[96];
+  size_t o = 0;
+  if (!dst || !n) return;
+  dst[0] = 0;
+  if (!rotulo) return;
+  for (const char *p = rotulo; ; ) {
+    size_t k = 0;
+    while (*p && !((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9'))) p++;
+    if (!*p) break;
+    while ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9')) {
+      if (k + 1 < sizeof w) w[k++] = (char)(*p >= 'A' && *p <= 'Z' ? *p - 'A' + 'a' : *p);
+      p++;
+    }
+    if (nomeTagEpisodio(w, k)) continue;
+    if (o + (o ? 1 : 0) + k + 1 > n) break;
+    if (o) dst[o++] = ' ';
+    memcpy(dst + o, w, k); o += k; dst[o] = 0;
+  }
+}
 void audioext_lembrar_serie(const AudioExtIdent *id) {
   char sr[64];
   // No mark yet (the pick being made now): the episode on screen.
@@ -479,8 +521,8 @@ void audioext_lembrar_serie(const AudioExtIdent *id) {
   snprintf(memo.serie, sizeof memo.serie, "%s", sr);
   snprintf(memo.episodio, sizeof memo.episodio, "%s", alvoMarca[0] ? alvoMarca : alvoAtual);
   memo.id = *id; memo.offset = offsetMs; memo.velocidade = velocidadePpm; memo.ativo = 1; memo.temFaixa = 0;
-  printf("[ext-audio] series memory: group=%s addon=%.40s lang=%s %dp codec=%d\n", memo.id.grupo[0] ? memo.id.grupo : "-",
-         memo.id.addon, memo.id.idioma, memo.id.altura, memo.id.codec);
+  printf("[ext-audio] series memory: group=%s addon=%.40s name=\"%.60s\" lang=%s %dp codec=%d\n", memo.id.grupo[0] ? memo.id.grupo : "-",
+         memo.id.addon, memo.id.nome, memo.id.idioma, memo.id.altura, memo.id.codec);
   fflush(stdout);
 }
 int audioext_serie_procura(const char *alvo, AudioExtIdent *id) {

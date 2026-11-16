@@ -700,15 +700,23 @@ void stream_definir_lista(const Stream *l, int qtd) {
 // SERIES MEMORY OF THE AUDIO FROM ANOTHER VERSION (audioext.h): the list of a
 // later episode arrives (whole or add-on by add-on); the remembered version
 // is looked for in it. Same binge group and language first; without a group,
-// the same add-on, language, resolution and audio codec.
+// the same add-on and version name (an aggregator such as AIOStreams sends
+// many releases with no group: owner's log 16/11, "ST Store" in one episode,
+// "MF|Midnight" in the next, both 1080p from the same add-on); then the same
+// add-on, language, resolution and audio codec.
 static int (*filtroAddonAudioext)(const char *chave);
+static int nomeIgual(const Stream *s, const char *nome) {
+  char v[96];
+  audioext_nome_versao(s->rotulo, v, sizeof v);
+  return v[0] && !strcmp(v, nome);
+}
 void stream_audioext_filtro_addon(int (*fn)(const char *chave)) { filtroAddonAudioext = fn; }
 static void audioextSerie(void) {
   AudioExtIdent id;
 #if !defined(NV_TPK) && !defined(NV_ANDROID) && !defined(__EMSCRIPTEN__)
   if (!ajustes_audio_externo() || !alvoLista[0] || strcmp(alvoLista, alvoPedido)) return;
   if (!audioext_serie_procura(alvoPedido, &id)) return;
-  int achou = -1, nivel = 0;
+  int achou = -1, nivel = 0, como = 0;
   for (int i = 0; i < n; i++) {
     AudioExtEntrada e;
     int lingua = 0, k;
@@ -720,12 +728,16 @@ static void audioextSerie(void) {
     if (!id.idioma[0]) lingua = e.nIdiomas == 0;
     if (!lingua) continue;
     if (id.grupo[0] && !strcmp(lista[i].bingeGroup, id.grupo)) k = 3;
-    else if (!strcmp(lista[i].provedor, id.addon) && lista[i].altura == id.altura && e.codec == id.codec) k = 2;
+    else if (!strcmp(lista[i].provedor, id.addon) && id.nome[0] && nomeIgual(&lista[i], id.nome)) k = 2;
+    else if (!strcmp(lista[i].provedor, id.addon) && lista[i].altura == id.altura && e.codec == id.codec) k = 1;
     else continue;
     if (e.cache > 0) k += 4;   // the cached copy of the same release wins
-    if (k > nivel) { nivel = k; achou = i; }
+    if (k > nivel) { nivel = k; achou = i; como = k > 4 ? k - 4 : k; }
   }
-  if (achou >= 0) audioext_serie_achou(lista[achou].url, lista[achou].cabecalhos, lista[achou].rotulo);
+  if (achou >= 0) {
+    printf("[ext-audio] series memory: found by %s\n", como == 3 ? "the same release group" : como == 2 ? "the same version name" : "the same add-on, resolution and codec");
+    audioext_serie_achou(lista[achou].url, lista[achou].cabecalhos, lista[achou].rotulo);
+  }
 #else
   (void)id;
 #endif
@@ -5345,6 +5357,7 @@ static void fonteMarcarAudio(int i) {
     memset(&id, 0, sizeof id);
     snprintf(id.grupo, sizeof id.grupo, "%s", s->bingeGroup);
     snprintf(id.addon, sizeof id.addon, "%s", s->provedor);
+    audioext_nome_versao(s->rotulo, id.nome, sizeof id.nome);
     if (e.nIdiomas > 0) snprintf(id.idioma, sizeof id.idioma, "%s", e.idiomas[0]);
     id.altura = s->altura; id.codec = e.codec;
     audioext_lembrar_serie(&id); }
@@ -5421,6 +5434,7 @@ static void fonteMarcarFaixa(int i, const AudioExtFaixa *f) {
     memset(&id, 0, sizeof id);
     snprintf(id.grupo, sizeof id.grupo, "%s", s->bingeGroup);
     snprintf(id.addon, sizeof id.addon, "%s", s->provedor);
+    audioext_nome_versao(s->rotulo, id.nome, sizeof id.nome);
     snprintf(id.idioma, sizeof id.idioma, "%.7s", f->idioma);
     id.altura = s->altura; id.codec = e.codec;
     audioext_lembrar_serie(&id);
