@@ -4700,16 +4700,10 @@ void player_atualizar(float dt, Uint32 agora) {
     { int corte, vel;
       if (audioext_diferenca_consumir(&corte, &vel)) {
         if (vel) snprintf(t, sizeof t, "%s", i18n("This version plays at another speed: Match automatically (audio menu) corrects it."));
-        else if (corte <= 10 && corte >= -10) {
-          // A few seconds apart: the gaps differ somewhere; the engine follows it.
-          snprintf(t, sizeof t, i18n(corte > 0 ? "This version is %d s longer: the sync is checked and adjusted while it plays."
-                                               : "This version is %d s shorter: the sync is checked and adjusted while it plays."),
-                   corte > 0 ? corte : -corte);
-          player_toast(t, 5000);
-        } else snprintf(t, sizeof t, i18n(corte > 0 ? "This version is %d s longer (another cut): the sync may drift."
-                                                    : "This version is %d s shorter (another cut): the sync may drift."),
-                        corte > 0 ? corte : -corte);
-        if (vel || corte > 10 || corte < -10) player_toast_ex(t, 6000, "aj_triangle-alert", 1);
+        else snprintf(t, sizeof t, i18n(corte > 0 ? "This version is %d s longer (another cut): the sync may drift."
+                                                  : "This version is %d s shorter (another cut): the sync may drift."),
+                      corte > 0 ? corte : -corte);
+        player_toast_ex(t, 6000, "aj_triangle-alert", 1);
       } }
     extVisto = audioext_tocando(); }
 #ifdef NV_TOUCH_UI
