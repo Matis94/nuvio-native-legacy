@@ -121,9 +121,11 @@ void dts_engine_external_mismatch(DtsEngine *, int *cut_s, int *speed, int *rati
  * caller seeks as before. */
 int dts_engine_external_shift(DtsEngine *, int offset_ms);
 /* The same for a change from an automatic check made while playing
- * (DtsMatchInfo.later): made at the next quiet moment of the other version's
- * audio, within a minute. Asked again with the same value it keeps waiting;
- * dts_engine_external_shift with another value, or a seek, replaces it. */
+ * (DtsMatchInfo.later): made in steps of up to 300 ms, each at a pause of the
+ * other version's audio at least as long, so the repeated or skipped part is
+ * silence. Asked again with the same value it goes on; another value becomes
+ * the new aim; dts_engine_external_shift with another value, or a seek,
+ * replaces it. */
 int dts_engine_external_shift_quiet(DtsEngine *, int offset_ms);
 /* Blocking (a worker thread): the audio tracks of a file this TV can play or
  * convert, read from its container header only. Count, -1, or -3 for the
