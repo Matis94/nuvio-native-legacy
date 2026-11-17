@@ -736,7 +736,7 @@ static void rings_add(long long bytes) {
   pthread_mutex_unlock(&g_rings_lock);
 }
 #define FX_CAP (e->fx_cap)             /* ring: read-ahead plus history (dts_engine_set_ring_mib) */
-#define FX_HIST (2 * 1024 * 1024)      /* kept behind the reader (small backward seeks) */
+#define FX_HIST fx_hist(e)             /* kept behind the reader (small backward seeks) */
 #define FX_SKIP (1024 * 1024)          /* a forward jump this short waits, no new request */
 #define FX_STALL_MS 20000              /* no byte for this long (not paused by us): drop */
 #define FX_TRIES 6                     /* 1+2+4+8+15 s of backoff, then the run fails */
@@ -745,6 +745,15 @@ static uint64_t fx_now_ms(void) { return clock_ns(CLOCK_MONOTONIC)/1000000u; }
  * the read-ahead buffer, and a jump outside it restarts the one request.
  * The Samsung remux keeps its short adaptive read-ahead. */
 static int fx_long(const DtsEngine *e) { return e->source_stream || e->conv_stream; }
+/* Kept behind the reader: 2 MiB, and for this source's long ring a quarter of
+ * it up to 32 MiB (owner's log 17/11: a 4K Dolby Vision conversion dropped
+ * its full ring about every 30 s for a jump back of the reader past 2 MiB,
+ * and the picture waited ~2 s for a new connection each time). */
+static int64_t fx_hist(const DtsEngine *e) {
+  int64_t h=2*1024*1024;
+  if(fx_long(e) && !e->parent) { int64_t q=e->fx_cap/4; if(q>32*1024*1024) q=32*1024*1024; if(q>h) h=q; }
+  return h;
+}
 /* Final addresses of another source's versions, remembered for the next
  * engine of the same version (owner, 14/11): a Torrentio link goes
  * torrentio.strem.fun -> api.torbox.app -> TorBox CDN, 1.2-2.4 s before the
@@ -1326,6 +1335,11 @@ static int read_fluxo_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
     }
     /* Outside what the stream has or will soon have: start over there. */
     if(e->fx_req<0 && (e->pos<e->fx_lo || e->pos>e->fx_hi+(fx_long(e)?0:FX_SKIP))) {
+      if(!e->parent) {   /* temporary: why the ring starts over (owner's log 17/11) */
+        printf("[http-stream] restart (read): reader at %lld MiB, ring %lld..%lld MiB, %+lld KiB from it\n",(long long)(e->pos>>20),
+               (long long)(e->fx_lo>>20),(long long)(e->fx_hi>>20),(long long)((e->pos<e->fx_lo?e->pos-e->fx_lo:e->pos-e->fx_hi)>>10));
+        fflush(stdout);
+      }
       e->fx_req=e->pos;
       if(fx_abortable(e))__atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
       pthread_cond_broadcast(&e->range_wake);
@@ -1367,6 +1381,12 @@ static int64_t seek_fluxo(void *opaque,int64_t offset,int whence) {
     /* A jump into the prefetched bytes: they serve it, the stream starts
      * again right after them. */
     int pf=e->pf_buf && e->pos>=e->pf_lo && e->pos<e->pf_hi && e->pf_hi-e->pos>=1024*1024;
+    if(!e->parent && e->fx_hi>e->fx_lo) {   /* temporary: why the ring starts over (owner's log 17/11) */
+      printf("[http-stream] restart (seek): reader to %lld MiB, ring %lld..%lld MiB, %+lld KiB from it%s\n",(long long)(e->pos>>20),
+             (long long)(e->fx_lo>>20),(long long)(e->fx_hi>>20),(long long)((e->pos<e->fx_lo?e->pos-e->fx_lo:e->pos-e->fx_hi)>>10),
+             pf?", served from the prefetch":"");
+      fflush(stdout);
+    }
     e->fx_req=pf?e->pf_hi:e->pos;
     if(pf && !e->pf_used) { e->pf_used=1; printf("[prefetch] jump to %.1fs served from %lld KiB fetched ahead\n",e->pf_seconds,(long long)((e->pf_hi-e->pos)/1024)); fflush(stdout); }
     __atomic_store_n(&e->source_cancel,1,__ATOMIC_RELAXED);
