@@ -3756,12 +3756,17 @@ static void follow_check(DtsEngine *e) {
     if(!dts_match_search_at(&sm,&sd,k,off,1.0,win,pos,&r)) return;   /* not covered (yet) or silent */
     double dd=r.offset_s-off;
     int here=fabs(dd)<0.25;
-    if(r.score>=f->thr && fabs(dd)<0.10) { f->bad=0; f->good_since_seek=1; f->t_good=tend-8.0; f->shift_n=0; return; }
+    /* Small mode (versions 0.5-10 s apart) moves only for a real gap: at
+     * least 200 ms and a clear score (owner's log 17/11, Stargate SG-1: a
+     * weak match, 0.23, set the bar at 0.12, and noise moved the sync
+     * +102 ms; the real gaps seen were 330-600 ms at 0.48-0.76). */
+    double near=e->fw_small?0.20:0.10, need=e->fw_small?fmax(f->thr,0.35):f->thr;
+    if(r.score>=f->thr && fabs(dd)<near) { f->bad=0; f->good_since_seek=1; f->t_good=tend-8.0; f->shift_n=0; return; }
     /* Owner's log 08/11 (Chicago Fire, two episode releases): the sync was
      * right, then 0.6 s off a few minutes on (a gap a little longer in one
      * of them) until matched again by hand. A clear peak at another offset
      * up to ~1 s away, the same in two checks in a row: moved there live. */
-    if(r.score>=f->thr && r.margin>=0.10 && fabs(dd)<=0.95) {
+    if(r.score>=need && r.margin>=0.10 && fabs(dd)<=0.95) {
       if(f->shift_n && fabs(r.offset_s-f->shift_s)<0.04) f->shift_n++;
       else { f->shift_n=1; f->shift_s=r.offset_s; }
       f->bad=0;
@@ -3795,7 +3800,7 @@ static void follow_check(DtsEngine *e) {
         }
         /* ...or clearly at another offset close by (a gap a little longer
          * or shorter in one version): moved there instead of switching. */
-        if(got && fabs(c.offset_s-off)>=0.10 && fabs(c.offset_s-off)<=1.4 && c.score>=f->thr*0.8 && c.margin>=0.08) {
+        if(got && fabs(c.offset_s-off)>=near && fabs(c.offset_s-off)<=1.4 && c.score>=(e->fw_small?need:f->thr*0.8) && c.margin>=0.08) {
           int ms=(int)lround((c.offset_s*1e9-e->ext_base_ns)/1e6);
           printf("[ext-audio] follow: shifted %+d ms over %.0f s (score %.2f): offset %d ms\n",
                  (int)lround((c.offset_s-off)*1000.0),cw,c.score,ms);
