@@ -219,6 +219,7 @@ struct DtsEngine {
   int64_t fx_lo, fx_hi;      /* bytes [fx_lo, fx_hi) of the file are in the ring */
   int64_t fx_req;            /* restart the read at this offset (-1: none) */
   int64_t fx_from;           /* where the current read started (read-ahead grows from it) */
+  unsigned jb_n, jb_out; int64_t jb_max; uint64_t jb_at;   /* temporary: jumps back of the reader (an MP4 with audio from another source) */
   uint64_t fx_resolved_ms;   /* last time the final address was dropped for the add-on's */
   /* Audio of another version (parent set): a wait of the reader that lasts
    * too long reconnects at the same place (xs_tries at xs_at, a fresh link
@@ -756,9 +757,12 @@ static int ext_mp4(const DtsEngine *e) {
  * another source a quarter of the ring up to 32 MiB (owner's log 17/11: a 4K
  * Dolby Vision MP4 dropped its full ring about every 30 s for a jump back of
  * the reader past 2 MiB, and the picture waited ~2 s for a new connection). */
+#ifndef FX_EXT_MP4_HIST
+#define FX_EXT_MP4_HIST 0   /* owner's test 17/11: off, to see the jumps back with 2 MiB only (1: on) */
+#endif
 static int64_t fx_hist(const DtsEngine *e) {
   int64_t h=2*1024*1024;
-  if(ext_mp4(e)) { int64_t q=e->fx_cap/4; if(q>32*1024*1024) q=32*1024*1024; if(q>h) h=q; }
+  if(FX_EXT_MP4_HIST && ext_mp4(e)) { int64_t q=e->fx_cap/4; if(q>32*1024*1024) q=32*1024*1024; if(q>h) h=q; }
   return h;
 }
 /* Final addresses of another source's versions, remembered for the next
@@ -1382,7 +1386,24 @@ static int64_t seek_fluxo(void *opaque,int64_t offset,int whence) {
   pthread_mutex_lock(&e->range_lock);
   int64_t base=whence==SEEK_SET?0:whence==SEEK_CUR?e->pos:whence==SEEK_END?e->total:-1;
   if (base<0 || (offset>0 && base>INT64_MAX-offset) || (offset<0 && offset<-base)) { pthread_mutex_unlock(&e->range_lock); return AVERROR(EINVAL); }
+  int64_t was=e->pos;
   e->pos=base+offset;
+  if(ext_mp4(e) && e->fx_thread_ok) {   /* temporary: the jumps back, per 5 s (owner's test 17/11) */
+    uint64_t now=fx_now_ms();
+    if(e->pos<was) {
+      e->jb_n++; if(was-e->pos>e->jb_max) e->jb_max=was-e->pos;
+      if(e->pos<e->fx_lo) e->jb_out++;
+    }
+    if(!e->jb_at) e->jb_at=now;
+    if(now-e->jb_at>=5000) {
+      if(e->jb_n) {
+        printf("[http-stream] jumps back in %.0f s: %u, largest %lld KiB, %u past what is kept (%lld KiB behind)\n",(now-e->jb_at)/1000.0,
+               e->jb_n,(long long)(e->jb_max>>10),e->jb_out,(long long)(fx_hist(e)>>10));
+        fflush(stdout);
+      }
+      e->jb_n=e->jb_out=0; e->jb_max=0; e->jb_at=now;
+    }
+  }
   if(fx_long(e) && e->fx_thread_ok &&
      (e->pos<e->fx_lo || e->pos>e->fx_hi)) {
     /* A jump into the prefetched bytes: they serve it, the stream starts
