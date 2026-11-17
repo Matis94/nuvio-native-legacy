@@ -46,13 +46,6 @@ static const struct { const char *cod, *nome; } NOMES[] = {
   { "lv", "Letão" },      { "lt", "Lituano" },   { "ca", "Catalão" },
   { "eu", "Basco" },      { "gl", "Galego" },    { "is", "Islandês" },
   { "fa", "Persa" },      { "ms", "Malaio" },    { "tl", "Filipino" },
-  // Owner's lists 17/11 (Dexter: "BEN"; Stargate SG-1 before): South Asian,
-  // Balkan and Caucasus codes the release names carry. Their 3-letter codes
-  // reach these through familia().
-  { "bn", "Bengali" },    { "ta", "Tâmil" },     { "te", "Télugo" },    { "ml", "Malaiala" },
-  { "kn", "Canarês" },    { "mr", "Marati" },    { "ur", "Urdu" },      { "pa", "Panjabi" },
-  { "gu", "Guzerate" },   { "sq", "Albanês" },   { "mk", "Macedônio" }, { "ka", "Georgiano" },
-  { "hy", "Armênio" },    { "kk", "Cazaque" },   { "be", "Bielorrusso" }, { "az", "Azerbaijano" },
 };
 #define NOMES_N ((int)(sizeof NOMES / sizeof *NOMES))
 
@@ -135,11 +128,6 @@ static const char *familia(const char *c, char *buf) {
     // legendas): ja->"jp", cs->"cz", nl->"du", el->"gr", id->"in", ms->"ma".
     // Nenhum deles e codigo ISO de outro idioma.
     { "jp","ja" },{ "cz","cs" },{ "du","nl" },{ "gr","el" },{ "in","id" },{ "ma","ms" },
-    // ISO 639-2 (B and T) of the names added 17/11.
-    { "ben","bn" },{ "tam","ta" },{ "tel","te" },{ "mal","ml" },{ "kan","kn" },{ "mar","mr" },
-    { "urd","ur" },{ "pan","pa" },{ "guj","gu" },{ "sqi","sq" },{ "alb","sq" },{ "mkd","mk" },
-    { "mac","mk" },{ "kat","ka" },{ "geo","ka" },{ "hye","hy" },{ "arm","hy" },{ "kaz","kk" },
-    { "bel","be" },{ "aze","az" },
     // #429: servo-croata. "hbs"/"sh" e o codigo conjunto que muitos MKV usam
     // para croata, servio e bosnio; ling_casa trata "sh" como os tres.
     { "bos","bs" },{ "hbs","sh" },
