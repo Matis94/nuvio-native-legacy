@@ -71,6 +71,9 @@ int main(void) {
   ok("nome de cz",  !strcmp(ling_nome("cz"), "Tcheco"));
   ok("nome de du",  !strcmp(ling_nome("du"), "Holandês"));
   ok("nome de ces", !strcmp(ling_nome("ces"), "Tcheco"));
+  ok("name of ben (owner 17/11)", !strcmp(ling_nome("ben"), "Bengali"));
+  ok("name of alb", !strcmp(ling_nome("alb"), "Albanês"));
+  ok("name of hye", !strcmp(ling_nome("hye"), "Armênio"));
   ok("nome de es-419", !strcmp(ling_nome("es-419"), "Espanhol"));
   ok("nome de zh-Hans", !strcmp(ling_nome("zh-Hans"), "Chinês"));
   ok("nome de hrv", !strcmp(ling_nome("hrv"), "Croata"));
