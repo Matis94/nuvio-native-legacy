@@ -4463,7 +4463,7 @@ static int temMarca(int i, int automatica) {
   (void)automatica;
   // StreamFit (F03): a measured-heavy source carries its reason on the mark line.
   return i >= 0 && (i == atual || i == preferida || (i == melhorFolha && nFiltrados() > 1) ||
-                    audioext_marcada(lista[i].url) ||
+                    audioext_marcada_nome(lista[i].url, lista[i].rotulo) ||
                     fitPesada(i) || lista[i].foraCache || (!canalFolha && stream_vod_falhou_ha(i) >= 0));
 }
 // Altura de uma linha: base, marca, e o nome do arquivo que abre por mola na
@@ -5339,7 +5339,7 @@ static void fonteMarcarAudio(int i) {
     if (player_aberto()) player_toast(i18n("This source can't be used as audio."), 2600);
     return;
   }
-  if (audioext_marcada(s->url)) {
+  if (audioext_marcada_nome(s->url, s->rotulo)) {
     if (player_aberto() && audioext_tocando()) {
       audioext_original();
       player_toast(i18n("Back to this file's own audio…"), 2500);
@@ -5372,7 +5372,7 @@ static void fonteMarcarAudio(int i) {
 static void fonteMenuAbrir(int i) {
   fmAberto = 1; fmFoco = 0; fmN = 0; fmAnim = 0;
   snprintf(fmUrl, sizeof fmUrl, "%s", lista[i].url);
-  fmMarcada = audioext_marcada(lista[i].url);
+  fmMarcada = audioext_marcada_nome(lista[i].url, lista[i].rotulo);
   fmIndice = i;
   faixas_idioma_principal_atualizar();
   fmModoFaixas = 0; fmSondaN = -2;
@@ -5427,7 +5427,7 @@ static int fmLinhas(void) {
 static void fonteMarcarFaixa(int i, const AudioExtFaixa *f) {
   const Stream *s = &lista[i];
   if (!fonteAceitaAudio(i)) return;
-  if (!audioext_marcada(s->url)) audioext_alternar(s->url, s->cabecalhos, s->rotulo);
+  if (!audioext_marcada_nome(s->url, s->rotulo)) audioext_alternar(s->url, s->cabecalhos, s->rotulo);
   { AudioExtEntrada e;
     AudioExtIdent id;
     stream_audioext_entrada(s, &e);
@@ -6875,7 +6875,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
         mx += caixaAlta(dica,135,130,125,mx,cy,anim)+18;
       }
       if(s->foraCache && !cacheConfirmado(s)) mx += caixaAlta("Fora do cache",185,179,171,mx,cy,anim)+18;
-      if(audioext_marcada(s->url)){
+      if(audioext_marcada_nome(s->url, s->rotulo)){
         gfx_cor((GfxRect){mx,cy+5,7,7},.5f,.45f,.62f,.95f,anim);
         mx+=16+caixaAlta("Audio source",150,180,240,mx+16,cy,anim)+18;
       }

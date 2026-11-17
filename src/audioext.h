@@ -111,6 +111,10 @@ int audioext_tem_marca(void);
 const char *audioext_idioma(void);
 // The source with this URL is the marked one (for the sheet's label).
 int audioext_marcada(const char *url);
+// The marked file on this very row: two add-ons can list one file under two
+// names (owner 17/11, Torrentio and BestTorrents), and only the row picked
+// shows the mark. Where the file itself matters, audioext_marcada.
+int audioext_marcada_nome(const char *url, const char *nome);
 // 1 when a mark exists for the current target and it is not the video itself.
 int audioext_pedido(const char *urlVideo);
 const char *audioext_url(void);

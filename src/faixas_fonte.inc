@@ -247,7 +247,7 @@ static void exLinhaCand(const AudioExtCand *c, float x, float y, float w, int se
   const Stream *st = extFonteIdx(c->indice);
   char sub[224];
   int dim = 0, cc = sel ? 255 : 219, cs = 122;
-  int ativo = st && (audioext_tocando() || audioext_carregando()) && audioext_marcada(st->url);
+  int ativo = st && (audioext_tocando() || audioext_carregando()) && audioext_marcada_nome(st->url, st->rotulo);
   float da, dir = x + w - 22.0f;
   extDetalhes(c->indice, c->idioma, sub, sizeof sub, &dim);
   da = dim ? a * 0.5f : a;

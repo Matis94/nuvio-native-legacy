@@ -99,6 +99,7 @@ static int extSoAudio, extReabrirPend;
 // there and stayed silent.
 static int extTvSom;
 static unsigned extPedidoVisto;
+static char extUrlAplicada[NV_MEDIA_URL_MAX];   /* the other version this session plays (start or last swap) */
 // DOLBY VISION IN MKV (Settings > Playback, experimental). The TV's own URI
 // player turns a Dolby Vision MKV into HDR10 (measured on an LG C9). The same
 // Starfish BUFFERSTREAM path used for DTS conversion, fed by our demux with the
@@ -2818,6 +2819,23 @@ static void extReabrir(void) {
       ack_publicar();
       return;
     }
+    if (quer && extAtivo && !strcmp(audioext_url(), extUrlAplicada)) {
+      /* The very file already playing, picked again: two add-ons can list the
+       * same file (owner's log 17/11: Torrentio and BestTorrents of
+       * AIOStreams), and a swap stops the picture for seconds (a Dolby Vision
+       * reload) for nothing. Kept when the track is the same one or none was
+       * picked; another track of it still swaps. */
+      DtsPlaybackStatus st = {0};
+      int f = audioext_faixa();
+      dts_playback_status(dtsSessao, &st);
+      if (f < 0 || (st.ext_stream_used > 0 && f == st.ext_stream_used - 1)) {
+        extReabrirPend = 0;
+        audioext_tocando_definir(1);   // nothing reopens: the pick is the one playing
+        printf("[ext-audio] the same file%s already plays: kept, no reload\n", f < 0 ? "" : " and track");
+        fflush(stdout);
+        return;
+      }
+    }
     if (quer && extAtivo) {
       // Another version, or another track of it, while one already plays:
       // only the other file is swapped; this source stays open (owner, 07/11).
@@ -2828,6 +2846,7 @@ static void extReabrir(void) {
       if (dts_playback_external_swap(dtsSessao, audioext_url(), audioext_cabecalhos(), langs,
                                      audioext_offset_ms(), audioext_faixa(), audioext_so_audio(), posSeg)) {
         extGenAplicada = extGenVista = audioext_offset_geracao(); extGenEm = 0;
+        snprintf(extUrlAplicada, sizeof extUrlAplicada, "%s", audioext_url());
         audioext_tocando_definir(0);   // the new audio says so when it plays
         audioext_carregando_definir(1);
 #ifdef NV_NATIVE_SEEK_TEST
@@ -3807,6 +3826,7 @@ static int iniciarDts(int stream) {
     dts_playback_next_external_automatch(ajustes_audio_externo_auto());
     extGenAplicada = extGenVista = audioext_offset_geracao(); extGenEm = 0;
     audioext_carregando_definir(1);
+    snprintf(extUrlAplicada, sizeof extUrlAplicada, "%s", audioext_url());
     printf("[ext-audio] start: picture from this source, audio from \"%.60s\" offsetMs=%d dv=%d langs=%s\n",
            audioext_nome(), audioext_offset_ms(), dtsModoDv, langs);
     fflush(stdout);

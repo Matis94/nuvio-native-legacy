@@ -105,6 +105,8 @@ void dts_engine_external_audio(DtsEngine *, const char *url, const char *headers
 /* Worker only: new offset for the next seek (applied by dts_engine_seek). */
 void dts_engine_external_offset(DtsEngine *, int offset_ms);
 int dts_engine_external_active(DtsEngine *);
+/* The other version's stream in use (-1: none open yet). */
+int dts_engine_external_stream(DtsEngine *);
 /* Before open: fetch only the donor's audio chunks when the file has an index
  * of them (MP4); Matroska and very fragmented files read the whole file. */
 void dts_engine_external_audio_only(DtsEngine *, int on);

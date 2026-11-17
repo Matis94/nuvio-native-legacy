@@ -96,6 +96,13 @@ void audioext_alvo(const char *alvo) {
 }
 int audioext_alternar(const char *url, const char *cabecalhos, const char *nome) {
   if (!url || !*url) return -1;
+  if (audioext_marcada(url) && !audioext_marcada_nome(url, nome)) {
+    // The same file under another add-on's name: the mark goes to this row.
+    snprintf(nomeMarca, sizeof nomeMarca, "%s", nome ? nome : "");
+    printf("[ext-audio] audio source marked: %.80s (the same file, target %s)\n", nomeMarca, alvoMarca);
+    fflush(stdout);
+    return 1;
+  }
   if (audioext_marcada(url)) {
     audioext_limpar();
     printf("[ext-audio] mark cleared by the user\n"); fflush(stdout);
@@ -127,6 +134,8 @@ void audioext_escolher(const char *url, const char *cabecalhos, const char *nome
     offsetMs = 0; offsetGeracao++; offsetSuave = 0; posAtual = -1; velocidadePpm = 0; kandN = 0; kandN = 0; velocidadePpm = 0;
     faixaMarca = -1; dicaAtiva = 0; offsetLembrado = 0;
   }
+  // The same file can come from two add-ons under two names: the row picked.
+  snprintf(nomeMarca, sizeof nomeMarca, "%s", nome ? nome : "");
   snprintf(idiomaMarca, sizeof idiomaMarca, "%s", idioma ? idioma : "");
   pedidoGeracao++;
   pendente = 1;   // the player reopens with it now
@@ -244,6 +253,9 @@ int audioext_tem_marca(void) { return urlMarca[0] != 0; }
 const char *audioext_idioma(void) { return idiomaMarca; }
 int audioext_marcada(const char *url) {
   return urlMarca[0] && url && !strcmp(url, urlMarca);
+}
+int audioext_marcada_nome(const char *url, const char *nome) {
+  return audioext_marcada(url) && (!nomeMarca[0] || !nome || !strcmp(nome, nomeMarca));
 }
 int audioext_pedido(const char *urlVideo) {
   return urlMarca[0] && mesmoAlvo(alvoAtual, alvoMarca) && urlVideo && *urlVideo &&

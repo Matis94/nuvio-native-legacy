@@ -549,8 +549,9 @@ static void reportRate(DtsPlayback *p, DtsRate *rate, double presented,
     int faminto = complete && clock_seen && !pause && !preroll &&
                   video_pts - presented < 1.0 && rate->read_wall > 0.8 * (now - rate->start);
     int64_t total = -1, lidos = dts_engine_external_bytes(p->engine, &total);
-    int seguidas;
+    int seguidas, usado = dts_engine_external_stream(p->engine);
     pthread_mutex_lock(&p->lock);
+    if (!p->ext_swap) p->status.ext_stream_used = usado + 1;
     if (faminto) p->status.ext_starved++;
     else if (!pause) p->status.ext_starved = 0;
     seguidas = p->status.ext_starved;
@@ -1290,7 +1291,7 @@ int dts_playback_external_swap(DtsPlayback *p, const char *url, const char *head
   p->ext_swap_track = track; p->ext_swap_only = !!audio_only;
   p->ext_offset_ms = offset_ms;
   p->ext_swap = 1;
-  p->status.ext_starved = 0;
+  p->status.ext_starved = 0; p->status.ext_stream_used = 0;
   /* Applied like a track change: same stream id, fresh native Load. */
   if (!p->seek_dirty) p->target = seconds < 0 ? 0 : seconds;
   p->audio_stream = DTS_ENGINE_EXTERNAL_STREAM; p->audio_dirty = 1;

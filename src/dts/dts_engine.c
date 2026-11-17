@@ -111,6 +111,7 @@ void dts_engine_external_automatch(DtsEngine *e,int on) { (void)e;(void)on; }
 int dts_engine_external_follow_poll(DtsEngine *e,int *s,int *o) { (void)e; *s=0; *o=0; return 0; }
 int64_t dts_engine_external_bytes(DtsEngine *e,int64_t *t) { (void)e; if(t) *t=-1; return 0; }
 int dts_engine_external_active(DtsEngine *e) { (void)e; return 0; }
+int dts_engine_external_stream(DtsEngine *e) { (void)e; return -1; }
 int dts_engine_external_replace(DtsEngine *e,const char *u,const char *h,const char *l,int o,int t,int a,double s) { (void)e;(void)u;(void)h;(void)l;(void)o;(void)t;(void)a;(void)s; return -1; }
 #else
 #include "../rede.h"
@@ -1872,6 +1873,7 @@ static int known_speed(double k) {
   return 0;
 }
 int dts_engine_external_active(DtsEngine *e) { return e && e->ext_url && e->ext_headers; }
+int dts_engine_external_stream(DtsEngine *e) { return e && e->ext_url && e->ext_headers && e->ext ? e->ext_stream : -1; }
 void dts_engine_external_audio_only(DtsEngine *e,int on) { if(e) e->ext_audio_only=!!on; }
 void dts_engine_external_track(DtsEngine *e,int s) { if(e) e->ext_force=s>=0?s+1:0; }
 void dts_engine_external_track_hint(DtsEngine *e,int stream,const char *lang,const char *codec,int channels,const char *title) {
