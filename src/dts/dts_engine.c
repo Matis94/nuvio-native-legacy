@@ -112,6 +112,7 @@ int dts_engine_external_follow_poll(DtsEngine *e,int *s,int *o) { (void)e; *s=0;
 int64_t dts_engine_external_bytes(DtsEngine *e,int64_t *t) { (void)e; if(t) *t=-1; return 0; }
 int dts_engine_external_active(DtsEngine *e) { (void)e; return 0; }
 int dts_engine_external_stream(DtsEngine *e) { (void)e; return -1; }
+void dts_engine_subtitle_only(DtsEngine *e,int stream) { (void)e; (void)stream; }
 int dts_engine_external_replace(DtsEngine *e,const char *u,const char *h,const char *l,int o,int t,int a,double s) { (void)e;(void)u;(void)h;(void)l;(void)o;(void)t;(void)a;(void)s; return -1; }
 #else
 #include "../rede.h"
@@ -745,13 +746,19 @@ static uint64_t fx_now_ms(void) { return clock_ns(CLOCK_MONOTONIC)/1000000u; }
  * the read-ahead buffer, and a jump outside it restarts the one request.
  * The Samsung remux keeps its short adaptive read-ahead. */
 static int fx_long(const DtsEngine *e) { return e->source_stream || e->conv_stream; }
-/* Kept behind the reader: 2 MiB, and for a conversion's own ring a quarter of
- * it up to 32 MiB (the TV player's path keeps 2 MiB, as it played smoothly) (owner's log 17/11: a 4K Dolby Vision conversion dropped
- * its full ring about every 30 s for a jump back of the reader past 2 MiB,
- * and the picture waited ~2 s for a new connection each time). */
+/* An MP4 converted with audio from another source (owner, 17/11: only there;
+ * any other conversion and the TV player's path as before). */
+static int ext_mp4(const DtsEngine *e) {
+  return e->conv_stream && !e->parent && e->ext_url && e->fmt && e->fmt->iformat && e->fmt->iformat->name &&
+         strstr(e->fmt->iformat->name,"mp4");
+}
+/* Kept behind the reader: 2 MiB, and for an MP4 converted with audio from
+ * another source a quarter of the ring up to 32 MiB (owner's log 17/11: a 4K
+ * Dolby Vision MP4 dropped its full ring about every 30 s for a jump back of
+ * the reader past 2 MiB, and the picture waited ~2 s for a new connection). */
 static int64_t fx_hist(const DtsEngine *e) {
   int64_t h=2*1024*1024;
-  if(e->conv_stream && !e->parent) { int64_t q=e->fx_cap/4; if(q>32*1024*1024) q=32*1024*1024; if(q>h) h=q; }
+  if(ext_mp4(e)) { int64_t q=e->fx_cap/4; if(q>32*1024*1024) q=32*1024*1024; if(q>h) h=q; }
   return h;
 }
 /* Final addresses of another source's versions, remembered for the next
@@ -1335,7 +1342,7 @@ static int read_fluxo_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
     }
     /* Outside what the stream has or will soon have: start over there. */
     if(e->fx_req<0 && (e->pos<e->fx_lo || e->pos>e->fx_hi+(fx_long(e)?0:FX_SKIP))) {
-      if(e->conv_stream && !e->parent) {   /* temporary: why the ring starts over (owner's log 17/11) */
+      if(ext_mp4(e)) {   /* temporary: why the ring starts over (owner's log 17/11) */
         printf("[http-stream] restart (read): reader at %lld MiB, ring %lld..%lld MiB, %+lld KiB from it\n",(long long)(e->pos>>20),
                (long long)(e->fx_lo>>20),(long long)(e->fx_hi>>20),(long long)((e->pos<e->fx_lo?e->pos-e->fx_lo:e->pos-e->fx_hi)>>10));
         fflush(stdout);
@@ -1381,7 +1388,7 @@ static int64_t seek_fluxo(void *opaque,int64_t offset,int whence) {
     /* A jump into the prefetched bytes: they serve it, the stream starts
      * again right after them. */
     int pf=e->pf_buf && e->pos>=e->pf_lo && e->pos<e->pf_hi && e->pf_hi-e->pos>=1024*1024;
-    if(e->conv_stream && !e->parent && e->fx_hi>e->fx_lo) {   /* temporary: why the ring starts over (owner's log 17/11) */
+    if(ext_mp4(e) && e->fx_hi>e->fx_lo) {   /* temporary: why the ring starts over (owner's log 17/11) */
       printf("[http-stream] restart (seek): reader to %lld MiB, ring %lld..%lld MiB, %+lld KiB from it%s\n",(long long)(e->pos>>20),
              (long long)(e->fx_lo>>20),(long long)(e->fx_hi>>20),(long long)((e->pos<e->fx_lo?e->pos-e->fx_lo:e->pos-e->fx_hi)>>10),
              pf?", served from the prefetch":"");
@@ -1894,6 +1901,24 @@ static int known_speed(double k) {
 }
 int dts_engine_external_active(DtsEngine *e) { return e && e->ext_url && e->ext_headers; }
 int dts_engine_external_stream(DtsEngine *e) { return e && e->ext_url && e->ext_headers && e->ext ? e->ext_stream : -1; }
+/* Only the subtitle track shown is read (-1: none). An MP4 keeps each track's
+ * samples in its own chunks: owner's log 17/11, a 4K Dolby Vision MP4 with 27
+ * text tracks, the reader went back and forth up to 180 MiB between them and
+ * the picture and the conversion ring started over each time. A track off
+ * still advances in the demuxer without reading, so turned on again it
+ * starts where the picture is. Only for an MP4 with audio from another
+ * source (owner, 17/11). Called from the playback worker. */
+void dts_engine_subtitle_only(DtsEngine *e,int stream) {
+  if(!e || !ext_mp4(e)) return;
+  int off=0;
+  for(unsigned i=0;i<e->fmt->nb_streams;i++) {
+    AVStream *s=e->fmt->streams[i];
+    if(s->codecpar->codec_type!=AVMEDIA_TYPE_SUBTITLE) continue;
+    if((int)i==stream) s->discard=AVDISCARD_DEFAULT;
+    else { if(s->discard!=AVDISCARD_ALL) off++; s->discard=AVDISCARD_ALL; }
+  }
+  if(off) { printf("[http-stream] MP4 with audio from another source: %d subtitle track(s) not read (shown: %d)\n",off,stream); fflush(stdout); }
+}
 void dts_engine_external_audio_only(DtsEngine *e,int on) { if(e) e->ext_audio_only=!!on; }
 void dts_engine_external_track(DtsEngine *e,int s) { if(e) e->ext_force=s>=0?s+1:0; }
 void dts_engine_external_track_hint(DtsEngine *e,int stream,const char *lang,const char *codec,int channels,const char *title) {

@@ -107,6 +107,9 @@ void dts_engine_external_offset(DtsEngine *, int offset_ms);
 int dts_engine_external_active(DtsEngine *);
 /* The other version's stream in use (-1: none open yet). */
 int dts_engine_external_stream(DtsEngine *);
+/* An MP4 with audio from another source: only this subtitle stream is read
+ * (-1: none); a no-op otherwise. From the playback worker only. */
+void dts_engine_subtitle_only(DtsEngine *, int stream);
 /* Before open: fetch only the donor's audio chunks when the file has an index
  * of them (MP4); Matroska and very fragmented files read the whole file. */
 void dts_engine_external_audio_only(DtsEngine *, int on);

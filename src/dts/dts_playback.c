@@ -123,6 +123,7 @@ static int selectSubtitle(DtsPlayback *p, int stream) {
   pthread_mutex_lock(&p->lock);
   p->subtitle_stream = stream;
   pthread_mutex_unlock(&p->lock);
+  dts_engine_subtitle_only(p->engine, stream);
   return 1;
 }
 
