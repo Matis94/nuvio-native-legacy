@@ -745,13 +745,13 @@ static uint64_t fx_now_ms(void) { return clock_ns(CLOCK_MONOTONIC)/1000000u; }
  * the read-ahead buffer, and a jump outside it restarts the one request.
  * The Samsung remux keeps its short adaptive read-ahead. */
 static int fx_long(const DtsEngine *e) { return e->source_stream || e->conv_stream; }
-/* Kept behind the reader: 2 MiB, and for this source's long ring a quarter of
- * it up to 32 MiB (owner's log 17/11: a 4K Dolby Vision conversion dropped
+/* Kept behind the reader: 2 MiB, and for a conversion's own ring a quarter of
+ * it up to 32 MiB (the TV player's path keeps 2 MiB, as it played smoothly) (owner's log 17/11: a 4K Dolby Vision conversion dropped
  * its full ring about every 30 s for a jump back of the reader past 2 MiB,
  * and the picture waited ~2 s for a new connection each time). */
 static int64_t fx_hist(const DtsEngine *e) {
   int64_t h=2*1024*1024;
-  if(fx_long(e) && !e->parent) { int64_t q=e->fx_cap/4; if(q>32*1024*1024) q=32*1024*1024; if(q>h) h=q; }
+  if(e->conv_stream && !e->parent) { int64_t q=e->fx_cap/4; if(q>32*1024*1024) q=32*1024*1024; if(q>h) h=q; }
   return h;
 }
 /* Final addresses of another source's versions, remembered for the next
@@ -1335,7 +1335,7 @@ static int read_fluxo_pending(void *opaque,uint8_t *dst,int n,int pending_fd) {
     }
     /* Outside what the stream has or will soon have: start over there. */
     if(e->fx_req<0 && (e->pos<e->fx_lo || e->pos>e->fx_hi+(fx_long(e)?0:FX_SKIP))) {
-      if(!e->parent) {   /* temporary: why the ring starts over (owner's log 17/11) */
+      if(e->conv_stream && !e->parent) {   /* temporary: why the ring starts over (owner's log 17/11) */
         printf("[http-stream] restart (read): reader at %lld MiB, ring %lld..%lld MiB, %+lld KiB from it\n",(long long)(e->pos>>20),
                (long long)(e->fx_lo>>20),(long long)(e->fx_hi>>20),(long long)((e->pos<e->fx_lo?e->pos-e->fx_lo:e->pos-e->fx_hi)>>10));
         fflush(stdout);
@@ -1381,7 +1381,7 @@ static int64_t seek_fluxo(void *opaque,int64_t offset,int whence) {
     /* A jump into the prefetched bytes: they serve it, the stream starts
      * again right after them. */
     int pf=e->pf_buf && e->pos>=e->pf_lo && e->pos<e->pf_hi && e->pf_hi-e->pos>=1024*1024;
-    if(!e->parent && e->fx_hi>e->fx_lo) {   /* temporary: why the ring starts over (owner's log 17/11) */
+    if(e->conv_stream && !e->parent && e->fx_hi>e->fx_lo) {   /* temporary: why the ring starts over (owner's log 17/11) */
       printf("[http-stream] restart (seek): reader to %lld MiB, ring %lld..%lld MiB, %+lld KiB from it%s\n",(long long)(e->pos>>20),
              (long long)(e->fx_lo>>20),(long long)(e->fx_hi>>20),(long long)((e->pos<e->fx_lo?e->pos-e->fx_lo:e->pos-e->fx_hi)>>10),
              pf?", served from the prefetch":"");
