@@ -3993,8 +3993,25 @@ static int filtroTem(const Stream *s, int cat, const char *nome) {
     if (!strcmp(fontefiltro_opcao(cat, i), nome)) return (s->filtro.valores[cat] & fontefiltro_bit(cat, i)) != 0;
   return 0;
 }
+/* The release group BenTheMen ("-BEN.THE.MEN", "BenTheMen"): add-ons read its
+ * "BEN" as Bengali (owner 17/11, Dexter: Resurrection, two such versions
+ * under "BEN" with English tracks only). True when a name or the
+ * description carries it, separators and case ignored. */
+static int grupoBenTheMen(const Stream *s) {
+  const char *campos[] = { s->arquivo, s->descricao, s->rotulo };
+  for (size_t k = 0; k < sizeof campos / sizeof *campos; k++) {
+    char t[2048];
+    size_t n = 0;
+    for (const char *q = campos[k]; *q && n + 1 < sizeof t; q++)
+      if (isalnum((unsigned char)*q)) t[n++] = (char)tolower((unsigned char)*q);
+    t[n] = 0;
+    if (strstr(t, "benthemen")) return 1;
+  }
+  return 0;
+}
 void stream_audioext_entrada(const Stream *s, AudioExtEntrada *e) {
   const char *lista, *p, *fim;
+  int semBengali;
   size_t limite;
   memset(e, 0, sizeof *e);
   if (!s) return;
@@ -4010,6 +4027,7 @@ void stream_audioext_entrada(const Stream *s, AudioExtEntrada *e) {
       if (ln > le && !strcasecmp(nome + ln - le, fora[k])) e->hls = 1;
     } }
   e->naoVideo = s->naoVideo;
+  semBengali = grupoBenTheMen(s);
   lista = s->audioIdiomas[0] ? s->audioIdiomas : s->audioRotulos;
   limite = s->audioIdiomas[0] ? sizeof s->audioIdiomas : sizeof s->audioRotulos;
   p = lista; fim = p + strnlen(p, limite);
@@ -4025,6 +4043,7 @@ void stream_audioext_entrada(const Stream *s, AudioExtEntrada *e) {
     cod = len <= 3 && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo) ? codigo : NULL;
     if (!cod) cod = faixaIdiomaDoNome(raw);
     if (!cod && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo)) cod = codigo;
+    if (cod && semBengali && (!strcasecmp(cod, "ben") || !strcasecmp(cod, "bn"))) cod = NULL;
     if (cod && faixaIdiomaInformado(raw, len) && strcasecmp(cod, "mul")) {
       int dup = 0;
       for (int j = 0; j < e->nIdiomas; j++) if (!strcasecmp(e->idiomas[j], cod)) dup = 1;
