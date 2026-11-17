@@ -298,7 +298,9 @@ static void exBarraLinguas(float x, float y, float w, float a) {
     }
   }
   for (int i = ini; i < fim; i++) { rot[i - ini] = exNomeBalde(i); cont[i - ini] = exBal[i].cont; }
-  plrui_seg(rot, cont, fim - ini, (float)(exLingua - ini), 0, x, y, a);
+  // More languages past either end: the bar takes the whole width, no empty
+  // strip that looks like the end of the list (owner 17/11).
+  plrui_seg_largura(rot, cont, fim - ini, (float)(exLingua - ini), 0, x, y, a, (ini > 0 || fim < exBalN) ? w : 0.0f);
 }
 static void corpoExt(GfxRect c, float a) {
   float x0 = c.x + IL_PAD_X, w = c.w - IL_PAD_X * 2.0f, y = c.y + IL_PAD_Y;
