@@ -45,7 +45,6 @@
 #endif
 #include <unistd.h>   // dup2 (o stderr no mesmo descritor do log)
 #include "gfx.h"
-#include "coredump_diag.h"
 #include "fundo.h"
 #include "gpunivel.h"
 #include "fpscena.h"
@@ -211,8 +210,6 @@ static void aoAlarmeTerminar(int sig) {
 // e o rearmava em 4 s: cortava p2pmotor_saida/ajustes_log_vazar_tudo/corviva.
 static void aoSinalTerminar(int sig) {
   (void)sig;
-  // Temporary core dump diagnostics: write() is async-signal-safe.
-  { static const char m[] = "[saida] SIGTERM received\n"; (void)!write(1, m, sizeof m - 1); }
   if (sinalTerminou) return;
   sinalTerminou = 1;
   alarm(4);
@@ -995,9 +992,6 @@ int main(int argc, char **argv) {
     }
   }
   setvbuf(stdout, NULL, _IOLBF, 0);
-#ifdef NV_WEBOS
-  coredump_diag_armar_saida();   // temporary: the atexit marker that runs last
-#endif
   arranque_etapa("main");
   arranque_relatar();
 #ifdef NV_DTS_DEBUG
@@ -1148,9 +1142,6 @@ int main(int argc, char **argv) {
   printf("[leve] build de diagnostico: pool de fios 12, sem canal de avisos, sem recomendacoes, sem sync periodico, sem GIF de foco\n");
 #endif
   avisos_iniciar();   // le a marca da sessao anterior e grava a desta
-#ifdef NV_WEBOS
-  coredump_diag_relatar();   // temporary: core dump setup, core files, previous exit trace
-#endif
   // E OS AJUSTES LOGO ATRAS, pelo mesmo motivo: ajustes_4k() le `valor[]`, que
   // so sai do padrao depois desta chamada. Sem ela a opcao existia na tela,
   // gravava no arquivo e nao fazia efeito nenhum — o pior tipo de ajuste.
@@ -2708,13 +2699,6 @@ int main(int argc, char **argv) {
 #ifdef NV_SINAL_TERMINAR
   if (sinalTerminou) alarm(NV_SAIDA_FOLGA_S);   // saida normal em curso: mais folga que os 4 s do laco
 #endif
-#ifdef NV_WEBOS
-  coredump_diag_saida(
-#ifdef NV_SINAL_TERMINAR
-                      sinalTerminou ? "main loop left (SIGTERM)" :
-#endif
-                      "main loop left");
-#endif
   if (perftv_enabled) {
     char line[320];
     if (perftv_flush(&perfTv, line, sizeof line)) { puts(line); fflush(stdout); }
@@ -2722,15 +2706,9 @@ int main(int argc, char **argv) {
   gfx_borrao_encerrar();
   gfx_snap_encerrar();
   app_encerrar();
-#ifdef NV_WEBOS
-  coredump_diag_saida("app_encerrar done");
-#endif
   // Motor P2P embutido: cancela e espera o destroy por ate P2PM_SAIDA_MS; o
   // cache so e apagado depois do destroy (ou no proximo inicio). No-op sem motor.
   p2pmotor_saida();
-#ifdef NV_WEBOS
-  coredump_diag_saida("p2pmotor_saida done");
-#endif
   ajustes_log_vazar_tudo();
   corviva_gravar_se_preciso(1);
   tex_encerrar();
@@ -2740,9 +2718,6 @@ int main(int argc, char **argv) {
   SDL_DestroyWindow(win);
   IMG_Quit();
   SDL_Quit();
-#ifdef NV_WEBOS
-  coredump_diag_saida("SDL_Quit done");
-#endif
 #ifdef NV_SINAL_TERMINAR
   alarm(0);   // a saida normal terminou: nada de SIGALRM depois dela
 #endif
@@ -2770,10 +2745,6 @@ int main(int argc, char **argv) {
   // sessao viva, os avisos vistos) ainda esta so no MEMFS. dados.c descarrega
   // para o IndexedDB e fecha no callback.
   dados_descarregar_e_sair();
-#endif
-#ifdef NV_WEBOS
-  coredump_diag_armar_saida();   // temporary: the atexit marker that runs first
-  coredump_diag_saida("main returns");
 #endif
   return 0;
 }
