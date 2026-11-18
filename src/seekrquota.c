@@ -1,3 +1,6 @@
+// The native webOS build with FFmpeg generates previews locally, without a quota.
+#include "miniplat.h"
+#ifndef NV_MINIATURAS
 #include "seekrquota.h"
 #include "dados.h"
 #include <pthread.h>
@@ -172,3 +175,6 @@ int seekrquota_reservar(long long utc) {
   pthread_mutex_unlock(&quotaTrava);
   return resultado;
 }
+#else
+typedef int seekrquota_fora_daqui;   // ISO C: a translation unit must not be empty
+#endif

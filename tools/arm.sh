@@ -148,6 +148,11 @@ ctr_run --rm --platform "$BUILD_PLATFORM" --env-file "$ENVF" \
   if [ "${NUVIO_DTS_FFMPEG:-1}" = "1" ]; then
     DTS=${NUVIO_DTS_ROOT:-/opt/nuvio-dts}
     [ -f "$DTS/include/libavcodec/avcodec.h" ] || { echo "FFmpeg DTS ausente; reconstrua tools/Dockerfile ou use NUVIO_DTS_FFMPEG=0" >&2; exit 2; }
+    if ! arm-webos-linux-gnueabi-nm -g --defined-only "$DTS/lib/libavcodec.a" |
+         grep -q " ff_mjpeg_encoder$"; then
+      echo "FFmpeg sem miniaturas; reconstrua tools/Dockerfile com o build-dts-ffmpeg.sh atualizado" >&2
+      exit 2
+    fi
     DTS_CFLAGS="-DNV_DTS_FFMPEG -DNV_DTS_WEBOS_RECOVERY -I$DTS/include"
     DTS_LIBS="-L$DTS/lib -Wl,--start-group -lavformat -lavcodec -lswresample -lavutil -Wl,--end-group -lpthread -lm"
   fi
@@ -183,8 +188,8 @@ ctr_run --rm --platform "$BUILD_PLATFORM" --env-file "$ENVF" \
     -I$SR/usr/include -I$SR/usr/include/SDL2 > /tmp/arm-flags
   for k in NV_SUPABASE_URL NV_SUPABASE_ANON_KEY NV_TV_LOGIN_BASE NV_TRAKT_CLIENT_ID \
            NV_TRAKT_CLIENT_SECRET NV_SIMKL_CLIENT_ID NV_SIMKL_APP NV_TMDB_API_KEY NV_SEEKR_API_KEY \
-           NV_REC_URL NV_DISCORD_CLIENT_ID NV_VERSAO; do
-    v=${!k}
+           NV_REC_URL NV_DISCORD_CLIENT_ID NV_GDRIVE_CLIENT_ID NV_GDRIVE_CLIENT_SECRET NV_VERSAO; do
+    v=${!k:-}
     v=$(printf "%s" "$v" | sed "s/[\\\\\"]/\\\\&/g")
     printf "%s\n" "\"-D$k=\\\"$v\\\"\""
   done >> /tmp/arm-flags
@@ -254,6 +259,7 @@ ctr_run --rm --platform "$BUILD_PLATFORM" --env-file "$ENVF" \
 # tranquiliza.
 while IFS='=' read -r NOME VALOR; do
   [ -z "$NOME" ] && continue
+  case "$NOME" in NV_GDRIVE_*) [ "$DTS_ENABLED" = 1 ] || continue ;; esac
   if [ -z "$VALOR" ]; then
     echo "    aviso: $NOME vazio em local.properties"
     continue

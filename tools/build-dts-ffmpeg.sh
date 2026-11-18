@@ -2,10 +2,11 @@
 export TMPDIR="${TMPDIR:-/tmp}"
 TMPDIR="${TMPDIR%/}"
 # Minimal static LGPL FFmpeg: DTS decode, stereo AAC and AC3 5.1 encode (no GPL/nonfree). No FFmpeg
-# network/TLS protocols or software video decoders enter the TV executable.
+# network/TLS protocols enter the TV executable. The webOS build also decodes
+# H.264/HEVC keyframes and encodes small JPEGs for seek-bar previews.
 #
 # NUVIO_DTS_TARGET picks the build:
-#   webos (default) cross build with the LG SDK (tools/Dockerfile); output unchanged.
+#   webos (default) cross build with the LG SDK (tools/Dockerfile).
 #   tpk             Samsung .tpk (tools/tpk.sh). ARM32 build inside the selected SDK
 #                   container, from the source tree tpk.sh already downloaded and checked on the
 #                   host (NUVIO_DTS_SRC; the container has no curl). Adds what the Samsung loopback
@@ -18,6 +19,8 @@ PREFIX=${NUVIO_DTS_ROOT:-/opt/nuvio-dts}
 BUILD=${NUVIO_DTS_BUILD:-${TMPDIR:-/tmp}/nuvio-dts-build}
 TARGET=${NUVIO_DTS_TARGET:-webos}
 DECODERS=dca,dvdsub,pgssub,ass,ssa,subrip,movtext,webvtt
+ENCODERS=aac,ac3
+DEMUXERS=matroska,mov
 MUXERS=
 PARSERS=dca,h264,hevc,aac
 BSFS=h264_mp4toannexb,hevc_mp4toannexb,dca_core
@@ -44,6 +47,9 @@ if [ "$TARGET" = tpk ]; then
       --cross-prefix=arm-linux-gnueabi-
   fi
 else
+  DECODERS=$DECODERS,h264,hevc
+  ENCODERS=$ENCODERS,mjpeg
+  DEMUXERS=$DEMUXERS,mpegts
   CC=${CC:-arm-webos-linux-gnueabi-gcc}
   archive="$BUILD/ffmpeg-$VERSION.tar.xz"
   [ -f "$archive" ] || curl -fsSL "https://ffmpeg.org/releases/ffmpeg-$VERSION.tar.xz" -o "$archive"
@@ -67,8 +73,8 @@ fi
   --disable-programs --disable-doc --disable-debug --disable-network \
   --disable-avdevice --disable-avfilter --disable-swscale --disable-postproc \
   --enable-avcodec --enable-avformat --enable-avutil --enable-swresample \
-  --enable-decoder="$DECODERS" --enable-encoder=aac,ac3 \
-  --enable-demuxer=matroska,mov --enable-parser="$PARSERS" \
+  --enable-decoder="$DECODERS" --enable-encoder="$ENCODERS" \
+  --enable-demuxer="$DEMUXERS" --enable-parser="$PARSERS" \
   --enable-bsf="$BSFS" \
   --extra-cflags="${CFLAGS:--O2}"
 make -j"${NUVIO_DTS_JOBS:-2}"
