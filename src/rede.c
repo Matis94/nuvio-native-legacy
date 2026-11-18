@@ -1,4 +1,7 @@
 #include "rede.h"
+#if defined(NV_WEBOS) && defined(NV_COREDUMP_DIAG)
+#include "coredump_diag.h"
+#endif
 #ifdef NV_ANDROID
 #include "android.h"
 #endif
@@ -1283,6 +1286,23 @@ static int   (*curl_getinfo)(void *, int, ...);
 static void  (*curl_reset)(void *);
 static time_t (*curl_getdate_fn)(const char *, const time_t *);
 
+#if defined(NV_WEBOS) && defined(NV_COREDUMP_DIAG)
+static int performComRastro(void *c) {
+  coredump_diag_rede("curl_easy_perform", 1, 0);
+  int rc = curl_perform(c);
+  coredump_diag_rede("curl_easy_perform", 0, rc);
+  return rc;
+}
+static void cleanupComRastro(void *c) {
+  coredump_diag_rede("curl_easy_cleanup", 1, 0);
+  curl_cleanup(c);
+  coredump_diag_rede("curl_easy_cleanup", 0, 0);
+}
+#else
+#define performComRastro curl_perform
+#define cleanupComRastro curl_cleanup
+#endif
+
 #ifdef NV_TPK
 static void *dnsShare;
 static pthread_mutex_t dnsTrava = PTHREAD_MUTEX_INITIALIZER;
@@ -1338,13 +1358,13 @@ static int tmdbFallback(void *c, int r, const char *pedido) {
   if (curl_getinfo(c, INFO_RESPONSE_CODE, &http) || http ||
       curl_getinfo(c, INFO_URL_FINAL, &url) || !(alias = tmdbUrl(url))) return r;
   if (!curl_setopt_f(c, OPT_URL, alias)) {
-    r = curl_perform(c); /* uma unica tentativa, sem recursao */
+    r = performComRastro(c); /* uma unica tentativa, sem recursao */
     if (!r) tmdbLigou();
   }
   free(alias);
   return r;
 }
-static int performTmdb(void *c, const char *url) { return tmdbFallback(c, curl_perform(c), url); }
+static int performTmdb(void *c, const char *url) { return tmdbFallback(c, performComRastro(c), url); }
 
 static int retrySegundos(const char *s, size_t n) {
   char b[128], *fim;
@@ -1394,7 +1414,7 @@ static int    pronto;
 // prepararOpenSSL); agora ele so roda no fim do fio.
 static pthread_key_t handleChave;
 static pthread_once_t handleUma = PTHREAD_ONCE_INIT;
-static void handleSoltar(void *c) { if (c && curl_cleanup) curl_cleanup(c); }
+static void handleSoltar(void *c) { if (c && curl_cleanup) cleanupComRastro(c); }
 static void handleCriarChave(void) { pthread_key_create(&handleChave, handleSoltar); }
 // QUANTAS CONEXOES CADA FIO GUARDA. O padrao da libcurl e 5, e um fio de
 // arte fala com mais hosts que isso numa volta so: metahub, api e image do
@@ -1499,7 +1519,7 @@ static void estacVelhos(unsigned long agora) {
   int i;
   for (i = 0; i < REDE_ESTAC_MAX; i++)
     if (estac[i].c && agora - estac[i].ms > REDE_ESTAC_VALE_MS) {
-      if (curl_cleanup) curl_cleanup(estac[i].c);
+      if (curl_cleanup) cleanupComRastro(estac[i].c);
       estac[i].c = NULL;
     }
 }
@@ -1512,7 +1532,7 @@ static void estacionar(void *c, char h[][96], int nh) {
     if (!estac[i].c) { livre = i; break; }
     if (estac[i].ms < estac[velho].ms) velho = i;
   }
-  if (livre < 0) { livre = velho; if (curl_cleanup) curl_cleanup(estac[livre].c); }
+  if (livre < 0) { livre = velho; if (curl_cleanup) cleanupComRastro(estac[livre].c); }
   estac[livre].c = c; estac[livre].ms = agora; estac[livre].nh = nh;
   for (i = 0; i < nh && i < REDE_ESTAC_HOSTS; i++) snprintf(estac[livre].h[i], 96, "%s", h[i]);
   pthread_mutex_unlock(&estacTrava);
@@ -1543,7 +1563,7 @@ static void *pegarHandle(const char *url) {
     if (c) pthread_setspecific(handleChave, c);
   }
   if (c && hostOcioso(url, redeAgoraMs())) {
-    curl_cleanup(c);
+    cleanupComRastro(c);
     pthread_setspecific(handleChave, NULL);
     hostsEsquecer();
     c = NULL;
@@ -1566,7 +1586,7 @@ static void *pegarHandle(const char *url) {
 // reaproveitado (e o ganho de 0,5-0,8 s por imagem). Conexao que fica anota o
 // host (e o do fim dos redirecionamentos) para o limite de ociosidade.
 static void descartarHandle(void *c) {
-  curl_cleanup(c);
+  cleanupComRastro(c);
   if (curl_reset) {
     pthread_setspecific(handleChave, NULL);
     hostsEsquecer();
@@ -2401,13 +2421,13 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
         primeira = 0;
         snprintf(m, sizeof m, "begin https-1 %s", rede_url_publica(url, seg, sizeof seg));
         nv_tpk40_etapa(m);
-        r = curl_perform(c);
+        r = performComRastro(c);
         { long http = 0; if (curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &http);
           snprintf(m, sizeof m, "ok https-1 curl=%d http=%ld", r, http); }
         nv_tpk40_etapa(m);
-      } else r = curl_perform(c); }
+      } else r = performComRastro(c); }
 #else
-    r = curl_perform(c);
+    r = performComRastro(c);
 #endif
     { long novas = -1;
       if (curl_getinfo) curl_getinfo(c, INFO_NUM_CONNECTS, &novas);
@@ -2756,7 +2776,7 @@ int rede_baixar_fluxo(const char *url, int segundos, const char *const *cab,
     for (k = 0; cab[k]; k++) lista = slist_append(lista, cab[k]);
     if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   }
-  r = curl_perform(c);
+  r = performComRastro(c);
   if (r == 42 && vigia.parou) r = 28;
   if (curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &http);
   if (status) *status = (int)http;
@@ -2837,7 +2857,7 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
     if (status) *status = (int)codigo;
     if (codigo == 401 && aviso401) aviso401(url); }
   if (lista) { curl_setopt(c, OPT_HTTPHEADER, (void *)0); if (slist_free) slist_free(lista); }
-  if (seguro) curl_cleanup(c); else soltarHandleR(c, r, url);
+  if (seguro) cleanupComRastro(c); else soltarHandleR(c, r, url);
   // Falha de TRANSPORTE (r != 0) continua sendo NULL — ai nao houve resposta
   // nenhuma. O corpo de um 4xx, ao contrario, e devolvido: e nele que o
   // PostgREST explica o que faltou.
@@ -3154,11 +3174,11 @@ RedeTls *rede_tls_abrir(const char *url, int segundos) {
   if (r == 0 && curl_getinfo) curl_getinfo(c, INFO_LASTSOCKET, &fd);
   if (r != 0 || fd < 0) {
     printf("[rede] tls: falhou (curl %d)\n", r);
-    curl_cleanup(c);
+    cleanupComRastro(c);
     return NULL;
   }
   t = (RedeTls *)calloc(1, sizeof *t);
-  if (!t) { curl_cleanup(c); return NULL; }
+  if (!t) { cleanupComRastro(c); return NULL; }
   t->c = c;
   t->fd = (int)fd;
   return t;
@@ -3211,7 +3231,7 @@ int rede_tls_receber(RedeTls *t, void *buf, size_t n, int esperaMs) {
 
 void rede_tls_fechar(RedeTls *t) {
   if (!t) return;
-  curl_cleanup(t->c);
+  cleanupComRastro(t->c);
   free(t);
 }
 

@@ -1,0 +1,125 @@
+name: Build webOS 2.0.8 core dump diagnostics
+on:
+  push:
+    branches: [core-dump-diagnostic-logging-2.0.8]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: core-dump-diagnostic-ipk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      NUVIO_BUILD_PLATFORM: linux/amd64
+      NUVIO_CONTAINER_RUNTIME: docker
+      NUVIO_BUILD_JOBS: '3'
+      NUVIO_DTS_FFMPEG: '1'
+      NUVIO_DV7: '1'
+      NUVIO_RUST_MKVCORE: '1'
+      NUVIO_EXTRA_CFLAGS: -DNV_COREDUMP_DIAG
+      RUSTUP_TOOLCHAIN: 1.88.0
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Test core parsing and shutdown trace
+        run: bash tests/coredump_diag.sh
+      - name: Install packaging tools
+        run: |
+          npm install --prefix .build-tools --no-audit --no-fund @webosose/ares-cli@2.4.0
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup target add --toolchain 1.88.0 armv7-unknown-linux-gnueabi
+          cargo fetch --locked --manifest-path rust/mkvcore/Cargo.toml --target armv7-unknown-linux-gnueabi
+      - name: Load the verified 2.0.8 application configuration
+        run: |
+          mkdir -m 700 .build-private
+          curl -fsSL --retry 3 https://github.com/iqui27/nuvio-native-legacy/releases/download/v2.0.8/space.nuvio.native.legacy_2.0.8_arm.ipk -o .build-private/official.ipk
+          curl -fsSL --retry 3 https://github.com/iqui27/nuvio-native-legacy/releases/download/v2.0.8/SHA256SUMS -o .build-private/SHA256SUMS
+          python3 .github/build/release_config.py .build-private/official.ipk .build-private/SHA256SUMS local.properties
+      - uses: actions/cache@v4
+        with:
+          path: .build-cache/sdk.tar.zst
+          key: nuvio-core-diag-sdk-v1-amd64-${{ hashFiles('tools/Dockerfile', 'tools/build-ass-arm.sh', 'tools/build-dts-ffmpeg.sh', '.github/build/sdk_links.py') }}
+      - name: Build or load the ARM webOS SDK
+        run: |
+          if [ -f .build-cache/sdk.tar.zst ]; then
+            zstd -dc .build-cache/sdk.tar.zst | docker load
+          else
+            cp tools/Dockerfile tools/Dockerfile.coredump
+            python3 .github/build/sdk_links.py tools/Dockerfile.coredump
+            docker build --platform linux/amd64 -f tools/Dockerfile.coredump \
+              --build-arg SDK_URL=https://github.com/openlgtv/buildroot-nc4/releases/download/webos-a38c582/arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz \
+              -t nuvio-webos-sdk tools/
+            rm tools/Dockerfile.coredump
+            mkdir -p .build-cache
+            docker save nuvio-webos-sdk | zstd -T2 -3 -o .build-cache/sdk.tar.zst
+          fi
+      - uses: actions/cache@v4
+        with:
+          path: .build-p2p
+          key: nuvio-core-diag-p2p-v1-amd64-${{ hashFiles('tools/p2p-motor/build-arm.sh', 'tools/p2p-motor/pasta.sh', 'tools/p2p-motor/janela-334.patch', 'tools/Dockerfile') }}
+      - name: Build the pinned ARM P2P engine
+        run: |
+          work="$GITHUB_WORKSPACE/.build-p2p/arm"
+          if [ -f "$work/build-arm/libnuvio_engine.a" ] &&
+             [ -f "$work/build-arm/_deps/nuvio_libtorrent-build/libtorrent-rasterbar.a" ]; then
+            exit 0
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("tools/p2p-motor/build-arm.sh")
+          script = path.read_text().replace("--platform linux/arm64", "--platform linux/amd64")
+          # The webOS application links the archives. Skip the standalone PoC.
+          path.write_text(script[:script.index("  SR=$NUVIO_SYSROOT")] + "'\n")
+          PY
+          NV_JOBS=2 bash tools/p2p-motor/build-arm.sh "$work"
+          git restore tools/p2p-motor/build-arm.sh
+      - name: Compile and package the diagnostic IPK
+        run: |
+          export RUSTUP_HOME="$HOME/.rustup" CARGO_HOME="$HOME/.cargo"
+          export NUVIO_P2P_MOTOR="$GITHUB_WORKSPACE/.build-p2p"
+          export NUVIO_ARES_PACKAGE="$GITHUB_WORKSPACE/.build-tools/node_modules/.bin/ares-package"
+          export NUVIO_RELEASE_OUT="$GITHUB_WORKSPACE/output"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path("deploy/app/appinfo.json")
+          info = json.loads(path.read_text())
+          assert info["id"] == "space.nuvio.native.legacy" and info["version"] == "2.0.8"
+          info["title"] = "Nuvio Legacy 2.0.8 (core dump diagnostics)"
+          info["appDescription"] = "Nuvio webOS 2.0.8 (core dump diagnostics)"
+          path.write_text(json.dumps(info, indent=2) + "\n")
+          PY
+          bash tools/arm.sh --ipk --build
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk \
+             output/space.nuvio.native.legacy_2.0.8_arm-core-dump-diagnostics.ipk
+      - name: Verify packaged ARM executable and trace markers
+        run: |
+          python3 - <<'PY'
+          import io, json, pathlib, subprocess, tarfile
+          package, = pathlib.Path("output").glob("*.ipk")
+          data = subprocess.check_output(["ar", "p", str(package), "data.tar.gz"])
+          with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
+              members = {pathlib.PurePosixPath(m.name).name: m for m in archive if m.isfile()}
+              info = json.load(archive.extractfile(members["appinfo.json"]))
+              executable = archive.extractfile(members["nuvio-proto"]).read()
+          assert info["version"] == "2.0.8" and "core dump diagnostics" in info["title"]
+          assert executable[:6] == b"\x7fELF\x01\x01" and executable[18:20] == b"\x28\x00"
+          for marker in (b"[coredump]", b"[saida]", b"[coredump-net]", b"curl_easy_perform", b"curl_easy_cleanup"):
+              assert marker in executable, marker
+          print("Verified the ARM IPK and diagnostic markers.")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nuvio-webos-2.0.8-core-dump-diagnostic-ipk
+          path: output/*.ipk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Remove temporary configuration
+        if: always()
+        run: rm -rf .build-private local.properties
