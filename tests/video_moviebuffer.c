@@ -2,7 +2,43 @@
 #define main video_acb_fixture_main
 #include "video_acb_lg.c"
 #undef main
+
+static int native_opacity, opacity_calls;
+static int fake_subtitle_style(LSHandle *h, const char *uri, const char *payload,
+                               Filtro cb, void *ctx, unsigned long *token, void *error) {
+  (void)h; (void)cb; (void)ctx; (void)token; (void)error;
+  if (strstr(uri, "/setSubtitleCharacterOpacity")) {
+    const char *value = strstr(payload, "\"charOpacity\":");
+    assert(value && sscanf(value, "\"charOpacity\":%d", &native_opacity) == 1);
+    opacity_calls++;
+  }
+  return 1;
+}
+
+static void test_native_subtitle_opacity(void) {
+  bus = (LSHandle *)(uintptr_t)1;
+  lsCall = fake_subtitle_style;
+  ligado = 1;
+  snprintf(midia, sizeof midia, "subtitle-fixture");
+  VideoLegendaEstilo e = {.tamanho = 120, .corBorda = -1};
+  for (int pct = 5; pct <= 100; pct += 5) {
+    e.opacidade = leg_opacidade_modo(pct);
+    video_legenda_estilo(&e);
+    assert(native_opacity == (pct * 255 + 50) / 100 && opacity_calls == pct / 5);
+  }
+  dtsSessao = (DtsPlayback *)(uintptr_t)1;
+  video_legenda_estilo(&e);
+  assert(opacity_calls == LEG_OPAC_N); // Converter overlay owns its subtitle style.
+  dtsSessao = NULL;
+  midia[0] = 0;
+  temEstilo = ligado = 0;
+  lsCall = NULL;
+  bus = NULL;
+  puts("PASS: all 20 subtitle opacity levels reach the native webOS player");
+}
+
 int main(void) {
+  test_native_subtitle_opacity();
   dtsSessao=NULL;posSeg=10;durSeg=100;bufferSeg=20;
   movie_snapshot=(DtsBufferInfo){.ready_bytes=200,.capacity_bytes=256,.total=1000};
   movie_active=1;

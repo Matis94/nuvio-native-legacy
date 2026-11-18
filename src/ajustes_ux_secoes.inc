@@ -172,6 +172,7 @@ enum {
   AJC_N
 };
 static int ajCenaSecao(int op) {
+  if (op == AJ_SHOW_SKIP_INTRO || op == AJ_SHOW_SKIP_RECAP || op == AJ_SHOW_SKIP_CREDITS) return AJC_REP_DURANTE;
   if (ajLegendaPrincipal(op) || op == AJ_LEG1_RESTAURAR) return AJC_IDI_FAIXAS;
   if (ajLegendaSecundaria(op)) return AJC_IDI_LEGENDA2;
   switch (op) {
@@ -248,7 +249,7 @@ static int ajCenaSecao(int op) {
       return AJC_TV_PROBLEMAS;
     case AJ_LIVETV_SUGERIR:
       return AJC_TV_PROVEDOR;
-    case AJ_PERFIL_ATIVO: case AJ_SYNC:
+    case AJ_PERFIL_ATIVO: case AJ_REMEMBER_PROFILE: case AJ_SYNC:
     case AJ_PERFIL_PESQ: case AJ_PERFIL_EDITAR: case AJ_PERFIL_INFANTIL: case AJ_SAIR:
       return AJC_CON_PERFIS;
     case AJ_ADDONS: case AJ_PLUGINS: case AJ_ADDONS_PRINCIPAL: return AJC_FON_ADDONS;

@@ -353,3 +353,7 @@
   0, /* gradient smoothing: Automatic */
   0, /* hero logo and information size: Normal */
   0, /* folder hero details: On (V_LIGA 0) */
+  1, /* Remember last profile: Off (V_LIGA), device-wide opt-in */
+  0, /* Show intro skip button: On */
+  0, /* Show recap skip button: On */
+  0, /* Show outro / credits skip button: On */
