@@ -19,7 +19,7 @@ cd "$(dirname "$0")/.."
 DIR=$(mktemp -d ${TMPDIR:-/tmp}/nuvio-rede-parada.XXXXXX)
 trap 'kill $SRV 2>/dev/null || true; rm -rf "$DIR"' EXIT
 python3 - "$DIR/porta" <<'PY' &
-import socket, socketserver, sys, threading, time
+import pathlib, socket, socketserver, sys, threading, time
 conexoes = 0
 cortes = {}
 trava = threading.Lock()
@@ -36,6 +36,9 @@ class H(socketserver.StreamRequestHandler):
             while True:
                 h = self.rfile.readline()
                 if not h or h in (b"\r\n", b"\n"): break
+            if caminho in ("/cancel-get", "/cancel-post"):
+                pathlib.Path(sys.argv[1]).with_name(caminho[1:]).touch()
+                time.sleep(15); return
             if congelada:
                 # Le e some: nem resposta nem FIN, como um par que morreu.
                 time.sleep(60); return
@@ -68,6 +71,6 @@ s.serve_forever()
 PY
 SRV=$!
 for i in $(seq 50); do [ -s "$DIR/porta" ] && break; sleep 0.1; done
-cc -Isrc tests/rede_parada.c src/rede.c src/redeurl.c -lpthread -o "$DIR/t" -O1 -g -Wall
+cc -DNV_WEBOS -Isrc tests/rede_parada.c src/rede.c src/redeurl.c -lpthread -o "$DIR/t" -O1 -g -Wall
 # Limite de ociosidade curto so para o teste nao demorar (o padrao e 20 s).
-NUVIO_REDE_OCIOSO_MS=1000 "$DIR/t" "$(cat "$DIR/porta")"
+NUVIO_REDE_OCIOSO_MS=1000 "$DIR/t" "$(cat "$DIR/porta")" "$DIR"

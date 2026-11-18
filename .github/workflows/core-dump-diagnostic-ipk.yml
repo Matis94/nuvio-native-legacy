@@ -28,6 +28,10 @@ jobs:
           persist-credentials: false
       - name: Test core parsing and shutdown trace
         run: bash tests/coredump_diag.sh
+      - name: Test webOS sync shutdown and HTTP cancellation
+        run: |
+          WEBOS_SHUTDOWN=1 SANITIZE=1 bash tests/sync_prioridade.sh
+          bash tests/rede_parada.sh
       - name: Install packaging tools
         run: |
           npm install --prefix .build-tools --no-audit --no-fund @webosose/ares-cli@2.4.0
@@ -112,13 +116,13 @@ jobs:
           path = Path("deploy/app/appinfo.json")
           info = json.loads(path.read_text())
           assert info["id"] == "space.nuvio.native.legacy" and info["version"] == "2.0.8"
-          info["title"] = "Nuvio Legacy 2.0.8 (core dump diagnostics)"
-          info["appDescription"] = "Nuvio webOS 2.0.8 (core dump diagnostics)"
+          info["title"] = "Nuvio Legacy 2.0.8 (core dump fix test)"
+          info["appDescription"] = "Nuvio webOS 2.0.8 (core dump fix test)"
           path.write_text(json.dumps(info, indent=2) + "\n")
           PY
           bash tools/arm.sh --ipk --build
           mv output/space.nuvio.native.legacy_2.0.8_arm.ipk \
-             output/space.nuvio.native.legacy_2.0.8_arm-core-dump-diagnostics.ipk
+             output/space.nuvio.native.legacy_2.0.8_arm-core-dump-fix-test.ipk
       - name: Verify packaged ARM executable and trace markers
         run: |
           python3 - <<'PY'
@@ -129,15 +133,15 @@ jobs:
               members = {pathlib.PurePosixPath(m.name).name: m for m in archive if m.isfile()}
               info = json.load(archive.extractfile(members["appinfo.json"]))
               executable = archive.extractfile(members["nuvio-proto"]).read()
-          assert info["version"] == "2.0.8" and "core dump diagnostics" in info["title"]
+          assert info["version"] == "2.0.8" and "core dump fix test" in info["title"]
           assert executable[:6] == b"\x7fELF\x01\x01" and executable[18:20] == b"\x28\x00"
-          for marker in (b"[coredump]", b"[saida]", b"[coredump-net]", b"curl_easy_perform", b"curl_easy_cleanup"):
+          for marker in (b"[coredump]", b"[saida]", b"[coredump-net]", b"curl_easy_perform", b"curl_easy_cleanup", b"sync_encerrar done"):
               assert marker in executable, marker
           print("Verified the ARM IPK and diagnostic markers.")
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: nuvio-webos-2.0.8-core-dump-diagnostic-ipk
+          name: nuvio-webos-2.0.8-core-dump-fix-test-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14

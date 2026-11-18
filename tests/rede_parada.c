@@ -1,5 +1,7 @@
 // Ver tests/rede_parada.sh.
 #include "rede.h"
+#include <assert.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,12 +37,49 @@ static void conferir(int ok, const char *o_que, unsigned long ms) {
   if (!ok) falhas++;
 }
 
+typedef struct {
+  int parando, post, cancelou;
+} SyncPedido;
+
+static void *pedidoSync(void *arg) {
+  SyncPedido *p = arg;
+  char url[160], *r;
+  int st = -1;
+  rede_cancelamento_fio(&p->parando);
+  snprintf(url, sizeof url, "http://127.0.0.1:%d/cancel-%s", porta, p->post ? "post" : "get");
+  r = p->post ? rede_postar_st(url, 12, NULL, "{}", &st) : rede_baixar_st(url, 12, NULL, &st);
+  p->cancelou = !r && st == 0;
+  free(r);
+  // The same worker cannot start another request after shutdown starts.
+  snprintf(url, sizeof url, "http://127.0.0.1:%d/conexoes", porta);
+  r = rede_baixar_st(url, 5, NULL, &st);
+  p->cancelou = p->cancelou && !r && st == 0;
+  free(r);
+  return NULL;
+}
+
+static void conferirCancelamento(const char *pasta, int post) {
+  SyncPedido p = { .post = post };
+  char sinal[1024];
+  pthread_t fio;
+  snprintf(sinal, sizeof sinal, "%s/cancel-%s", pasta, post ? "post" : "get");
+  assert(pthread_create(&fio, NULL, pedidoSync, &p) == 0);
+  for (int i = 0; access(sinal, F_OK) && i < 500; i++) usleep(10000);
+  assert(access(sinal, F_OK) == 0);
+  unsigned long inicio = agoraMs();
+  __atomic_store_n(&p.parando, 1, __ATOMIC_RELEASE);
+  assert(pthread_join(fio, NULL) == 0);
+  unsigned long ms = agoraMs() - inicio;
+  conferir(p.cancelou && ms < 3000, post ? "sync POST cancelado" : "sync GET cancelado", ms);
+  assert(conexoes() >= 0);   // Other threads still use the same transport.
+}
+
 int main(int argc, char **argv) {
   long n = 0;
   unsigned long ms;
   char *r;
   int i, antes, depois;
-  if (argc < 2) return 2;
+  if (argc < 3) return 2;
   porta = atoi(argv[1]);
 
   // D primeiro: rajada no mesmo fio abre UMA conexao (o /conexoes tambem vai
@@ -67,6 +106,9 @@ int main(int argc, char **argv) {
   conferir(r && n == 65536 && ms < 2000,
            "A. reusada e abandonada apos ociosa: conexao nova, sem esperar o prazo", ms);
   free(r);
+
+  conferirCancelamento(argv[2], 0);
+  conferirCancelamento(argv[2], 1);
 
   // B. Corpo parado no meio com a conexao aberta. Prazo de 8 s: o vigia de
   // "sem progresso" corta em ~2,7 s e a segunda tentativa, em conexao nova,

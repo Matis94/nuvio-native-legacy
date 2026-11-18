@@ -2684,6 +2684,12 @@ int main(int argc, char **argv) {
 #if defined(NV_WEBOS) && defined(NV_COREDUMP_DIAG)
   coredump_diag_saida(sinalTerminou ? "main loop left (SIGTERM)" : "main loop left");
 #endif
+#ifdef NV_WEBOS
+  sync_encerrar();
+#ifdef NV_COREDUMP_DIAG
+  coredump_diag_saida("sync_encerrar done");
+#endif
+#endif
   if (perftv_enabled) {
     char line[320];
     if (perftv_flush(&perfTv, line, sizeof line)) { puts(line); fflush(stdout); }

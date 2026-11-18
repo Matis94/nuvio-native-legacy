@@ -3,6 +3,9 @@ void servidores_esquecer_todos(void);   // servidores.c: wipe every profile's to
 #include <time.h>
 #include "sessao.h"
 #include "nuvem.h"
+#ifdef NV_WEBOS
+#include "rede.h"
+#endif
 #include "perfis.h"
 #include "perfisessao.h"
 #include "perfilinfantil.h"
@@ -68,6 +71,11 @@ void servidores_esquecer_todos(void);   // servidores.c: wipe every profile's to
 
 static pthread_t fio;
 static int fioVivo, fioPronto;
+#ifdef NV_WEBOS
+// Worker handles are owned by the main thread, including their final join.
+static int syncParando, fioPontoVivo;
+static pthread_t fioPonto;
+#endif
 // A ENTREGA DO FIO DE SYNC PARA O PRINCIPAL (#203). `fioPronto` e
 // `addonsCedo` sao porteiras: o fio enche buffers (catHomeBlob, colBlob,
 // addonsRem...) e SO DEPOIS liga a porteira; o principal ve a porteira e
@@ -263,6 +271,9 @@ static int contaDoCicloAtual(void) {
          copiaGeracaoDoCiclo == contacache_geracao();
 }
 static int perfilDoCicloAtual(void) {
+#ifdef NV_WEBOS
+  if (PRONTO_LER(syncParando)) return 0;
+#endif
   return contaDoCicloAtual() && perfilDoCiclo == perfis_ativo() &&
          nv_perfil_sessao_atual(sessaoDoCiclo);
 }
@@ -1305,6 +1316,9 @@ static int progressoPuxar(int perfil, NvPerfilSessao sessao) {
 }
 static void *fioProgresso(void *u) {
   ProgressoSync *p = u;
+#ifdef NV_WEBOS
+  rede_cancelamento_fio(&syncParando);
+#endif
   p->n = progressoPuxar(p->perfil, p->sessao);
   return NULL;
 }
@@ -1319,7 +1333,11 @@ static void *rodar(void *u) {
   addonsCiclo = 0;
   copiaQuandoCiclo = 0;
   addonsLidosCiclo = 0;
-  perfis_puxar_sessao(sessaoDoCiclo, usuarioDoCiclo, tokenDoCiclo);
+#ifdef NV_WEBOS
+  rede_cancelamento_fio(&syncParando);
+  if (!PRONTO_LER(syncParando))
+#endif
+    perfis_puxar_sessao(sessaoDoCiclo, usuarioDoCiclo, tokenDoCiclo);
   if (!perfilDoCicloAtual()) {
     estado = SYNC_PRONTO;
     PRONTO_PUBLICAR(fioPronto, 1);
@@ -1502,6 +1520,9 @@ static AddonRemoto manualAntes[SY_ADD_MAX];
 static int manualAntesN;
 
 void sync_iniciar(void) {
+#ifdef NV_WEBOS
+  if (PRONTO_LER(syncParando)) return;
+#endif
   plugins_perfil_mudou();   // conta/perfil novos: estado e geracao dos plugins
   colfileiras_contexto();
   cat_historico_contexto(sessao_logada() ? sessao_usuario() : "",
@@ -1541,7 +1562,13 @@ void sync_iniciar(void) {
   __atomic_store_n(&progressoCedo, 0, __ATOMIC_RELAXED);
   __atomic_store_n(&estruturaCedo, 0, __ATOMIC_RELAXED);
   progressoAplicadoCedo = 0;
-  if (pthread_create(&fio, NULL, rodar, NULL) == 0) { pthread_detach(fio); fioVivo = 1; if (manualPedido) manualRodando = 1; }
+  if (pthread_create(&fio, NULL, rodar, NULL) == 0) {
+#ifndef NV_WEBOS
+    pthread_detach(fio);
+#endif
+    fioVivo = 1;
+    if (manualPedido) manualRodando = 1;
+  }
   else { estado = SYNC_FALHOU; resumoFixo("sem fio para sincronizar"); }
 }
 
@@ -1685,6 +1712,9 @@ void sync_passo(unsigned agoraMs) {
   // bytes. Nada e refeito enquanto o catalogo for o mesmo.
   contalib_reconciliar();
   if (!fioVivo || !PRONTO_LER(fioPronto)) return;
+#ifdef NV_WEBOS
+  pthread_join(fio, NULL);
+#endif
   fioVivo = 0;
   __atomic_store_n(&fioPronto, 0, __ATOMIC_RELAXED);
   memset(spMs, 0, sizeof spMs);
@@ -2010,18 +2040,37 @@ static int pontoEmVoo;
 static struct { int perfil; uint64_t sessao; } pontoPedido;
 static void *empurrarPonto(void *arg) {
   (void)arg;
+#ifdef NV_WEBOS
+  rede_cancelamento_fio(&syncParando);
+#endif
   syncprog_empurrar_sessao(pontoPedido.perfil, pontoPedido.sessao);
   __atomic_store_n(&pontoEmVoo, 0, __ATOMIC_RELEASE);
   return NULL;
 }
 void sync_sujar_progresso(void) {
   sujoProgresso = 1;
+#ifdef NV_WEBOS
+  if (PRONTO_LER(syncParando)) return;
+#endif
   if (!sessao_logada() || !ajustes_hist_conta() || nuvem_freio_ativo() ||
       __atomic_exchange_n(&pontoEmVoo, 1, __ATOMIC_ACQUIRE)) return;
+#ifdef NV_WEBOS
+  if (fioPontoVivo) {
+    pthread_join(fioPonto, NULL);
+    fioPontoVivo = 0;
+  }
+#else
+  pthread_t fioPonto;
+#endif
   pontoPedido.perfil = perfis_ativo();
   pontoPedido.sessao = nv_perfil_sessao_ler();
-  pthread_t fioPonto;
-  if (pthread_create(&fioPonto, NULL, empurrarPonto, NULL) == 0) pthread_detach(fioPonto);
+  if (pthread_create(&fioPonto, NULL, empurrarPonto, NULL) == 0) {
+#ifdef NV_WEBOS
+    fioPontoVivo = 1;
+#else
+    pthread_detach(fioPonto);
+#endif
+  }
   else __atomic_store_n(&pontoEmVoo, 0, __ATOMIC_RELEASE);
 }
 // Addon flag state, per account (see addonsAplicar for the merge order):
@@ -2476,4 +2525,18 @@ void sync_esquecer_usuario(void) {
   printf("[sync] dados do usuario apagados deste aparelho\n");
 }
 
-void        sync_encerrar(void)    { }
+void sync_encerrar(void) {
+#ifdef NV_WEBOS
+  // Prevent new transfers, interrupt pending ones and wait for libcurl's
+  // per-thread handles to be destroyed before process-wide atexit handlers.
+  PRONTO_PUBLICAR(syncParando, 1);
+  if (fioVivo) {
+    pthread_join(fio, NULL);
+    fioVivo = 0;
+  }
+  if (fioPontoVivo) {
+    pthread_join(fioPonto, NULL);
+    fioPontoVivo = 0;
+  }
+#endif
+}

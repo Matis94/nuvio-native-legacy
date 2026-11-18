@@ -1286,20 +1286,47 @@ static int   (*curl_getinfo)(void *, int, ...);
 static void  (*curl_reset)(void *);
 static time_t (*curl_getdate_fn)(const char *, const time_t *);
 
-#if defined(NV_WEBOS) && defined(NV_COREDUMP_DIAG)
+#ifdef NV_WEBOS
+static _Thread_local const int *paradaFio;
+
+void rede_cancelamento_fio(const int *parando) {
+  paradaFio = parando;
+}
+
+static int pararFio(void) {
+  if (!paradaFio || !__atomic_load_n(paradaFio, __ATOMIC_ACQUIRE)) return 0;
+  redeCancelouLocal = 1;
+  return 1;
+}
+
+static int vigiarParadaFio(void *u, long long dlTotal, long long dlAgora,
+                           long long ulTotal, long long ulAgora) {
+  (void)u; (void)dlTotal; (void)dlAgora; (void)ulTotal; (void)ulAgora;
+  return pararFio();
+}
+
 static int performComRastro(void *c) {
+  if (pararFio()) return 42;   // CURLE_ABORTED_BY_CALLBACK, before entering curl.
+#ifdef NV_COREDUMP_DIAG
   coredump_diag_rede("curl_easy_perform", 1, 0);
   int rc = curl_perform(c);
   coredump_diag_rede("curl_easy_perform", 0, rc);
   return rc;
+#else
+  return curl_perform(c);
+#endif
 }
+#else
+#define performComRastro curl_perform
+#endif
+
+#if defined(NV_WEBOS) && defined(NV_COREDUMP_DIAG)
 static void cleanupComRastro(void *c) {
   coredump_diag_rede("curl_easy_cleanup", 1, 0);
   curl_cleanup(c);
   coredump_diag_rede("curl_easy_cleanup", 0, 0);
 }
 #else
-#define performComRastro curl_perform
 #define cleanupComRastro curl_cleanup
 #endif
 
@@ -1660,6 +1687,12 @@ static void opcoesComuns(void *c, unsigned long prazoMs) {
 #endif
   curl_setopt(c, OPT_TIMEOUT_MS, (long)prazoMs);
   curl_setopt(c, OPT_CONNECTTIMEOUT_MS, (long)conexaoMs(prazoMs));
+#ifdef NV_WEBOS
+  if (paradaFio) {
+    curl_setopt(c, OPT_XFERINFOFUNCTION, vigiarParadaFio);
+    curl_setopt(c, OPT_NOPROGRESS, (long)0);
+  }
+#endif
   // O app roda com fios; sem NOSIGNAL a libcurl usa alarmes para o timeout de
   // DNS e pode derrubar o processo inteiro a partir de um fio secundario.
   curl_setopt(c, OPT_NOSIGNAL, (long)1);
@@ -1708,6 +1741,9 @@ static int vigiar(void *u, long long dlTotal, long long dlAgora,
   Vigia *v = (Vigia *)u;
   unsigned long agora = redeAgoraMs();
   (void)dlTotal; (void)ulTotal; (void)ulAgora;
+#ifdef NV_WEBOS
+  if (pararFio()) return 1;
+#endif
   if (redeCancelLocal && *redeCancelLocal) { redeCancelouLocal = 1; return 1; }
   if (dlAgora > v->visto) { v->visto = dlAgora; v->ultimoMs = agora; return 0; }
   if (v->visto > 0 && v->paradoMs && agora - v->ultimoMs > v->paradoMs) {
@@ -2376,6 +2412,9 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
   if (retry) *retry = 0;
   if (etag && tamEtag) etag[0] = 0;
   if (status) *status = 0;
+#ifdef NV_WEBOS
+  if (pararFio()) return NULL;
+#endif
   if (!url || !*url) return NULL;
   // Endereco de API de metadados que ja respondeu "nao existe" (ou host em
   // recuo por timeout): nao pede de novo — ver negcache.h.
@@ -2813,6 +2852,9 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
   if (status) *status = 0;
   redeCurlLocal = 0;
   anotarErro(0);
+#ifdef NV_WEBOS
+  if (pararFio()) return NULL;
+#endif
   if (!url || !*url) { anotarErro(3); return NULL; }
   if (!abrir()) { anotarErro(2); return NULL; }
   c = seguro ? curl_init() : pegarHandle(url);
