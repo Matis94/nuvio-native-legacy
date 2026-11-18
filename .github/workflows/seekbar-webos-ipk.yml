@@ -1,0 +1,126 @@
+name: Build webOS 2.0.8 with seek thumbnails
+
+on:
+  push:
+    branches: [Nuvio_webOS_2.0.8-seekbar-thumbnails]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: webos-seek-thumbnails-ipk
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      NUVIO_BUILD_PLATFORM: linux/amd64
+      NUVIO_CONTAINER_RUNTIME: docker
+      NUVIO_BUILD_JOBS: '3'
+      NUVIO_DTS_FFMPEG: '1'
+      NUVIO_DV7: '1'
+      NUVIO_RUST_MKVCORE: '1'
+      NUVIO_REQUIRE_ALL: '1'
+      RUSTUP_TOOLCHAIN: 1.88.0
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Check thumbnail settings and install build tools
+        run: |
+          bash tests/seekr.sh
+          bash tests/seekrquota.sh
+          npm install --prefix .build-tools --no-audit --no-fund @webosose/ares-cli@2.4.0
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup target add --toolchain 1.88.0 armv7-unknown-linux-gnueabi
+
+      - name: Load app configuration from the verified 2.0.8 release
+        run: |
+          mkdir -p .build-private
+          release=https://github.com/iqui27/nuvio-native-legacy/releases/download/v2.0.8
+          curl -fsSL --retry 3 "$release/space.nuvio.native.legacy_2.0.8_arm.ipk" -o .build-private/official.ipk
+          curl -fsSL --retry 3 "$release/SHA256SUMS" -o .build-private/SHA256SUMS
+          python3 .github/build/release_config.py .build-private/official.ipk .build-private/SHA256SUMS local.properties
+
+      - name: Restore webOS SDK cache
+        id: sdk-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .build-cache/webos-sdk.tar.zst
+          key: webos-seek-thumbnails-sdk-amd64-${{ hashFiles('tools/Dockerfile', 'tools/build-ass-arm.sh', 'tools/build-dts-ffmpeg.sh', '.github/build/sdk_links.py') }}
+
+      - name: Build or load the SDK with thumbnail codecs
+        run: |
+          if [ -f .build-cache/webos-sdk.tar.zst ]; then
+            zstd -dc .build-cache/webos-sdk.tar.zst | docker load
+          else
+            cp tools/Dockerfile tools/Dockerfile.ci
+            python3 .github/build/sdk_links.py tools/Dockerfile.ci
+            sdk=https://github.com/openlgtv/buildroot-nc4/releases/download/webos-a38c582/arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz
+            docker build -f tools/Dockerfile.ci --platform linux/amd64 --build-arg "SDK_URL=$sdk" -t nuvio-webos-sdk tools/
+            mkdir -p .build-cache
+            docker save nuvio-webos-sdk | zstd -T2 -3 -o .build-cache/webos-sdk.tar.zst
+          fi
+
+      - name: Save webOS SDK cache
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .build-cache/webos-sdk.tar.zst
+          key: webos-seek-thumbnails-sdk-amd64-${{ hashFiles('tools/Dockerfile', 'tools/build-ass-arm.sh', 'tools/build-dts-ffmpeg.sh', '.github/build/sdk_links.py') }}
+
+      - name: Restore P2P build cache
+        id: p2p-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .build-p2p
+          key: custom207-p2p-amd64-${{ hashFiles('tools/p2p-motor/build-arm.sh', 'tools/p2p-motor/pasta.sh', 'tools/p2p-motor/janela-334.patch') }}
+
+      - name: Build the pinned P2P engine
+        if: steps.p2p-cache.outputs.cache-hit != 'true'
+        run: |
+          export NUVIO_P2P_MOTOR="$GITHUB_WORKSPACE/.build-p2p"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          script = Path("tools/p2p-motor/build-arm.sh")
+          source = script.read_text().replace("--platform linux/arm64", "--platform linux/amd64")
+          script.write_text(source[:source.index("  SR=$NUVIO_SYSROOT")] + "'\n")
+          PY
+          NV_JOBS=2 bash tools/p2p-motor/build-arm.sh "$NUVIO_P2P_MOTOR/arm"
+          git restore -- tools/p2p-motor/build-arm.sh
+
+      - name: Save P2P build cache
+        if: steps.p2p-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .build-p2p
+          key: custom207-p2p-amd64-${{ hashFiles('tools/p2p-motor/build-arm.sh', 'tools/p2p-motor/pasta.sh', 'tools/p2p-motor/janela-334.patch') }}
+
+      - name: Compile and package webOS ARM
+        run: |
+          export RUSTUP_HOME="$HOME/.rustup"
+          export CARGO_HOME="$HOME/.cargo"
+          export NUVIO_P2P_MOTOR="$GITHUB_WORKSPACE/.build-p2p"
+          export NUVIO_ARES_PACKAGE="$GITHUB_WORKSPACE/.build-tools/node_modules/.bin/ares-package"
+          export NUVIO_RELEASE_OUT="$GITHUB_WORKSPACE/output"
+          bash tools/arm.sh --ipk --build
+          readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk output/space.nuvio.native.legacy_2.0.8_arm-seekbar-thumbnails.ipk
+
+      - name: Upload webOS IPK
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuvio-webos-2.0.8-seekbar-thumbnails-arm-ipk
+          path: output/*.ipk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Remove temporary build configuration
+        if: always()
+        run: rm -rf local.properties .build-private
