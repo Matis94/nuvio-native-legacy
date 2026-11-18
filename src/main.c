@@ -4,6 +4,7 @@
 #include "swapint.h"
 #include "quadroc.h"
 #include "streams.h"
+#include "sourceperf.h"
 #ifdef NV_DTS_DEBUG
 #include "dts/dts_engine.h"
 #include "dts/dts_pipeline.h"
@@ -1811,6 +1812,9 @@ int main(int argc, char **argv) {
   int    txtNQuadro = 0, piorTxtN = 0;
   int quadros = 0, janks = 0; double pior = 0;
   int playerUiPrevious = 0;
+#ifndef NV_SEM_WEBOS
+  int sourceLoadingVsyncFailed = 0;
+#endif
   SwapInt swapInt = {0};   // intervalo real entre swaps (swapint.h)
 
   // TELEMETRIA POR FASE. O quadro pior custava 22ms num alvo de 20ms e nao
@@ -2180,7 +2184,9 @@ int main(int argc, char **argv) {
     fBomb = NV_DT(t0);
     fUplN = tex_upl_n; fUplB = tex_upl_bytes;
     t0 = NV_T0();
+    SOURCEPERF_SCENE_BEGIN(NV_SRC_APP_UPDATE);
     app_atualizar(dt, agora);
+    SOURCEPERF_SCENE_END(NV_SRC_APP_UPDATE);
     // COR VIVA: UMA vez por quadro, antes do desenho. Consome o pedido que o
     // desenho do quadro anterior fez (corviva_definir) e anda a transicao; o
     // desenho deste quadro so le o resultado (ajustes_acento, NV_COR_FUNDO_*).
@@ -2219,9 +2225,11 @@ int main(int argc, char **argv) {
       } }
     ajustes_log_vazar();
     ajustes_idioma_auto_tick();   // locale da TV (webOS): chega de um fio
+    SOURCEPERF_SCENE_BEGIN(NV_SRC_THEME);
     corviva_quadro(dt, ajustes_cor_viva(), ajustes_cor_logo(),
                    ajustes_animacoes_reduzidas());
     ajustes_textura_quadro();   // Textura: a do titulo em cena vai ao gfx
+    SOURCEPERF_SCENE_END(NV_SRC_THEME);
     fUpd = NV_DT(t0);
 
     // RECORTE DESLIGADO ANTES DO CLEAR. glClear respeita o scissor test: se
@@ -2231,6 +2239,7 @@ int main(int argc, char **argv) {
     // invariante que ninguem verifica — e o sintoma seria justamente uma faixa
     // com conteudo velho, dificil de atribuir a causa. Uma chamada por quadro.
     t0 = NV_T0();
+    SOURCEPERF_SCENE_BEGIN(NV_SRC_CLEAR);
     gfx_novo_quadro();
     // Amostra: os desenhos grandes de UM quadro a cada 30 (meio segundo).
     gfx_rastro_grandes = rastroQuadros && (quadros % 30) == 0;
@@ -2262,11 +2271,14 @@ int main(int argc, char **argv) {
     // se apagam em alfa (uVaza). Uma passada de tela cheia com 4 luzes; nos
     // outros temas a forca e 0 e isto nao desenha nada.
     gfx_ambiente(1.0f);
+    SOURCEPERF_SCENE_END(NV_SRC_CLEAR);
     fClr = NV_DT(t0);
     t0 = NV_T0();
     txt_novo_quadro();
     ponteiro_quadro(agora);
+    SOURCEPERF_SCENE_BEGIN(NV_SRC_APP_DRAW);
     app_desenhar(agora);
+    SOURCEPERF_SCENE_END(NV_SRC_APP_DRAW);
     if (perftv_enabled) snprintf(perfScreen, sizeof perfScreen, "%s", perfTvScreen());
     // A abertura (#213) cobre os primeiros quadros, com a home montando por baixo.
     if (abertura_ativa()) {
@@ -2279,10 +2291,12 @@ int main(int argc, char **argv) {
     ponteiro_desenhar();
     // GIF QUE NINGUEM DESENHOU ha 1,5 s sai da memoria (tela de perfis
     // fechada, foco fora do cartaz). Ver gif_ocioso em gif.h.
+    SOURCEPERF_SCENE_BEGIN(NV_SRC_FINISH);
     gif_ocioso();
     gfx_ambiente_descarregar();   // quadro sem desenho por cima: a luz ainda sai
     gpun_ampliacao(ajustes_ampliacao_algo(), ajustes_ampliacao_nitidez());
     gpun_quadro_fim();
+    SOURCEPERF_SCENE_END(NV_SRC_FINISH);
     fDes = NV_DT(t0);
     fGfxMs = gfx_ms_rect; fTexMs = tex_ms_busca;
     fNRect = gfx_n_rect; fNProg = gfx_n_prog; fNBind = gfx_n_bind; fNBusca = tex_n_busca;
@@ -2299,20 +2313,40 @@ int main(int argc, char **argv) {
     gputempo_quadro_fim();
     t0 = NV_T0();
     int playerUi = player_ui_frame(player_aberto(), gfx_n_rect, gfx_n_outros);
-    if (playerUi != playerUiPrevious) {
-#if !defined(__APPLE__) && !defined(__EMSCRIPTEN__)
-      SDL_GL_SetSwapInterval(playerUi ? 0 : 1);
+    int playerClockUi = playerUi;
+#ifndef NV_SEM_WEBOS
+    playerClockUi = player_source_ui_unpaced(playerUi, stream_folha_aberta(), player_carregando(),
+                                            player_tem_video() || player_retido());
+    if (playerClockUi == playerUi) sourceLoadingVsyncFailed = 0;
+    else if (sourceLoadingVsyncFailed) playerClockUi = playerUi;
 #endif
-      playerUiPrevious = playerUi;
+    if (playerClockUi != playerUiPrevious) {
+#if !defined(__APPLE__) && !defined(__EMSCRIPTEN__)
+      if (SDL_GL_SetSwapInterval(playerClockUi ? 0 : 1) != 0) {
+#ifndef NV_SEM_WEBOS
+        // Retry only on the next sheet/loading session; retain the old limiter.
+        if (playerClockUi != playerUi) {
+          sourceLoadingVsyncFailed = 1;
+          playerClockUi = playerUi;
+          SDL_GL_SetSwapInterval(0);
+        }
+#endif
+      }
+#endif
+      playerUiPrevious = playerClockUi;
     }
     if (!nvPrimeiroQuadroFeito) arranque_etapa("primeiro SwapWindow");
+    SOURCEPERF_SCENE_BEGIN(NV_SRC_PRESENT);
+    SOURCEPERF_SWAP_BEGIN();
     SDL_GL_SwapWindow(win);
+    SOURCEPERF_SWAP_END(playerClockUi, player_aberto(), player_carregando());
 #ifndef __EMSCRIPTEN__
-    { unsigned wait = player_frame_wait(playerUi, SDL_GetTicks() - frameStarted);
+    { unsigned wait = player_frame_wait(playerClockUi, SDL_GetTicks() - frameStarted);
       if (wait) SDL_Delay(wait); }
 #else
     (void)frameStarted;
 #endif
+    SOURCEPERF_SCENE_END(NV_SRC_PRESENT);
     swapint_marca(&swapInt, (double)SDL_GetPerformanceCounter() * 1000.0 / perFreq);
 #ifdef NV_ANDROID
     android_quadro();   // todo quadro apresentado, de qualquer tela (vigia #266)
