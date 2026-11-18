@@ -16,7 +16,7 @@ jobs:
     env:
       NUVIO_BUILD_PLATFORM: linux/amd64
       NUVIO_CONTAINER_RUNTIME: docker
-      NUVIO_BUILD_JOBS: '3'
+      NUVIO_BUILD_JOBS: '4'
       NUVIO_DTS_FFMPEG: '1'
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'
@@ -40,7 +40,8 @@ jobs:
           curl -fsSL --retry 3 https://github.com/iqui27/nuvio-native-legacy/releases/download/v2.0.8/space.nuvio.native.legacy_2.0.8_arm.ipk -o .build-private/official.ipk
           curl -fsSL --retry 3 https://github.com/iqui27/nuvio-native-legacy/releases/download/v2.0.8/SHA256SUMS -o .build-private/SHA256SUMS
           python3 .github/build/release_config.py .build-private/official.ipk .build-private/SHA256SUMS local.properties
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: sdk-cache
         with:
           path: .build-cache/sdk.tar.zst
           key: nuvio-core-diag-sdk-v1-amd64-${{ hashFiles('tools/Dockerfile', 'tools/build-ass-arm.sh', 'tools/build-dts-ffmpeg.sh', '.github/build/sdk_links.py') }}
@@ -58,6 +59,11 @@ jobs:
             mkdir -p .build-cache
             docker save nuvio-webos-sdk | zstd -T2 -3 -o .build-cache/sdk.tar.zst
           fi
+      - uses: actions/cache/save@v4
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        with:
+          path: .build-cache/sdk.tar.zst
+          key: ${{ steps.sdk-cache.outputs.cache-primary-key }}
       - uses: actions/cache@v4
         with:
           path: .build-p2p
@@ -76,9 +82,25 @@ jobs:
           # The webOS application links the archives. Skip the standalone PoC.
           path.write_text(script[:script.index("  SR=$NUVIO_SYSROOT")] + "'\n")
           PY
-          NV_JOBS=2 bash tools/p2p-motor/build-arm.sh "$work"
+          NV_JOBS=3 bash tools/p2p-motor/build-arm.sh "$work"
           git restore tools/p2p-motor/build-arm.sh
+      - uses: actions/cache@v4
+        with:
+          path: build/ccache-arm
+          key: nuvio-core-diag-ccache-v1-amd64-${{ hashFiles('tools/Dockerfile', 'tools/build-ass-arm.sh', 'tools/build-dts-ffmpeg.sh', '.github/build/sdk_links.py') }}-${{ github.sha }}
+          restore-keys: nuvio-core-diag-ccache-v1-amd64-${{ hashFiles('tools/Dockerfile', 'tools/build-ass-arm.sh', 'tools/build-dts-ffmpeg.sh', '.github/build/sdk_links.py') }}-
+      - name: Enable the ARM compiler cache
+        run: |
+          docker build --platform linux/amd64 -t nuvio-webos-sdk-ccache - <<'DOCKERFILE'
+          FROM nuvio-webos-sdk
+          RUN apt-get update && apt-get install -y --no-install-recommends ccache \
+              && rm -rf /var/lib/apt/lists/*
+          DOCKERFILE
+          mkdir -p build/ccache-arm
+          printf 'max_size = 256M\n' > build/ccache-arm/ccache.conf
       - name: Compile and package the diagnostic IPK
+        env:
+          NUVIO_SDK_IMAGE: nuvio-webos-sdk-ccache
         run: |
           export RUSTUP_HOME="$HOME/.rustup" CARGO_HOME="$HOME/.cargo"
           export NUVIO_P2P_MOTOR="$GITHUB_WORKSPACE/.build-p2p"
