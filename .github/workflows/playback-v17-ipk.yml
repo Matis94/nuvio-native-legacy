@@ -307,6 +307,7 @@ jobs:
         timeout-minutes: 20
         env:
           RUSTUP_TOOLCHAIN: 1.88.0
+          NUVIO_DV_TRUEHD: '1'
           NUVIO_DTS_ROOT: /tmp/nuvio-webos-hls-ffmpeg
           NUVIO_DTS_BUILD: /tmp/nuvio-webos-hls-ffmpeg-build
         run: |
