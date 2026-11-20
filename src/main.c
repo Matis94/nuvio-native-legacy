@@ -44,6 +44,7 @@
 #endif
 #include <unistd.h>   // dup2 (o stderr no mesmo descritor do log)
 #include "gfx.h"
+#include "coreguarda.h"
 #if defined(NV_WEBOS) && defined(NV_COREDUMP_DIAG)
 #include <errno.h>
 #include "coredump_diag.h"
@@ -937,6 +938,9 @@ static EM_BOOL cicloWgt(int tipo, const EmscriptenVisibilityChangeEvent *e, void
 #endif
 
 int main(int argc, char **argv) {
+  // Antes de qualquer fio: nenhum arquivo core.<pid> do tamanho do processo
+  // na pasta do app (LG C1, ~400 MB por queda). Ver coreguarda.h.
+  coreguarda_bloquear();
   // NUMERO COM PONTO, SEMPRE. O host .NET do .tpk poe o processo no locale do
   // idioma da TV, e em alemao/portugues/russo o printf("%.2f") sai "0,50" e o
   // strtod para na virgula. Os registros 9866-9920 (Tizen 9, "FPS=51,2")
@@ -1156,6 +1160,9 @@ int main(int argc, char **argv) {
   avisos_iniciar();   // le a marca da sessao anterior e grava a desta
 #if defined(NV_WEBOS) && defined(NV_COREDUMP_DIAG)
   coredump_diag_relatar();
+#endif
+#ifdef NV_WEBOS
+  coreguarda_limpar();   // depois do relato: o diagnostico ainda lista o que havia
 #endif
   // E OS AJUSTES LOGO ATRAS, pelo mesmo motivo: ajustes_4k() le `valor[]`, que
   // so sai do padrao depois desta chamada. Sem ela a opcao existia na tela,
@@ -2749,6 +2756,15 @@ int main(int argc, char **argv) {
 #if defined(NV_WEBOS) && defined(NV_COREDUMP_DIAG)
   coredump_diag_armar_saida();
   coredump_diag_saida("main returns");
+#endif
+#ifdef NV_WEBOS
+  // Tudo ja foi gravado acima. Sem atexit nem destrutores de biblioteca: o
+  // OpenSSL liberava dados que um fio de rede destacado ainda usava (SIGSEGV
+  // em libcrypto depois do return do main, core.* de 350-400 MB na C1).
+#ifdef NV_COREDUMP_DIAG
+  coredump_diag_saida("_exit");
+#endif
+  coreguarda_sair();
 #endif
   return 0;
 }
