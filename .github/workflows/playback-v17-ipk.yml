@@ -425,7 +425,7 @@ jobs:
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
           suffix=test
-          if [ "$NUVIO_WEBOS_HLS" = 1 ]; then suffix=hls-test3; fi
+          if [ "$NUVIO_WEBOS_HLS" = 1 ]; then suffix=hls-test4; fi
           mv output/space.nuvio.native.legacy_2.0.8_arm.ipk "output/space.nuvio.native.legacy_2.0.8.8_arm-$suffix.ipk"
       - name: Check ARM dynamic dependencies
         run: |
@@ -442,7 +442,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.NUVIO_WEBOS_HLS == '1' && 'nuvio-webos-2.0.8.8-hls-test3-arm-ipk' || 'nuvio-webos-2.0.8.8-test-arm-ipk' }}
+          name: ${{ env.NUVIO_WEBOS_HLS == '1' && 'nuvio-webos-2.0.8.8-hls-test4-arm-ipk' || 'nuvio-webos-2.0.8.8-test-arm-ipk' }}
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14
