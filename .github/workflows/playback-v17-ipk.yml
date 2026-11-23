@@ -1,7 +1,7 @@
-name: Build webOS 2.0.8.8 (test version)
+name: Build webOS 2.0.8.9
 on:
   push:
-    branches: [Nuvio_webOS_2.0.8.8_test, Nuvio_webOS_2.0.8.8_hls_test]
+    branches: [Nuvio_webOS_2.0.8.9]
   workflow_dispatch:
     inputs:
       full_regression:
@@ -29,8 +29,11 @@ jobs:
       NUVIO_DV7: '1'
       NUVIO_RUST_MKVCORE: '1'
       NUVIO_REQUIRE_ALL: '1'
-      NUVIO_WEBOS_HLS: ${{ github.ref_name == 'Nuvio_webOS_2.0.8.8_hls_test' && '1' || '0' }}
-      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST -DNV_HEVC_SEI_TEST ${{ github.ref_name == 'Nuvio_webOS_2.0.8.8_hls_test' && '-DNV_WEBOS_HLS_TEST' || '' }}
+      NUVIO_WEBOS_HLS: '1'
+      # Build name: "Nuvio Legacy 2.0.8.9 (<label>)" and the .ipk file name.
+      NUVIO_BUILD_LABEL: stable build
+      NUVIO_BUILD_SLUG: stable-build
+      NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST -DNV_HEVC_SEI_TEST -DNV_WEBOS_HLS_TEST
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -407,9 +410,9 @@ jobs:
           assert data["id"] == "space.nuvio.native.legacy"
           # webOS requires a three-component technical version. Keep 2.0.8
           # and expose the custom release revision in the install label.
-          label = "23.11.2026 fixes" if os.environ["NUVIO_WEBOS_HLS"] == "1" else "test version"
-          data["title"] = f"Nuvio Legacy 2.0.8.8 ({label})"
-          data["appDescription"] = f"Nuvio webOS 2.0.8.8 ({label})"
+          label = os.environ["NUVIO_BUILD_LABEL"]
+          data["title"] = f"Nuvio Legacy 2.0.8.9 ({label})"
+          data["appDescription"] = f"Nuvio webOS 2.0.8.9 ({label})"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -422,9 +425,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          suffix=test
-          if [ "$NUVIO_WEBOS_HLS" = 1 ]; then suffix=hls-test-23.11.2026-fixes; fi
-          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk "output/space.nuvio.native.legacy_2.0.8.8_arm-$suffix.ipk"
+          mv output/space.nuvio.native.legacy_2.0.8_arm.ipk "output/space.nuvio.native.legacy_2.0.8.9_arm-$NUVIO_BUILD_SLUG.ipk"
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -440,7 +441,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.NUVIO_WEBOS_HLS == '1' && 'nuvio-webos-2.0.8.8-hls-test-23.11.2026-fixes-arm-ipk' || 'nuvio-webos-2.0.8.8-test-arm-ipk' }}
+          name: nuvio-webos-2.0.8.9-${{ env.NUVIO_BUILD_SLUG }}-arm-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14
