@@ -35,9 +35,18 @@ static void addonDesenharPecas(const LinhaAddon *ls,const AddonDesenho *ds,int n
     int c=sel ? (d->linha?205:230) : (d->linha?165:195);
     if(estilo==TXT_CALLOUT)c=sel?250:225;
     if(d->icone) {
-      GfxRect icon={x+dx,y+dy+addonPixel(3,pixels),22,22};
+      int tipo=l->tipo[d->peca];
+      GfxRect icon=tipo==ADDON_IC_BANDEIRA ? (GfxRect){x+dx,y+dy+addonPixel(3.5f,pixels),28,21}
+                                           : (GfxRect){x+dx,y+dy+addonPixel(3,pixels),22,22};
       if(icon.y+icon.h<clipTop-4.0f)continue;
-      gfx_icone(icon,l->ic[d->peca],c/255.f,c/255.f,c/255.f,a);
+      // Colour emoji and flags keep the PNG's colours; symbols and the
+      // Minimalistic Lucide icons take the text colour. Artwork missing from
+      // the package was already swapped for the tinted Lucide icon when the
+      // card was parsed (iconeAddon).
+      if(tipo==ADDON_IC_TOM)
+        gfx_icone(icon,l->ic[d->peca],c/255.f,c/255.f,c/255.f,a);
+      else if(!gfx_icone_cor(icon,l->ic[d->peca],a) && l->alt[d->peca])
+        gfx_icone(icon,l->alt[d->peca],c/255.f,c/255.f,c/255.f,a);
     } else {
       char texto[2048];size_t tam=d->tam;
       if(tam>=sizeof texto)tam=sizeof texto-1;

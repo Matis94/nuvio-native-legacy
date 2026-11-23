@@ -17,11 +17,12 @@ static size_t countedClean(const char *s,char *d,size_t n,int flags) {
 #include "source_badge_gl.inc"
 #define CARDS 2000
 static Stream fixtures[CARDS];
-static int badgesBottom;
+static int badgesBottom, iconStyle;
 static void setting(const char *dir,int addon) {
   char path[512];snprintf(path,sizeof path,"%s/ajustes.txt",dir);
   FILE *f=fopen(path,"w");assert(f);
-  fprintf(f,"fonteTextoLocal %d\nvidroLocal 0\nsourceBadgePositionLocal %d\n",addon,badgesBottom);
+  fprintf(f,"fonteTextoLocal %d\nvidroLocal 0\nsourceBadgePositionLocal %d\nfonteIconesLocal %d\n",
+          addon,badgesBottom,iconStyle);
   fclose(f);ajustes_dir(dir);assert(ajustes_fonte_texto_addon()==addon);
 }
 static int hasText(const TextoAddon *t,const char *s) {
@@ -51,14 +52,23 @@ static void inspectLayout(const TextoAddon *t) {
     }
   }
 }
-static void parserAndCache(void) {
+static void parserAndCache(const char *dir) {
+  // Minimalistic: Lucide icons, and the flags become the language codes.
+  iconStyle=1;setting(dir,1);assert(ajustes_fonte_icones_minimalista());
+  stream_definir_lista(fixtures,CARDS);
+  const TextoAddon *t=textoAddonDa(CARDS-1);
+  assert(hasIcon(t,"aj_clapperboard") && hasIcon(t,"aj_headphones") && !hasIcon(t,"formatador/tw_1f3ac"));
+  assert(hasText(t,"PL") && hasText(t,"EN") && !hasIcon(t,"formatador/fl_PL"));
+  inspectLayout(t);
+  // Standard: Twemoji in colour and flagpack flags.
+  iconStyle=0;setting(dir,1);assert(!ajustes_fonte_icones_minimalista());
   stream_definir_lista(fixtures,CARDS);
   int before=cleanCalls;
-  const TextoAddon *t=textoAddonDa(CARDS-1);
+  t=textoAddonDa(CARDS-1);
   assert(textoAddonPreparados==1 && cleanCalls>before);
   assert(hasText(t,"DUAL") && hasText(t,"MULTI") && hasText(t,"Lektor"));
-  assert(hasText(t,"PL") && hasText(t,"EN"));
-  assert(hasIcon(t,"aj_film") && hasIcon(t,"aj_globe"));inspectLayout(t);
+  assert(hasIcon(t,"formatador/fl_PL") && hasIcon(t,"formatador/fl_GB"));
+  assert(hasIcon(t,"formatador/tw_1f3ac"));inspectLayout(t);
   before=cleanCalls;
   for(int j=0;j<120;j++)textoAddonDa(CARDS-1);
   assert(cleanCalls==before && textoAddonPreparados==1);
@@ -260,7 +270,7 @@ static void completeCards(const char *dir,int pixels) {
   for(int row=0;row<3;row++) {
     const TextoAddon *t=textoAddonDa(ordem[row]);
     assert(hasText(t,"DTS-HD MA 5.1") && hasText(t,"9.6 GB"));
-    assert(hasText(t,"PL") && hasText(t,"NOGRP.mkv"));
+    assert(hasIcon(t,"formatador/fl_PL") && hasText(t,"NOGRP.mkv"));
     // Restore each addon newline instead of joining codec/audio/size together.
     int last=-1;
     for(int j=0;j<t->nd;j++) {
@@ -466,6 +476,27 @@ static void sourceTimingIntegration(const char *dir) {
   puts("PASS: real 2000-source UI records all 12 timing stages and preserves the cached filter path");
 }
 #endif
+static void emojiPixels(void) {
+  assert(tex_iniciar(64));gfx_icones_dir("deploy/app/art");
+  const char *path="deploy/app/art/icones/formatador/fl_PL.png";
+  GLuint icon=0;
+  for(int tries=0;tries<200 && !icon;tries++) {
+    tex_bombear(8);icon=tex_obter_larg(path,48);if(!icon)SDL_Delay(5);
+  }
+  assert(icon);glViewport(0,0,1920,1080);
+  glClearColor(77/255.f,77/255.f,77/255.f,1);glClear(GL_COLOR_BUFFER_BIT);
+  assert(gfx_icone_cor((GfxRect){0,0,48,36},"formatador/fl_PL",1));
+  unsigned char pixels[48*48*4];
+  glReadPixels(0,1080-48,48,48,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+  int red=0,white=0,background=0;
+  for(size_t p=0;p<sizeof pixels;p+=4) {
+    red+=pixels[p]>180 && pixels[p+1]<120 && pixels[p+2]<120;
+    white+=pixels[p]>180 && pixels[p+1]>180 && pixels[p+2]>180;
+    background+=abs((int)pixels[p]-77)<=1 && abs((int)pixels[p+1]-77)<=1 && abs((int)pixels[p+2]-77)<=1;
+  }
+  assert(red>20 && white>20 && background>10);
+  tex_encerrar();puts("PASS: flag retains red/white color, background around it untouched");
+}
 int main(int argc,char **argv) {
   int logicOnly=argc>1 && !strcmp(argv[1],"--logic-only");
   setvbuf(stdout,NULL,_IONBF,0);
@@ -497,14 +528,22 @@ int main(int argc,char **argv) {
       "Release.group.Oppenheimer.2023.2160p.UHD.BluRay.REMUX.HEVC.DTS-HD.MA.5.1.DUAL.MULTI.Polish.Lektor.%04d.Long.File.Name.Without.Space.mkv\n"
       "Audio: Polski · English\nSubtitles: Polish · English\nLast formatter line",i);
   }
-  size_t used=0;
-  assert(!strcmp(emojiIcone("🎞️",&used),"aj_film") && used==strlen("🎞️"));
-  assert(!emojiIcone("1080p.filename.mkv",&used));
-  assert(!emojiIcone("🇵🇱",&used)); // flags become readable language text through nv_limpar_texto
-  for(unsigned k=0;k<sizeof EMOJI_ICONE/sizeof *EMOJI_ICONE;k++) {
-    size_t used=0;const char *icon=emojiIcone(EMOJI_ICONE[k].emoji,&used);
-    assert(icon && !strcmp(icon,EMOJI_ICONE[k].icone));
-    assert(used==strlen(EMOJI_ICONE[k].emoji));
+  gfx_icones_dir("deploy/app/art");
+  // VS16, skin tones and an unknown ZWJ tail go with the icon they follow.
+  const char *symbols[]={"💿","🧲","♻️","🧑‍💻","💃🏻","🕵️‍♀️"};
+  for(unsigned k=0;k<sizeof symbols/sizeof *symbols;k++) {
+    size_t used=0;assert(emojiIcone(symbols[k],&used)>=0);assert(used==strlen(symbols[k]));
+  }
+  size_t ignored=0;assert(emojiIcone("1080p.filename.mkv",&ignored)<0);
+  char cc[8];assert(bandeiraEm((const unsigned char *)"🇦🇷",cc)==8 && !strcmp(cc,"AR"));
+  assert(bandeiraEm((const unsigned char *)"🏴\U000E0067\U000E0062\U000E0065\U000E006E\U000E0067\U000E007F",cc) &&
+         !strcmp(cc,"GB-ENG") && gfx_icone_existe("formatador/fl_GB-ENG")==1);
+  // Every table entry matches itself whole (longest sequences come first), and
+  // both styles have their artwork in the package.
+  for(int k=0;k<FMT_ICONES_N;k++) {
+    size_t used=0;assert(emojiIcone(FMT_ICONES[k].utf8,&used)==k);
+    assert(used==strlen(FMT_ICONES[k].utf8));
+    assert(gfx_icone_existe(FMT_ICONES[k].padrao)==1 && gfx_icone_existe(FMT_ICONES[k].minimalista)==1);
   }
   const char *longname="Show.S01E01.2160p.UHD.BluRay.REMUX.HEVC.Dolby.Vision.TrueHD.Atmos.7.1.Polish.Lektor.DUAL.MULTI.Extended.Directors.Cut.Release.Group.FraMeSToR.Full.Filename.End.mkv";
   const ArquivoLayout *arq=arquivoLayout(longname);size_t end=0;
@@ -513,7 +552,7 @@ int main(int argc,char **argv) {
   assert(arquivoAltura(longname)==arq->n*FOLHA_ARQ_H);
   for(badgesBottom=0;badgesBottom<=1;badgesBottom++) {
     setting(dir,1);assert(ajustes_selos_embaixo()==badgesBottom);
-    parserAndCache();geometry(dir);measuredScrollGeometry(dir);
+    parserAndCache(dir);geometry(dir);measuredScrollGeometry(dir);
     completeCards(dir,!logicOnly);screenshotCards(dir,!logicOnly);
     if(!logicOnly){formatterMotionPixels();firstCardScrollPixels(dir);wrappedFilenamePixels();clippedFormatterPixels();}
 #ifdef NV_SOURCE_PERF_DIAG

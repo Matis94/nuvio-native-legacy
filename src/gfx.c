@@ -2,6 +2,7 @@
 #include "tex_cache.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
+#include <unistd.h>   /* access: gfx_icone_existe */
 #include "gfx_smartphone_png.h"
 #include "layout.h"
 #include <stdio.h>
@@ -4783,6 +4784,30 @@ void gfx_icone(GfxRect r, const char *nome, float cr, float cg, float cb, float 
   if (!t) return;
   gfx_tex_aspect_atual = 0.0f;   // o arquivo ja e quadrado
   gfx_rect(r, t, GFX_MARCA, 0, 0, 0, 0.0f, cr, cg, cb, ca);
+}
+
+int gfx_icone_existe(const char *nome) {
+  char cam[600];
+  if (!dirIcones[0]) return -1;   // art folder not set yet: unknown, not missing
+  if (!nome || !nome[0]) return 0;
+  snprintf(cam, sizeof cam, "%s/%s.png", dirIcones, nome);
+  return access(cam, R_OK) == 0;
+}
+
+// Only the formatter artwork (icones/formatador/): the other icons are white
+// shapes meant to be tinted, and drawn in their own colours they would be blank.
+int gfx_icone_cor(GfxRect r, const char *nome, float alpha) {
+  char cam[600];
+  if (!dirIcones[0] || !nome || strncmp(nome,"formatador/",11) ||
+      alpha <= 0 || r.w <= 0 || r.h <= 0) return 0;
+  snprintf(cam,sizeof cam,"%s/%s.png",dirIcones,nome);
+  GLuint t=tex_obter_larg(cam,r.w);
+  if (!t) return 0;
+  gfx_tex_aspect_atual=0;
+  // The text path preserves RGB and PNG alpha, and applies the HDR UI level.
+  // GFX_SNAP is for opaque snapshots and would draw a square behind emoji.
+  gfx_rect(r,t,GFX_TEXTO,0,0,0,0,1,1,1,alpha);
+  return 1;
 }
 
 void gfx_recorte(float x, float y, float w, float h) {

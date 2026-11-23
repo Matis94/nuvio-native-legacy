@@ -2,6 +2,9 @@
 // bounded source-line window. Use the real parser and text normalization.
 #include "../src/streams.c"
 #include <assert.h>
+// Standard icon style, with every formatter PNG present.
+int ajustes_fonte_icones_minimalista(void) { return 0; }
+int gfx_icone_existe(const char *nome) { return nome && nome[0]; }
 int main(void) {
   static Stream s;
   static LinhaAddon body[FOLHA_ADDON_LINHAS];
@@ -14,7 +17,7 @@ int main(void) {
   snprintf(s.descricao,sizeof s.descricao,"📁 %s",s.arquivo);
   n=linhasAddon(&s,body,FOLHA_ADDON_LINHAS);
   assert(n==1 && !strcmp(pecaAddonTexto(&body[0],0),s.arquivo));
-  assert(!body[0].ic[0]);
+  assert(body[0].ic[0] && !strcmp(body[0].ic[0],"formatador/tw_1f4c1"));
   const char *file="The.Lord.of.the.Rings.2001.Extended.2160p.TrueHD.Atmos.mkv";
   for(int space=0;space<2;space++) {
     snprintf(s.arquivo,sizeof s.arquivo,"[Cloud]%s%s",space?" ":"",file);

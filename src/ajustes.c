@@ -726,6 +726,10 @@ typedef enum {
   AJ_HERO_TAMANHO,
   AJ_HERO_PASTA_DETALHES, // Device-local folder hero details, append-only; on by default.
   AJ_SOURCE_BADGE_POSITION, // From addon card: Top (default) / Bottom, append-only
+  // ICONES DO TEXTO "DO ADDON": 0 Estilo padrao = Twemoji em cores, os simbolos
+  // monocromaticos como glifo e as bandeiras do flagpack; 1 Minimalista = Lucide
+  // na cor do texto, bandeira vira o codigo do idioma. LOCAL, append-only.
+  AJ_FONTE_ICONES,
   AJ_N
 } OpcaoId;
 _Static_assert(DEBRID_RD == 0 && DEBRID_TB == 1 && DEBRID_PM == 2 && DEBRID_AD == 3,
@@ -944,6 +948,9 @@ static const char *V_FONTE_REPOR[] = { "Desligado", "1 fonte", "2 fontes", "3 fo
 // o nome e a descricao como o addon formatou — quem monta o proprio formato no
 // AIOStreams quer ver o dele.
 static const char *V_FONTE_TEXTO[] = { "Do Nuvio", "Do addon", "Logo do título" };
+// Ver AJ_FONTE_ICONES. "Estilo padrão" e nao "Padrão": a chave "Padrão" ja
+// traduz para "Default", e o nome pedido e "Standard".
+static const char *V_FONTE_ICONES[] = { "Estilo padrão", "Minimalista" };
 // #90: o fundo de arte da tela de escolha de perfil (psfundo.c). "Automático"
 // e o comportamento atual (perfil primeiro, catalogo como reserva, com
 // rotacao); "Desligado" volta a tela ao que era antes da issue — psfundo nao
@@ -1866,6 +1873,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Tamanho do destaque", V_HERO_TAMANHO, 3),       // local: heroSizeLocal
   ESC("Mostrar detalhes da pasta no destaque", V_LIGA, 2),
   ESC("Badge position (From addon)", V_SOURCE_BADGE_POSITION, 2),
+  ESC("Estilo dos ícones", V_FONTE_ICONES, 2),   // local: fonteIconesLocal
 };
 
 // Nome de cada opcao no arquivo. O formato era POSICIONAL — uma linha por
@@ -2200,6 +2208,7 @@ static const char *CHAVE[] = {
   "heroSizeLocal",
   "heroFolderDetailsLocal",
   "sourceBadgePositionLocal",
+  "fonteIconesLocal",
 };
 // QUATRO VETORES PARALELOS indexados pelo mesmo enum AJ_*: OPCOES, CHAVE,
 // valor e as secoes. OPCOES ja e declarado [AJ_N], e `valor` aceita inicializacao
@@ -2929,6 +2938,7 @@ void ajustes_espelhar_enquetes(int ligado) { int n = ligado ? 0 : 1; if (valor[A
 int ajustes_fonte_hdr(void)        { int v = valor[AJ_FONTE_HDR]; return v < 0 || v > 2 ? 0 : v; }
 int ajustes_fonte_ordem_addon(void)   { return valor[AJ_FONTE_ORDEM_ADDON] == 1; }
 int ajustes_fonte_texto_addon(void)   { return valor[AJ_FONTE_TEXTO] == 1; }
+int ajustes_fonte_icones_minimalista(void) { return valor[AJ_FONTE_ICONES] == 1; }
 // "Logo do titulo" (dono, 03/10, em teste): o layout do Nuvio com a logo do
 // conteudo no lugar do nome escrito em cada linha. Indice 2: o 0 e o 1 ja
 // estavam gravados em fonteTextoLocal.
@@ -6012,7 +6022,7 @@ static int somenteDesteAparelho(int op) {
     case AJ_FONTE_PRECARREGAR:
     case AJ_FONTE_GRUPO: case AJ_FONTE_GRUPO_SESSOES:
     case AJ_LINK_REUSAR: case AJ_LINK_PRAZO:
-    case AJ_FONTE_TEXTO: case AJ_FONTE_ORDEM_ADDON:
+    case AJ_FONTE_TEXTO: case AJ_FONTE_ORDEM_ADDON: case AJ_FONTE_ICONES:
     case AJ_SALVOS_DEST:
     case AJ_EPG_PAIS:       /* pais da grade: por aparelho, o web nao tem */
     // Arte do destaque: o web nao tem as chaves (heroFundoLocal,
@@ -7416,6 +7426,7 @@ static int inativa(int op) {
     // O fundo em tela cheia e da Moderna: no Padrao o destaque e um banner e na
     // Dinamica ele e sempre de ponta a ponta e rola junto com as fileiras.
     case AJ_HERO_CHEIO:   return ajustes_home_layout() != HOME_LAYOUT_MODERNA;
+    case AJ_FONTE_ICONES: return valor[AJ_FONTE_TEXTO] != 1;
     case AJ_EP_TAMANHO:   return ajustes_home_layout() != HOME_LAYOUT_MODERNA;
     // #162: o Descobrir do app web (navegar catalogos por tipo e genero) ainda
     // nao existe nesta TV — o "Explorar" daqui e outra tela. A escolha vem e
@@ -7780,6 +7791,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_LOGO_APP: return "O símbolo que o Nuvio mostra na abertura e nas telas de entrada. Novo é o play em degradê; Clássico é a TV retrô de sempre. Vale só nesta TV.";
     case AJ_ABERTURA: return "Como o logo some quando o app abre. Padrão para um instante, aproxima e esmaece; Só esmaece não aproxima; Direto abre a Home sem parar. Vale só nesta TV.";
     case AJ_FONTE_HDR: return "Preferir: fontes com HDR ou Dolby Vision vêm na frente. Indiferente: o formato não conta. Evitar: prefere SDR na mesma resolução. O Dolby Vision só entra se estiver ligado em Imagem e som; perfil 5 sem HDR10 fica atrás do HDR10, porque sai com cores erradas fora de TV Dolby Vision. Só vale para a escolha automática.";
+    case AJ_FONTE_ICONES: return "Vale só com Texto das fontes em Do addon. Estilo padrão: os emojis do formatador em cores (Twemoji) e os símbolos dele como ele desenhou. Minimalista: ícones de traço (Lucide) na cor do texto. No Minimalista, as bandeiras viram o código do idioma.";
     case AJ_FONTE_ORDEM_ADDON: return "Por qualidade: as fontes vêm agrupadas por resolução, da maior para a menor, e do maior arquivo para o menor. Do addon: cada addon na ordem em que você o instalou, e as fontes de cada um na ordem em que ele mandou — para quem já ordena no AIOStreams. A escolha automática não muda.";
     case AJ_FONTE_TEXTO: return "Do Nuvio: o nome do título em cima e os logos de qualidade embaixo. Do addon: o nome e a descrição exatamente como o addon manda — para quem já formata o texto no AIOStreams. Logo do título: a logo do título no lugar do nome escrito.";
     case AJ_FONTE_PRAZO: return "As fontes aparecem na lista assim que cada add-on responde. A escolha automática não espera o mais lento: sai quando já há uma fonte boa ou depois deste tempo. Com uma fonte escolhida antes neste título, o add-on dela é sempre esperado.";
@@ -10756,7 +10768,7 @@ static AjPreview familiaPreviaOpcao(int op) {
     case AJ_PAUSA_COMENTARIOS: case AJ_PAUSA_NOTAS: case AJ_PAUSA_ELENCO:
     case AJ_AUD_LINGUA: case AJ_AUD_LINGUA2: case AJ_PAUSA_OVERLAY: case AJ_PLR_CLASSIF: case AJ_TELA_ABERTURA: case AJ_ABERTURA_ADDON: case AJ_ABERTURA_FUNDO: case AJ_ABERTURA_ESTILO: case AJ_FONTE_MANUAL:
     case AJ_PLR_FORMATO: case AJ_PLR_FORMATO_POS: case AJ_PLR_CODEC:
-    case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_TEXTO: case AJ_FONTE_ORDEM_ADDON: case AJ_SELOS_CORES: case AJ_SOURCE_BADGE_POSITION: case AJ_FONTE_TOCAR_CONFERINDO: case AJ_FONTE_AQUECER: case AJ_FONTE_CONFERIR_VARIAS: case AJ_FONTE_PREPARAR: case AJ_FONTE_PRECARREGAR:
+    case AJ_FONTE_AUTO: case AJ_FONTE_REPOR: case AJ_FONTE_TEXTO: case AJ_FONTE_ICONES: case AJ_FONTE_ORDEM_ADDON: case AJ_SELOS_CORES: case AJ_SOURCE_BADGE_POSITION: case AJ_FONTE_TOCAR_CONFERINDO: case AJ_FONTE_AQUECER: case AJ_FONTE_CONFERIR_VARIAS: case AJ_FONTE_PREPARAR: case AJ_FONTE_PRECARREGAR:
     case AJ_FONTE_GRUPO: case AJ_FONTE_GRUPO_SESSOES:
     case AJ_LINK_REUSAR: case AJ_LINK_PRAZO:
     case AJ_FONTE_PRIORIDADE: case AJ_FONTE_HDR: case AJ_FONTE_IDIOMA_AUDIO:
