@@ -13,11 +13,26 @@
 #define ADDON_PECAS 24
 #define ADDON_DESENHOS 256
 #define TEXTO_ADDON_CACHE 32
-#include "stream_formatter_emoji.inc"
+// FORMATTER ICONS (tools/icones-formatador.py, from Namer03's Formatter set):
+// one entry per emoji the stream formatters print. Standard = Twemoji in colour
+// (tw_) or a monochrome symbol drawn in the text colour (sy_); Minimalistic =
+// Lucide in the text colour. Country flags come from flagpack (fl_XX) in
+// Standard; in Minimalistic they stay text and nv_limpar_texto writes the
+// language code. Emoji outside the table stay text, as the UI font draws them.
+typedef struct { const char *utf8, *padrao, *minimalista; int cor; } FmtIcone;
+static const FmtIcone FMT_ICONES[] = {
+#include "formatador_icones.inc"
+};
+#define FMT_ICONES_N ((int)(sizeof FMT_ICONES / sizeof *FMT_ICONES))
+// What a piece's icon is drawn with: tinted with the text colour, the PNG's own
+// colours (square), or a 4:3 flag in its own colours.
+enum { ADDON_IC_TOM = 0, ADDON_IC_COR = 1, ADDON_IC_BANDEIRA = 2 };
 
 typedef struct {
   int n;
   const char *ic[ADDON_PECAS];
+  const char *alt[ADDON_PECAS];      // drawn tinted when the colour PNG is missing
+  unsigned char tipo[ADDON_PECAS];   // ADDON_IC_*
   unsigned short off[ADDON_PECAS];
   char texto[2048];
 } LinhaAddon;
@@ -30,7 +45,7 @@ typedef struct {
   char titulo[192];
   LinhaAddon cabecalho, linhas[FOLHA_ADDON_LINHAS];
   AddonDesenho desenhos[ADDON_DESENHOS], nome[ADDON_PECAS * 2];
-  int nl, nv, nd, nn, indice, pronto;
+  int nl, nv, nd, nn, indice, pronto, estilo;
   int corpo, peso, familia;
   unsigned uso;
   float largura;
@@ -51,7 +66,7 @@ static void addonMedido(int i) {
   else addonMedidosTodos=1;
 }
 static float addonMedidasW;
-static int addonMedidasCorpo, addonMedidasPeso, addonMedidasFamilia;
+static int addonMedidasCorpo, addonMedidasPeso, addonMedidasFamilia, addonMedidasEstilo;
 
 static void linhaLimpa(char *d, size_t tam, const char *ini, size_t n) {
   size_t k = 0;
@@ -60,46 +75,172 @@ static void linhaLimpa(char *d, size_t tam, const char *ini, size_t n) {
   while (k < n && k + 1 < tam) { unsigned char c = (unsigned char)ini[k]; d[k++] = c < 32 ? ' ' : (char)c; }
   d[k] = 0;
 }
-static const char *emojiIcone(const char *p, size_t *len) {
-  unsigned char first=(unsigned char)*p;
-  // Ordinary ASCII filenames never search the emoji index. Keycaps are the
-  // only ASCII starters; require their combining mark/variation selector.
-  if (first < 0x80) {
-    if (!(first=='#' || first=='*' || (first>='0' && first<='9')) ||
-        (strncmp(p+1,"\xEF\xB8\x8F",3) && strncmp(p+1,"\xE2\x83\xA3",3))) return NULL;
-  } else if (first<0xC2) return NULL;
-  char key[128]; size_t n=0, consumed=0;
-  const char *best=NULL;
-  while (p[consumed] && n+1<sizeof key) {
-    if (!strncmp(p+consumed,"\xEF\xB8\x8F",3)) { consumed+=3; continue; }
-    key[n++]=p[consumed++]; key[n]=0;
-    size_t lo=0,hi=sizeof EMOJI_ICONE/sizeof *EMOJI_ICONE;
-    while (lo<hi) {
-      size_t mid=lo+(hi-lo)/2;
-      if (strncmp(EMOJI_ICONE[mid].emoji,key,n)<0) lo=mid+1; else hi=mid;
-    }
-    if (lo==sizeof EMOJI_ICONE/sizeof *EMOJI_ICONE || strncmp(EMOJI_ICONE[lo].emoji,key,n)) break;
-    if (!EMOJI_ICONE[lo].emoji[n]) {
-      best=EMOJI_ICONE[lo].icone; *len=consumed;
-      if (!strncmp(p+consumed,"\xEF\xB8\x8F",3)) *len+=3;
-    }
+// Strict UTF-8 decoder (as limpa.c): an invalid sequence is U+FFFD, 1 byte.
+static unsigned long fmtDec(const unsigned char *p, int *n) {
+  unsigned long cp;
+  int len, i;
+  if (*p < 0x80) { *n = 1; return *p; }
+  if (*p >= 0xC2 && *p <= 0xDF) { len = 2; cp = *p & 0x1F; }
+  else if (*p >= 0xE0 && *p <= 0xEF) { len = 3; cp = *p & 0x0F; }
+  else if (*p >= 0xF0 && *p <= 0xF4) { len = 4; cp = *p & 0x07; }
+  else { *n = 1; return 0xFFFD; }
+  for (i = 1; i < len; i++) {
+    if ((p[i] & 0xC0) != 0x80) { *n = 1; return 0xFFFD; }
+    cp = cp << 6 | (p[i] & 0x3F);
   }
-  return best;
+  if ((len == 3 && cp < 0x800) || (len == 4 && (cp < 0x10000 || cp > 0x10FFFF)) ||
+      (cp >= 0xD800 && cp <= 0xDFFF)) { *n = 1; return 0xFFFD; }
+  *n = len;
+  return cp;
 }
-static const char *emojiReserva(const char *icone) {
-  for (size_t k = 0; k < sizeof EMOJI_ICONE / sizeof *EMOJI_ICONE; k++)
-    if (!strcmp(EMOJI_ICONE[k].icone,icone)) return EMOJI_ICONE[k].reserva;
-  return "aj_globe";
+static int fmtVS(unsigned long c) { return c == 0xFE0F || c == 0xFE0E; }
+static int fmtTom(unsigned long c) { return c >= 0x1F3FB && c <= 0x1F3FF; }
+// After an icon, variation selectors, skin tones and the rest of an unknown
+// ZWJ sequence go with it: "🕵️‍♀️" must not leave a loose "♀" behind.
+static const unsigned char *fmtCauda(const unsigned char *q) {
+  for (;;) {
+    int n, n2;
+    unsigned long c;
+    if (!*q) return q;
+    c = fmtDec(q, &n);
+    if (fmtVS(c) || fmtTom(c)) { q += n; continue; }
+    if (c == 0x200D && q[n]) {
+      unsigned long c2 = fmtDec(q + n, &n2);
+      if (c2 >= 0x2000 && c2 != 0xFFFD) { q += n + n2; continue; }
+    }
+    return q;
+  }
+}
+// Table entry at the start of `p` (longest sequences come first in the table),
+// tolerant of VS15/VS16 and skin tones the table does not have. -1 = none.
+// Ordinary ASCII filenames never search the table.
+static int emojiIcone(const char *p, size_t *len) {
+  const unsigned char *s = (const unsigned char *)p;
+  if (!s || *s < 0xC2) return -1;
+  for (int k = 0; k < FMT_ICONES_N; k++) {
+    const unsigned char *e = (const unsigned char *)FMT_ICONES[k].utf8, *q = s;
+    int ok = 1;
+    if (*e != *s) continue;
+    while (*e) {
+      int ne, nq = 1;
+      unsigned long ce = fmtDec(e, &ne), cq = 0;
+      for (;;) {
+        if (!*q) { ok = 0; break; }
+        cq = fmtDec(q, &nq);
+        if (fmtVS(cq) || (fmtTom(cq) && !fmtTom(ce))) { q += nq; continue; }
+        break;
+      }
+      if (!ok || cq != ce) { ok = 0; break; }
+      e += ne; q += nq;
+    }
+    if (!ok) continue;
+    q = fmtCauda(q);
+    if (len) *len = (size_t)(q - s);
+    return k;
+  }
+  return -1;
+}
+// Flag at the start of `s`: a pair of regional indicators ("GB") or 🏴 with the
+// tags of England, Scotland and Wales ("GB-ENG"). 0 = not a flag.
+static size_t bandeiraEm(const unsigned char *s, char cc[8]) {
+  int n1, n2;
+  unsigned long a, b;
+  if (!s || *s < 0xC2) return 0;
+  a = fmtDec(s, &n1);
+  if (a >= 0x1F1E6 && a <= 0x1F1FF && s[n1]) {
+    b = fmtDec(s + n1, &n2);
+    if (b >= 0x1F1E6 && b <= 0x1F1FF) {
+      cc[0] = (char)('A' + (a - 0x1F1E6)); cc[1] = (char)('A' + (b - 0x1F1E6)); cc[2] = 0;
+      return (size_t)(n1 + n2);
+    }
+    return 0;
+  }
+  if (a == 0x1F3F4) {
+    static const struct { const char *tag, *cc; } SUB[] = {
+      { "gbeng", "GB-ENG" }, { "gbsct", "GB-SCT" }, { "gbwls", "GB-WLS" } };
+    char tag[8];
+    int t = 0;
+    const unsigned char *q = s + n1;
+    for (;;) {
+      int n;
+      unsigned long c;
+      if (!*q) return 0;
+      c = fmtDec(q, &n);
+      if (c == 0xE007F) { q += n; break; }
+      if (c < 0xE0020 || c > 0xE007E || t >= 7) return 0;
+      tag[t++] = (char)(c - 0xE0000);
+      q += n;
+    }
+    tag[t] = 0;
+    for (unsigned i = 0; i < sizeof SUB / sizeof *SUB; i++)
+      if (!strcmp(tag, SUB[i].tag)) { strcpy(cc, SUB[i].cc); return (size_t)(q - s); }
+  }
+  return 0;
+}
+// "formatador/fl_XX" for the flags the package has, interned once per code:
+// the piece keeps a pointer, and the disk is asked at parse time only, never
+// per frame. NULL = no PNG (the flag stays text, as the language code).
+static const char *bandeiraNome(const char *cc) {
+  static struct { char cc[8], nome[32]; int existe; } memo[320];
+  static int nMemo;
+  int k;
+  for (k = 0; k < nMemo; k++)
+    if (!strcmp(memo[k].cc, cc)) return memo[k].existe ? memo[k].nome : NULL;
+  if (nMemo == (int)(sizeof memo / sizeof *memo)) return NULL;
+  snprintf(memo[nMemo].cc, sizeof memo[nMemo].cc, "%s", cc);
+  snprintf(memo[nMemo].nome, sizeof memo[nMemo].nome, "formatador/fl_%s", cc);
+  memo[nMemo].existe = gfx_icone_existe(memo[nMemo].nome);
+  if (memo[nMemo].existe < 0) return NULL;   // art folder not set yet: ask again later
+  nMemo++;
+  return memo[nMemo - 1].existe ? memo[nMemo - 1].nome : NULL;
+}
+// The icon at the start of `p` in the current style. Returns the consumed
+// length (0 = no icon here) and fills the drawing name, fallback and kind.
+static size_t iconeAddon(const char *p, int minimalista, const char **ic,
+                         const char **alt, unsigned char *tipo) {
+  size_t len = 0;
+  char cc[8];
+  int k;
+  if ((unsigned char)*p < 0xC2) return 0;
+  if ((len = bandeiraEm((const unsigned char *)p, cc))) {
+    const char *nome = minimalista ? NULL : bandeiraNome(cc);
+    if (!nome) return 0;   // text: nv_limpar_texto writes the language code
+    *ic = nome; *alt = NULL; *tipo = ADDON_IC_BANDEIRA;
+    return len;
+  }
+  k = emojiIcone(p, &len);
+  if (k < 0) return 0;
+  // Standard artwork missing from the package (an old art folder): the
+  // Lucide icon, tinted, instead of an empty gap. Asked once per entry.
+  static signed char existe[FMT_ICONES_N];
+  if (!minimalista && !existe[k]) {
+    int e = gfx_icone_existe(FMT_ICONES[k].padrao);
+    if (e >= 0) existe[k] = e ? 1 : -1;   // e < 0: art folder not set yet, ask again
+  }
+  if (minimalista || existe[k] < 0) {
+    *ic = FMT_ICONES[k].minimalista; *alt = NULL; *tipo = ADDON_IC_TOM;
+  } else {
+    *ic = FMT_ICONES[k].padrao; *alt = NULL;
+    *tipo = FMT_ICONES[k].cor ? ADDON_IC_COR : ADDON_IC_TOM;
+  }
+  return len;
 }
 static const char *pecaAddonTexto(const LinhaAddon *l, int p) { return l->texto + l->off[p]; }
 static void pecasAddon(const char *ini, size_t n, LinhaAddon *l) {
   char cru[2048]; size_t usado = 0;
+  int minimalista = ajustes_fonte_icones_minimalista();
   memset(l, 0, sizeof *l);
   linhaLimpa(cru, sizeof cru, ini, n);
   for (const char *p = cru; *p && l->n < ADDON_PECAS && usado + 1 < sizeof l->texto;) {
-    size_t el = 0; const char *icone = emojiIcone(p, &el), *q = p + el;
+    const char *icone = NULL, *alt = NULL; unsigned char tipo = ADDON_IC_TOM;
+    size_t el = iconeAddon(p, minimalista, &icone, &alt, &tipo);
+    const char *q = p + el;
     const char *fim = q;
-    while (*fim) { size_t z; if (emojiIcone(fim, &z)) break; fim++; }
+    while (*fim) {
+      const char *zi, *za; unsigned char zt;
+      if (iconeAddon(fim, minimalista, &zi, &za, &zt)) break;
+      fim++;
+    }
     char seg[2048]; size_t tamanho = (size_t)(fim-q);
     if (tamanho >= sizeof seg) tamanho = sizeof seg-1;
     memcpy(seg,q,tamanho); seg[tamanho]=0;
@@ -107,6 +248,7 @@ static void pecasAddon(const char *ini, size_t n, LinhaAddon *l) {
     nv_limpar_texto(seg,l->texto+usado,sizeof l->texto-usado,NV_LIMPA_UMA_LINHA);
     nv_aparar_separadores(l->texto+usado);
     if (icone || l->texto[usado]) {
+      l->alt[l->n] = alt; l->tipo[l->n] = tipo;
       l->ic[l->n++] = icone;
       usado += strlen(l->texto+usado)+1;
     }
@@ -173,9 +315,14 @@ static void addonMedidasAtualizar(void) {
       addonVisuais=p;addonVisuaisCap=n;
     }
   }
-  if(w!=addonMedidasW || corpo!=addonMedidasCorpo || peso!=addonMedidasPeso || familia!=addonMedidasFamilia) {
+  // The icon style changes pieces (a flag is an icon or a language code), so
+  // every measured height is stale with it, like with a new width or font.
+  int estilo=ajustes_fonte_icones_minimalista();
+  if(w!=addonMedidasW || corpo!=addonMedidasCorpo || peso!=addonMedidasPeso || familia!=addonMedidasFamilia ||
+     estilo!=addonMedidasEstilo) {
     if(addonVisuais)memset(addonVisuais,0,(size_t)addonVisuaisCap*sizeof *addonVisuais);
     addonMedidasW=w;addonMedidasCorpo=corpo;addonMedidasPeso=peso;addonMedidasFamilia=familia;
+    addonMedidasEstilo=estilo;
     addonMedidasRevisao++;
     addonEstiloRevisao++;
   }
@@ -244,10 +391,12 @@ static void addonQuebrar(const LinhaAddon *linhas,int nl,AddonDesenho *out,int c
     for(int pc=0;pc<l->n && row<maxLinhas;pc++) {
       const char *s=pecaAddonTexto(l,pc);size_t inicio=0;
       if(l->ic[pc]) {
+        // A flag is 4:3 (28x21), the other icons square (22x22).
+        float iw=l->tipo[pc]==ADDON_IC_BANDEIRA ? 28 : 22;
         if(x+60>w && x>0){row++;x=0;}
         if(row>=maxLinhas || nd>=cap)goto pronto;
-        out[nd++]=(AddonDesenho){0,0,(unsigned char)k,(unsigned char)pc,(unsigned char)row,1,x,22};
-        x+=30;
+        out[nd++]=(AddonDesenho){0,0,(unsigned char)k,(unsigned char)pc,(unsigned char)row,1,x,iw};
+        x+=iw+8;
       }
       while(s[inicio] && row<maxLinhas) {
         size_t cabe=addonCabe(s+inicio,w-x,estilo);
@@ -294,8 +443,9 @@ static const TextoAddon *textoAddonDa(int i) {
   if(!textoAddon)t->pronto=0; // allocation failure must never reuse another list
   float w=addonTextoW();int corpo,peso,familia=(int)txt_fonte_interface();
   txt_estilo_medidas(TXT_PG_FIM,&corpo,&peso);
-  if(!t->pronto || t->indice!=i) {
-    memset(t,0,sizeof *t);t->indice=i;t->pronto=1;
+  int estilo=ajustes_fonte_icones_minimalista();
+  if(!t->pronto || t->indice!=i || t->estilo!=estilo) {
+    memset(t,0,sizeof *t);t->indice=i;t->pronto=1;t->estilo=estilo;
     t->nl=linhasAddon(&lista[i],t->linhas,FOLHA_ADDON_LINHAS);
     tituloAddon(&lista[i],t->titulo,sizeof t->titulo);
     const char *nome=lista[i].rotulo[0] ? lista[i].rotulo : lista[i].provedor;

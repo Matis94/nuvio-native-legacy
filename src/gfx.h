@@ -421,6 +421,10 @@ void gfx_icone(GfxRect r, const char *nome, float cr, float cg, float cb, float 
 // Local formatter emoji: retain PNG color, using the existing async texture LRU.
 // Returns 0 while unavailable so the caller can draw a monochrome fallback.
 int gfx_icone_cor(GfxRect r, const char *nome, float alpha);
+// 1 if icones/<nome>.png is in the package (a flag without its PNG goes back to
+// the language code), 0 if not, -1 before gfx_icones_dir (unknown: do not
+// remember it). Asks the disk: call when building text, never per frame.
+int gfx_icone_existe(const char *nome);
 void gfx_sem_recorte(void);
 
 int  gfx_snap_iniciar(int w, int h);

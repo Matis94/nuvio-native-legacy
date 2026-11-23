@@ -384,3 +384,4 @@
   1, /* Dolby Vision P7 via HLS: Off */
   1, /* Experimental HLS mode: Off (V_LIGA) */
   1, /* HLS MPEG-TS segments (test): Off (V_LIGA) */
+  0, /* formatter icons (From addon): Standard */

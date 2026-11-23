@@ -89,5 +89,3 @@ epg-conta-*
 tools/dv7/target/
 deploy/app/licenses/dv7/
 
-# Generated from the verified offline formatter emoji bundle.
-/deploy/app/art/icones/emoji_*.png
