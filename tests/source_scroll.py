@@ -102,7 +102,8 @@ typedef struct {unsigned tex;int w,h,pw,ph;} TxtLinha;
 typedef int TxtEstilo;
 enum {TXT_CALLOUT,TXT_PG_FIM};
 #define FOLHA_ADDON_LD 28.0f
-typedef struct {int n;const char *ic[24];unsigned short off[24];char texto[2048];} LinhaAddon;
+enum { ADDON_IC_TOM = 0, ADDON_IC_COR = 1, ADDON_IC_BANDEIRA = 2 };
+typedef struct {int n;const char *ic[24];const char *alt[24];unsigned char tipo[24];unsigned short off[24];char texto[2048];} LinhaAddon;
 typedef struct {unsigned short inicio,tam;unsigned char linha,peca,visual,icone;float x,w;} AddonDesenho;
 static const char *pecaAddonTexto(const LinhaAddon *l,int p){return l->texto+l->off[p];}
 static float top,bottom;
@@ -116,7 +117,6 @@ static void record(GfxRect r,float red,float green,float blue,float alpha,int ic
  visible[nVisible++]=(DrawCall){r.x,r.y,r.w,r.h,red,green,blue,alpha,icon};
 }
 static int gfx_icone_cor(GfxRect r,const char *s,float a){(void)s;record(r,1,1,1,a,1);return 1;}
-static const char *emojiReserva(const char *s){return s;}
 static void gfx_icone(GfxRect r,const char *s,float red,float green,float blue,float a){(void)s;record(r,red,green,blue,a,1);}
 static TxtLinha txt_linha(TxtEstilo e,const char *s,int r,int g,int b,int a){
  (void)e;(void)r;(void)g;(void)b;(void)a;lookups++;return (TxtLinha){1,(int)strlen(s)*7,fontHeight,0,0};
@@ -133,7 +133,7 @@ static void clippedDraw(void){
  LinhaAddon lines[12]={0};AddonDesenho pieces[256];int count=0;
  for(int i=0;i<12;i++){
   strcpy(lines[i].texto,"Cloud Polish English DUAL MULTI REMUX DTS-HD MA 5.1 155.48 GB filename.mkv");
-  lines[i].ic[0]="emoji";
+  lines[i].ic[0]="formatador/tw_1f3ac";lines[i].tipo[0]=ADDON_IC_COR;
   for(int row=0;row<8;row++){
    pieces[count++]=(AddonDesenho){0,0,(unsigned char)i,0,(unsigned char)(i*8+row),1,0,22};
    pieces[count++]=(AddonDesenho){0,70,(unsigned char)i,0,(unsigned char)(i*8+row),0,30,490};

@@ -35,10 +35,10 @@ static float gfx_escala(void){return scale;}
 @SNAP@
 @PIXEL@
 @ALIGN@
-typedef struct {const char *ic[2];const char *texto[2];} LinhaAddon;
+enum { ADDON_IC_TOM = 0, ADDON_IC_COR = 1, ADDON_IC_BANDEIRA = 2 };
+typedef struct {const char *ic[2];const char *alt[2];unsigned char tipo[2];const char *texto[2];} LinhaAddon;
 typedef struct {int visual,linha,peca,icone,inicio,tam;float x,w;} AddonDesenho;
 static const char *pecaAddonTexto(const LinhaAddon *line,int p){return line->texto[p];}
-static const char *emojiReserva(const char *p){return p;}
 static int icons,texts;
 static GfxRect iconRect,textRect;
 static int gfx_icone_cor(GfxRect r,const char *p,float alpha){(void)p;assert(alpha==1);iconRect=r;icons++;return 1;}
@@ -60,7 +60,7 @@ static void sample(float x,float y,int aligned,int visual,int heading,float *rel
   assert(fabsf((left-card.x)-26)*ESC_T<=.501f);
   assert(fabsf(card.x-original.x)*ESC_T<=.501f&&fabsf(card.y-original.y)*ESC_T<=.501f);
  }
- LinhaAddon line={.ic={"emoji",NULL},.texto={"","WEB-DL"}};
+ LinhaAddon line={.ic={"formatador/tw_1f5a5",NULL},.tipo={ADDON_IC_COR,0},.texto={"","WEB-DL"}};
  AddonDesenho pieces[2]={
   {.visual=visual,.icone=1,.x=0,.w=22},
   {.visual=visual,.peca=1,.tam=6,.x=28,.w=80}
