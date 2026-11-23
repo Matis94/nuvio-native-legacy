@@ -35,7 +35,7 @@ static float gfx_escala(void){return scale;}
 @SNAP@
 @PIXEL@
 @ALIGN@
-enum { ADDON_IC_TOM = 0, ADDON_IC_COR = 1, ADDON_IC_BANDEIRA = 2 };
+enum { ADDON_IC_TOM = 0, ADDON_IC_COR = 1 };
 typedef struct {const char *ic[2];const char *alt[2];unsigned char tipo[2];const char *texto[2];} LinhaAddon;
 typedef struct {int visual,linha,peca,icone,inicio,tam;float x,w;} AddonDesenho;
 static const char *pecaAddonTexto(const LinhaAddon *line,int p){return line->texto[p];}

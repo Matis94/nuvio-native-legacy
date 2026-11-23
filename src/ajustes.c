@@ -727,7 +727,7 @@ typedef enum {
   AJ_HERO_PASTA_DETALHES, // Device-local folder hero details, append-only; on by default.
   AJ_SOURCE_BADGE_POSITION, // From addon card: Top (default) / Bottom, append-only
   // ICONES DO TEXTO "DO ADDON": 0 Estilo padrao = Twemoji em cores, os simbolos
-  // monocromaticos como glifo e as bandeiras do flagpack; 1 Minimalista = Lucide
+  // monocromaticos como glifo e as bandeiras Twemoji; 1 Minimalista = Lucide
   // na cor do texto, bandeira vira o codigo do idioma. LOCAL, append-only.
   AJ_FONTE_ICONES,
   AJ_N

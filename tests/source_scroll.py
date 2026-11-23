@@ -102,7 +102,7 @@ typedef struct {unsigned tex;int w,h,pw,ph;} TxtLinha;
 typedef int TxtEstilo;
 enum {TXT_CALLOUT,TXT_PG_FIM};
 #define FOLHA_ADDON_LD 28.0f
-enum { ADDON_IC_TOM = 0, ADDON_IC_COR = 1, ADDON_IC_BANDEIRA = 2 };
+enum { ADDON_IC_TOM = 0, ADDON_IC_COR = 1 };
 typedef struct {int n;const char *ic[24];const char *alt[24];unsigned char tipo[24];unsigned short off[24];char texto[2048];} LinhaAddon;
 typedef struct {unsigned short inicio,tam;unsigned char linha,peca,visual,icone;float x,w;} AddonDesenho;
 static const char *pecaAddonTexto(const LinhaAddon *l,int p){return l->texto+l->off[p];}

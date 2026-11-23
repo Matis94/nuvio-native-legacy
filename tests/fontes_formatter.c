@@ -60,7 +60,7 @@ static void parserAndCache(const char *dir) {
   assert(hasIcon(t,"aj_clapperboard") && hasIcon(t,"aj_headphones") && !hasIcon(t,"formatador/tw_1f3ac"));
   assert(hasText(t,"PL") && hasText(t,"EN") && !hasIcon(t,"formatador/fl_PL"));
   inspectLayout(t);
-  // Standard: Twemoji in colour and flagpack flags.
+  // Standard: Twemoji in colour, flags included.
   iconStyle=0;setting(dir,1);assert(!ajustes_fonte_icones_minimalista());
   stream_definir_lista(fixtures,CARDS);
   int before=cleanCalls;
@@ -485,7 +485,7 @@ static void emojiPixels(void) {
   }
   assert(icon);glViewport(0,0,1920,1080);
   glClearColor(77/255.f,77/255.f,77/255.f,1);glClear(GL_COLOR_BUFFER_BIT);
-  assert(gfx_icone_cor((GfxRect){0,0,48,36},"formatador/fl_PL",1));
+  assert(gfx_icone_cor((GfxRect){0,0,48,48},"formatador/fl_PL",1));
   unsigned char pixels[48*48*4];
   glReadPixels(0,1080-48,48,48,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
   int red=0,white=0,background=0;
