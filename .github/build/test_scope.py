@@ -9,7 +9,7 @@ import subprocess
 SOURCE_FILES = {
     "src/streams.c", "src/selospacote.c", "src/selospacote.h", "src/sourceperf.h",
     "src/regexjs.c", "src/regexjs.h", "src/fontenota.c", "src/stream_formatter.inc",
-    "src/stream_formatter_draw.inc", "src/stream_formatter_emoji.inc", "src/source_backdrop.inc",
+    "src/stream_formatter_draw.inc", "src/formatador_icones.inc", "src/source_backdrop.inc",
     ".github/workflows/playback-v17-ipk.yml", ".github/build/test_scope.py",
     "tests/test_scope.py", "tests/sourceperf.c", "tests/sourceperf_peer.c", "tests/sourceperf.sh",
     "tests/source_scroll.py", "tests/source_formatter_motion.py", "tests/source_selection.py", "tests/source_badge_position.py",
