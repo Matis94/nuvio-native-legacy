@@ -409,7 +409,7 @@ jobs:
           assert data["id"] == "space.nuvio.native.legacy"
           # webOS requires a three-component technical version. Keep 2.0.8
           # and expose the custom release revision in the install label.
-          label = "HLS test" if os.environ["NUVIO_WEBOS_HLS"] == "1" else "test version"
+          label = "23.11.2026 fixes" if os.environ["NUVIO_WEBOS_HLS"] == "1" else "test version"
           data["title"] = f"Nuvio Legacy 2.0.8.8 ({label})"
           data["appDescription"] = f"Nuvio webOS 2.0.8.8 ({label})"
           p.write_text(json.dumps(data, indent=2)+"\n")
