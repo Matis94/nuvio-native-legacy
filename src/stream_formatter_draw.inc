@@ -36,8 +36,7 @@ static void addonDesenharPecas(const LinhaAddon *ls,const AddonDesenho *ds,int n
     if(estilo==TXT_CALLOUT)c=sel?250:225;
     if(d->icone) {
       int tipo=l->tipo[d->peca];
-      GfxRect icon=tipo==ADDON_IC_BANDEIRA ? (GfxRect){x+dx,y+dy+addonPixel(3.5f,pixels),28,21}
-                                           : (GfxRect){x+dx,y+dy+addonPixel(3,pixels),22,22};
+      GfxRect icon={x+dx,y+dy+addonPixel(3,pixels),22,22};
       if(icon.y+icon.h<clipTop-4.0f)continue;
       // Colour emoji and flags keep the PNG's colours; symbols and the
       // Minimalistic Lucide icons take the text colour. Artwork missing from

@@ -16,7 +16,7 @@
 // FORMATTER ICONS (tools/icones-formatador.py, from Namer03's Formatter set):
 // one entry per emoji the stream formatters print. Standard = Twemoji in colour
 // (tw_) or a monochrome symbol drawn in the text colour (sy_); Minimalistic =
-// Lucide in the text colour. Country flags come from flagpack (fl_XX) in
+// Lucide in the text colour. Country flags are Twemoji too (fl_XX) in
 // Standard; in Minimalistic they stay text and nv_limpar_texto writes the
 // language code. Emoji outside the table stay text, as the UI font draws them.
 typedef struct { const char *utf8, *padrao, *minimalista; int cor; } FmtIcone;
@@ -24,9 +24,9 @@ static const FmtIcone FMT_ICONES[] = {
 #include "formatador_icones.inc"
 };
 #define FMT_ICONES_N ((int)(sizeof FMT_ICONES / sizeof *FMT_ICONES))
-// What a piece's icon is drawn with: tinted with the text colour, the PNG's own
-// colours (square), or a 4:3 flag in its own colours.
-enum { ADDON_IC_TOM = 0, ADDON_IC_COR = 1, ADDON_IC_BANDEIRA = 2 };
+// What a piece's icon is drawn with: tinted with the text colour, or the PNG's
+// own colours (colour emoji and flags). Every icon is square (22x22).
+enum { ADDON_IC_TOM = 0, ADDON_IC_COR = 1 };
 
 typedef struct {
   int n;
@@ -205,7 +205,7 @@ static size_t iconeAddon(const char *p, int minimalista, const char **ic,
   if ((len = bandeiraEm((const unsigned char *)p, cc))) {
     const char *nome = minimalista ? NULL : bandeiraNome(cc);
     if (!nome) return 0;   // text: nv_limpar_texto writes the language code
-    *ic = nome; *alt = NULL; *tipo = ADDON_IC_BANDEIRA;
+    *ic = nome; *alt = NULL; *tipo = ADDON_IC_COR;
     return len;
   }
   k = emojiIcone(p, &len);
@@ -391,8 +391,7 @@ static void addonQuebrar(const LinhaAddon *linhas,int nl,AddonDesenho *out,int c
     for(int pc=0;pc<l->n && row<maxLinhas;pc++) {
       const char *s=pecaAddonTexto(l,pc);size_t inicio=0;
       if(l->ic[pc]) {
-        // A flag is 4:3 (28x21), the other icons square (22x22).
-        float iw=l->tipo[pc]==ADDON_IC_BANDEIRA ? 28 : 22;
+        float iw=22;
         if(x+60>w && x>0){row++;x=0;}
         if(row>=maxLinhas || nd>=cap)goto pronto;
         out[nd++]=(AddonDesenho){0,0,(unsigned char)k,(unsigned char)pc,(unsigned char)row,1,x,iw};

@@ -759,7 +759,7 @@ typedef enum {
   AJ_WEBOS_HLS_MODE,
   AJ_WEBOS_HLS_TS,     // HLS test: this TV starts HLS in MPEG-TS, learned by the player (device-local, no row)
   // ICONES DO TEXTO "DO ADDON": 0 Estilo padrao = Twemoji em cores, os simbolos
-  // monocromaticos como glifo e as bandeiras do flagpack; 1 Minimalista = Lucide
+  // monocromaticos como glifo e as bandeiras Twemoji; 1 Minimalista = Lucide
   // na cor do texto, bandeira vira o codigo do idioma. LOCAL, append-only.
   AJ_FONTE_ICONES,
   AJ_N
