@@ -348,6 +348,9 @@ static size_t addonCabe(const char *s, float w, TxtEstilo estilo) {
   while(a<b){size_t m=a+(b-a)/2;if(addonMedir(s,fim[m],estilo)<=w)a=m+1;else b=m;}
   if(!a)return 0;
   size_t k=fim[a-1];
+  // The prefix ends right before a space: every word in it fits whole. Do
+  // not step back to a dot inside the last word ("DDP5." | "1 Atmos").
+  if(s[k]==' ')return k;
   if(s[k]) for(size_t j=k;j>k/2;j--)
     if(strchr(" ._-/|",s[j-1]))return j;
   return k;
@@ -383,16 +386,64 @@ static void arquivoDesenhar(const char *s,float x,float y,float alpha) {
     txt_desenhar_alpha(txt_linha(TXT_PG_FIM,parte,125,125,123,255),x,y+k*FOLHA_ARQ_H,alpha);
   }
 }
+// AN ICON GOES WITH WHAT IT LABELS (from Lsror's PR #9 to NuvioLN-prebuilds,
+// rewritten for these pieces). An icon is the start of its piece and its text
+// follows it; icons with no text of their own are glued to the next one
+// (★★★★☆ 8.1, 🔊 🇬🇧 English). What goes after the icon at `pc`, up to the end
+// of the logical line: `run` = where its text would start, counted from the
+// icon (the glued icons included), `pal` = the first word of that text (up
+// to the first space), `tudo` = the whole text. Returns 1 when text follows
+// the run, 0 when the run ends the line (then `run` is up to the last icon's
+// right edge); `ult` = the run's last piece. Same advances as addonQuebrar:
+// icon 22+8, then 12 per piece.
+typedef struct { float run, pal, tudo; int ult; } AddonDepois;
+static int addonDepois(const LinhaAddon *l,int pc,TxtEstilo estilo,AddonDepois *d) {
+  d->run=d->pal=d->tudo=0;d->ult=pc;
+  for(int j=pc;j<l->n;j++) {
+    const char *t=pecaAddonTexto(l,j);
+    d->ult=j;d->run+=30;
+    if(t[0]) {
+      size_t n=0;while(t[n] && t[n]!=' ')n++;
+      d->pal=(float)addonMedir(t,n,estilo);
+      d->tudo=(float)addonMedir(t,strlen(t),estilo);
+      return 1;
+    }
+    if(j+1>=l->n || !l->ic[j+1]){d->run-=8;return 0;}
+    d->run+=12;
+  }
+  return 0;
+}
 static void addonQuebrar(const LinhaAddon *linhas,int nl,AddonDesenho *out,int cap,
                          int *quantos,int *visuais,float w,TxtEstilo estilo,int maxLinhas) {
   int row=0,nd=0;
   for(int k=0;k<nl && row<maxLinhas;k++) {
     const LinhaAddon *l=&linhas[k];float x=0;
+    int temTexto=0;   // this visual row already has text (not only icons)
+    int colado=-1;    // pieces up to here belong to a run already placed whole
     for(int pc=0;pc<l->n && row<maxLinhas;pc++) {
       const char *s=pecaAddonTexto(l,pc);size_t inicio=0;
       if(l->ic[pc]) {
         float iw=22;
-        if(x+60>w && x>0){row++;x=0;}
+        // The icon starts the next row with its label instead of ending this
+        // one alone ("🔊" here, "DDP5.1" below; "★★" here, "★★☆ 8.1" below):
+        // when the glued icons and the first word of the text after them do
+        // not fit in what is left, the row already has text before the icon,
+        // and the whole unit fits on the row below. A row of flags wider than
+        // a row just flows (it would otherwise move one flag per row), and a
+        // first word wider than a row is cut beside the icon as before. Body
+        // only: the one-row heading has no row below.
+        // Once a run is placed whole (here or on the row below), its other
+        // icons follow without the 60 px check, which would split it.
+        int mover=0,naRun=pc<=colado;
+        if(!naRun && maxLinhas>1) {
+          AddonDepois d;
+          int texto=addonDepois(l,pc,estilo,&d);
+          float xt=x+d.run,unidade=d.run+(texto ? d.pal : 0);
+          int cabe=texto ? xt+d.pal<=w : xt<=w;
+          mover=!cabe && x>0 && temTexto && unidade<=w && (texto ? xt+d.tudo>w : d.ult>pc);
+          if(cabe || mover){colado=d.ult;naRun=1;}
+        }
+        if(x>0 && (mover || (!naRun && x+60>w))){row++;x=0;temTexto=0;}
         if(row>=maxLinhas || nd>=cap)goto pronto;
         out[nd++]=(AddonDesenho){0,0,(unsigned char)k,(unsigned char)pc,(unsigned char)row,1,x,iw};
         x+=iw+8;
@@ -400,7 +451,7 @@ static void addonQuebrar(const LinhaAddon *linhas,int nl,AddonDesenho *out,int c
       while(s[inicio] && row<maxLinhas) {
         size_t cabe=addonCabe(s+inicio,w-x,estilo);
         if(!cabe) {
-          if(x>0){row++;x=0;continue;}
+          if(x>0){row++;x=0;temTexto=0;continue;}
           // An oversized glyph still makes progress at a complete boundary.
           cabe=1;while(s[inicio+cabe] && ((unsigned char)s[inicio+cabe]&0xC0)==0x80)cabe++;
         }
@@ -408,8 +459,8 @@ static void addonQuebrar(const LinhaAddon *linhas,int nl,AddonDesenho *out,int c
         float larg=(float)addonMedir(s+inicio,cabe,estilo);
         out[nd++]=(AddonDesenho){(unsigned short)inicio,(unsigned short)cabe,
           (unsigned char)k,(unsigned char)pc,(unsigned char)row,0,x,fminf(larg,w-x)};
-        inicio+=cabe;x+=larg;
-        if(s[inicio]){row++;x=0;while(s[inicio]==' ')inicio++;}
+        inicio+=cabe;x+=larg;temTexto=1;
+        if(s[inicio]){row++;x=0;temTexto=0;while(s[inicio]==' ')inicio++;}
       }
       x+=12;
     }

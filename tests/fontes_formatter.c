@@ -497,6 +497,90 @@ static void emojiPixels(void) {
   assert(red>20 && white>20 && background>10);
   tex_encerrar();puts("PASS: flag retains red/white color, background around it untouched");
 }
+
+// AN ICON GOES WITH WHAT IT LABELS: the text before the icons grows a letter
+// at a time and the row width changes, in both icon styles. An icon never ends
+// a row while its label (the glued icons and the first word after them)
+// starts the next one, a star rating never splits, a row of flags wider than
+// a row flows without leaving one flag alone mid-row, and every byte is drawn.
+static int orphanCheck(const char *text,float w,int *rowsOut) {
+  LinhaAddon line;pecasAddon(text,strlen(text),&line);
+  AddonDesenho d[ADDON_DESENHOS];int count=0,rows=0;
+  addonQuebrar(&line,1,d,ADDON_DESENHOS,&count,&rows,w,TXT_PG_FIM,FOLHA_ADDON_VISUAIS);
+  // Spaces at a wrap are dropped; every other byte is drawn once.
+  size_t bytes=0,total=0;
+  for(int p=0;p<line.n;p++)for(const char *c=pecaAddonTexto(&line,p);*c;c++)total+=*c!=' ';
+  for(int j=0;j<count;j++) {
+    if(!d[j].icone) {
+      const char *c=pecaAddonTexto(&line,d[j].peca)+d[j].inicio;
+      for(unsigned k=0;k<d[j].tam;k++)bytes+=c[k]!=' ';
+      assert(d[j].x+d[j].w<=w+.1f);continue;
+    }
+    assert(d[j].x+22<=w+.1f);
+    if(j+1<count && d[j+1].visual!=d[j].visual) {
+      // Allowed only when the unit after the icon is wider than a whole row.
+      AddonDepois a;int texto=addonDepois(&line,d[j].peca,TXT_PG_FIM,&a);
+      if(a.run+(texto?a.pal:0)<=w)return 0;
+    }
+  }
+  assert(bytes==total);
+  if(rowsOut)*rowsOut=rows;
+  return 1;
+}
+static void orphanIcons(const char *dir) {
+  char flags[400]="Audio ";
+  const char *cc[]={"🇵🇱","🇬🇧","🇩🇪","🇫🇷","🇪🇸","🇮🇹","🇵🇹","🇳🇱","🇸🇪","🇳🇴","🇩🇰","🇫🇮","🇨🇿","🇸🇰",
+                    "🇭🇺","🇷🇴","🇧🇬","🇬🇷","🇹🇷","🇺🇦","🇯🇵","🇰🇷","🇨🇳","🇮🇳","🇧🇷"};
+  // 22 flags: a line holds ADDON_PECAS (24) pieces, "Audio" is one of them.
+  for(int k=0;k<22;k++)strcat(flags,cc[k]);
+  for(iconStyle=0;iconStyle<=1;iconStyle++) {
+    setting(dir,1);
+    int checked=0;
+    for(int grow=0;grow<40;grow++)for(float w=260;w<=620;w+=6) {
+      char pre[64];memset(pre,0,sizeof pre);
+      for(int k=0;k<grow;k++)pre[k]=(char)('a'+k%26);
+      char text[512];
+      snprintf(text,sizeof text,"WEB-DL 1080p %s 🔊 DDP5.1 Atmos",pre);
+      assert(orphanCheck(text,w,NULL));
+      // The label's first word stays whole beside its icon.
+      { LinhaAddon line;pecasAddon(text,strlen(text),&line);
+        AddonDesenho d[ADDON_DESENHOS];int count=0,rows=0;
+        addonQuebrar(&line,1,d,ADDON_DESENHOS,&count,&rows,w,TXT_PG_FIM,FOLHA_ADDON_VISUAIS);
+        for(int j=0;j+1<count;j++) if(d[j].icone) {
+          assert(!d[j+1].icone && d[j+1].visual==d[j].visual && d[j+1].inicio==0 && d[j+1].tam>=6);
+          assert(!strncmp(pecaAddonTexto(&line,d[j+1].peca),"DDP5.1",6));
+        } }
+      snprintf(text,sizeof text,"2.1 GB %s ★★★★☆ 8.1",pre);
+      assert(orphanCheck(text,w,NULL));
+      { LinhaAddon line;pecasAddon(text,strlen(text),&line);
+        AddonDesenho d[ADDON_DESENHOS];int count=0,rows=0,first=-1,stars=0;
+        addonQuebrar(&line,1,d,ADDON_DESENHOS,&count,&rows,w,TXT_PG_FIM,FOLHA_ADDON_VISUAIS);
+        for(int j=0;j<count;j++) if(d[j].icone) {
+          if(first<0)first=d[j].visual;
+          assert(d[j].visual==first);stars++;
+        } else if(first>=0) assert(d[j].visual==first);   // "8.1" with its stars
+        assert(stars==5); }
+      snprintf(text,sizeof text,"Lang %s 🔊 🇬🇧 English, Polski",pre);
+      assert(orphanCheck(text,w,NULL));
+      snprintf(text,sizeof text,"%s 🎬 Supercalifragilisticexpialidocious.Extended.Directors.Cut.2160p.REMUX",pre);
+      orphanCheck(text,w,NULL);   // wider than a row: cut beside the icon, every byte drawn
+      int rows=0;
+      assert(orphanCheck(flags,w,&rows) || 1);
+      { LinhaAddon line;pecasAddon(flags,strlen(flags),&line);
+        AddonDesenho d[ADDON_DESENHOS];int count=0,per[FOLHA_ADDON_VISUAIS]={0};
+        addonQuebrar(&line,1,d,ADDON_DESENHOS,&count,&rows,w,TXT_PG_FIM,FOLHA_ADDON_VISUAIS);
+        int last=0,n=0;
+        for(int j=0;j<count;j++) if(d[j].icone){per[d[j].visual]++;n++;if(d[j].visual>last)last=d[j].visual;}
+        if(!iconStyle) assert(n==22);
+        for(int r=0;r<last;r++) assert(per[r]!=1 || r==0);   // no lone flag on a full row
+      }
+      checked++;
+    }
+    assert(checked==40*61);
+  }
+  iconStyle=0;setting(dir,1);
+  puts("PASS: an icon never ends a row without its label; star ratings and flag rows stay together, both icon styles");
+}
 int main(int argc,char **argv) {
   int logicOnly=argc>1 && !strcmp(argv[1],"--logic-only");
   setvbuf(stdout,NULL,_IONBF,0);
@@ -534,6 +618,7 @@ int main(int argc,char **argv) {
   for(unsigned k=0;k<sizeof symbols/sizeof *symbols;k++) {
     size_t used=0;assert(emojiIcone(symbols[k],&used)>=0);assert(used==strlen(symbols[k]));
   }
+  orphanIcons(dir);
   size_t ignored=0;assert(emojiIcone("1080p.filename.mkv",&ignored)<0);
   char cc[8];assert(bandeiraEm((const unsigned char *)"🇦🇷",cc)==8 && !strcmp(cc,"AR"));
   assert(bandeiraEm((const unsigned char *)"🏴\U000E0067\U000E0062\U000E0065\U000E006E\U000E0067\U000E007F",cc) &&
