@@ -62,6 +62,10 @@ typedef struct Stream {
   int filtroLido;       // 1 = classificado pelo parser; 0 = origem sintetica
   char descricao[2048];
   char arquivo[512];
+  // 1 = `arquivo` veio de um campo filename (behaviorHints/clientResolve/raw),
+  // 0 = do torrentName ou vazio. So o primeiro escolhe o arquivo do pacote no
+  // debrid (debrid_dica_fonte): o nome do torrent nao e o de arquivo nenhum.
+  int arquivoReal;
   // O QUE O ADDON DECLARA COMO "a mesma fonte" entre episodios:
   // behaviorHints.bingeGroup, a convencao do Stremio. Quem manda o campo
   // resolve o casamento entre episodios SEM heuristica nenhuma — e o proprio

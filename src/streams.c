@@ -691,6 +691,13 @@ void stream_definir_lista(const Stream *l, int qtd) {
 static int selosPacoteDa(Stream *s);
 static void selosAgendar(int ini, int qtd);
 static void textoAddonLimpar(void);
+// O que o addon disse do torrent (nome do arquivo, trackers) vai para o
+// resolvedor do debrid, que monta o magnet e escolhe o arquivo como o NuvioTV.
+static void dicasDebrid(const Stream *v, int qtd) {
+  for (int i = 0; i < qtd; i++)
+    if (v[i].infoHash[0])
+      debrid_dica_fonte(v[i].infoHash, v[i].fileIdx, v[i].arquivoReal ? v[i].arquivo : "", v[i].fontes);
+}
 void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
   int i, k = 0;
   Stream *nova = l && qtd > 0 ? malloc(sizeof(Stream) * (size_t)qtd) : NULL;
@@ -709,6 +716,7 @@ void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
     // "ligue o P2P", nunca fingir que o addon nao mandou nada.
     if (!fonteOferecida(&l[i])) contarDescartada(&l[i]);
   for (i = 0; i < k && nova; i++) { nova[i].selosPacoteVer = 0; filtroCompletar(&nova[i]); filtroEscopo(&nova[i]); }   // os selos saem do fio de fundo (selosAgendar)
+  if (nova) dicasDebrid(nova, k);
   pthread_mutex_lock(&verTrava);
   free(lista); lista = nova; n = nova ? k : 0; atual = -1;
   textoAddonLimpar();
@@ -801,6 +809,7 @@ void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
     return;
   }
   memcpy(lista + n, nova, sizeof(Stream) * (size_t)k);
+  dicasDebrid(nova, k);
   for (i = 0; i < k; i++)
     chave[n + i] = ((unsigned)(ordemAddon < 0 ? 0 : ordemAddon) << 16) | (unsigned)(i & 0xFFFF);
   // Insercao ordenada das novas em `exib`: as de antes ja estao em ordem, e
