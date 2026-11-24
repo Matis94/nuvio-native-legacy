@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real badge worker/readiness and addon draw policy, without SDL or network."""
+"""Real badge worker/readiness and both source-row draw policies, without SDL or network."""
 import os
 from pathlib import Path
 import subprocess
@@ -32,7 +32,7 @@ fixture = r'''
 typedef struct {
  char url[64], rotulo[32]; unsigned short selosPacote[16];
  unsigned char nSelosPacote; unsigned selosPacoteVer;
- unsigned long long badges; int dolbyVision;
+ unsigned long long badges; int dolbyVision; char descricao[64];
 } Stream;
 static Stream rows[1001], *lista=rows;
 static int n=2, pack=0, available=1, schedules, aberta=1;
@@ -83,11 +83,25 @@ static int badges_fonte_hdr_marca(unsigned long long m){(void)m;return 1;}
 enum {FMT_SDR};
 #define FOLHA_SELO_H 24
 static void marca_formato(int f,float x,float y,float h,float r,float g,float b,float a){(void)f;(void)x;(void)y;(void)h;(void)r;(void)g;(void)b;(void)a;}
-static void drawRow(Stream *s){float tx=0,y=0,bw=800,anim=1;int sel=1;
+static int selosPacoteVisiveis(Stream *s){return s->nSelosPacote>0;}
+typedef struct {int w,h;} TxtLinha;
+enum {TXT_PG_FIM};
+static TxtLinha txt_linha_corta(int e,const char *p,int r,int g,int b,int a,float w){(void)e;(void)p;(void)r;(void)g;(void)b;(void)a;(void)w;return (TxtLinha){0,0};}
+static void txt_desenhar_alpha(TxtLinha l,float x,float y,float a){(void)l;(void)x;(void)y;(void)a;}
+// From addon rows: the badge block of desenharCartaoAddon.
+static void drawRowAddon(Stream *s){float tx=0,y=0,bw=800,anim=1;int sel=1;
 @DRAW@
 }
+// From Nuvio rows (the default view): the badge block of corpoFolha, in its own locals.
+static void drawRowNuvio(Stream *s){float tx0=0,cy=0,txtW0=800,mpW=0,t=.78f,lw=0;int sel=1,ehMp4=0;
+ unsigned long long logos=logosDa(s,0);
+@NUVIO@
+ (void)lw;(void)ehMp4;
+}
+static void (*drawRow)(Stream *s);
 static SelosLote *job(int count){SelosLote *l=calloc(1,sizeof *l);assert(l);l->ger=listaGeracao;l->ver=version;l->k=count;return l;}
-int main(void){
+int main(int argc,char **argv){
+ (void)argv;drawRow=argc>1?drawRowNuvio:drawRowAddon;
  int ready=9;strcpy(rows[0].url,"a");strcpy(rows[0].rotulo,"one");rows[0].badges=1;
  assert(selosPacoteEstado(rows,&ready)==0&&!ready&&schedules==1);
  drawRow(rows);assert(!drawnPack&&!drawnLegacy&&schedules==1);
@@ -167,6 +181,10 @@ fixture=fixture.replace("@VIEW@",source[view_start:view_end])
 start = draw.index("  int badgeView=selosVistaDa(")
 end = draw.index("  y=r.y+addonPixel(titleY,pixels);", start)
 fixture = fixture.replace("@DRAW@", draw[start:end])
+# The same scenario runs once per row that draws badges.
+start = source.index("      int selosView = selosVistaDa(")
+end = source.index("      if(ehMp4){ txt_desenhar_alpha(mp,", start)
+fixture = fixture.replace("@NUVIO@", source[start:end])
 with tempfile.TemporaryDirectory(prefix="nuvio-badge-ready-") as directory:
     temp = Path(directory)
     (temp / "test.c").write_text(fixture)
@@ -177,6 +195,7 @@ with tempfile.TemporaryDirectory(prefix="nuvio-badge-ready-") as directory:
     subprocess.run([os.environ.get("CC", "cc"), *flags, "-I" + str(root / "src"),
                     str(temp / "test.c"), "-o", binary], check=True)
     subprocess.run([binary], check=True)
+    subprocess.run([binary, "--nuvio-row"], check=True)
 
     # Exercise the production scheduler too: it must not read/copy a batch on
     # the UI thread. Model reallocations between row snapshot and publication.
