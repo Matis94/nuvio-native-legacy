@@ -32,6 +32,7 @@ cache = source[start:source.index("typedef struct {\n  int declarados", start)]
 fixture = r'''
 #include "linguas.h"
 #include <assert.h>
+#include <stdatomic.h>
 #include <ctype.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -39,7 +40,7 @@ fixture = r'''
 #include <string.h>
 #include <strings.h>
 typedef struct {char audioIdiomas[512],audioRotulos[512];} Stream;
-static Stream *lista;static int n,aberta;static unsigned listaGeracao=1;
+static Stream *lista;static int n,aberta;static unsigned listaGeracao=1;static _Atomic unsigned audioFiltroRevisao;
 static const char *preference="pl";
 static const char *idiomaFiltroAudio(void){return preference;}
 static int evaluations,failAlloc;
@@ -81,6 +82,15 @@ int main(void){
  assert(evaluations==4000);
  listaGeracao++;strcpy(lista[0].audioRotulos,"English");
  assert(temAudioPreferido(&lista[0]) && evaluations==4001);
+ // A renewed source keeps its index and list generation: the cached answer
+ // stays until stream_vod_renovada_aplicar bumps the revision.
+ strcpy(lista[0].audioRotulos,"Polish");
+ assert(temAudioPreferido(&lista[0]) && evaluations==4001);
+ audioFiltroRevisao++;
+ assert(!temAudioPreferido(&lista[0]) && evaluations==4002);
+ strcpy(lista[0].audioRotulos,"English");audioFiltroRevisao++;
+ assert(temAudioPreferido(&lista[0]) && evaluations==4003);
+ evaluations-=2;
  Stream external={.audioIdiomas="Polish",.audioRotulos="English"};
  assert(!temAudioPreferido(&external) && evaluations==4002); // explicit audio wins
  aberta=0;strcpy(lista[0].audioRotulos,"Polish");
@@ -91,7 +101,7 @@ int main(void){
  failAlloc=0;assert(temAudioPreferido(&lista[0]));
  n=1;listaGeracao++;strcpy(lista[0].audioRotulos,"English");assert(!temAudioPreferido(&lista[0]));
  audioFiltroDescartar();free(lista);lista=NULL;n=0;
- puts("PASS: legacy language/alias matching; 39000 repeated checks need only 1950 evaluations; append, replace, preference, declared precedence, external rows, allocation failure and cleanup");
+ puts("PASS: legacy language/alias matching; 39000 repeated checks need only 1950 evaluations; append, replace, renewal, preference, declared precedence, external rows, allocation failure and cleanup");
 }
 '''
 for marker, code in {
