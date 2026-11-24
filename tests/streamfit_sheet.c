@@ -38,6 +38,7 @@ Uint32 SDL_GetTicks(void) { return (Uint32)fakeNow; }
 float gfx_escala_ui(void) { return 1; }
 const char *i18n(const char *s) { return s; }
 int debrid_ativo(void) { return 0; }
+void debrid_dica_fonte(const char *h, int i, const char *a, const char *f) { (void)h; (void)i; (void)a; (void)f; }
 int p2p_ativo(void) { return 0; }
 int selospacote_ativo(void) { return -1; }
 unsigned selospacote_versao(void) { return 1; }
