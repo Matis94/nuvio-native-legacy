@@ -86,7 +86,7 @@ static int   pmSemPlano;
 // (1 = "true") e se o mylist diz que o torrent ainda esta baixando.
 static int   tbSoCache = -1, tbBaixando;
 
-static int arquivosEspeciais, arquivoAnime;
+static int arquivosEspeciais, arquivoAnime, arquivosPastas;
 static char *dup2s(const char *s) {
   char *c = strdup(s);
   if (arquivosEspeciais) {
@@ -264,6 +264,11 @@ char *rede_baixar_st(const char *url, int s, const char *const *cab, int *st) {
   if (strstr(url, "real-debrid.com")) {
     assert(strstr(url, "torrents/info/ABC123"));
     if (arquivoAnime) return strdup("{\"files\":[{\"id\":1,\"path\":\"[SubsPlease] Mushoku Tensei - 05 (1080p).mkv\",\"bytes\":1900000000}],\"status\":\"downloaded\",\"links\":[\"https://real-debrid.com/d/LINK1\"]}");
+    if (arquivosPastas) return strdup("{\"files\":["
+      "{\"id\":1,\"path\":\"/Show.S02E04.1080p/video.mkv\",\"bytes\":2000000000},"
+      "{\"id\":2,\"path\":\"/Show.S02E05.1080p/video.mkv\",\"bytes\":1900000000},"
+      "{\"id\":3,\"path\":\"/Show.S02E05.1080p/sample.mkv\",\"bytes\":30000000}],"
+      "\"status\":\"downloaded\",\"links\":[\"https://real-debrid.com/d/LINK1\"]}");
     return dup2s("{\"id\":\"ABC123\",\"status\":\"downloaded\",\"files\":["
       "{\"id\":1,\"path\":\"/Show.S02E04.1080p.mkv\",\"bytes\":2000000000,\"selected\":0},"
       "{\"id\":2,\"path\":\"/Show.S02E05.1080p.mkv\",\"bytes\":1900000000,\"selected\":0},"
@@ -423,14 +428,27 @@ static void comoNuvioTV(void) {
   debrid_dica_fonte("DEADBEEF", -1, "Outro.S09E09.mkv", "");
   debrid_nova_busca();
   assert(debrid_resolver("DEADBEEF", -1, url, sizeof url) && !strcmp(corpoSelectRD, "files=2"));
-  // filme (sem episodio), nome que nao existe, sem fileIdx: nenhum arquivo,
-  // em vez do maior (como o NuvioTV)
+  // filme (sem episodio), nome que nao existe, sem fileIdx: o maior video
+  // (o NuvioTV nao toca nada aqui; decisao de 2026-11-18: tocar todos)
   debrid_definir_episodio(0, 0);
   debrid_nova_busca();
-  assert(!debrid_resolver("DEADBEEF", -1, url, sizeof url));
+  assert(debrid_resolver("DEADBEEF", -1, url, sizeof url) && !strcmp(corpoSelectRD, "files=1"));
   debrid_dica_fonte("DEADBEEF", -1, "", "");
-  debrid_esquecer();
   OK("como o NuvioTV: magnet com dn e trackers, arquivo pelo nome do addon antes do SxxEyy");
+
+  // Onde o NuvioTV desiste e aqui toca:
+  // torrent de UM video, sem SxxEyy, sem fileIdx, sem nome do addon
+  debrid_definir_episodio(1, 5);
+  arquivoAnime = 1; debrid_nova_busca();
+  assert(debrid_resolver("DEADBEEF", -1, url, sizeof url) && !strcmp(corpoSelectRD, "files=1"));
+  arquivoAnime = 0;
+  // SxxEyy so na pasta: a pasta do episodio, e o video principal, nao o sample
+  debrid_definir_episodio(2, 5);
+  arquivosPastas = 1; debrid_nova_busca();
+  assert(debrid_resolver("DEADBEEF", -1, url, sizeof url) && !strcmp(corpoSelectRD, "files=2"));
+  arquivosPastas = 0;
+  debrid_esquecer();
+  OK("tocar todos: torrent de um video sem SxxEyy, e SxxEyy so no nome da pasta");
 }
 
 static void especiais(void) {

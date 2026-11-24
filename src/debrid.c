@@ -713,18 +713,23 @@ static int ehVideo(const char *nome) {
 }
 
 // ESCOLHA DO ARQUIVO, na ordem do NuvioTV (DebridFileSelection.kt
-// selectDebridFile), so entre os videos:
+// selectDebridFile) enquanto ele acha algo, so entre os videos:
 //   1. o nome que o addon deu (behaviorHints/clientResolve.filename): caminho
 //      igual, ou terminando em "/<nome>", depois so o nome do arquivo; com e
-//      depois sem diferenca de caixa. Mais de um igual = nenhum.
+//      depois sem diferenca de caixa.
 //   2. o episodio: s<T>e<E> ou <T>x<E> (zeros a esquerda livres) no nome do
-//      arquivo, sem letra/numero colado antes nem numero depois. Mais de um =
-//      nenhum.
-//   3. se 1 ou 2 havia o que procurar e nada casou: o fileIdx publicado, ou
-//      nenhum (a falha deixa outra fonte tentar, em vez de tocar o episodio
-//      errado de um pacote).
-//   4. o fileIdx do addon (posicao na lista inteira), se for video.
-//   5. o maior video.
+//      arquivo, sem letra/numero colado antes nem numero depois.
+//   3. o fileIdx do addon (posicao na lista inteira), se for video.
+// Onde o NuvioTV desiste, aqui ainda toca (decisao do dono, 2026-11-18: "tocar
+// todos"):
+//   - em 1 e 2, mais de um igual = o MAIOR deles (o arquivo principal, nao o
+//     sample), em vez de nenhum;
+//   4. o episodio so no nome da PASTA ("Show.S01E05/video.mkv");
+//   5. um video so no torrent: ele (torrent de um arquivo, "Show - 05.mkv"
+//      sem SxxEyy nem fileIdx);
+//   6. sem episodio procurado (filme): o maior video, como antes do NuvioTV.
+// Episodio de PACOTE em que nada aponta o arquivo continua sem nenhum: o maior
+// seria quase sempre o episodio errado, e a falha deixa outra fonte tentar.
 // Devolve o ELEMENTO escolhido (ponteiro para o '{' dele, dentro de `files`)
 // ou NULL.
 //
@@ -768,48 +773,51 @@ static int casaEpisodio(const char *nome, int t, int e) {
   }
   return 0;
 }
+// O maior entre os que casaram: `*el` fica com o maior visto ate aqui.
+static void ficaMaior(const char **el, double *tamEl, const char *p, double tam) {
+  if (!*el || tam > *tamEl) { *el = p; *tamEl = tam; }
+}
 static const char *escolherArquivo(const char *files, int fileIdx,
                                    const char *kNome, const char *kTam, const char *dica) {
-  const char *p, *maior = NULL, *noIndice = NULL;
-  int idx = 0, temporada = -1, episodio = 0, ep;
-  double maiorTam = -1;
+  const char *p, *maior = NULL, *noIndice = NULL, *epNome = NULL, *epPasta = NULL;
+  int idx = 0, temporada = -1, episodio = 0, ep, videos = 0;
+  double maiorTam = -1, epNomeTam = -1, epPastaTam = -1;
   char alvo[512] = "";
   debrid_episodio(&temporada, &episodio);
   ep = temporada >= 0 && episodio > 0;
   if (dica && *dica) { snprintf(alvo, sizeof alvo, "%s", dica); caminhoNormal(alvo); }
   // 1. pelo nome: quatro passadas (caminho / nome do arquivo x caixa)
   for (int modo = 0; alvo[0] && modo < 4; modo++) {
-    const char *achado = NULL; int quantos = 0, ci = modo & 1, soBase = modo >> 1;
+    const char *achado = NULL; double achadoTam = -1; int ci = modo & 1, soBase = modo >> 1;
     for (p = files; p && *p == '{'; p = js_prox(js_fim(p))) {
       char nome[600];
       if (!js_texto(p, js_fim(p), kNome, nome, sizeof nome) || !ehVideo(nome)) continue;
       caminhoNormal(nome);
       int ok = soBase ? igual(baseNome(nome), baseNome(alvo), ci)
                       : igual(nome, alvo, ci) || (strchr(alvo, '/') && terminaEm(nome, alvo, ci));
-      if (ok) { achado = p; quantos++; }
+      if (ok) ficaMaior(&achado, &achadoTam, p, js_num(p, js_fim(p), kTam, 0));
     }
-    if (quantos) return quantos == 1 ? achado : NULL;
+    if (achado) return achado;
   }
-  // 2. pelo episodio; 4/5 na mesma volta
-  {
-    const char *achado = NULL; int quantos = 0;
-    for (p = files, idx = 0; p && *p == '{'; p = js_prox(js_fim(p)), idx++) {
-      char nome[600];
-      if (!js_texto(p, js_fim(p), kNome, nome, sizeof nome) || !ehVideo(nome)) continue;
-      caminhoNormal(nome);
-      if (ep && casaEpisodio(baseNome(nome), temporada, episodio)) { achado = p; quantos++; }
-      if (idx == fileIdx) noIndice = p;
-      double tam = js_num(p, js_fim(p), kTam, 0);
-      if (tam > maiorTam) { maior = p; maiorTam = tam; }
-    }
-    if (quantos) return quantos == 1 ? achado : NULL;
+  // 2-6 numa volta so
+  for (p = files, idx = 0; p && *p == '{'; p = js_prox(js_fim(p)), idx++) {
+    char nome[600];
+    if (!js_texto(p, js_fim(p), kNome, nome, sizeof nome) || !ehVideo(nome)) continue;
+    caminhoNormal(nome);
+    double tam = js_num(p, js_fim(p), kTam, 0);
+    videos++;
+    if (ep && casaEpisodio(baseNome(nome), temporada, episodio)) ficaMaior(&epNome, &epNomeTam, p, tam);
+    else if (ep && casaEpisodio(nome, temporada, episodio)) ficaMaior(&epPasta, &epPastaTam, p, tam);
+    if (idx == fileIdx) noIndice = p;
+    if (tam > maiorTam) { maior = p; maiorTam = tam; }
   }
-  // 3. Diferenca de proposito com o NuvioTV: se o addon PUBLICOU o fileIdx,
-  // ele vale mesmo sem o nome casar (#556: pacote com "Show - 05.mkv", sem
-  // SxxEyy). O NuvioTV falha ai; aqui toca o arquivo que o addon apontou.
-  if (alvo[0] || ep) return fileIdx >= 0 ? noIndice : NULL;
-  if (fileIdx >= 0) return noIndice;                     // 4
-  return maior;                                          // 5
+  if (epNome) return epNome;                             // 2
+  // 3. #556: o fileIdx publicado vale mesmo sem nome/episodio casar (pacote
+  // com "Show - 05.mkv", sem SxxEyy). O NuvioTV falha ai.
+  if (fileIdx >= 0 && noIndice) return noIndice;
+  if (epPasta) return epPasta;                           // 4
+  if (videos == 1) return maior;                         // 5
+  return ep ? NULL : maior;                              // 6
 }
 
 // ---------------------------------------------------------------- Real-Debrid
