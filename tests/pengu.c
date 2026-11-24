@@ -117,6 +117,7 @@ int main(void) {
 
 int p2p_ativo(void) { return 0; }
 int debrid_ativo(void) { return 0; }
+void debrid_dica_fonte(const char *h, int i, const char *a, const char *f) { (void)h; (void)i; (void)a; (void)f; }
 void fontefiltro_classificar(const FonteFiltroEntrada *entrada, FonteFiltroDados *out) {
   (void)entrada; (void)out;
 }
