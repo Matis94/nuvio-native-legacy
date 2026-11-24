@@ -452,36 +452,76 @@ static void urlenc(char *dst, unsigned n, const char *s) {
 }
 
 // ---------------------------------------------------------------- dicas (ver debrid.h)
-#define DICAS_N 512
-typedef struct { char hash[48]; int idx; char arquivo[512]; char fontes[640]; } Dica;
-static Dica dicas[DICAS_N];
-static int dicaProx;
+// Tabela de espalhamento por hash + fileIdx, do tamanho da lista. Era um anel
+// fixo de 512 (616 KB parados): com mais de 512 torrents na lista, os primeiros
+// perdiam nome e trackers. Agora cada dica guarda so o que tem (texto do
+// tamanho real) e a tabela cresce; passou de DICAS_MAX, recomeca vazia (a lista
+// seguinte repoe as suas).
+#define DICAS_MAX 8192
+typedef struct { char hash[48]; int idx; char *arquivo, *fontes; } Dica;
+static Dica *dicas;
+static unsigned dicasCap, dicasN;
 static pthread_mutex_t dicaTrava = PTHREAD_MUTEX_INITIALIZER;
 
+static unsigned dicaChave(const char *h, int idx) {
+  unsigned x = 2166136261u;
+  for (; *h; h++) { x ^= (unsigned char)tolower((unsigned char)*h); x *= 16777619u; }
+  return x ^ (unsigned)idx * 2654435761u;
+}
+// Posicao de (h, idx) na tabela: a dele, ou a vazia onde entraria.
+static Dica *dicaLugar(Dica *t, unsigned cap, const char *h, int idx) {
+  unsigned i = dicaChave(h, idx) & (cap - 1);
+  while (t[i].hash[0] && !(t[i].idx == idx && !strcasecmp(t[i].hash, h))) i = (i + 1) & (cap - 1);
+  return &t[i];
+}
+static void dicasLimpar(void) {
+  for (unsigned i = 0; i < dicasCap; i++) { free(dicas[i].arquivo); free(dicas[i].fontes); }
+  free(dicas); dicas = NULL; dicasCap = dicasN = 0;
+}
+// Cabe mais uma? Dobra a tabela (carga ate 1/2) ou, no teto, recomeca.
+static int dicasEspaco(void) {
+  if ((dicasN + 1) * 2 <= dicasCap) return 1;
+  if (dicasN >= DICAS_MAX) dicasLimpar();
+  unsigned nc = dicasCap ? dicasCap * 2 : 1024;
+  Dica *nt = calloc(nc, sizeof *nt);
+  if (!nt) return 0;
+  for (unsigned i = 0; i < dicasCap; i++)
+    if (dicas[i].hash[0]) *dicaLugar(nt, nc, dicas[i].hash, dicas[i].idx) = dicas[i];
+  free(dicas); dicas = nt; dicasCap = nc;
+  return 1;
+}
+static char *dicaTexto(char *velho, const char *s) {
+  free(velho);
+  return s && *s ? strdup(s) : NULL;
+}
+
 void debrid_dica_fonte(const char *infoHash, int fileIdx, const char *arquivo, const char *fontes) {
-  if (!infoHash || !*infoHash) return;
+  if (!infoHash || !*infoHash || strlen(infoHash) >= sizeof dicas[0].hash) return;
   pthread_mutex_lock(&dicaTrava);
-  Dica *d = NULL;
-  for (int i = 0; i < DICAS_N; i++)
-    if (dicas[i].hash[0] && dicas[i].idx == fileIdx && !strcasecmp(dicas[i].hash, infoHash)) { d = &dicas[i]; break; }
-  if (!d) { d = &dicas[dicaProx]; dicaProx = (dicaProx + 1) % DICAS_N; }
-  snprintf(d->hash, sizeof d->hash, "%s", infoHash);
-  d->idx = fileIdx;
-  snprintf(d->arquivo, sizeof d->arquivo, "%s", arquivo ? arquivo : "");
-  snprintf(d->fontes, sizeof d->fontes, "%s", fontes ? fontes : "");
+  Dica *d = dicasCap ? dicaLugar(dicas, dicasCap, infoHash, fileIdx) : NULL;
+  if (!d || !d->hash[0]) {
+    if (!dicasEspaco()) { pthread_mutex_unlock(&dicaTrava); return; }
+    d = dicaLugar(dicas, dicasCap, infoHash, fileIdx);
+    snprintf(d->hash, sizeof d->hash, "%s", infoHash);
+    d->idx = fileIdx;
+    dicasN++;
+  }
+  d->arquivo = dicaTexto(d->arquivo, arquivo);
+  d->fontes = dicaTexto(d->fontes, fontes);
   pthread_mutex_unlock(&dicaTrava);
 }
 static void dicaDe(const char *infoHash, int fileIdx, char *arq, size_t na, char *fon, size_t nf) {
   if (arq && na) arq[0] = 0;
   if (fon && nf) fon[0] = 0;
-  if (!infoHash) return;
+  if (!infoHash || !*infoHash) return;
   pthread_mutex_lock(&dicaTrava);
-  for (int i = 0; i < DICAS_N; i++)
-    if (dicas[i].hash[0] && dicas[i].idx == fileIdx && !strcasecmp(dicas[i].hash, infoHash)) {
-      if (arq && na) snprintf(arq, na, "%s", dicas[i].arquivo);
-      if (fon && nf) snprintf(fon, nf, "%s", dicas[i].fontes);
-      break;
+  if (dicasCap) {
+    const Dica *d = dicaLugar(dicas, dicasCap, infoHash, fileIdx);
+    if (d->hash[0]) {
+      if (arq && na && d->arquivo) snprintf(arq, na, "%s", d->arquivo);
+      if (fon && nf && d->fontes) snprintf(fon, nf, "%s", d->fontes);
     }
+  }
   pthread_mutex_unlock(&dicaTrava);
 }
 

@@ -417,6 +417,12 @@ static void comoNuvioTV(void) {
   debrid_esquecer();
   debrid_definir_chave("real-debrid", K_RD);
   debrid_dica_fonte("DEADBEEF", -1, "Show.S02E04.1080p.mkv", "tracker:udp://t.example:1337/announce\ndht:xyz");
+  // lista grande: as dicas de outros 600 torrents nao apagam a primeira (era
+  // um anel de 512)
+  for (int d = 0; d < 600; d++) {
+    char h[48]; snprintf(h, sizeof h, "%040d", d);
+    debrid_dica_fonte(h, d % 3 - 1, "outro.mkv", "tracker:udp://o.example:1/announce");
+  }
   debrid_definir_episodio(2, 5);
   assert(debrid_resolver("DEADBEEF", -1, url, sizeof url));
   // o nome que o addon deu vence o SxxEyy (o S02E05 seria o id 2)
