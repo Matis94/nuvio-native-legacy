@@ -117,7 +117,7 @@ static void record(GfxRect r,float red,float green,float blue,float alpha,int ic
  visible[nVisible++]=(DrawCall){r.x,r.y,r.w,r.h,red,green,blue,alpha,icon};
 }
 static int gfx_icone_cor(GfxRect r,const char *s,float a){(void)s;record(r,1,1,1,a,1);return 1;}
-static void gfx_icone_fmt(GfxRect r,const char *s,float red,float green,float blue,float a){(void)s;record(r,red,green,blue,a,1);}
+static void gfx_icone(GfxRect r,const char *s,float red,float green,float blue,float a){(void)s;record(r,red,green,blue,a,1);}
 static TxtLinha txt_linha(TxtEstilo e,const char *s,int r,int g,int b,int a){
  (void)e;(void)r;(void)g;(void)b;(void)a;lookups++;return (TxtLinha){1,(int)strlen(s)*7,fontHeight,0,0};
 }

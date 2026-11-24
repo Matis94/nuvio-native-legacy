@@ -43,9 +43,9 @@ static void addonDesenharPecas(const LinhaAddon *ls,const AddonDesenho *ds,int n
       // the package was already swapped for the tinted Lucide icon when the
       // card was parsed (iconeAddon).
       if(tipo==ADDON_IC_TOM)
-        gfx_icone_fmt(icon,l->ic[d->peca],c/255.f,c/255.f,c/255.f,a);
+        gfx_icone(icon,l->ic[d->peca],c/255.f,c/255.f,c/255.f,a);
       else if(!gfx_icone_cor(icon,l->ic[d->peca],a) && l->alt[d->peca])
-        gfx_icone_fmt(icon,l->alt[d->peca],c/255.f,c/255.f,c/255.f,a);
+        gfx_icone(icon,l->alt[d->peca],c/255.f,c/255.f,c/255.f,a);
     } else {
       char texto[2048];size_t tam=d->tam;
       if(tam>=sizeof texto)tam=sizeof texto-1;
