@@ -999,6 +999,48 @@ static int tbPronto(const char *r) {
 // TorBox deve baixar o que nao tem — sem checkcached (quem chama ja
 // perguntou) e sem add_only_if_cached. `pct` recebe o progresso quando o
 // torrent ainda esta baixando.
+// FALLBACK DO PAINEL (owner 19/11/2026): the normal resolve had an issue
+// (createtorrent refused, the file list not there yet, requestdl failed).
+// The file is looked up as it is on the TorBox dashboard: the account's
+// torrents (fresh lists, up to 10 pages) by this hash, then its file and a
+// requestdl. Not in the account -> 0 and the source is dropped, as before:
+// something not cached is never downloaded. `tidVisto` = the item the normal
+// resolve already tried (its files are read again, fresh).
+static int tbRequestdl(int tid, int fid, char *url, unsigned n);
+static int tbDoPainel(const char *h, int fileIdx, const char *arquivo, int tidVisto, const char *porque,
+                      char *url, unsigned n) {
+  int pg, tid = -1, fid = -1, st = 0;
+  char *r = NULL;
+  for (pg = 0; pg < 10 && tid < 0 && contextoVale(); pg++) {
+    const char *el; int itens = 0;
+    r = debrid_tb_mylist(0, 0, pg, 1, &st);
+    if (!ok2xx(r, st)) { free(r); r = NULL; break; }
+    for (el = js_array(r, NULL, "data"); el && *el == '{'; el = js_prox(js_fim(el)), itens++) {
+      char hh[64] = "";
+      if (js_texto_raiz_em(el, js_fim(el), "hash", hh, sizeof hh) && !strcasecmp(hh, h)) {
+        const char *files = js_array(el, js_fim(el), "files"), *f;
+        tid = (int)js_num(el, js_fim(el), "id", -1);
+        if (files && (f = escolherArquivo(files, fileIdx, "name", "size", arquivo)) != NULL)
+          fid = (int)js_num(f, js_fim(f), "id", -1);
+        break;
+      }
+    }
+    free(r); r = NULL;
+    if (itens < DEBRID_TB_PAGINA) break;
+  }
+  if (tid < 0) {
+    printf("[debrid] TorBox: %s %s; not on your TorBox dashboard either: source dropped\n", h, porque);
+    return 0;
+  }
+  if (fid < 0) {
+    printf("[debrid] TorBox: %s %s; on your dashboard (item %d%s) but no usable video yet: source dropped\n",
+           h, porque, tid, tid == tidVisto ? ", the one just added" : "");
+    return 0;
+  }
+  printf("[debrid] TorBox: %s %s; found on your TorBox dashboard (item %d, file %d): playing that\n", h, porque, tid, fid);
+  return tbRequestdl(tid, fid, url, n);
+}
+
 static int resolverTB(const char *infoHash, int fileIdx, char *url, unsigned n,
                       int baixar, int *pct) {
   char h[80], magnet[4096], arquivo[512], rota[600];
@@ -1051,6 +1093,7 @@ criar:
     // cache entre as duas chamadas) e fora de cache tambem, nao falha.
     int foraC = !baixar && r && (contem(r, "not cached") || contem(r, "not_cached"));
     int v = falha(STB, "createtorrent", st, r); free(r);
+    if (!baixar && !foraC && v == 0 && tbDoPainel(h, fileIdx, arquivo, -1, "createtorrent had an issue", url, n)) return 1;
     return v == 0 && foraC ? FORA : v;
   }
   free(r);
@@ -1077,7 +1120,9 @@ criar:
             && (el = escolherArquivo(files, fileIdx, "name", "size", arquivo)) != NULL)
           fid = (int)js_num(el, js_fim(el), "id", -1);
       } else if (r) {
-        int v = falha(STB, "mylist", st, r); free(r); return v;
+        int v = falha(STB, "mylist", st, r); free(r);
+        if (!baixar && v == 0 && tbDoPainel(h, fileIdx, arquivo, tid, "the new item's file list failed", url, n)) return 1;
+        return v;
       }
       free(r);
       if (fid < 0 || !pronto) sleep(1);
@@ -1091,12 +1136,23 @@ criar:
       return DEBRID_BAIXANDO;
     }
   }
-  if (fid < 0) { printf("[debrid] TorBox: sem video utilizavel em %s\n", h); return 0; }
+  if (fid < 0) {
+    printf("[debrid] TorBox: sem video utilizavel em %s\n", h);
+    // TorBox may need a while to list a just-added torrent's files.
+    return !baixar && tbDoPainel(h, fileIdx, arquivo, tid, "no file list in 3 s", url, n) ? 1 : 0;
+  }
+  { int v = tbRequestdl(tid, fid, url, n);
+    if (v == 0 && !baixar && tbDoPainel(h, fileIdx, arquivo, tid, "requestdl failed", url, n)) return 1;
+    return v; }
+}
 
-  // 4) ESTA E A UNICA ROTA QUE LEVA A CHAVE NA QUERY, e nao por escolha nossa:
-  //    request_download_link poe `token` em add_query, nao em cabecalho. Logo,
-  //    esta URL nunca pode ir para log nem inteira nem em pedaco — o que sai
-  //    no fim de debrid_resolver e so a resposta passada por rede_url_publica.
+// 4) ESTA E A UNICA ROTA QUE LEVA A CHAVE NA QUERY, e nao por escolha nossa:
+//    request_download_link poe `token` em add_query, nao em cabecalho. Logo,
+//    esta URL nunca pode ir para log nem inteira nem em pedaco — o que sai
+//    no fim de debrid_resolver e so a resposta passada por rede_url_publica.
+// 1 = `url` pronta; outro valor = o de falha().
+static int tbRequestdl(int tid, int fid, char *url, unsigned n) {
+  char *r; int st = 0;
   { char u[1200]; const char *cab[1];
     cab[0] = NULL;
     snprintf(u, sizeof u, TB "/torrents/requestdl?token=%s&torrent_id=%d&file_id=%d&redirect=false",
@@ -1104,7 +1160,9 @@ criar:
     r = contextoVale() ? rede_baixar_st(u, 15, cab, &st) : NULL; }
   if (!ok2xx(r, st) || !js_texto_raiz(r, "data", url, n)) {
     // "requestdl" e nao a URL: a URL leva o token (ver acima)
-    int v = falha(STB, "requestdl", st, r); free(r); return v;
+    int v = falha(STB, "requestdl", st, r); free(r);
+    if (url && n) url[0] = 0;
+    return v;
   }
   free(r);
   return 1;
