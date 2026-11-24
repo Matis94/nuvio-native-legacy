@@ -124,6 +124,8 @@ static Stream *lista;
 static int n = 0;
 // Workers publish source mutations; UI caches consume this revision.
 static _Atomic unsigned folhaRevisao;
+// A source renewed in place (same index, same list) drops the audio filter cache.
+static _Atomic unsigned audioFiltroRevisao;
 static void folhaDados(void);
 static void audioFiltroDescartar(void);
 static float linhaTopo(int row);
@@ -2361,7 +2363,8 @@ int stream_vod_renovada_aplicar(int indice, unsigned geracao, const Stream *font
   if (!fonte || !fonte->url[0] || !nv_perfil_sessao_travar(sessao)) return 0;
   pthread_mutex_lock(&verTrava);
   int ok = geracao == listaGeracao && indice >= 0 && indice < n;
-  if (ok) { lista[indice] = *fonte; atomic_fetch_add(&folhaRevisao, 1); }
+  if (ok) { lista[indice] = *fonte; atomic_fetch_add(&folhaRevisao, 1);
+    atomic_fetch_add(&audioFiltroRevisao, 1); }
   pthread_mutex_unlock(&verTrava);
   nv_perfil_sessao_destravar();
   return ok;
@@ -3922,13 +3925,14 @@ static int temAudioPreferidoSemCache(const Stream *s, const char *pref) {
   return !pref[0] || (s->audioIdiomas[0] ? audioDeclaradoEm(s,pref) :
     audioListaEm(s->audioRotulos,sizeof s->audioRotulos,pref));
 }
-// Raw indices survive addon appends. These two immutable audio fields come
-// from the parser; badge/URL workers never change them. One byte per source:
+// Raw indices survive addon appends. These two audio fields come from the
+// parser; badge/URL workers never change them, and a renewed source invalidates
+// this cache through audioFiltroRevisao. One byte per source:
 // 0=unknown, 1=no match, 2=match. Never cache external/temporary Stream values.
 static struct {
   unsigned char *match;
   int cap, total;
-  unsigned generation;
+  unsigned generation, revision;
   char language[96];
 } audioFiltroCache;
 static void audioFiltroDescartar(void) {
@@ -3948,9 +3952,11 @@ static int temAudioPreferido(const Stream *s) {
     if (!next) return temAudioPreferidoSemCache(s, pref);
     audioFiltroCache.match = next; audioFiltroCache.cap = n;
   }
-  if (audioFiltroCache.generation != listaGeracao || strcmp(audioFiltroCache.language, pref) ||
-      audioFiltroCache.total > n) {
+  unsigned revision = atomic_load(&audioFiltroRevisao);
+  if (audioFiltroCache.generation != listaGeracao || audioFiltroCache.revision != revision ||
+      strcmp(audioFiltroCache.language, pref) || audioFiltroCache.total > n) {
     audioFiltroCache.total = 0; audioFiltroCache.generation = listaGeracao;
+    audioFiltroCache.revision = revision;
     snprintf(audioFiltroCache.language, sizeof audioFiltroCache.language, "%s", pref);
   }
   if (audioFiltroCache.total < n) {
