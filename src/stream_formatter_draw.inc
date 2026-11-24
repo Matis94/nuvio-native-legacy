@@ -72,7 +72,7 @@ static GfxRect addonFocoRect(GfxRect r,int row) {
 static void addonPosicoes(const TextoAddon *t, const Stream *s, float base, int bottom,
                            float *title, float *body, float *badges) {
   float bodyHeight = t->nv * FOLHA_ADDON_LD;
-  if (!t->nl) bodyHeight += linhasFaixas(s) * FOLHA_FAIXA_H;
+  (void)s;   // the app's Audio/Subtitles rows are not drawn in From addon
   *title = base + (bottom ? 0 : FOLHA_ADDON_SELOS);
   *body = *title + FOLHA_ADDON_TITULO;
   *badges = bottom ? *body + bodyHeight + (FOLHA_ADDON_SELOS - FOLHA_SELO_H) * .5f : base;
@@ -128,5 +128,4 @@ static void desenharCartaoAddon(int i,int row,GfxRect r,float tx,float tr,
   y=r.y+addonPixel(bodyY,pixels);
   addonDesenharPecas(t->linhas,t->desenhos,t->nd,bodyX,y,bodyW,
                      t->nv*FOLHA_ADDON_LD,TXT_PG_FIM,sel,anim,clipTop,clipBottom);
-  if(!t->nl)desenharFaixas(s,bodyX,y,bodyW,sel,anim);
 }

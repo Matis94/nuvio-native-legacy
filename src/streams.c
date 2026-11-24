@@ -4510,7 +4510,8 @@ static float alturaLinha(int i, int automatica, float abertura) {
     float vis=(float)addonLinhasVisuais(i);
     h=FOLHA_ADDON_TOPO+FOLHA_ADDON_SELOS+FOLHA_ADDON_TITULO+vis*FOLHA_ADDON_LD+FOLHA_ADDON_BASE+
       (temMarca(i,automatica)?FOLHA_ADDON_MARCA:0);
-    if(!vis)h+=linhasFaixas(&lista[i])*FOLHA_FAIXA_H;
+    // No app "Audio:" / "Subtitles:" rows here: the addon's formatter writes
+    // the languages itself (as in Namer03's NuvioLN-prebuilds 7a689ad).
     return h;
   } else {
     // The connection line opens with the focused row even without a file name.

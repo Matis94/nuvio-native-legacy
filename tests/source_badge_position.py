@@ -24,14 +24,13 @@ fixture = r'''
 #include <stdio.h>
 typedef struct {int nv,nl;} TextoAddon;
 typedef struct {int tracks;} Stream;
-static int linhasFaixas(const Stream *s){return s->tracks;}
 @DEFINES@
 @LAYOUT@
 int main(void){
  for(int nv=0;nv<=96;nv++)for(int nl=0;nl<=1;nl++)for(int tracks=0;tracks<=2;tracks++)for(int mark=0;mark<=1;mark++){
   TextoAddon t={nv,nl};Stream s={tracks};
   float base=20+mark*30,title[2],body[2],badges[2];
-  float content=nv*FOLHA_ADDON_LD+(!nl?tracks*FOLHA_FAIXA_H:0);
+  float content=nv*FOLHA_ADDON_LD;   // no app Audio/Subtitles rows in From addon
   float budget=base+FOLHA_ADDON_TITULO+FOLHA_ADDON_SELOS+content+FOLHA_ADDON_BASE;
   for(int bottom=0;bottom<2;bottom++){
    addonPosicoes(&t,&s,base,bottom,&title[bottom],&body[bottom],&badges[bottom]);
@@ -43,7 +42,7 @@ int main(void){
   assert(title[1]==base && badges[1]>=body[1]+content);
   assert(body[0]-body[1]==FOLHA_ADDON_SELOS);
  }
- puts("PASS: Top/Bottom with 0..96 wrapped lines, fallback languages and marked cards fits the identical height budget");
+ puts("PASS: Top/Bottom with 0..96 wrapped lines, with or without language data and marked cards fits the identical height budget");
 }
 '''.replace("@DEFINES@", defines).replace("@LAYOUT@", draw[start:end])
 with tempfile.TemporaryDirectory(prefix="nuvio-badge-position-") as directory:
