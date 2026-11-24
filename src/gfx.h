@@ -421,6 +421,9 @@ void gfx_icone(GfxRect r, const char *nome, float cr, float cg, float cb, float 
 // Local formatter emoji: retain PNG color, using the existing async texture LRU.
 // Returns 0 while unavailable so the caller can draw a monochrome fallback.
 int gfx_icone_cor(GfxRect r, const char *nome, float alpha);
+// Formatter stroke icon (sy_ symbol or Minimalistic Lucide) in the text tint,
+// through the formatter icon cache (the one gfx_icone_cor uses): no queue wait.
+void gfx_icone_fmt(GfxRect r, const char *nome, float cr, float cg, float cb, float ca);
 // 1 if icones/<nome>.png is in the package (a flag without its PNG goes back to
 // the language code), 0 if not, -1 before gfx_icones_dir (unknown: do not
 // remember it). Asks the disk: call when building text, never per frame.
