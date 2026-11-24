@@ -41,7 +41,8 @@ typedef struct {int visual,linha,peca,icone,inicio,tam;float x,w;} AddonDesenho;
 static const char *pecaAddonTexto(const LinhaAddon *line,int p){return line->texto[p];}
 static int icons,texts;
 static GfxRect iconRect,textRect;
-static void gfx_icone(GfxRect r,const char *p,float red,float g,float b,float a){(void)p;(void)red;(void)g;(void)b;assert(a==1);iconRect=r;icons++;}
+static int gfx_icone_cor(GfxRect r,const char *p,float alpha){(void)p;assert(alpha==1);iconRect=r;icons++;return 1;}
+static void gfx_icone(GfxRect r,const char *p,float red,float g,float b,float a){(void)r;(void)p;(void)red;(void)g;(void)b;(void)a;assert(0);}
 static TxtLinha txt_linha(TxtEstilo style,const char *s,int r,int g,int b,int a){(void)style;(void)s;(void)r;(void)g;(void)b;(void)a;return (TxtLinha){80,20};}
 static TxtLinha txt_linha_corta(TxtEstilo style,const char *s,int r,int g,int b,int a,float width){(void)width;return txt_linha(style,s,r,g,b,a);}
 static void txt_desenhar_tom(TxtLinha line,float x,float y,float r,float g,float b,float a){

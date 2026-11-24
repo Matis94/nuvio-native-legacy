@@ -645,7 +645,7 @@ int main(int argc,char **argv) {
     setting(dir,1);assert(ajustes_selos_embaixo()==badgesBottom);
     parserAndCache(dir);geometry(dir);measuredScrollGeometry(dir);
     completeCards(dir,!logicOnly);screenshotCards(dir,!logicOnly);
-    if(!logicOnly){formatterMotionPixels();firstCardScrollPixels(dir);wrappedFilenamePixels();clippedFormatterPixels();}
+    if(!logicOnly){formatterMotionPixels();firstCardScrollPixels(dir);wrappedFilenamePixels();clippedFormatterPixels();emojiPixels();}
 #ifdef NV_SOURCE_PERF_DIAG
     if(!logicOnly)sourceTimingIntegration(dir);
 #endif
