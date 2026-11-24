@@ -138,6 +138,8 @@ int main(void) {
   }
   assert(inativa(AJ_VIDRO_CONTORNO));
   assert(uxRequisito(AJ_VIDRO_CONTORNO) == AJ_VIDRO);
+  // From addon options point at Source text, the setting that enables them.
+  assert(uxRequisito(AJ_FONTE_ICONES) == AJ_FONTE_TEXTO && uxRequisito(AJ_SOURCE_BADGE_POSITION) == AJ_FONTE_TEXTO);
   assert(strstr(ajudaOpcao(AJ_VIDRO_CONTORNO), "Ative a interface de vidro"));
   // 2.0.3 (M3): the line says what it needs and OK turns it on ("OK liga").
   // The dry run touches nothing; the modal stays for shortcuts.
