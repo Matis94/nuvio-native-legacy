@@ -4241,6 +4241,9 @@ static float alturaLinha(int i, int automatica, float abertura) {
     float vis = nl > FOLHA_ADDON_FECHADA ? FOLHA_ADDON_FECHADA + (nl - FOLHA_ADDON_FECHADA) * abertura : (float)nl;
     h = 20 + 40 + vis * FOLHA_ADDON_LD + 18 + (temMarca(i, automatica) ? FOLHA_MARCA_H : 0);
     if (h < 96) h = 96;
+    // No app "Audio:" / "Subtitles:" rows here: the addon's formatter writes
+    // the languages itself (as in Namer03's NuvioLN-prebuilds 7a689ad).
+    return h;
   } else {
     // The connection line opens with the focused row even without a file name.
     float extra = (arquivoDa(&lista[i])[0] ? FOLHA_ARQ_H : 0) + FOLHA_FIT_H * fitLinhas(i);
@@ -6123,7 +6126,6 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
           if(l.w+14+le.w<=nw) txt_desenhar_tom(le,nx+l.w+14,cy+l.h-le.h-3,ce/175.0f,ce/175.0f,ce/175.0f,anim); } } }
     cy+=40;
     if(ajustes_fonte_texto_addon()) {
-      cy+=desenharFaixas(s,tx,cy,tr-tx,sel,anim);
       const TextoAddon *t=textoAddonDa(i);
       const LinhaAddon *ls=t->linhas;
       int nl=t->nl;
