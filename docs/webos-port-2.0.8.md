@@ -1,0 +1,223 @@
+# Nuvio Legacy for LG webOS — 2.0.8 port documentation
+
+Source audit and implementation reference · 24 November 2026
+
+This document describes the webOS feature ports built on the clean 2.0.8 base and what a combined build still needs. The reference for the intended behavior is the current test branch, [`Nuvio_webOS_2.0.8.9`](https://github.com/Matis94/nuvio-native-legacy/tree/Nuvio_webOS_2.0.8.9) at [`06385ee9`](https://github.com/Matis94/nuvio-native-legacy/commit/06385ee9b). Its history contains the snapshot audited on 18 November, [`258a2174`](https://github.com/Matis94/nuvio-native-legacy/commit/258a2174549a7a263feb4223da4a3680f10855c4) on `Nuvio_webOS_2.0.8.8_test`, so permalinks to that revision stay valid. When you review a port, compare each change with its implementation on the test branch to confirm that the behavior and the later fixes carried over. The deliverable is documentation only.
+
+## Branches and reference revisions
+
+| Branch or revision | Role and comparison |
+| --- | --- |
+| [Clean port base `7cac4f25`](https://github.com/Matis94/nuvio-native-legacy/tree/7cac4f25d11931b56c41cfefb952e4e183c45c1a) | The upstream `master` revision used as the clean base for every port below and as the base of PR #749. “Clean 2.0.8” in this document means this revision. |
+| [Upstream release tag `v2.0.8`](https://github.com/iqui27/nuvio-native-legacy/tree/v2.0.8) | The published upstream release, at `87c8b890`. Its episode-identity implementation is older than the one in the port base. The fork also has a separate [`2.0.8` tag](https://github.com/Matis94/nuvio-native-legacy/tree/2.0.8), at `d2fe0f77`. Use the pinned clean base when you reproduce the comparisons. |
+| [`Nuvio_webOS_2.0.8.9`](https://github.com/Matis94/nuvio-native-legacy/tree/Nuvio_webOS_2.0.8.9) | Current test build that combines all of the work below, at `06385ee9`. [Changes since clean base](https://github.com/Matis94/nuvio-native-legacy/compare/7cac4f25...06385ee9b). |
+| [`buffer-dts-dv-test-2.0.8`](https://github.com/Matis94/nuvio-native-legacy/tree/buffer-dts-dv-test-2.0.8) | Playback and buffering base `87f985e9` (the head of [upstream PR #749](https://github.com/iqui27/nuvio-native-legacy/pull/749)), with **Audio from another source** and **experimental webOS HLS** on top. [Changes since clean base](https://github.com/Matis94/nuvio-native-legacy/compare/7cac4f25...buffer-dts-dv-test-2.0.8) · [Changes since the #749 base](https://github.com/Matis94/nuvio-native-legacy/compare/87f985e9...buffer-dts-dv-test-2.0.8). |
+| [`From_addon_Full_formatter`](https://github.com/Matis94/nuvio-native-legacy/tree/From_addon_Full_formatter) | Rich formatter, formatter icons, badges and the source-list optimizations, at `c55f3b86`. [Changes since clean base](https://github.com/Matis94/nuvio-native-legacy/compare/7cac4f25...c55f3b86f). |
+| [`ui_enhancements_2.0.8`](https://github.com/Matis94/nuvio-native-legacy/tree/ui_enhancements_2.0.8) | Startup profile, skip buttons, subtitle opacity, Continue Watching, torrent resolving and MKV chapters, at `c58e215a`. [Changes since clean base](https://github.com/Matis94/nuvio-native-legacy/compare/7cac4f25...c58e215a5). |
+
+> [!NOTE]
+> `Nuvio_webOS_2.0.8-Audio-from-another-source` is no longer needed as a separate port. Its tip, [`c7466818`](https://github.com/Matis94/nuvio-native-legacy/commit/c74668182), is an ancestor of `buffer-dts-dv-test-2.0.8`, which now carries the complete feature and its later fixes. The branch stays only as history.
+>
+> `Source_list_performance_2.0.8` (`593c4429`) is not needed either. `From_addon_Full_formatter` contains all of its optimizations, adapted to the formatter’s drawing path, with its own regression tests.
+
+> [!WARNING]
+> **PRs [#611](https://github.com/iqui27/nuvio-native-legacy/pull/611), [#614](https://github.com/iqui27/nuvio-native-legacy/pull/614) and [#576](https://github.com/iqui27/nuvio-native-legacy/pull/576) must be added manually.** They are not merged into any of the port branches above, and none of these branches brings them in by itself. Add and adapt them by hand on the clean 2.0.8 base, following the section [Upstream PRs #611, #614 and #576](#upstream-prs-611-614-and-576--required-must-be-adapted).
+
+## buffer-dts-dv-test-2.0.8
+
+### Playback and buffering foundation — upstream PR #749
+
+The playback branch improves startup, resume, seeking, track switching and refill recovery for webOS native playback and DTS/TrueHD/Dolby Vision conversion. It keeps useful partial downloads during an active transfer, prioritizes awaited fragments, respects HTTP 429 backoff, reuses resolved URLs and keeps already downloaded data where possible. A refill pauses the current pipeline and resumes once audio/video and a continuous byte reserve are ready. Manual pause, cancellation, seeking, track changes and EOF keep their own handling. Loading and opening overlays follow the active playback session. [PR #749](https://github.com/iqui27/nuvio-native-legacy/pull/749)
+
+The current PR revision supersedes several earlier defaults in its description. **Buffer size** has separate selectors for standard native playback and for DTS/TrueHD/DV7 conversion. Both default to **Standard (1)**, with Parallel 2/3/4 available. The conversion default uses one continuous HTTP connection, drawing on Namer03’s [Tizen buffering work in PR #537](https://github.com/iqui27/nuvio-native-legacy/pull/537). Buffer data, the RAM overlay and the green-button OSD shortcut each have their own switch, off by default. Dolby Vision adds selectable Original audio, AAC stereo or Dolby Digital 5.1 output, and experimental MP4 and P7 mapping options. [PR #749 revision and update history](https://github.com/iqui27/nuvio-native-legacy/pull/749)
+
+The later playback fixes detect TV-native DTS through `tv.model.edidType`, recover DTS tracks missing from the LG native list, and label DTS, DTS-HD and DTS-HD MA separately in the menu. **DTS output: Off** disables app conversion of DTS and TrueHD. A compatible TV can receive native DTS on the Dolby Vision path. For TrueHD with conversion off, that path uses a suitable AC-3/E-AC-3 track in the same language when one exists. Other cases can fall back to the TV player. The branch also corrects HDR10/DV8 HEVC parameter-set handling, keeps each recovered PGS subtitle track selectable, supports zlib-compressed Matroska subtitles, protects playback from subtitle-queue overflow and suppresses the misleading profile-8 notice for unconfirmed P8.1 playback. Logs go through the existing local-network log export. [PR #749 final updates](https://github.com/iqui27/nuvio-native-legacy/pull/749)
+
+### Audio from another source
+
+**From another source** is layered on the #749 playback foundation in this branch. Use the player’s Audio menu to play the audio of another release of the same title while the current source keeps the picture. The port includes the external-audio work from `3ef119cf` through the test branch, with webOS-specific changes for the existing playback adapter and FFmpeg package. [First source implementation](https://github.com/Matis94/nuvio-native-legacy/commit/3ef119cf) · [External-audio port](https://github.com/Matis94/nuvio-native-legacy/commit/55fdc0ab) · [All audio commits on the #749 base](https://github.com/Matis94/nuvio-native-legacy/compare/87f985e9...c74668182)
+
+- **Choose a release and track.** Browse one page of versions with a language-tab bar, an add-on filter scoped to the profile, and a separate track picker for the selected release. Each language tab lists its eligible versions. The chooser groups language tags consistently, ranks candidates for audio by default, and can sort in add-on order or hide duplicate files. Unknown languages and uncached candidates have their own handling. Supported donor containers are MKV/WebM, MP4, AVI and TS. The chooser leaves out unsupported, HLS and non-video entries.
+- **Pick another episode’s versions.** Releases of a series can number episodes differently, so the right audio can sit in another episode’s list. An episode card (LEFT/RIGHT, with the still and episode title) lists the versions of any episode of the season. When the episode differs from the picture, the card says so in amber. Such a pick stays out of the series memory. A failed match whose lengths point to another episode says so. The episode list keeps what the add-ons that answered sent, even when one add-on fails. [`e316b0fb`](https://github.com/Matis94/nuvio-native-legacy/commit/e316b0fb2) · [`4b8d9287`](https://github.com/Matis94/nuvio-native-legacy/commit/4b8d9287e) · [`2b1507c2`](https://github.com/Matis94/nuvio-native-legacy/commit/2b1507c21)
+- **Keep the current picture.** Switch the donor release or track, pick the same file again without a picture reload, or go back to the original audio. The player retries slow donors and debrid placeholder responses, reuses a valid resolved donor address and discards placeholder addresses. In audio-only download mode, indexed formats such as suitable MP4 files fetch only the audio ranges. Other layouts may need the whole file. An independent donor buffer absorbs short network stalls.
+- **Synchronize the releases.** The in-player Audio sync row supports live offsets, manual steps and automatic matching. It can account for supported speed differences and optionally follow timing shifts across a different cut. Follow mode applies corrections at quiet points when it can. **Match automatically** also compares a second track of the picture’s file in the same language (another codec or channel count), including when the versions share no language, and keeps the better one for the session. [`5d090401`](https://github.com/Matis94/nuvio-native-legacy/commit/5d0904012) · [`9ff68756`](https://github.com/Matis94/nuvio-native-legacy/commit/9ff687569)
+- **Remember the series.** **Remember for the next episodes** keeps the chosen version, track identity and usable offset and applies them to later episodes when a compatible release is found. The memory is saved on disk (`audioextserie.txt`), one row per series, account and profile, for up to 50 series; the series used longest ago leaves first. It survives a restart and watching another series in between. Going back to the file’s own audio forgets that series. [Series memory per series and profile](https://github.com/Matis94/nuvio-native-legacy/commit/143dcc849)
+- **Native DTS.** On a TV that declares DTS (`tv.model.edidType`) with DTS conversion off, the other version’s DTS tracks are listed again and go to the TV unchanged, as on the Dolby Vision path. TVs without DTS keep hiding them. Another speed or another cut still converts. [`c7466818`](https://github.com/Matis94/nuvio-native-legacy/commit/c74668182)
+- **Keep language hints in context.** The donor chooser uses declared language metadata first, then guarded release-label hints. Short inferred codes are limited to common release tags, so the `SG` in *Stargate SG‑1* does not create a Sango tab. An apparent Bengali tag on a BenTheMen release is suppressed in the donor chooser. The test branch reverted the separate expansion of the language-name table and kept the BenTheMen fix. [Language inference follow-up](https://github.com/Matis94/nuvio-native-legacy/commit/c7b80a2a) · [BenTheMen fix](https://github.com/Matis94/nuvio-native-legacy/commit/33c4e692) · [Language-table revert](https://github.com/Matis94/nuvio-native-legacy/commit/258a2174)
+
+| External-audio setting | Port default and available options |
+| --- | --- |
+| From another source | On |
+| Versions not in cache | Show dimmed · Hide |
+| Audio sync step | 50 ms · 10 or 100 ms also available |
+| Warn about large files | On · applies to donor files over 20 GB |
+| Download of the audio file | Whole file · Audio only where supported |
+| Remember for the next episodes | On · saved per series, account and profile |
+| Follow through the whole movie | Off |
+| Sync adjusted message | Off |
+| Match automatically at start | On |
+| Hide duplicates | On |
+| Sort like the addons | Off · audio-oriented order by default |
+| Other version buffer | 8 MB · 16 or 32 MB also available |
+
+### Experimental HLS on webOS
+
+The branch adds the HLS path from the test branch, built with `-DNV_WEBOS_HLS_TEST` (`NUVIO_WEBOS_HLS=1` in the workflow). Under **Playback → More options → Audio and video on this TV**, **HLS (experimental)** is a single, device-local switch, Off by default, that applies when a video opens. With HLS Off, the DTS and Dolby Vision P7 conversion options use the existing converter. [HLS commits on this branch](https://github.com/Matis94/nuvio-native-legacy/compare/c74668182...buffer-dts-dv-test-2.0.8)
+
+- **What it serves.** With HLS On, the enabled conversions go through the loopback HLS server: H.264/HEVC with DTS becomes AC-3 5.1, and P7 MKV becomes single-layer P8.1 with the base advertised as `hvc1` and P8.1 signaled through `SUPPLEMENTAL-CODECS` and the Dolby Vision configuration. Enable both conversions for a P7 source whose selected track is DTS. Other Dolby Vision sources (P5, P8, or P7 without the P7 conversion), VP9/AV1, and MP4 Dolby Vision with audio from another source keep the existing converter.
+- **Segment format.** There is one switch; the TV picks fMP4 or MPEG-TS by itself. MPEG-TS segments carry the DOVI registration and the Dolby Vision video descriptor in each PMT. webOS 11 and newer always use fMP4. On webOS 10 and older, the first open uses fMP4; if the player fetches segments for 15 s without starting, or fails before the first frame, the video reopens at the same position in MPEG-TS. The format that starts is remembered on that TV. The former “HLS: MPEG-TS” switch is gone, and a TV that had it on keeps HLS on and starts with MPEG-TS. HLS switched off stays off after a restart.
+- **Audio tracks.** The stream carries one audio track as AC-3 5.1. Choosing another track of the same file keeps the HLS session; the next segments use that track and the player seeks to the current position.
+- **Buffering.** With HLS On, the app’s input buffer is a fixed 32 MiB whatever the **Buffer size** preset, dropping to 16 MiB with little free memory. Every segment request is answered at once, and its body is paced by how far ahead the TV player is: full speed below 10 s or 50 MB ahead (start, seek, rebuffer), 1.25× the content rate below 20 s or 100 MB, then the content rate. After a seek, the player stays paused until 12 s are fetched, with one loading ring and no Trakt pause. Large fMP4 segments are split into 8 MiB fragments. **Show buffer data** reads `HLS buffer: <ready> / 32 MiB · HTTP: <readers> · <rate> Mbps`.
+- **Sources.** HLS needs a seekable source with a keyframe index. If an MKV’s last indexed keyframe is far from the reported end, a bounded tail probe verifies the real end, and an overstated duration is corrected after a verified EOF. A startup or stream error stops playback with an HLS error; turn HLS Off and reopen the video to use the existing converter.
+- **With From another source.** The selected track, saved language, manual offset and stored speed of the donor are used for the AC-3 stream, and the donor shares the 32 MiB buffer (its share set by **Other version buffer**, capped at half). Changing the source, track or offset reloads HLS at the current position. Continuous alignment and **Match automatically** are available with HLS Off.
+
+The temporary network, buffer and pacing logs used during the HLS comparison are removed again at the end of the series. The HLS code in this branch is identical to the test branch; `video.c` differs only outside HLS.
+
+## From_addon_Full_formatter
+
+The formatter port expands the existing **From addon** view into a rich source card. It keeps the release name, formatter body, language/flag and audio details, file size and wrapped filename readable in focused and unfocused cards. It keeps compact rows when appropriate, adapts row height to content and handles Cloud labels and filename tails. Text and artwork share the same pixel grid while scrolling. [Formatter port](https://github.com/Matis94/nuvio-native-legacy/commit/86cbe74d)
+
+**Badge position (From addon)** places the badge row above the source name (**Top**, default) or after the complete formatter description (**Bottom**). Both positions use the same card height and source order. The selected badge pack applies consistently across cards. Badge work is bounded, with shared pack matching, scoped regex modifiers, bounded long rules, and stable artwork and style while a card gains focus or finishes loading. [Source badge-position change](https://github.com/Matis94/nuvio-native-legacy/commit/68446135)
+
+**Source-list optimizations.** The first port also brought the work of the separate performance branch (`435fd032`, `f4b11493`, `593c4429`), cross-checked against it. Arriving add-on batches merge in linear time with a stable sort order; scoring and automatic-selection results are reused; badge work runs on a worker one source at a time, outside the list lock, and publishes each finished row; text and icons outside the visible sheet are not drawn. Declared-audio and release-label matches are cached per source. The webOS source sheet reuses a settled backdrop until its inputs change. Before a video is assigned, the source picker uses the title-details VSync clock, falling back to the existing frame limiter if VSync cannot be enabled; assigned or retained video keeps the player’s pacing, and other platforms keep their existing policy. [`86cbe74d`](https://github.com/Matis94/nuvio-native-legacy/commit/86cbe74d) · [Performance notes on the old branch](https://github.com/Matis94/nuvio-native-legacy/blob/593c4429/tests/SOURCE_PERFORMANCE.md)
+
+Changes added since the first port (`86cbe74d..c55f3b86`):
+
+| Change | Behavior | Commits |
+| --- | --- | --- |
+| Formatter icon set and **Icon style** | Replaces the full Twemoji bundle with Namer03’s smaller Formatter set (about 0.7 MB). New setting under Source text: **Standard** draws emoji in colour with country flags; **Minimalistic** draws Lucide icons in the text colour and writes the language code instead of a flag. Greyed out unless Source text is **From the addon**. Matching tolerates VS15/VS16, skin tones and unknown ZWJ tails; other emoji stay text. | [`c39a31bb`](https://github.com/Matis94/nuvio-native-legacy/commit/c39a31bb5) · [`6ded0cd3`](https://github.com/Matis94/nuvio-native-legacy/commit/6ded0cd3f) |
+| Twemoji flags | Flags come from the same Twemoji set as the colour emoji (262 flags, including England, Scotland and Wales) as square colour icons; Flagpack is removed. | [`ce9dc957`](https://github.com/Matis94/nuvio-native-legacy/commit/ce9dc957d) |
+| ★ as an icon | A star rating such as `★★★★☆` draws five matching stars in both icon styles. | [`26173c22`](https://github.com/Matis94/nuvio-native-legacy/commit/26173c223) · [`c55f3b86`](https://github.com/Matis94/nuvio-native-legacy/commit/c55f3b86f) |
+| Audio-filter cache on link renewal | A source renewed in place starts a new cache revision, so its language match is evaluated again (as `435fd032` did on the old performance branch). | [`5f37ec54`](https://github.com/Matis94/nuvio-native-legacy/commit/5f37ec545) |
+| Icon wrapping | An icon never ends a row while its label starts the next; an icon, the icons glued to it and the first word after them move to the next row together. From Lsror’s PR #9 to NuvioLN-prebuilds. | [`67b341ef`](https://github.com/Matis94/nuvio-native-legacy/commit/67b341ef4) |
+| Badge-position preview | The help panel shows the same source with the badge row at Top and Bottom. The greyed line names **Source text**, and OK switches it on. From Lsror’s PR #9 to NuvioLN-prebuilds. | [`119ea7f9`](https://github.com/Matis94/nuvio-native-legacy/commit/119ea7f9b) · [`bf111675`](https://github.com/Matis94/nuvio-native-legacy/commit/bf1116750) |
+
+## ui_enhancements_2.0.8
+
+### Startup profile, skip buttons and subtitle opacity
+
+| Feature | Behavior | Reference |
+| --- | --- | --- |
+| **Remember last profile** | Device-wide startup preference, off by default. When on, the app can reopen the last valid, unlocked profile. The normal picker and PIN rules still apply when the remembered profile is unavailable or locked. | [`effe6782`](https://github.com/Matis94/nuvio-native-legacy/commit/effe6782) |
+| **Show intro skip button** | Profile-local, on by default. Turn it off to hide the manual **Skip intro** prompt even while player controls are open. | [`1ebc13b7`](https://github.com/Matis94/nuvio-native-legacy/commit/1ebc13b7) |
+| **Show recap skip button** | Profile-local, on by default. Controls the manual **Skip recap** prompt. | [`1ebc13b7`](https://github.com/Matis94/nuvio-native-legacy/commit/1ebc13b7) |
+| **Show outro / credits skip button** | Profile-local, on by default. Outro and credits share one marker type and one manual-button switch. | [`1ebc13b7`](https://github.com/Matis94/nuvio-native-legacy/commit/1ebc13b7) |
+| **Subtitle opacity** | 20 levels, 5–100% in steps of 5 percentage points, for primary and secondary subtitles in the app and native rendering paths. Secondary subtitles can inherit the primary value. Old saved values keep their percentages. | [`238adde6`](https://github.com/Matis94/nuvio-native-legacy/commit/238adde6) |
+
+The three switches control only the manual buttons. Automatic intro, recap and credits skipping and next-episode playback keep their own settings. [UI port](https://github.com/Matis94/nuvio-native-legacy/commit/941c558a)
+
+### Continue Watching and the source sheet
+
+- **Ordering and badges.** A newly aired next episode sorts by its premiere, so it goes to the front and brings a hidden show back. A next episode that aired in the last 7 days shows **New episode**, or **New season** when it opens a season. An unaired next episode shows its air date with the default ordering too. A finished episode no longer pulls the next-up card back to it. [`92662574`](https://github.com/Matis94/nuvio-native-legacy/commit/92662574e) · [`d7413fbf`](https://github.com/Matis94/nuvio-native-legacy/commit/d7413fbfc) · [`eaa5b43d`](https://github.com/Matis94/nuvio-native-legacy/commit/eaa5b43df) · [`c5be5cd4`](https://github.com/Matis94/nuvio-native-legacy/commit/c5be5cd43) · [`5e89aa5c`](https://github.com/Matis94/nuvio-native-legacy/commit/5e89aa5c5)
+- **Resume.** The playing source is saved when its picture is ready, and resuming from the card or the island plays the saved link with **Reuse last link** on, also when **Choose the source on Play** is on. A card for an unfinished episode plays the episode instead of stopping on the title page; for IMDb series it opens the player at once with its own loading screen. Opaque add-on IDs without an episode list still wait. [`fb12a059`](https://github.com/Matis94/nuvio-native-legacy/commit/fb12a059f) · [`eb57a11b`](https://github.com/Matis94/nuvio-native-legacy/commit/eb57a11b2) · [`c7c1eaf2`](https://github.com/Matis94/nuvio-native-legacy/commit/c7c1eaf24)
+- **Back and the player bar.** Back on a source sheet opened by Play returns to the title page and closes the player without the exit fade. The player bar no longer blinks after closing a sheet that stayed open for more than 4 s. [`9cdaf572`](https://github.com/Matis94/nuvio-native-legacy/commit/9cdaf5729) · [`a13c67be`](https://github.com/Matis94/nuvio-native-legacy/commit/a13c67be5) · [`a109bc06`](https://github.com/Matis94/nuvio-native-legacy/commit/a109bc06a)
+
+### Torrent resolving like NuvioTV
+
+Changes by [@Namer03](https://github.com/Namer03), from Namer03/NuvioLN-prebuilds. Torrent streams are read as NuvioTV reads them: the hash comes from `infoHash`, `clientResolve.infoHash`, or a `magnet:`/`torrent://` link in the URL, external URL or `clientResolve.magnetUri`, so magnet-only sources are no longer dropped. Each torrent’s filename and trackers go to debrid (`&dn=` and `&tr=` in the magnet for Real-Debrid, TorBox, Premiumize and AllDebrid) and pick the file in NuvioTV’s order, then by SxxEyy in the folder, the only video, or for movies the largest file. The hints live in a hash table sized to the list. When an automatic TorBox resolve has an issue, the app falls back to the same torrent on the account’s dashboard; uncached sources are dropped, never downloaded. The From addon part of the original change is not included. [`b36bfa9a`](https://github.com/Matis94/nuvio-native-legacy/commit/b36bfa9ac) · [`8df53f19`](https://github.com/Matis94/nuvio-native-legacy/commit/8df53f19f) · [`bcea4fcf`](https://github.com/Matis94/nuvio-native-legacy/commit/bcea4fcf3) · [`8af9d87f`](https://github.com/Matis94/nuvio-native-legacy/commit/8af9d87fc) · [`45a8915f`](https://github.com/Matis94/nuvio-native-legacy/commit/45a8915f4)
+
+### MKV chapters and skip segments — PR #11
+
+Changes by [@Namer03](https://github.com/Namer03), from [PR #11](https://github.com/Matis94/nuvio-native-legacy/pull/11). **Chapters in the player** (device-local, off by default) reads MKV chapters as NuvioTV does, names them in the app language, and adds chapter marks on the seek bar, the chapter name and a chapter row (UP), with pointer and touch support. Skip segments follow NuvioTV’s chapter rules and an online pipeline (IntroDB, Anime-Skip, AniSkip, with TheIntroDB as fallback); provider segments use the file’s exact chapter times. A post-credits scene gets its own **Post credits** label and is told apart from a preview. Episodes say **Skip ending** and movies **Skip credits**. Simkl IDs are cached per show and season and asked only for series with anime evidence. **Anime-Skip ID** sets a personal client ID; empty uses the Nuvio account’s. [PR #11 commits on this branch](https://github.com/Matis94/nuvio-native-legacy/compare/45a8915f4...56972a5de)
+
+### From addon without the app’s Audio/Subtitles rows
+
+In **From addon** mode, the source list no longer adds the app’s own Audio/Subtitles rows; the description shows the formatter text and the name only. **From Nuvio** rows are unchanged. Changes by [@Namer03](https://github.com/Namer03), from Namer03/NuvioLN-prebuilds (the From addon part of `7a689ad`). [`c58e215a`](https://github.com/Matis94/nuvio-native-legacy/commit/c58e215a5)
+
+## Upstream PRs [#611](https://github.com/iqui27/nuvio-native-legacy/pull/611), [#614](https://github.com/iqui27/nuvio-native-legacy/pull/614) and [#576](https://github.com/iqui27/nuvio-native-legacy/pull/576) — required, must be adapted
+
+> [!WARNING]
+> **Add these PRs manually.** They are not part of any port branch and do not come in with a merge of the branches.
+
+> [!IMPORTANT]
+> PRs [#611](https://github.com/iqui27/nuvio-native-legacy/pull/611), [#614](https://github.com/iqui27/nuvio-native-legacy/pull/614) and [#576](https://github.com/iqui27/nuvio-native-legacy/pull/576) are required in the final build. None of the isolated port branches contains all of them; only `Nuvio_webOS_2.0.8.9` does (initial integration [`27773724`](https://github.com/Matis94/nuvio-native-legacy/commit/27773724) and later follow-ups). They cannot be cherry-picked as they are: each must be adapted to the clean 2.0.8 base and to the ported branches, as described below.
+>
+> - [PR #611 — Sources: match audio-language filters against release labels](https://github.com/iqui27/nuvio-native-legacy/pull/611)
+> - [PR #614 — Episodes: publish season tabs with episode cards](https://github.com/iqui27/nuvio-native-legacy/pull/614)
+> - [PR #576 — Episodes: keep canonical identity after metadata updates](https://github.com/iqui27/nuvio-native-legacy/pull/576)
+
+| Item | Clean base `7cac4f25` | Test branch | Port branches |
+| --- | --- | --- | --- |
+| **[#611](https://github.com/iqui27/nuvio-native-legacy/pull/611)** | The Sources audio chip uses declared audio-language data. No release-label fallback, no aggregate reporting. | Declared audio takes precedence. Sources can otherwise match guarded release hints, with counts and a per-source match cache. The donor picker also uses the hints with its own grouping rules. | `From_addon_Full_formatter` has the parser, the Sources fallback, aggregate diagnostics and the match cache. `buffer-dts-dv-test-2.0.8` has the parser and its donor-picker use; its Sources chip still uses declared data. `ui_enhancements_2.0.8` has none. |
+| **[#614](https://github.com/iqui27/nuvio-native-legacy/pull/614)** | The early episode-publication path can publish tabs. A complete-looking list without tabs can short-circuit the next load. | Provisional and final selected lists both publish matching tabs. A cache with cards and no tabs refreshes. The pending-add-on state stays explicit. | None of the port branches includes these episode-list changes. |
+| **[#576](https://github.com/iqui27/nuvio-native-legacy/pull/576)** | Core canonical identity and exact tracking targets are present through `940288b0` and related upstream fixes. | The integration kept that implementation, updated fixtures and later added safeguards around source refresh and source-add-on episode lists. | All branches inherit the base implementation. The test branch’s fixtures and follow-ups are missing. |
+
+### [PR #611](https://github.com/iqui27/nuvio-native-legacy/pull/611) — Sources: match audio-language filters against release labels
+
+**Test-branch behavior.** With a particular audio language selected, the Sources chip first matches declared audio languages. Only a stream without declared audio falls back to release-label evidence. The parser uses the stream’s bounded name, description, title and filename, before rendering truncation. It recognizes language names, supported short codes and flags, including adjacent flags such as `1080p🇹🇷`. Subtitle labels, suffixes and icons keep subtitle evidence separate across ordinary separators and line breaks. Generic Dual/Multi/Dubbed text alone supplies no specific language. Transport URLs, headers and add-on names supply no language evidence. **All** and unresolved **Original** keep the unfiltered behavior. [PR #611](https://github.com/iqui27/nuvio-native-legacy/pull/611) · [Test-branch integration](https://github.com/Matis94/nuvio-native-legacy/commit/27773724)
+
+**Adaptation for clean 2.0.8.** Carry the final `audioRotulos` parser and field through `stream_parse.c`, `stream_audio_rotulos.inc` and `streams.h` into the Sources chip in `streams.c`. Keep the fallback separate from declared track data, metadata rows and playback-track selection. Preserve the existing ranking and the source-exclusion, MP4, cache and selected-add-on behaviors, including the live-source chip exemptions and the stable add-on matching used by the diagnostics. Emit aggregate counts for declared, hinted, unknown, matched and subtitle-only evidence, plus separate blocked/visible counts. The diagnostic contains no release texts, URLs or credentials.
+
+Include the normalized short-code fast path and the match cache. Cache by raw source position, source-list generation and selected language. Reuse entries on valid appends, invalidate them on replacement, preference change or in-place link renewal ([`5f37ec54`](https://github.com/Matis94/nuvio-native-legacy/commit/5f37ec545)), and use the ordinary matcher for temporary stream records or an allocation failure. Use the common-code guard from `c7b80a2a`. The formatter branch already has the final parser with this guard and can supply the Sources chip and its diagnostics. When it is combined with `buffer-dts-dv-test-2.0.8`, keep one parser and keep the donor-only BenTheMen check in the donor chooser. [Cache follow-up](https://github.com/Matis94/nuvio-native-legacy/commit/e13c6e70) · [Common-code guard](https://github.com/Matis94/nuvio-native-legacy/commit/c7b80a2a) · [Donor-only fix](https://github.com/Matis94/nuvio-native-legacy/commit/33c4e692)
+
+**Acceptance cases.** A Turkish flag or supported code in a release label matches when declared audio is missing. Declared English overrides an inferred Turkish label. Subtitle-only Turkish, a generic Multi label and an incidental code in a URL or title produce no Turkish match. The MP4, cache and add-on controls can still hide a matching stream and explain the exclusion in aggregate diagnostics. Confirm identical results after appending providers, replacing the list, renewing a link and changing the preferred language. [Release-label regression](https://github.com/Matis94/nuvio-native-legacy/blob/258a2174/tests/source_audio_language.c) · [Cache regression](https://github.com/Matis94/nuvio-native-legacy/blob/258a2174/tests/source_audio_cache.py)
+
+### [PR #614](https://github.com/iqui27/nuvio-native-legacy/pull/614) — Episodes: publish season tabs with episode cards
+
+**Test-branch behavior.** Every selected episode list publishes its season tabs with the cards, ahead of optional enrichment, both when provisional results appear and when the final list is selected. The tabs come from the list actually kept after replacement or merge, including Specials when present. A cached list with episodes but no tabs is repaired by regular loading or preloading. An empty follow-up leaves usable episodes and their tabs intact. [PR #614](https://github.com/iqui27/nuvio-native-legacy/pull/614) · [Adapted implementation](https://github.com/Matis94/nuvio-native-legacy/commit/27773724)
+
+**Adaptation for clean 2.0.8.** Update the existing `publicarEpisodiosEscolhidos` path in `src/descoberta.c` to publish tabs whenever it has the selected list’s season data. Set `epsParciais` from the real provisional state. Visible tabs can coexist with a pending add-on decision, so playback and tracking never mistake an early list for the final identity. In both `desc_episodios` and `desc_episodios_precarregar`, use the complete-cache fast path only when cards exist, the list is final and at least one season tab exists. Keep the current guards against replacing useful data with an empty result. On `ui_enhancements_2.0.8`, check the result together with the Continue Watching resume path, which plays from the list published before the extras.
+
+**Acceptance cases.** Use a multi-season title such as *Game of Thrones*. Check that tabs and cards become usable together while optional metadata is delayed, a cache with cards and no tabs repairs itself, Specials stay accessible, and an empty response leaves the view usable. Check early and final publication with a delayed preferred add-on and a final list that changes the season topology. [Episode regression fixture](https://github.com/Matis94/nuvio-native-legacy/blob/258a2174/tests/episodiosdup.c)
+
+### [PR #576](https://github.com/iqui27/nuvio-native-legacy/pull/576) — Episodes: keep canonical identity after metadata updates
+
+**Test-branch behavior.** A final selected metadata add-on can supply the canonical season/episode topology even when the initial Cinemeta list looks complete. The app captures episode identity before replacement and carries it through source lookup, source switching, playback, watched-state updates and Trakt scrobbling. It keeps compatible enrichment without folding conflicting numbering schemes together. Exact TVDB targets stay in the persistent watched-state journal across retries and restarts, and unresolved or ambiguous mappings stay deferred. For *Kaiju No. 8*, the final list can replace provisional `S01E13` with canonical `S02E01` without tracking or querying a neighboring episode. [PR #576](https://github.com/iqui27/nuvio-native-legacy/pull/576) · [Core upstream integration in the clean base](https://github.com/iqui27/nuvio-native-legacy/commit/940288b0)
+
+**Adaptation for clean 2.0.8.** On `7cac4f25`, keep the canonical implementation, the saved-source/switch protections and pending-add-on handling. Bring over the regression updates from the final integration and preserve exact Trakt/TVDB routing in the catalog, player and watched-state journal, with the current profile, signed-URL and non-IMDb source-ID handling. A port that starts from the upstream tag `v2.0.8` instead needs the core canonical-identity changes and the later upstream protections first. [Canonical identity merge](https://github.com/iqui27/nuvio-native-legacy/commit/940288b0) · [Source-switch identity fix](https://github.com/iqui27/nuvio-native-legacy/commit/ee42d28c) · [Test-branch fixture integration](https://github.com/Matis94/nuvio-native-legacy/commit/27773724)
+
+Two follow-ups belong in the adaptation:
+
+1. **Avoid a duplicate source refresh when early metadata confirms the same episode.** A bare IMDb series ID is normalized to `tt…:1:1` before any episode is focused, matching the add-on request’s immediate S1E1 fallback. Metadata that confirms the same target keeps the completed source list. A real target change, an explicit refresh and a changed add-on configuration still issue a new request. Non-IMDb IDs are left as they are. [`89564e5c`](https://github.com/Matis94/nuvio-native-legacy/commit/89564e5c)
+2. **Keep source add-ons’ file lists from inflating older seasons or supplying episode artwork.** A file list that passes the catalog compatibility checks may extend the catalog’s last regular season or later seasons. Extra entries in an already listed earlier season make the catalog win. File-list artwork is discarded; catalog stills are used for matching episodes, with the series backdrop as fallback. The regression covers *Lupin* with MediaFusion’s 21/15/14 file entries against the catalog’s 5/5/7, on both the add-on and catalog-first paths. [`97e50292`](https://github.com/Matis94/nuvio-native-legacy/commit/97e50292)
+
+**Acceptance cases.** Start playback from provisional metadata, then replace the list with the final canonical topology. Verify source lookup, switching sources, watched/unwatched updates, Trakt scrobbling and a failed watched-state upload retried after restart. Use a duplicate or ambiguous ID fixture to confirm the player does not guess. Test a late S1E1 confirmation, a real episode change, explicit refresh, add-on changes and the *Lupin* file-list case separately. [Identity fixtures](https://github.com/Matis94/nuvio-native-legacy/tree/258a2174/tests/fixtures/episode_identity_512) · [Refresh regression](https://github.com/Matis94/nuvio-native-legacy/blob/258a2174/tests/source_refresh_identity.py) · [Watched-state journal regression](https://github.com/Matis94/nuvio-native-legacy/blob/258a2174/tests/contapend.c)
+
+## Combining the branches
+
+These items exist only in the test branch, because each needs code from more than one port:
+
+| Item | Needs | Test-branch commit |
+| --- | --- | --- |
+| Continue Watching resumes with the audio from another source (the saved source, version, track and sync) | `ui_enhancements_2.0.8` (Continue Watching) and `buffer-dts-dv-test-2.0.8` (Audio from another source) | [`08f893e7`](https://github.com/Matis94/nuvio-native-legacy/commit/08f893e7b) |
+| One shared #611 parser for the Sources chip and the donor chooser | `From_addon_Full_formatter` and `buffer-dts-dv-test-2.0.8` | [`27773724`](https://github.com/Matis94/nuvio-native-legacy/commit/27773724) and follow-ups |
+| Torrent resolving and MKV chapters next to the formatter and the HLS player | `ui_enhancements_2.0.8` with the other branches | see the sections above |
+
+A combined build should verify the shared `stream_parse.c`, `streams.c`, `player.c`, `ajustes.c` and translation changes together. Product acceptance includes the isolated cases above and a real LG webOS session that crosses source selection, season selection, donor-audio switching, HLS on and off, seeking and resuming playback.
+
+## Validation and remaining device coverage
+
+| Scope | Evidence |
+| --- | --- |
+| Test branch | The `27773724` integration recorded static checks for modified files, scripts, fixtures and 29 languages. Focused host checks passed on the test source for release-label matching, the match cache, episode publication and file-list handling, canonical episode identity, journal retries and source refresh routing. |
+| DTS / TrueHD / Dolby Vision foundation | PR #749 reports host and sanitizer runs and tests on LG C3 and C5, including refill recovery, DTS/DTS-HD identification, PGS track selection and the P8.1 notice fix. [PR #749 validation](https://github.com/iqui27/nuvio-native-legacy/pull/749) |
+| Audio from another source | ARM build and host tests for donor selection, playback, sync, seek, buffering, recovery and the saved series memory (`tests/audioext.c`). Physical LG verification of the port remains open. |
+| Experimental HLS | The branch workflow runs the HLS loopback and stream checks below before the IPK build. Device checks on LG C1 and C5: audio, the TV’s Dolby Vision indicator, seek/resume, memory, and MPEG-TS fallback on webOS 6. |
+| Formatter and source-list optimizations | ARM build, both badge positions, 2,000-source layouts, GLES rendering and motion fixtures, icon-style and badge-readiness fixtures, source performance, backdrop, scroll, selection and VSync tests. Physical LG verification of this branch remains open. |
+| UI enhancements | ARM build; host checks for settings navigation, all eight skip-button switch combinations, cross-process saving and migration of subtitle opacity, Continue Watching ordering and resume, debrid hints (`tests/debrid.c`) and the chapter/segment tests. Physical LG verification of this branch remains open. |
+
+## webOS HLS tests
+
+`tests/webos_hls.sh` runs the real loopback HLS server against generated media, without a TV. The workflow step **WebOS HLS loopback and stream checks** builds the host FFmpeg (`tools/build-dts-ffmpeg.sh` with `NUVIO_DTS_HOST=1`) and runs it whenever `NUVIO_WEBOS_HLS` is `1`.
+
+```bash
+NUVIO_DTS_HOST=1 CC=gcc NUVIO_DTS_ROOT=/tmp/nuvio-webos-hls-ffmpeg \
+  NUVIO_DTS_BUILD=/tmp/nuvio-webos-hls-ffmpeg-build bash tools/build-dts-ffmpeg.sh
+NUVIO_DV_TRUEHD=1 NUVIO_DTS_ROOT=/tmp/nuvio-webos-hls-ffmpeg bash tests/webos_hls.sh
+```
+
+| File | Role |
+| --- | --- |
+| [`tests/webos_hls.sh`](https://github.com/Matis94/nuvio-native-legacy/blob/buffer-dts-dv-test-2.0.8/tests/webos_hls.sh) | Builds the DV7 tool and fixtures, generates DTS, HDR10, P7 FEL/MEL and donor-audio test files with FFmpeg, starts a local HTTP origin, compiles the server and runs the checks. |
+| [`tests/webos_hls.c`](https://github.com/Matis94/nuvio-native-legacy/blob/buffer-dts-dv-test-2.0.8/tests/webos_hls.c) | Small host program that opens a source through `dts_hls_tpk.c`, `dts_remux.c` and `dts_engine.c` with the HLS options (DTS, DV7, MPEG-TS, P7 mapping, buffer size, donor audio) and checks that a closed session releases its reader buffers. |
+| [`tests/webos_hls.py`](https://github.com/Matis94/nuvio-native-legacy/blob/buffer-dts-dv-test-2.0.8/tests/webos_hls.py) | Requests playlists and segments from the server and checks them with `ffprobe` and decoded audio. |
+
+What `tests/webos_hls.py` checks:
+
+- DTS → AC-3 5.1 and P7 FEL/MEL → P8.1 in fMP4: master playlist (`hvc1`, `SUPPLEMENTAL-CODECS`, `VIDEO-RANGE=PQ`), Dolby Vision configuration and RPU, no enhancement layer left, HDR10 metadata, and the RPU mapping in both mapping modes.
+- A long final GOP streams several bounded fMP4 fragments; an overstated MKV duration is corrected from the last packets and track metadata.
+- Audio track changes: AC-3 → longer DTS stays seekable and ends with the picture; a short AC-3 track plays from the requested position without rescanning the video tail; the alternate P7 track plays as AC-3 at a nonzero segment; a change in the same session keeps the init segment and the picture.
+- MPEG-TS: DTS → AC-3 5.1 segments without `#EXT-X-MAP`; P7 → P8.1 with the PMT Dolby Vision descriptor, RPU and no enhancement layer; a DTS track change in place keeps P8.1; out-of-order segment requests (seek).
+- Audio from another source: an external AAC track becomes AC-3 with the chosen track, positive and negative offsets, speed, an out-of-order seek, and the 32/64/128/256 MiB input-ring presets, with the donor’s 8 or 16 MiB share.
+
+Related host tests in the same workflow: `tests/dts_engine.sh`, `tests/dv7_engine.sh` (with TrueHD, fixed audio, cache reuse and P7 mapping variants), `tests/mp4_bd_engine.sh`, `tests/dvaudio_lg.sh` and `tests/ajustes_secoes.sh`, which checks that the HLS and Audio from another source options appear in Settings exactly where intended.
