@@ -545,6 +545,12 @@ int main(int argc,char **argv) {
     assert(used==strlen(FMT_ICONES[k].utf8));
     assert(gfx_icone_existe(FMT_ICONES[k].padrao)==1 && gfx_icone_existe(FMT_ICONES[k].minimalista)==1);
   }
+  // AIOStreams star rating: full, half and empty stars are all the same Noto
+  // glyph set in both styles, so "★★★★☆" draws five matching icons.
+  { const char *stars[]={"★","⯪","☆"};
+    for(int k=0;k<3;k++){size_t used=0;int e=emojiIcone(stars[k],&used);
+      assert(e>=0 && !strncmp(FMT_ICONES[e].padrao,"formatador/sy_",14) &&
+             !strcmp(FMT_ICONES[e].padrao,FMT_ICONES[e].minimalista));} }
   const char *longname="Show.S01E01.2160p.UHD.BluRay.REMUX.HEVC.Dolby.Vision.TrueHD.Atmos.7.1.Polish.Lektor.DUAL.MULTI.Extended.Directors.Cut.Release.Group.FraMeSToR.Full.Filename.End.mkv";
   const ArquivoLayout *arq=arquivoLayout(longname);size_t end=0;
   for(int k=0;k<arq->n;k++){assert(arq->off[k]==end);end+=arq->tam[k];}
