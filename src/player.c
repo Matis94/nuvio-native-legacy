@@ -2688,6 +2688,25 @@ static int lembrarAudio(const char *alvo, const char *url) {
   }
   return fontevolta_guardar_audio(alvo, sessao_usuario(), perfis_ativo(), url, &a);
 }
+// O EPISODIO SEGUINTE AO QUE ACABOU DE TERMINAR (dono, 25/11): o Reproduzir
+// da pagina do serial, logo depois do fim, vale como o Next (app.c). So na
+// RAM e do perfil que assistiu; consumido pelo primeiro Reproduzir.
+static char proximoConcluido[64];
+static int proximoConcluidoPerfil = -1;
+int player_proximo_do_concluido(const char *alvo) {
+  int ok = alvo && alvo[0] && proximoConcluido[0] && proximoConcluidoPerfil == perfis_ativo() &&
+           !strcmp(alvo, proximoConcluido);
+  proximoConcluido[0] = 0;
+  return ok;
+}
+static void lembrarProximoDoConcluido(void) {
+  const CatEp *px = epE > 0 ? player_proximo_episodio() : NULL;
+  proximoConcluido[0] = 0;
+  if (px && cat_id_stream(idxAtual(), px->temporada, px->episodio, proximoConcluido, sizeof proximoConcluido))
+    proximoConcluidoPerfil = perfis_ativo();
+}
+// Test hook for tests/app_next_manual.c: the episode playing now just finished.
+void player_teste_concluiu(void) { lembrarProximoDoConcluido(); }
 static void lembrarFonte(void) {
   const Stream *s = stream_item(stream_atual());
   const char *url = video_url_atual();
@@ -2705,7 +2724,9 @@ static void lembrarFonte(void) {
   }
   cred = credEfetivo();
   if (concluiuAgora(cred)) {
-    fontevolta_esquecer_alvo(alvo, sessao_usuario(), perfis_ativo(), "titulo concluido"); return;
+    fontevolta_esquecer_alvo(alvo, sessao_usuario(), perfis_ativo(), "titulo concluido");
+    lembrarProximoDoConcluido();
+    return;
   }
   // A lista pode ter sido trocada por baixo (a busca da pagina do titulo ao
   // sair, a busca de fundo do Retomar): vale a copia da fonte que tocou.
