@@ -2396,6 +2396,29 @@ static int escolhaDoNext(const char *base, char *prov, unsigned tam) {
   alvoPlayer(alvo, sizeof alvo);
   return !strcmp(alvo, buscaNextAlvo) && fontepref_tocando_de(base, prov, tam, NULL, 0);
 }
+// CONTINUAR ASSISTINDO SEM LINK GUARDADO (dono, 25/11; log: o card do T7E10
+// depois de sair no fim do T7E9 abria a folha, o Next seguia a fonte). O card
+// do proximo episodio — ou o do mesmo episodio com o link vencido — vale como
+// o Next: uma fonte com o bingeGroup ou a release EXATA da ultima que tocou
+// neste titulo sai sozinha, tambem com "Escolher a fonte ao reproduzir";
+// sem ela a folha abre como sempre. Armado depois de renovarListaDoPlayer, que
+// zera buscaNextAlvo com o resto do estado VOD.
+static void cwSeguirUltimaFonte(const char *alvo) {
+  char base[24];
+  int de;
+  if (!alvo || !strchr(alvo, ':') || player_id_canal()[0]) return;
+  idBaseDoTitulo(base, sizeof base);
+  de = base[0] ? fontepref_tocando_semear(base) : 0;
+  if (!de) {
+    printf("[cw] %s: sem link guardado e sem fonte anterior do titulo a seguir\n", alvo);
+    fflush(stdout);
+    return;
+  }
+  snprintf(buscaNextAlvo, sizeof buscaNextAlvo, "%s", alvo);
+  printf("[cw] %s: sem link guardado; segue a fonte do ultimo episodio (%s), como o Next\n", alvo,
+         de == 1 ? "a que tocou agora" : "a escolha guardada do titulo");
+  fflush(stdout);
+}
 static void abrirProximoEpisodio(int t, int e, int apontar) {
   uint64_t sessaoEntrada = nv_perfil_sessao_ler();
   int titulo = player_indice();
@@ -5960,7 +5983,7 @@ void app_atualizar(float dt, Uint32 agora) {
         if (usouPreparo) limparFonteVOD();
         renovarListaDoPlayer();
         if (tocarParteGuardada() || tocarFonteGuardada(deCw)) { preparoEspera = 0; }
-        else aguardandoFonte = 1;
+        else { aguardandoFonte = 1; if (deCw) cwSeguirUltimaFonte(alvoDefinitivo); }
       }
     }
     if (detail_pediu_marcar()) {
