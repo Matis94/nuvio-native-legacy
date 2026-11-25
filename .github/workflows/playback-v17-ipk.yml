@@ -31,8 +31,8 @@ jobs:
       NUVIO_REQUIRE_ALL: '1'
       NUVIO_WEBOS_HLS: '1'
       # Build name: "Nuvio Legacy 2.0.8.9 (<label>)" and the .ipk file name.
-      NUVIO_BUILD_LABEL: "25.11.2026 credits act fix, Play after end"
-      NUVIO_BUILD_SLUG: 25.11.2026-credits-play-after-end
+      NUVIO_BUILD_LABEL: "Trailerio, credits, Play after end"
+      NUVIO_BUILD_SLUG: trailerio-credits-play-after-end
       NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST -DNV_HEVC_SEI_TEST -DNV_WEBOS_HLS_TEST
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -42,6 +42,8 @@ jobs:
       - name: Verify application source
         run: |
           git diff --check
+      - name: Check Trailerio response parsing
+        run: bash tests/trailerio.sh
       - name: Select affected regression suites
         id: tests
         env:
@@ -116,6 +118,8 @@ jobs:
       - name: Install host test dependencies
         timeout-minutes: 6
         run: bash .github/build/host_deps.sh
+      - name: Check Trailerio native playback lifecycle
+        run: bash tests/trailerio.sh --native
       - name: Experimental HEVC SEI compatibility regressions
         if: steps.tests.outputs.full == 'true'
         timeout-minutes: 3
