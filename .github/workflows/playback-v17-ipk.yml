@@ -31,8 +31,8 @@ jobs:
       NUVIO_REQUIRE_ALL: '1'
       NUVIO_WEBOS_HLS: '1'
       # Build name: "Nuvio Legacy 2.0.8.9 (<label>)" and the .ipk file name.
-      NUVIO_BUILD_LABEL: "Trailerio, credits, Play after end"
-      NUVIO_BUILD_SLUG: trailerio-credits-play-after-end
+      NUVIO_BUILD_LABEL: "Trailerio"
+      NUVIO_BUILD_SLUG: trailerio
       NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST -DNV_HEVC_SEI_TEST -DNV_WEBOS_HLS_TEST
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
