@@ -10,16 +10,13 @@ int main(void) {
   assert(ajustes_escopo(AJ_DV_AUDIO_FIXO)==ESC_TV);
   assert(!ajustePortavel(AJ_DV_AUDIO_FIXO) && !ajusteAparelho(AJ_DV_AUDIO_FIXO));
   assert(!ajustes_dv_audio_fixo());
+  // Removed (owner 27/11): hidden everywhere and always the original audio.
   for(int mode=1;mode<=2;mode++) {
     valor[AJ_DV_AUDIO_FIXO]=mode;
-#ifdef NV_DV_FIXED_AUDIO_TEST
-    assert(ajustes_dv_audio_fixo()==mode && !foraDestaPlataforma(AJ_DV_AUDIO_FIXO));
-#else
     assert(!ajustes_dv_audio_fixo() && foraDestaPlataforma(AJ_DV_AUDIO_FIXO));
-#endif
   }
   valor[AJ_DV_AUDIO_FIXO]=77;assert(!ajustes_dv_audio_fixo());
   assert(!strcmp(OPCOES[AJ_DV_AUDIO_FIXO].rotulo,"Dolby Vision audio output"));
-  puts("Fixed DV audio settings: opt-in, invalid value, append-only ID, device-only scope and build gate passed");
+  puts("Fixed DV audio settings: removed row, always original audio, append-only ID and device-only scope passed");
   return 0;
 }

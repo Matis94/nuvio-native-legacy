@@ -1922,7 +1922,7 @@ static const Opcao OPCOES[AJ_N] = {
   ESC("Interface em HDR (teste)", V_VIDRO_FOSCO, 2),
   ACAO("Limpar cache"),
   ESC("Reprodução em túnel", V_VIDRO_FOSCO, 2),
-  ESC("Dolby Vision P7 para P8.1 (experimental)", V_LIGA, 2),
+  ESC("Dolby Vision P7 para P8.1", V_LIGA, 2),
   ESC("Registro na rede local", V_LIGA, 2),                   // local: logRedeLocal
   ESC("Formato no player", V_PLR_FORMATO, 5),          // local: plrFormatoLocal
   ESC("Perfil infantil",                 V_LIGA, 2),             // local: perfilinfantil.c (por perfil)
@@ -3489,7 +3489,9 @@ int ajustes_dv7_mapping(void) {
 }
 int ajustes_mp4_bd_test(void) {
 #if defined(NV_MP4_BD_TEST) && defined(NV_WEBOS) && defined(NV_DV7_CONVERSION)
-  return valor[AJ_MP4_BD_TEST]==0;
+  // Dolby Vision MP4 is part of "Dolby Vision P7 to P8.1" now (owner 27/11):
+  // one switch for MKV and MP4; the old MP4 row is gone.
+  return ajustes_dv7();
 #else
   return 0;
 #endif
@@ -4056,11 +4058,8 @@ void ajustes_webos_hls_ts_lembrar(int ts) {
   gravar();
 }
 int ajustes_dv_audio_fixo(void) {
-#if defined(NV_DV_FIXED_AUDIO_TEST) && defined(NV_WEBOS)
-  int v=valor[AJ_DV_AUDIO_FIXO];return v==1 || v==2 ? v : 0;
-#else
+  // "Dolby Vision audio output" removed (owner 27/11): always the original audio.
   return 0;
-#endif
 }
 int ajustes_hist_conta(void)          { return lig(AJ_HIST_CONTA); }
 int ajustes_social(void)              { return lig(AJ_SOCIAL); }
@@ -7079,9 +7078,8 @@ static int foraDestaPlataforma(int op) {
 #if !defined(NV_WEBOS_HLS_TEST) || !defined(NV_WEBOS)
   if (op == AJ_WEBOS_HLS_MODE || op == AJ_WEBOS_HLS_TS) return 1;
 #endif
-#if !defined(NV_DV_FIXED_AUDIO_TEST) || !defined(NV_WEBOS)
-  if(op==AJ_DV_AUDIO_FIXO) return 1;
-#endif
+  if(op==AJ_DV_AUDIO_FIXO) return 1;   // removed (owner 27/11): always the original audio
+
 #if defined(NV_TPK) || defined(NV_ANDROID) || defined(__EMSCRIPTEN__)
   // Only the webOS converter plays the audio of another version.
   if (op == AJ_EXT_AUDIO || op == AJ_EXT_AUDIO_CACHE || op == AJ_EXT_AUDIO_PASSO || op == AJ_EXT_AUDIO_GRANDE ||
@@ -7090,9 +7088,8 @@ static int foraDestaPlataforma(int op) {
 #if !defined(NV_DV7_MAPPING_TEST) || !defined(NV_WEBOS) || !defined(NV_DV7_CONVERSION)
   if(op==AJ_DV7_MAPPING)return 1;
 #endif
-#if !defined(NV_MP4_BD_TEST) || !defined(NV_WEBOS) || !defined(NV_DV7_CONVERSION)
-  if(op==AJ_MP4_BD_TEST)return 1;
-#endif
+  if(op==AJ_MP4_BD_TEST)return 1;   // part of "Dolby Vision P7 to P8.1" (owner 27/11)
+
 #ifndef NV_ANDROID
   if (op == AJ_FONTE_PRECARREGAR || op == AJ_LEG_SYNC_AUDIO || op == AJ_TUNNELING) return 1;
 #endif
@@ -8434,7 +8431,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_SOCIAL: return "Ligado (padrão): amigos, atividade deles e recomendações. Desligado: tudo isso some, com a fileira de amigos da Home, e o app para de falar com o serviço social. Salvos e Avisos continuam. Vale só para este perfil.";
     case AJ_DV_MKV: return "Arquivos MKV em Dolby Vision perfil 5 ou 8 tocam com o Dolby Vision ligado, em vez de HDR10. O áudio Dolby Digital e Dolby Digital Plus vai direto para a TV. Se a conexão não acompanhar, o vídeo continua em HDR10. Só em TVs LG com webOS 4 ou mais novo.";
     case AJ_WEBOS_HLS_MODE: return "Use HLS fMP4 or MPEG-TS for the DTS and Dolby Vision P7 conversions. HLS outputs Dolby Digital (AC-3). Can help on some devices. Use only if you have issues. Reopen the video to apply.";
-    case AJ_DV7: return "Converte MKV Dolby Vision perfil 7 para 8.1. Mantém o vídeo base e os metadados dinâmicos; descarta a camada de melhoria, incluindo FEL. Vale para o próximo vídeo.";
+    case AJ_DV7: return "Converte MKV e MP4 Dolby Vision perfil 7 para 8.1. Mantém o vídeo base e os metadados dinâmicos; descarta a camada de melhoria, incluindo FEL. Vale para o próximo vídeo.";
     case AJ_DV_AUDIO_FIXO: return "Original audio may reload video when switching formats. AAC stereo / Dolby Digital 5.1 converts supported tracks for smoother switching. Conversion does not preserve lossless audio or Atmos/DTS:X metadata. Reopen the video to apply.";
     case AJ_MP4_BD_TEST: return "Helps play compatible Dolby Vision MP4 files that fail to open normally. Off by default. Reopen the video to apply.";
     case AJ_DV7_MAPPING: return "Test P7 to P8.1 conversion with luma/chroma mapping preserved. May alter colors or brightness; does not restore FEL. Off uses standard conversion. Reopen the video to apply.";

@@ -63,12 +63,8 @@ static const Item TELA[] = {
       OPC(AJ_DV7_MAPPING),
 #endif
 #endif
-#if defined(NV_MP4_BD_TEST) && defined(NV_WEBOS) && defined(NV_DV7_CONVERSION)
-      OPC(AJ_MP4_BD_TEST),
-#endif
-#if defined(NV_DV_FIXED_AUDIO_TEST) && defined(NV_WEBOS)
-      OPC(AJ_DV_AUDIO_FIXO),
-#endif
+      // Dolby Vision MP4 is part of P7 to P8.1, and the DV audio output row is
+      // gone (owner 27/11).
 #ifndef __EMSCRIPTEN__
       // Audio from another version (owner, 07/11): right under the Dolby
       // Vision audio output; one row, its options in its sheet (eaAbrir).

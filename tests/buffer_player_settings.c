@@ -28,7 +28,7 @@ int main(void) {
   assert(AJ_SHOW_SKIP_CREDITS==AJ_SHOW_SKIP_RECAP+1);
   assert(AJ_EXT_AUDIO==AJ_SHOW_SKIP_CREDITS+1);
   assert(AJ_EXT_AUDIO_BUFOR==AJ_EXT_AUDIO_ORDEM+1);
-  assert(AJ_N==AJ_EXT_AUDIO_BUFOR+1);
+  assert(AJ_N==AJ_ANIMESKIP_ID+1);
   assert(!strcmp(CHAVE[AJ_REMEMBER_PROFILE],"rememberLastProfileLocal"));
   assert(ajustes_escopo(AJ_REMEMBER_PROFILE)==ESC_TV && !dePerfil(AJ_REMEMBER_PROFILE));
   assert(!ajustePortavel(AJ_REMEMBER_PROFILE) && !ajusteAparelho(AJ_REMEMBER_PROFILE));
@@ -165,15 +165,16 @@ int main(void) {
   uxRestaurar=1;uxAplicar();
   assert(!uxEditor && !ajustes_buffer_dados() && !ajustes_ram_overlay() && !ajustes_ram_verde() && ajustes_buffer_preset()==0);
   assert(ajustes_buffer_native_connections()==1 && ajustes_buffer_conversion_connections()==1);
-  // Fixed audio preference uses the actual UI save/reload path, not just a getter.
-  uxAbrirEditor(AJ_DV_AUDIO_FIXO);assert(uxEditor==1);
-  uxPendente=1;uxAplicar();assert(ajustes_dv_audio_fixo()==1);
-  valor[AJ_DV_AUDIO_FIXO]=0;ajustes_dir(dir);assert(ajustes_dv_audio_fixo()==1);
+  // "Dolby Vision audio output" is gone (owner 27/11): no row, always the original audio.
+  valor[AJ_DV_AUDIO_FIXO]=1;assert(ajustes_dv_audio_fixo()==0 && foraDestaPlataforma(AJ_DV_AUDIO_FIXO));
+  valor[AJ_DV_AUDIO_FIXO]=0;
 #ifdef NV_MP4_BD_TEST
-  assert(!ajustes_mp4_bd_test());
-  uxAbrirEditor(AJ_MP4_BD_TEST);assert(uxEditor==1);
-  uxPendente=0;uxAplicar();assert(ajustes_mp4_bd_test());
-  valor[AJ_MP4_BD_TEST]=1;ajustes_dir(dir);assert(ajustes_mp4_bd_test());
+  // Dolby Vision MP4 follows "Dolby Vision P7 to P8.1" (one switch, owner 27/11).
+  assert(foraDestaPlataforma(AJ_MP4_BD_TEST));
+  { int antes=valor[AJ_DV7];
+    valor[AJ_MP4_BD_TEST]=0;valor[AJ_DV7]=1;assert(!ajustes_mp4_bd_test());
+    valor[AJ_MP4_BD_TEST]=1;valor[AJ_DV7]=0;assert(ajustes_mp4_bd_test());
+    valor[AJ_DV7]=antes; }
 #endif
   // A failed immediate save restores the visible and live toggle state.
   open_buffer();switch_row();
