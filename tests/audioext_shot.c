@@ -16,6 +16,7 @@
 #include "video.h"
 #include "audioext.h"
 #include "fontefiltro.h"
+#include "doadorfontes.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <assert.h>
@@ -24,6 +25,7 @@
 #include <string.h>
 #include <time.h>
 
+void faixas_shot_scan(const void *faixas, int n);
 static GLuint fbo, fboTex;
 static int LW = 1920, LH = 1080;
 static const char *saida;
@@ -259,6 +261,23 @@ int main(int argc, char **argv) {
     audioext_dopasuj_resultado(0, &f); }
   tecla(SDLK_RETURN); estado(); quadros(20);
   salvar("audio-sync-editor");
+  // 3a. Scan again's picker with a remux's twelve tracks: its own page in the
+  // editor, the rows a window that follows the focus.
+  { static const struct { const char *l, *c; int ch; } fx[12] = {
+      { "en", "truehd", 8 }, { "en", "ac3", 6 }, { "fr", "dts", 6 }, { "fr", "dts", 6 }, { "de", "dts", 6 }, { "de", "dts", 6 },
+      { "it", "dts", 6 }, { "it", "dts", 6 }, { "es", "dts", 6 }, { "es", "dts", 6 }, { "ja", "dts", 6 }, { "ja", "dts", 6 } };
+    DoaRendicao r[12];
+    memset(r, 0, sizeof r);
+    for (int i = 0; i < 12; i++) {
+      snprintf(r[i].lingua, sizeof r[i].lingua, "%s", fx[i].l); snprintf(r[i].codec, sizeof r[i].codec, "%s", fx[i].c);
+      r[i].canais = fx[i].ch; r[i].si = i + 1;
+    }
+    faixas_shot_scan(r, 12); estado(); quadros(10);
+    salvar("audio-sync-scan-again");
+    for (int i = 0; i < 11; i++) tecla(SDLK_DOWN);
+    estado(); quadros(10);
+    salvar("audio-sync-scan-again-scrolled");
+    tecla(SDLK_ESCAPE); estado(); quadros(10); }
   tecla(SDLK_RIGHT);                          /* +100 ms (the step) */
   assert(audioext_offset_ms() == 250);
   tecla(SDLK_DOWN); tecla(SDLK_RIGHT);        /* step 1 s */

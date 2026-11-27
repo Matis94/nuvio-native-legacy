@@ -502,7 +502,7 @@ static unsigned sincAutoVisto;
 // editor with Auto and the file's own audio tracks; OK on one keeps it for
 // this show (audioext) and runs the whole sync again with it. Back closes it.
 #define SCAN_MAX 12
-static int scanPag, scanFoco, scanN;
+static int scanPag, scanFoco, scanN, scanRol;
 static DoaRendicao scanF[SCAN_MAX];
 static const int SED_PASSOS[] = { 10, 100, 1000, 10000, 60000, 600000 };
 static int volFocavel(void) { return cacheboost_suportado(); }
@@ -1524,9 +1524,19 @@ static int scanAtual(void) {
 }
 static void scanAbrir(void) {
   scanN = doa_faixas_arquivo(scanF, SCAN_MAX);
-  scanPag = 1; scanFoco = scanAtual();
+  scanPag = 1; scanFoco = scanAtual(); scanRol = 0;
   printf("[ext-audio] scan again: the picker opens (%d of the file's tracks, now row %d)\n", scanN, scanFoco); fflush(stdout);
 }
+#ifdef NV_SHOT_HOOKS
+// Captures: the Scan again picker over the open sync editor, with these tracks
+// as the file's (DoaRendicao[n]).
+void faixas_shot_scan(const void *faixas, int n) {
+  if (n > SCAN_MAX) n = SCAN_MAX;
+  memcpy(scanF, faixas, sizeof *scanF * (size_t)(n > 0 ? n : 0));
+  scanN = n > 0 ? n : 0;
+  scanPag = 1; scanFoco = scanAtual(); scanRol = 0;
+}
+#endif
 static void scanTecla(SDL_Keycode k) {
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE) { scanPag = 0; return; }
   if (k == SDLK_UP) { if (scanFoco > 0) scanFoco--; return; }
@@ -2705,22 +2715,38 @@ static float alturaSinc(void) {
 }
 #define SCAN_LN_H 58.0f
 #define SCAN_W 470.0f
+// SCAN AGAIN PICKER: a card on the Scan again row's right side, between the
+// editor's title and its footer. With more tracks than fit, the rows are a
+// window that follows the focus (Up/Down) and a scrollbar on the card's right
+// edge shows where it is (a remux has a dozen tracks).
 static void overlayScan(GfxRect c, GfxRect linha, float a) {
-  float ar, ag, ab, h = 14.0f + 40.0f + (scanN + 1) * SCAN_LN_H + 12.0f, x, y;
-  int atual = scanAtual();
+  float ar, ag, ab, x, y, h, topo = c.y + IL_PAD_Y + IL_TIT_H + 6.0f, base = c.y + c.h - IL_PAD_Y - IL_PE_H - 8.0f;
+  int atual = scanAtual(), n = scanN + 1, vis = (int)((base - topo - 14.0f - 40.0f - 12.0f) / SCAN_LN_H), fim, rolar;
   ajustes_acento(&ar, &ag, &ab);
-  // The editor stays as it is; the card sits on the Scan again row's right
-  // side, centred on it, inside the body.
+  if (vis < 1) vis = 1;
+  if (vis > n) vis = n;
+  rolar = n > vis;
+  if (scanFoco < scanRol) scanRol = scanFoco;
+  else if (scanFoco >= scanRol + vis) scanRol = scanFoco - vis + 1;
+  if (scanRol > n - vis) scanRol = n - vis;
+  if (scanRol < 0) scanRol = 0;
+  h = 14.0f + 40.0f + vis * SCAN_LN_H + 12.0f;
   x = linha.x + linha.w - SCAN_W - 8.0f;
   y = linha.y + linha.h * 0.5f - h * 0.5f;
-  if (y + h > c.y + c.h - IL_PE_H - 8.0f) y = c.y + c.h - IL_PE_H - 8.0f - h;
-  if (y < c.y + 8.0f) y = c.y + 8.0f;
+  if (y + h > base) y = base - h;
+  if (y < topo) y = topo;
   plrui_material((GfxRect){ x, y, SCAN_W, h }, 18.0f, 1, a);
   { TxtLinha t = txt_linha(TXT_G18R, i18n("Match against"), 243, 242, 239, 160);
     txt_desenhar_alpha(t, x + 22.0f, y + 14.0f + (40.0f - (float)t.h) * 0.5f, a); }
   y += 14.0f + 40.0f;
-  for (int i = 0; i <= scanN; i++, y += SCAN_LN_H) {
-    GfxRect r = { x + 8.0f, y, SCAN_W - 16.0f, SCAN_LN_H };
+  if (rolar) {   // the scrollbar: the track, and the thumb for the rows shown
+    float th = vis * SCAN_LN_H, tx = x + SCAN_W - 12.0f;
+    gfx_cor((GfxRect){ tx, y, 4.0f, th }, 0.0f, 1, 1, 1, 0.10f * a);
+    gfx_cor((GfxRect){ tx, y + th * (float)scanRol / (float)n, 4.0f, th * (float)vis / (float)n }, 0.0f, 1, 1, 1, 0.55f * a);
+  }
+  fim = scanRol + vis;
+  for (int i = scanRol; i < fim; i++, y += SCAN_LN_H) {
+    GfxRect r = { x + 8.0f, y, SCAN_W - 16.0f - (rolar ? 12.0f : 0.0f), SCAN_LN_H };
     int sel = i == scanFoco, cc = sel ? 255 : 219;
     char nome[96], val[64];
     float dir = r.x + r.w - 14.0f;
@@ -2823,7 +2849,7 @@ static void corpoSinc(GfxRect c, float a) {
   if (scanPag && linhaScan.w > 0) {
     float yc = c.y + c.h - IL_PAD_Y - IL_PE_H * 0.5f;
     const char *k[2] = { "OK", "Voltar" };
-    const char *rt[2] = { "Scan again", "Voltar" };
+    const char *rt[2] = { "Scan again", "Cancel" };
     overlayScan(c, linhaScan, a);
     plrui_dicas(k, rt, 2, x0 + w - 10.0f, yc, 1, a);
     return;
