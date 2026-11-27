@@ -55,6 +55,7 @@ struct DtsPlayback {
   size_t picture_last_size;
 #endif
   int allow_p7, dv, starved; /* Dolby Vision path: passthrough audio, starvation fallback. */
+  int feed_dv; /* HDR10 base of a Dolby Vision MP4: the native load leaves the DV route, the audio keeps its passthrough policy. */
   pthread_t thread;
   pthread_mutex_t lock;
   pthread_cond_t wake;
@@ -216,7 +217,7 @@ static void rest(DtsPlayback *p) {
  * AC-3 and E-AC-3 pass through. The TrueHD experiment converts its audio;
  * anything else belongs to the native player. */
 static int codecFeeds(const DtsPlayback *p, const char *codec) {
-  return nv_dts_audio_feeds_off(codec,p->dv,dts_engine_dts_off());
+  return nv_dts_audio_feeds_off(codec,p->dv || p->feed_dv,dts_engine_dts_off());
 }
 static int trackMatches(DtsPlayback *p, const DtsTrack *t) {
   const char *selected_codec = audioinfo_codec(p->selected.codec);
@@ -296,8 +297,11 @@ static int prepareModePrimed(DtsPlayback *p, int stream, int core, double target
   }
   /* Dolby Vision MP4 with "Dolby Vision P7 to P8.1" off: the engine plays the
    * HDR10 base layer, so the native load is a plain HEVC HDR10 one. */
+  /* The engine keeps its Dolby Vision audio and read policy (the MP4 is
+   * refused by the TV player, so AC-3/E-AC-3 must still pass through here:
+   * owner's log 27/11, "Cannot safely identify the selected DTS track"). */
   if(p->dv && info && dts_engine_hdr10_base(p->engine)) {
-    p->dv=0;dts_engine_dv(p->engine,0);
+    p->dv=0;p->feed_dv=1;
     nativeEvent(p,"{\"dtsStage\":{\"name\":\"prepared-hdr10-base-route\"}}");
   }
   int pct_resume=p->resume_pct>0;

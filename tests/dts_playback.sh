@@ -20,7 +20,7 @@ fi
 for scenario in external-audio external-seamless late-dv hidden-dts-first hidden-dts-second hidden-dts-dv url-limit url-limit-dv;do "$tmp/test" "$scenario";done
 if [[ ${NV_TEST_P7_MAPPING:-0} == 1 ]];then "$tmp/test" p7-mapping;exit;fi
 if [[ ${NV_TEST_MP4:-0} == 1 ]];then
- for scenario in mp4-seek-series mp4-seek-off mp4-seek-timeout mp4-seek-paused mp4-seek-cancel mp4-seek-audio;do "$tmp/test" "$scenario";done
+ for scenario in mp4-hdr10-base mp4-seek-series mp4-seek-off mp4-seek-timeout mp4-seek-paused mp4-seek-cancel mp4-seek-audio;do "$tmp/test" "$scenario";done
  exit
 fi
 for scenario in audio-hold-ready audio-hold-gap audio-hold-paused audio-hold-deadline audio-hold-cancel audio-hold-readwait audio-hold-total fixed-aac fixed-ac3 fixed-aac-paused fixed-ac3-paused fixed-refused fixed-invalid fixed-nondv fixed-rejected handoff-format handoff-paused handoff-cancel handoff-disabled handoff-refused handoff-prime-error; do

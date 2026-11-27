@@ -31,7 +31,7 @@ static int hold_fixture,hold_deadline;
 static atomic_int hold_slow_reads,hold_no_clock;
 static atomic_llong hold_wall_offset;
 static atomic_int handoff_cancelled;
-static int last_p7,mp4_fixture,mp4_seek_case;
+static int last_p7,mp4_fixture,mp4_seek_case,hdr10_fixture;
 static const char *expected_url="fixture://movie";
 static atomic_int mp4_no_clock;
 #ifdef DTS_REFILL_FIXTURE
@@ -76,7 +76,9 @@ void dts_engine_allow_p7(DtsEngine *e,int on) { (void)e; (void)on;
 }
 void dts_engine_dv(DtsEngine *e,int on) { (void)e; last_dv=on; }
 void dts_engine_mp4_test(DtsEngine *e,int on) { (void)e;assert(on==mp4_fixture); }
-int dts_engine_hdr10_base(DtsEngine *e) { (void)e; return 0; }   /* the HDR10 base route is covered by mp4_bd_engine/mp4_p8_engine */
+/* The HDR10 base layer itself is covered by mp4_bd_engine/mp4_p8_engine;
+ * here only the session's route (mp4-hdr10-base). */
+int dts_engine_hdr10_base(DtsEngine *e) { (void)e; return hdr10_fixture; }
 void dts_engine_dv_audio(DtsEngine *e,int mode) { e->dv_audio=mode; }
 static void fixedInfo(DtsEngine *e) {
  if(e->dv_audio) {
@@ -159,6 +161,10 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int stream,
   strcpy(e->info.tracks[2].codec,"ac3");strcpy(e->info.tracks[2].language,"ru");
   strcpy(e->info.tracks[3].language,"ru");e->info.tracks[3].channels=6;
   if(truehd_fixture)strcpy(e->info.tracks[3].codec,"truehd");
+ }
+ if(hdr10_fixture) {
+  /* A Blu-ray MP4's first audio is AC-3 (owner's log 27/11). */
+  strcpy(e->info.tracks[1].codec,"ac3");e->info.tracks[1].channels=6;
  }
  if(scenario==MAPPING_BAD) { e->info.tracks[4]=e->info.tracks[3];e->info.tracks[4].stream_index=10;e->info.n_tracks=5; }
  if(scenario==SUBTITLES || scenario==SUB_FLOOD || scenario==SEEK_SEGMENT || timestampScenario()) {
@@ -612,6 +618,20 @@ int main(int argc,char **argv) {
  /* Seamless reposition queue: mp4-seek-* (MP4 recovery build) and the same
   * cases on an ordinary DTS/DV session (seek-queue-*, mp4-seek-off). A second
   * seek or a track change before the firmware clock must not reload. */
+ /* Dolby Vision MP4 with "Dolby Vision P7 to P8.1" off: the engine plays the
+  * HDR10 base layer. The session opened on the Dolby Vision route with no
+  * track picked, and the file's first audio is AC-3: it must play as HEVC
+  * HDR10 with that track (owner's log 27/11: "Cannot safely identify the
+  * selected DTS track"), and the engine keeps its Dolby Vision policy. */
+ if(!strcmp(argv[1],"mp4-hdr10-base")) {
+  mp4_fixture=hdr10_fixture=missing_dv=1;
+  dts_playback_next_mp4_test(1);dts_playback_next_dv(1);dts_playback_next_p7(0);
+  p=dts_playback_start("fixture://movie","",-1,0,0,"window",0,NULL,0,0);assert(p);
+  s=wait_status(p,0,0);
+  assert(!s.failed && s.info.audio_stream==1 && !s.info.dovi_profile && count(&loads)==1);
+  assert(last_dv==1);
+  dts_playback_close(p);puts("MP4 HDR10 base: AC-3 plays on the HDR10 route, engine keeps its DV audio policy");return 0;
+ }
  if(!strncmp(argv[1],"mp4-seek-",9) || !strncmp(argv[1],"seek-queue-",11)) {
   const char *kind=argv[1]+(argv[1][0]=='m'?9:11);
   int off=argv[1][0]=='s' || !strcmp(kind,"off"),timeout=!strcmp(kind,"timeout");
