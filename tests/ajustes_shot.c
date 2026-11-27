@@ -179,6 +179,15 @@ extern int perf_uploads;
 #include "ajustes_perf.h"
 #endif
 
+#ifdef NV_LINUX_DESKTOP
+// Linux (Mesa): the app's own context, GLES 2.0, not the macOS GL 2.1 one.
+static int attrShot(SDL_GLattr at, int v) {
+  if (at == SDL_GL_CONTEXT_MAJOR_VERSION) { SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES); v = 2; }
+  if (at == SDL_GL_CONTEXT_MINOR_VERSION) v = 0;
+  return SDL_GL_SetAttribute(at, v);
+}
+#define SDL_GL_SetAttribute attrShot
+#endif
 int main(int argc, char **argv) {
   const char *saida = argc > 1 ? argv[1] : nvt("/nuvio-ajustes");
   char nome[600];
@@ -527,6 +536,12 @@ int main(int argc, char **argv) {
     goto fim_capturas;
   }
 
+  // NUVIO_SHOT_EA=1: the "From another source" sheet over its list (40) and the list alone (41).
+  if (getenv("NUVIO_SHOT_EA")) {
+    ajustes_teste_ux_captura(41); snprintf(nome, sizeof nome, "%s-ea-lista.png", saida); captura(nome, w);
+    ajustes_teste_ux_captura(40); snprintf(nome, sizeof nome, "%s-ea-folha.png", saida); captura(nome, w);
+    goto fim_capturas;
+  }
   // NUVIO_SHOT_PERFIL=1 (2.1): so as capturas de ajustes por perfil. Use com
   // NUVIO_SHOT_DADOS=<pasta vazia> para as marcas de perfil infantil gravarem.
   if (getenv("NUVIO_SHOT_PERFIL")) {

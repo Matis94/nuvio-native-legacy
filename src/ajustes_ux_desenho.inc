@@ -1136,8 +1136,15 @@ static float aj2PilulaEstado(int op, float xDir, float yc, int ligado, float a) 
   }
   if (on > 0.005f) {
     gfx_cor(r, 0.5f, 0.953f, 0.949f, 0.937f, on * a);
-    gfx_cor(d, 0.5f, 0.086f, 0.086f, 0.102f, on * a);
-    txt_desenhar_alpha(tOn, d.x + 22.0f, yc - tOn.h * 0.5f, on * a);
+    // Behind a sheet the list recedes to 16% (ajDesenharTela): the dark dot and
+    // text at 16% over a 16% white pill vanished, leaving blank pills while the
+    // Off pills still read (owner 27/11). They keep up to 5x the group opacity
+    // so "On" stays legible, and still fade out with the list.
+    { float g = gfx_opacidade_grupo;
+      if (g < 1.0f) gfx_opacidade_grupo = fminf(1.0f, g * 5.0f);
+      gfx_cor(d, 0.5f, 0.086f, 0.086f, 0.102f, on * a);
+      txt_desenhar_alpha(tOn, d.x + 22.0f, yc - tOn.h * 0.5f, on * a);
+      gfx_opacidade_grupo = g; }
   }
   return w;
 }

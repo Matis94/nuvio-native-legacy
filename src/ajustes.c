@@ -11545,6 +11545,14 @@ void ajustes_teste_ux_captura(int cenario) {
     focarOpcao(AJ_HERO_TRAILER);
   }
   if (cenario >= 10 && cenario < 21) { focarSecao(cenario - 10); focoIndice = 1; }
+  // 40/41: the "From another source" row in Polish, with its sheet (40) and
+  // without (41): the On pills of the rows behind the sheet.
+  if (cenario == 40 || cenario == 41) {
+    valor[AJ_IDIOMA] = IDIOMA_PL + 1;
+    valor[AJ_EXT_AUDIO] = 0;
+    focarOpcao(AJ_EXT_AUDIO);
+    if (cenario == 40) eaAbrir();
+  }
 }
 
 // O numero da opcao pela chave do disco/da conta ("idioma", "tmdb_language"): as
