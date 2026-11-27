@@ -35,7 +35,7 @@ static const NovItem ITENS_2091[] = {
   { .icone = "aj_film", .nome = "Seek-bar thumbnails",
     .frase = "The TV makes the seek-bar thumbnails itself from the file while it plays: no key, any title. Up on the bar opens the chapter row with a picture for every chapter.", .linhas = 8, .plataformas = NOV_LG | NOV_OUTRAS },
   { .icone = "aj_monitor-play", .nome = "Dolby Vision P7 to P8.1",
-    .frase = "One switch converts both MKV and MP4 Dolby Vision profile 7, no longer marked experimental. The Dolby Vision audio output row is gone.", .linhas = 6, .plataformas = NOV_LG | NOV_OUTRAS },
+    .frase = "One switch converts both MKV and MP4 Dolby Vision profile 7, no longer marked experimental. Off, a Dolby Vision MP4 the TV refuses still plays, in HDR10. The Dolby Vision audio output row is gone.", .linhas = 9, .plataformas = NOV_LG | NOV_OUTRAS },
   { .icone = "aj_list-video", .nome = "Chapters per kind",
     .frase = "Chapters in the player can be on for Movies, TV Shows or Anime, each on its own. Movies by default.", .linhas = 5 },
   { .icone = "aj_languages", .nome = "Hebrew",
