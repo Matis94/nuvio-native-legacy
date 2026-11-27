@@ -12,6 +12,14 @@ TMPDIR="${TMPDIR%/}"
 #                   host (NUVIO_DTS_SRC; the container has no curl). Adds what the Samsung loopback
 #                   converter needs: TrueHD/MLP
 #                   decoders, mpegts/matroska/mp4 muxers, mlp/ac3 parsers, truehd_core.
+#                   The opus parser: Matroska-laced Opus without DefaultDuration
+#                   (mkvmerge) only has a timestamp on each block's first frame;
+#                   the parser gives every frame its length, so FFmpeg fills
+#                   the rest (without it 15 of 100 packets per 2 s: no sound).
+#                   Original audio with TorBox burn-in (src/dts/tbaudio_tpk.c): the adts
+#                   muxer (the MPEG-TS muxer wraps copied AAC with it). FLAC and Opus go
+#                   as is in fMP4, so no FLAC/Opus decoder. No mpegts demuxer: TorBox's
+#                   segments are stripped by hand (tba_ts_sem_audio), never demuxed.
 set -eu
 VERSION=7.1.5
 SHA256=de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f
@@ -36,8 +44,8 @@ if [ "$TARGET" = tpk ]; then
   SRC=${NUVIO_DTS_SRC:?tools/tpk.sh passes the extracted ffmpeg-$VERSION source}
   CC=${CC:-gcc}
   DECODERS=$DECODERS,truehd,mlp
-  MUXERS=mpegts,matroska,mp4
-  PARSERS=$PARSERS,mlp,ac3
+  MUXERS=mpegts,matroska,mp4,adts
+  PARSERS=$PARSERS,mlp,ac3,opus
   BSFS=$BSFS,truehd_core
   # Out of tree: the source stays clean in the host cache.
   mkdir -p "$BUILD/obj"

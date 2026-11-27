@@ -33,10 +33,10 @@
 #include <string.h>
 
 /* Shared by the Samsung player, the webOS HLS experiment and host tests. */
-#include "../audsync.h"
+#include "../audiooffset.h"
 #include <stdatomic.h>
 static atomic_int audioOffsetMs;
-void dts_remux_set_audio_offset_ms(int ms) { atomic_store(&audioOffsetMs, audsync_offset_ms(ms)); }
+void dts_remux_set_audio_offset_ms(int ms) { atomic_store(&audioOffsetMs, audio_offset_ms(ms)); }
 
 #if !defined(NV_DTS_FFMPEG) || !(defined(NV_TPK) || defined(NV_DTS_REMUX_TEST) || defined(NV_WEBOS_HLS_TEST))
 int dts_remux_available(void) { return 0; }

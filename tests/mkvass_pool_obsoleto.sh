@@ -9,6 +9,6 @@ trap 'rm -rf "$DIR"' EXIT
 flags=()
 if [ "$(uname -s)" != Darwin ]; then flags+=(-pthread -lm); fi
 flags+=(-lz)   # mkvass.c inflates zlib-compressed MKV subtitle blocks
-cc tests/mkvass_pool_obsoleto.c src/legenda.c tests/mkvass_i18n.c src/imgsub.c src/pgs.c src/assrender.c src/dados.c -Isrc -O1 -g -Wno-deprecated-declarations \
+cc tests/mkvass_pool_obsoleto.c src/fontefamilias.c src/legenda.c src/asssinais.c tests/mkvass_i18n.c src/imgsub.c src/pgs.c src/assrender.c src/dados.c -Isrc -O1 -g -Wno-deprecated-declarations \
   "${flags[@]}" -o "$DIR/test"
 "$DIR/test"

@@ -37,6 +37,6 @@ for nome,enc,emb in [('pgs.mkv',b'',lambda b:b),
   cues=el(0x1c53bb6b,b''.join(el(0xbb,u(0xb3,t)+el(0xb7,u(0xf7,6)+u(0xf1,len(sh)+len(tr))+u(0xf0,r))) for t,r in zip((1250,5000),rel)))
   p.joinpath(nome).write_bytes(el(0x1a45dfa3,el(0x4282,b'matroska'))+el(0x18538067,sh+tr+cluster+cues+el(0xec,b'\0'*1024)))
 PY
-cc -Isrc -O1 -g -Wall -Wextra -DMKVASS_RANGES_POR_SEG=1000 tests/mkvass_pgs.c src/mkvass.c src/imgsub.c src/pgs.c src/legenda.c tests/mkvass_i18n.c src/assrender.c src/dados.c -o "$DIR/test" -lz -lm -lpthread
+cc -Isrc -O1 -g -Wall -Wextra -DMKVASS_RANGES_POR_SEG=1000 tests/mkvass_pgs.c src/mkvass.c src/fontefamilias.c src/imgsub.c src/pgs.c src/legenda.c src/asssinais.c tests/mkvass_i18n.c src/assrender.c src/dados.c -o "$DIR/test" -lz -lm -lpthread
 mkdir "$DIR/dados"
 for m in pgs pgs-zlib pgs-tira; do NUVIO_DADOS="$DIR/dados" "$DIR/test" "$DIR/$m.mkv"; done

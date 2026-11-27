@@ -1,6 +1,7 @@
 // Bootstrap: janela, contexto GL, loop e telemetria. Toda a UI vive nos modulos.
 #include "app_id.h"
 #include "arranque.h"
+#include "assrender.h"   // assrender_fios_ambiente (webOS, new subtitle engine)
 #include "swapint.h"
 #include "quadroc.h"
 #include "streams.h"
@@ -75,6 +76,7 @@
 #include "androidcache.h"
 #include "negcache.h"
 #include "p2pmotor.h"
+#include "telalag.h"   // every target: off the .tpk the calls are no-ops (telalag.c)
 #include <pthread.h>
 #include <stdatomic.h>
 #include <time.h>
@@ -92,6 +94,8 @@
 #include "desempenho.h"
 #include "atualizacao.h"
 #include "avisos.h"
+#include "queda.h"
+#include "passo.h"
 #include "seguro.h"
 #include "video.h"
 #include "addons.h"
@@ -702,6 +706,44 @@ static const char *pedidoVideo(void) {
 static _Atomic long pedVidTam;      // tamanho visto pelo fio (<=0: nada)
 static _Atomic long pedVidMtime;    // st_mtime visto pelo fio
 static _Atomic int pedVidFioOk;     // 1 = o fio esta de pe
+// passo.h: the watcher. Every 50 ms it reads the frame count; a count that
+// has not moved for 300 ms while the main thread is in a step other than the
+// input wait is a stall: the step goes to the log, again if it changes (up to
+// 4 lines per stall), and the total once frames move again.
+static void *passoFio(void *x) {
+  unsigned ult = 0, desde = 0, linhas = 0;
+  const char *dito = NULL;
+  struct timespec t;
+  int parado = 0;
+  (void)x;
+  for (;;) {
+    unsigned q = __atomic_load_n(&nv_passo_quadros, __ATOMIC_RELAXED), agora;
+    const char *p = __atomic_load_n(&nv_passo_atual, __ATOMIC_RELAXED);
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    agora = (unsigned)(t.tv_sec * 1000u + t.tv_nsec / 1000000);
+    if (q != ult) {
+      if (parado) {
+        printf("[parado] main thread back after %u ms; last step \"%s\"\n", agora - desde, dito ? dito : "?");
+        fflush(stdout);
+      }
+      ult = q; desde = agora; parado = 0; linhas = 0; dito = NULL;
+    } else if (agora - desde >= 300u && p && strcmp(p, "eventos") && p != dito && linhas < 4) {
+      printf("[parado] main thread %u+ ms in \"%s\" (frame %u)\n", agora - desde, p, q);
+      fflush(stdout);
+      parado = 1; dito = p; linhas++;
+    }
+    usleep(50000);
+  }
+  return NULL;
+}
+void passo_iniciar(void) {
+  static int feito;
+  pthread_t t;
+  if (feito) return;
+  feito = 1;
+  if (pthread_create(&t, NULL, passoFio, NULL) == 0) pthread_detach(t);
+}
+
 static void *pedVidFio(void *x) {
   (void)x;
   for (;;) {
@@ -1038,6 +1080,9 @@ int main(int argc, char **argv) {
   // lancamento (URL autenticada, tokens) naquele payload — iriam direto ao
   // registro da sessao. O sinal de ciclo chega pelo allowlist ja logado em
   // [ciclo] (nome/estado do evento de janela/app), sem payload nenhum.
+  // New subtitle engine (LG port, 25/11/2026): libass's event threads follow
+  // the CPUs this process may use. Set before any thread starts (assrender.h).
+  assrender_fios_ambiente();
 #endif
 
 #ifdef __EMSCRIPTEN__
@@ -1802,6 +1847,9 @@ int main(int argc, char **argv) {
   // verdade. Esticado 4x, nenhuma borda de texel aparece.
   gfx_borrao_iniciar(480, 270);
   NV_ETAPA("primeiro quadro");
+#ifdef NV_TPK
+  passo_iniciar();   // passo.h: names the step of a main-thread stall
+#endif
 
   Uint32 ultRelato = SDL_GetTicks();
   double txtMsQuadro = 0, piorTxtMs = 0;
@@ -1889,7 +1937,10 @@ int main(int argc, char **argv) {
 #endif
     // Enquanto o detalhe existe ele fica com o teclado inteiro: a home
     // continua desenhada por baixo, mas nao deve reagir ao D-pad.
+    passo_quadro();
+    NV_PASSO("eventos");
     while (SDL_PollEvent(&e)) {
+      NV_PASSO("evento (tecla/janela)");
 #if defined(NV_ANDROID) && defined(NV_TOUCH_UI)
       if (android_toque_cancelado(&e)) {
         ponteiro_cancelar_toque();
@@ -2205,13 +2256,20 @@ int main(int argc, char **argv) {
     Uint64 t0 = NV_T0();
     tex_upl_n = 0; tex_upl_bytes = 0;
     gputempo_quadro_inicio();   // the GPU clock brackets uploads + draw
+    telalag_quadro_inicio();    // .tpk: the GPU queue limit (Auto at 75 %)
+#ifdef NV_TPK
+    queda_vigiar();             // .tpk: our SIGSEGV handler stays on top (one syscall; queda.h)
+#endif
+    NV_PASSO("tex_bombear");
     tex_bombear(3);
     fBomb = NV_DT(t0);
     fUplN = tex_upl_n; fUplB = tex_upl_bytes;
     t0 = NV_T0();
+    NV_PASSO("app");
     SOURCEPERF_SCENE_BEGIN(NV_SRC_APP_UPDATE);
     app_atualizar(dt, agora);
     SOURCEPERF_SCENE_END(NV_SRC_APP_UPDATE);
+    NV_PASSO("depois do app");
     // COR VIVA: UMA vez por quadro, antes do desenho. Consome o pedido que o
     // desenho do quadro anterior fez (corviva_definir) e anda a transicao; o
     // desenho deste quadro so le o resultado (ajustes_acento, NV_COR_FUNDO_*).
@@ -2302,6 +2360,7 @@ int main(int argc, char **argv) {
     txt_novo_quadro();
     ponteiro_quadro(agora);
     SOURCEPERF_SCENE_BEGIN(NV_SRC_APP_DRAW);
+    NV_PASSO("desenho");
     app_desenhar(agora);
     SOURCEPERF_SCENE_END(NV_SRC_APP_DRAW);
     if (perftv_enabled) snprintf(perfScreen, sizeof perfScreen, "%s", perfTvScreen());
@@ -2336,6 +2395,7 @@ int main(int argc, char **argv) {
     capturaSeSolicitado();
     fAux = NV_DT(t0);
     gputempo_quadro_fim();
+    telalag_quadro_fim();
     t0 = NV_T0();
     int playerUi = player_ui_frame(player_aberto(), gfx_n_rect, gfx_n_outros);
     int playerClockUi = playerUi;
@@ -2363,6 +2423,7 @@ int main(int argc, char **argv) {
     if (!nvPrimeiroQuadroFeito) arranque_etapa("primeiro SwapWindow");
     SOURCEPERF_SCENE_BEGIN(NV_SRC_PRESENT);
     SOURCEPERF_SWAP_BEGIN();
+    NV_PASSO("swap");
     SDL_GL_SwapWindow(win);
     SOURCEPERF_SWAP_END(playerClockUi, player_aberto(), player_carregando());
 #ifndef __EMSCRIPTEN__

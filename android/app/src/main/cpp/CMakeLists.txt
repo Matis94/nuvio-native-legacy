@@ -10,7 +10,9 @@ set(NUVIO_RAIZ "" CACHE PATH "raiz do repositorio")
 set(NUVIO_SDL_SRC "$ENV{HOME}/.cache/nuvio-android/src" CACHE PATH "fontes do SDL")
 set(NUVIO_ENV_CMAKE "" CACHE FILEPATH "chaves -D geradas por tools/android.sh (fora do git)")
 set(NUVIO_P2P_MOTOR "" CACHE PATH "motor P2P de tools/p2p-motor/build-android.sh (vazio = sem motor)")
+set(NUVIO_MINI_FFMPEG "" CACHE PATH "pasta <abi>/{include,lib} de tools/android/ffmpeg-miniaturas.sh (vazio = sem a rota de CPU das miniaturas)")
 set(NUVIO_RUST_MKVCORE "" CACHE PATH "pasta <abi>/libmkvcore.a de tools/rust-mkvcore.sh --android (vazio = nucleo C)")
+set(NUVIO_LIBASS "" CACHE PATH "pasta <abi>/libass/{lib,include} de tools/android/libass.sh (vazio = sem libass)")
 
 set(SDL_DIR   "${NUVIO_SDL_SRC}/SDL2-2.30.9")
 set(IMG_DIR   "${NUVIO_SDL_SRC}/SDL2_image-2.8.2")
@@ -134,6 +136,11 @@ if(NUVIO_ENV_CMAKE AND EXISTS "${NUVIO_ENV_CMAKE}")
   include("${NUVIO_ENV_CMAKE}")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${NUVIO_ENV_CMAKE}")
 endif()
+# A versao embutida (NV_VERSAO: o que o atualizador compara com a release) e SEMPRE a do appinfo.json, nunca a de um nuvio-env.cmake velho:
+# senao o app se acharia na versao anterior e ofereceria a si mesmo como atualizacao.
+if(NV_VERSAO_APP)
+  set(NV_VERSAO "${NV_VERSAO_APP}")
+endif()
 foreach(k ${NV_KEYS})
   # \" literal: o gerador de build escapa o resto.
   target_compile_definitions(main PRIVATE "${k}=\"${${k}}\"")
@@ -147,6 +154,16 @@ target_link_options(main PRIVATE "-Wl,--wrap=pthread_create" "-Wl,--wrap=fclose"
 
 # Nucleo EBML/NAL do mkv.c em Rust (piloto, docs/plans/rust-mapa.md): so com a
 # pasta informada; vazio = o caminho C de sempre.
+# Rota de CPU das miniaturas feitas no aparelho (src/miniatura_motor.c, motor do Namer03 com FFmpeg so de miniaturas).
+if(NUVIO_MINI_FFMPEG AND EXISTS "${NUVIO_MINI_FFMPEG}/${ANDROID_ABI}/lib/libavcodec.a")
+  set(MINI_FF "${NUVIO_MINI_FFMPEG}/${ANDROID_ABI}")
+  target_include_directories(main PRIVATE "${MINI_FF}/include")
+  target_compile_definitions(main PRIVATE NV_MINI_FFMPEG)
+  target_link_libraries(main PRIVATE "${MINI_FF}/lib/libavformat.a" "${MINI_FF}/lib/libavcodec.a" "${MINI_FF}/lib/libavutil.a" z m)
+elseif(NUVIO_MINI_FFMPEG)
+  message(WARNING "NUVIO_MINI_FFMPEG sem ${ANDROID_ABI}: miniaturas sem a rota de CPU")
+endif()
+
 if(NUVIO_RUST_MKVCORE)
   set(RUST_MKV_LIB "${NUVIO_RUST_MKVCORE}/${ANDROID_ABI}/libmkvcore.a")
   if(NOT EXISTS "${RUST_MKV_LIB}")
@@ -154,6 +171,22 @@ if(NUVIO_RUST_MKVCORE)
   endif()
   target_compile_definitions(main PRIVATE NV_RUST_MKVCORE)
   target_link_libraries(main PRIVATE "${RUST_MKV_LIB}")
+endif()
+
+# libass hybrid (tools/android/libass.sh): the .tpk's subtitle engine
+# (NV_ASS_LIBASS + NV_ASS_NOVO). libass and HarfBuzz were compiled against
+# SDL2_ttf's vendored FreeType headers and take their FT_* symbols from that
+# same target here: one FreeType in libmain.so. Empty = text cues only.
+if(NUVIO_LIBASS)
+  set(ASS_PREFIX "${NUVIO_LIBASS}/${ANDROID_ABI}/libass")
+  if(NOT EXISTS "${ASS_PREFIX}/lib/libass.a")
+    message(FATAL_ERROR "libass ausente em ${ASS_PREFIX} (rode tools/android/libass.sh)")
+  endif()
+  target_compile_definitions(main PRIVATE NV_ASS_LIBASS NV_ASS_NOVO)
+  target_include_directories(main PRIVATE "${ASS_PREFIX}/include")
+  target_link_libraries(main PRIVATE "${ASS_PREFIX}/lib/libass.a" "${ASS_PREFIX}/lib/libharfbuzz.a"
+    "${ASS_PREFIX}/lib/libfribidi.a" freetype)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ASS_PREFIX}/.stamp")
 endif()
 
 # Motor P2P embutido (src/p2pmotor.h): nuvio-engine + libtorrent + OpenSSL,
