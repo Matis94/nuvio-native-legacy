@@ -3157,7 +3157,9 @@ static void *match_job_run(void *arg) {
   const double tm=j->mt0+j->mn/2.0/DTS_MATCH_HZ;   /* centre of this file's window */
   const double bps=j->donor_total>0 && j->donor_dur>0?j->donor_total/j->donor_dur:0;
   double ks[2]={j->k0,j->kf}; int nk=j->kf>0 && fabs(j->kf-j->k0)>0.0005?2:1;
-  struct { double c, r, cap_mb; int how; } st[5]; int n=0;
+  struct { double c, r, cap_mb; int how; } st[24]; int n=0;
+  const double pad=DTS_MATCH_WIN_S/2.0+5.0;   /* the window, and the two halves of the check */
+  double spent=0;
   /* The lengths suggest where the extra minutes are: all at the start
    * (offset -cut), spread evenly (proportional), or at the end (no change,
    * already searched). */
@@ -3172,11 +3174,31 @@ static void *match_job_run(void *arg) {
     /* Another cut far apart: one direction only (a longer picture has the
      * other version's scene earlier, a shorter one later), around the
      * proportional place, wider. */
+    /* The whole span the extra scenes allow (owner's log 27/11: extended
+     * 13698 s against theatrical 10700 s, at 4819 s the offset lay between 0
+     * and the proportional 1054 s, and the one +-150 s window around the
+     * proportional place was skipped at 317 MB). The span is cut into
+     * windows of at most 300 MB of the other version, searched outwards
+     * from the proportional place, both sides in turn, within a budget. */
     if(far) {
-      double c=h2, r=150;
-      if(j->cut_s<0 && c-r<j->base) c=j->base+r;
-      if(j->cut_s>0 && c+r>j->base) c=j->base-r;
-      st[n].c=c; st[n].r=r; st[n].cap_mb=300; st[n++].how=4;
+      double a=j->base<j->base-j->cut_s?j->base:j->base-j->cut_s;
+      double b=j->base<j->base-j->cut_s?j->base-j->cut_s:j->base;
+      double rr=150, dlo=h2-60, dhi=h2+60;
+      int down=1;
+      if(b>tm) b=tm;   /* the other version starts at 0 */
+      if(j->donor_dur>0 && a<tm-j->donor_dur) a=tm-j->donor_dur;
+      if(bps>0) {
+        double w=(300.0*1048576.0/bps-2.0*pad-4.0)/2.0/(nk>1?1.002:1.0);
+        if(w<rr) rr=w;
+      }
+      if(rr<30) rr=30;
+      while(n<20 && (dlo>a || dhi<b)) {
+        double c;
+        if((down && dlo>a) || dhi>=b) { c=dlo-rr; if(c-rr<a) c=a+rr; dlo=c-rr; }
+        else { c=dhi+rr; if(c+rr>b) c=b-rr; dhi=c+rr; }
+        st[n].c=c; st[n].r=rr; st[n].cap_mb=310; st[n++].how=4;
+        down=!down;
+      }
     }
   }
   st[n].c=j->center; st[n].r=60; st[n].cap_mb=300; st[n++].how=3;
@@ -3184,7 +3206,6 @@ static void *match_job_run(void *arg) {
   for(int i=0;i<n && !__atomic_load_n(&j->cancel,__ATOMIC_RELAXED) && !j->found;i++) {
     if(st[i].how==2 && fabs(st[i].c-j->center)<10) continue;   /* the first search covered it */
     double lo=1e18, hi=-1e18;
-    const double pad=DTS_MATCH_WIN_S/2.0+5.0;   /* the window, and the two halves of the check */
     for(int q=0;q<nk;q++) {
       double a=(tm-pad-(st[i].c+st[i].r))/ks[q], b=(tm+pad-(st[i].c-st[i].r))/ks[q];
       if(a<lo) lo=a;
@@ -3198,6 +3219,16 @@ static void *match_job_run(void *arg) {
       printf("[ext-audio] match: +-%.0f s skipped, about %.0f MB of the other version to read\n",st[i].r,mb);
       fflush(stdout); j->heavy=1; continue;
     }
+    /* Another cut far apart: at most 1.5 GB of the other version in all. */
+    if(far && bps>0 && spent+mb>1500.0) {
+      printf("[ext-audio] match: around %.0f s skipped, the search already read %.0f MB\n",st[i].c-j->base,spent);
+      fflush(stdout); j->heavy=1; continue;
+    }
+    spent+=mb;
+    if(far && st[i].how==4)
+      printf("[ext-audio] match: another cut, searching %.0f..%.0f s, reading %.0f s of the other version (about %.0f MB)\n",
+        st[i].c-st[i].r-j->base,st[i].c+st[i].r-j->base,hi-lo,mb);
+    else
     printf("[ext-audio] match: %s, reading %.0f s of the other version (about %.0f MB)\n",
       st[i].how==2?"trying the offset its length suggests":st[i].r<100?"searching +-60 s":"searching +-5 min",hi-lo,mb);
     fflush(stdout);
