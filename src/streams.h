@@ -381,7 +381,8 @@ int  stream_url_serve(const char *url, const char *cabecalhos);
 // novo. NULL fora do .tpk (o tpk.c liga) e nos testes.
 extern void (*stream_cdn_lembrar)(const char *orig, const char *final, const char *cabecalhos, uint64_t sessao);
 // A source focused 1 s in the source list (owner 18/11): once per focused row.
-// app.c sets it (the early TorBox lookup, tbabrir.h); NULL in the tests.
+// tpk.c / tbqueima.c install the burn-in lookup (tbburn.h) first; app.c then
+// puts the early TorBox lookup (tbabrir.h) in front and calls both. NULL in the tests.
 extern void (*stream_foco_demorado)(const Stream *s);
 
 // 1 quando o texto da fonte diz "fora de cache" (ver Stream.foraCache).
