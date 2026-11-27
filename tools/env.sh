@@ -69,6 +69,14 @@ fi
 if [ "$VER" != "$VERT" ]; then
   echo "env.sh: appinfo.json diz $VER e tizen-config.xml diz $VERT -- alinhe antes de compilar" >&2; exit 2
 fi
+# The version the app shows can carry a fourth part (NUVIO_VERSION=2.0.9.1)
+# that webOS does not accept in appinfo.json: it must start with that version.
+if [ -n "${NUVIO_VERSION:-}" ]; then
+  case "$NUVIO_VERSION" in
+    "$VER"|"$VER".[0-9]*) VER="$NUVIO_VERSION" ;;
+    *) echo "env.sh: NUVIO_VERSION $NUVIO_VERSION does not start with appinfo.json's $VER" >&2; exit 2 ;;
+  esac
+fi
 
 # Release unificada: conta, Trakt, Simkl e TMDB obrigatorios; demais opcionais.
 if [ "${NUVIO_REQUIRE_ALL:-0}" = 1 ]; then

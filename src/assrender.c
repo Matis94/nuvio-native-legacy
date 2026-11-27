@@ -952,6 +952,11 @@ int assrender_carregar(const char *corpo, size_t tamanho, unsigned geracao) {
 #endif
 /* Garante a fonte arabe completa para o texto simples RTL (ver ass_carregar_pasta_locked).
  * Chamada fora de assTrava, no fio que baixou a legenda: ~175 KB, uma vez por instalacao. */
+// The upstream release tag that holds the Naskh fonts. NV_VERSAO is no tag
+// there on custom builds (2.0.9.1), so the download uses this one.
+#ifndef NV_ASS_FONTE_TAG
+#define NV_ASS_FONTE_TAG "2.0.8"
+#endif
 static void ass_garantir_naskh(void) {
   static int pronto, tentativas;
   const char *arte = getenv("NUVIO_TPK_ARTE"), *v;
@@ -970,10 +975,10 @@ static void ass_garantir_naskh(void) {
     for (v = NV_VERSAO; *v; v++) if (!((*v >= '0' && *v <= '9') || *v == '.')) { pronto = 1; return; }
     tentativas++;
     mkdir(pasta, 0755);
-    snprintf(url, sizeof url, "https://raw.githubusercontent.com/iqui27/nuvio-native-legacy/v%s/deploy/app/fonts/NotoNaskhArabic-Regular.ttf", NV_VERSAO);
+    snprintf(url, sizeof url, "https://raw.githubusercontent.com/iqui27/nuvio-native-legacy/v%s/deploy/app/fonts/NotoNaskhArabic-Regular.ttf", NV_ASS_FONTE_TAG);
     buf = rede_baixar_bin(url, 20, &n);
     if (!buf || n < 100000 || n > 400000 || !assrender_bytes_sao_fonte((const unsigned char *)buf, 4)) {
-      fprintf(stderr, "[libass] NotoNaskhArabic-Regular nao veio da tag v%s (%ld bytes)\n", NV_VERSAO, buf ? n : -1L);
+      fprintf(stderr, "[libass] NotoNaskhArabic-Regular nao veio da tag v%s (%ld bytes)\n", NV_ASS_FONTE_TAG, buf ? n : -1L);
       free(buf); goto falhou;
     }
     snprintf(tmp, sizeof tmp, "%s.tmp", caminho);
@@ -981,10 +986,10 @@ static void ass_garantir_naskh(void) {
     if (!f || fwrite(buf, 1, (size_t)n, f) != (size_t)n) { if (f) fclose(f); free(buf); remove(tmp); goto falhou; }
     fclose(f); free(buf);
     if (rename(tmp, caminho) != 0) { remove(tmp); goto falhou; }
-    fprintf(stderr, "[libass] NotoNaskhArabic-Regular baixada da tag v%s (%ld bytes)\n", NV_VERSAO, n);
+    fprintf(stderr, "[libass] NotoNaskhArabic-Regular baixada da tag v%s (%ld bytes)\n", NV_ASS_FONTE_TAG, n);
     /* Negrito real (#335), de cortesia: sem ele o libass cai no "sem negrito"
      * para trilhas com arabe, que e o comportamento antigo seguro. */
-    snprintf(url, sizeof url, "https://raw.githubusercontent.com/iqui27/nuvio-native-legacy/v%s/deploy/app/fonts/NotoNaskhArabic-Bold.ttf", NV_VERSAO);
+    snprintf(url, sizeof url, "https://raw.githubusercontent.com/iqui27/nuvio-native-legacy/v%s/deploy/app/fonts/NotoNaskhArabic-Bold.ttf", NV_ASS_FONTE_TAG);
     snprintf(caminho, sizeof caminho, "%s/NotoNaskhArabic-Bold.ttf", pasta);
     buf = rede_baixar_bin(url, 20, &n);
     if (buf && n > 100000 && n < 400000 && assrender_bytes_sao_fonte((const unsigned char *)buf, 4)) {
