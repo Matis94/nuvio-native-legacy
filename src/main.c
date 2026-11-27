@@ -45,6 +45,7 @@
 #endif
 #include <unistd.h>   // dup2 (o stderr no mesmo descritor do log)
 #include "gfx.h"
+#include "coreguarda.h"
 #include "fundo.h"
 #include "gpunivel.h"
 #include "fpscena.h"
@@ -928,6 +929,9 @@ static EM_BOOL cicloWgt(int tipo, const EmscriptenVisibilityChangeEvent *e, void
 #endif
 
 int main(int argc, char **argv) {
+  // Antes de qualquer fio: nenhum arquivo core.<pid> do tamanho do processo
+  // na pasta do app (LG C1, ~400 MB por queda). Ver coreguarda.h.
+  coreguarda_bloquear();
   // NUMERO COM PONTO, SEMPRE. O host .NET do .tpk poe o processo no locale do
   // idioma da TV, e em alemao/portugues/russo o printf("%.2f") sai "0,50" e o
   // strtod para na virgula. Os registros 9866-9920 (Tizen 9, "FPS=51,2")
@@ -1142,6 +1146,9 @@ int main(int argc, char **argv) {
   printf("[leve] build de diagnostico: pool de fios 12, sem canal de avisos, sem recomendacoes, sem sync periodico, sem GIF de foco\n");
 #endif
   avisos_iniciar();   // le a marca da sessao anterior e grava a desta
+#ifdef NV_WEBOS
+  coreguarda_limpar();   // core files left by earlier sessions (coreguarda.h)
+#endif
   // E OS AJUSTES LOGO ATRAS, pelo mesmo motivo: ajustes_4k() le `valor[]`, que
   // so sai do padrao depois desta chamada. Sem ela a opcao existia na tela,
   // gravava no arquivo e nao fazia efeito nenhum — o pior tipo de ajuste.
@@ -2766,6 +2773,12 @@ int main(int argc, char **argv) {
   // sessao viva, os avisos vistos) ainda esta so no MEMFS. dados.c descarrega
   // para o IndexedDB e fecha no callback.
   dados_descarregar_e_sair();
+#endif
+#ifdef NV_WEBOS
+  // Everything was saved above. No atexit handlers or library destructors:
+  // OpenSSL freed data a detached network thread still used (SIGSEGV in
+  // libcrypto after main returned, 350-400 MB core files on an LG C1).
+  coreguarda_sair();
 #endif
   return 0;
 }
