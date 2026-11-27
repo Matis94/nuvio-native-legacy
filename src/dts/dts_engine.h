@@ -194,6 +194,8 @@ void dts_engine_external_automatch(DtsEngine *, int on);
 /* Worker only, on an open external session: start the automatic match now
  * (at the next picture packet; the app asks it after the subtitle match). */
 void dts_engine_external_match_auto(DtsEngine *);
+/* This file's track the match compares (Audio sync > Scan again), -1 Auto. */
+void dts_engine_external_match_track(DtsEngine *, int stream);
 /* Both files of an external session opened (the converter, or the HLS remux
  * with hls 1): fn gets their AVFormatContexts on the worker thread
  * (doador_webos.c reads their subtitle indexes and audio tracks). */

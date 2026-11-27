@@ -103,6 +103,7 @@ int dts_engine_external_shift_quiet(DtsEngine *e,int o) { (void)e;(void)o; retur
 int dts_engine_probe_audio(const char *u,const char *h,DtsTrack *t,int m) { (void)u;(void)h;(void)t;(void)m; return -1; }
 int dts_engine_external_match_arm(DtsEngine *e) { (void)e; return -1; }
 void dts_engine_external_match_auto(DtsEngine *e) { (void)e; }
+void dts_engine_external_match_track(DtsEngine *e,int s) { (void)e;(void)s; }
 void dts_engine_set_external_open_hook(void (*f)(void *,void *,int)) { (void)f; }
 void dts_engine_external_open_notify(void *m,void *d,int h) { (void)m;(void)d;(void)h; }
 int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) { (void)e; memset(o,0,sizeof *o); return -1; }
@@ -330,6 +331,7 @@ struct DtsEngine {
    * each break's 0.6 s heard for minutes). */
   int fw_small;
   int mt_main_pref;      /* this file's track that compared best, +1 (0: none; see match_alt) */
+  int mt_main_force;     /* this file's track picked in Audio sync > Scan again, +1 (0: Auto) */
   int ext_automatch;     /* Settings: "Match automatically" by itself when the other version starts */
   int mt_retry;          /* automatic captures started again after a jump cut them short */
   struct Follow *fw;
@@ -3519,6 +3521,17 @@ static void match_pair(DtsEngine *e,int alt,int *mains,int *donor,int *shared) {
     int p=e->mt_main_pref-1;
     if(p>=0 && (unsigned)p<mf->nb_streams && match_rank(mf->streams[p])) m=p;
   }
+  /* Picked by hand (Audio sync > Scan again): that track of this file, against
+   * the other version's track in its language when there is one and its
+   * other tracks are read; else against the track that plays. */
+  { int f=e->mt_main_force-1;
+    if(f>=0 && (unsigned)f<mf->nb_streams && match_rank(mf->streams[f])) {
+      char lf[16]="";
+      copy_metadata(lf,sizeof lf,mf->streams[f]->metadata,"language");
+      int k=lf[0] && alt?match_track_lang(df,lf):-1;
+      m=f; d=k>=0?k:e->ext_stream;
+      if(shared) *shared=1;
+    } }
   *mains=m; *donor=d;
 }
 static int lang_is_en(const char *l) {
@@ -3582,7 +3595,7 @@ static int match_arm(DtsEngine *e,int check) {
   if(match_side_open(&mc->s[0],e->fmt->streams[best],DTS_MATCH_MAX)<0 ||
      match_side_open(&mc->s[1],e->ext->fmt->streams[donor],DTS_MATCH_MAX)<0) { match_disarm(e); return -1; }
   e->fmt->streams[best]->discard=AVDISCARD_DEFAULT;
-  if(shared && !check && !e->mt_main_pref) {
+  if(shared && !check && !e->mt_main_pref && !e->mt_main_force) {
     int a=match_alt_same(e,best);
     if(a>=0 && match_side_open(&mc->s[2],e->fmt->streams[a],DTS_MATCH_MAX)==0) {
       char la[16]="";
@@ -3592,7 +3605,7 @@ static int match_arm(DtsEngine *e,int check) {
              avcodec_get_name(e->fmt->streams[a]->codecpar->codec_id),la[0]?la:"-");
     }
   }
-  if(!shared && !check && !e->mt_main_pref) {
+  if(!shared && !check && !e->mt_main_pref && !e->mt_main_force) {
     int a=match_alt(e,best), same=0;
     /* No other language in this file (owner's log 21/11: a Polish AVI with
      * no language tag against a 4K file with three English tracks): another
@@ -4021,6 +4034,7 @@ void dts_engine_external_automatch(DtsEngine *e,int on) { if(e) e->ext_automatch
 /* The automatic match, asked by the app (after the subtitle match): it starts
  * at the next picture packet, reported as automatic. */
 void dts_engine_external_match_auto(DtsEngine *e) { if(e && e->ext) e->fw_autoarm=1; }
+void dts_engine_external_match_track(DtsEngine *e,int stream) { if(e) e->mt_main_force=stream>=0?stream+1:0; }
 /* Both files of an external session open (the converter here, the HLS remux
  * in dts_remux.c): the app's hook reads their indexes (doador_webos.c). */
 static void (*g_ext_open_hook)(void *,void *,int);

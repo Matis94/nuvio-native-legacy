@@ -2206,9 +2206,11 @@ static int extSondaFaixas(const char *url, const char *cab, AudioExtFaixa *out, 
   return n;
 }
 // Audio from another source: the subtitle match reads both files' indexes
-// when the converter opens them.
+// when the converter opens them; Scan again's pick is kept per show.
 static void extSyncPreparar(void) {
+  static int feito;
   dts_engine_set_external_open_hook(doaw_fontes_abertas);
+  if (!feito) { feito = 1; audioext_match_io(dados_ler, dados_gravar_leve); }
 }
 int video_iniciar(void)      { mkvass_aceitar_imagem(1); extSyncPreparar(); if (dts_playback_enabled()) audioext_definir_sonda(extSondaFaixas); return iniciar(0); }
 int video_iniciar_auto(void) { mkvass_aceitar_imagem(1); extSyncPreparar(); if (dts_playback_enabled()) audioext_definir_sonda(extSondaFaixas); return iniciar(1); }
@@ -3169,6 +3171,7 @@ static struct {
   char url[NV_MEDIA_URL_MAX], video[NV_MEDIA_URL_MAX];   // the pair the subtitles last ran for
   int legEstado;   // 0 idle, 1 subtitles running, 2 placed by them, 3 not by them
   int audioPend;   // the audio match waits for the offset in force
+  int forcada;     // Scan again: run the whole sync again for this pair
 } dl;
 static int dlConversor(void) { return dtsSessao && extAtivo; }
 static int dlOutraTocando(void) {
@@ -3178,9 +3181,14 @@ static int dlOutraTocando(void) {
   return dlConversor();
 }
 static void dlAudio(void) {
+  char l[16], c[24];
+  int ch = 0, si = -1;
   if (!dlConversor()) return;
+  if (audioext_match_faixa(l, sizeof l, c, sizeof c, &ch)) si = doaw_faixa_si(l, c, ch);
+  dts_playback_external_match_track(dtsSessao, si);
   dts_playback_external_match_auto(dtsSessao);
-  printf("[ext-audio] audio match starts at %.1f s (offset %+d ms)\n", posSeg, audioext_offset_ms());
+  printf("[ext-audio] audio match starts at %.1f s (offset %+d ms, this file's track: %s)\n", posSeg, audioext_offset_ms(),
+         si >= 0 ? "picked in Scan again" : "Auto");
   fflush(stdout);
 }
 static void dlIniciar(const char *porque) {
@@ -3196,7 +3204,7 @@ static void dlIniciar(const char *porque) {
 static void dlBombear(void) {
   if (!dlOutraTocando()) {
     if (dl.legEstado == 1) doadorleg_cancelar();
-    dl.legEstado = 0; dl.audioPend = 0;
+    dl.legEstado = 0; dl.audioPend = 0; dl.forcada = 0;
     if (!audioext_url()[0]) dl.url[0] = 0;   // back to this file's own audio: a new pick syncs again
     return;
   }
@@ -3208,6 +3216,7 @@ static void dlBombear(void) {
       if (novo && ajustes_audio_externo_auto()) dlIniciar("the other version started");
       else if (ajustes_audio_externo_auto() && dl.legEstado != 1) dl.audioPend = 1;
     } }
+  if (dl.forcada && audioext_tocando() && doaw_geracao()) { dl.forcada = 0; dlIniciar("Scan again"); }
   if (dl.legEstado == 1) {
     double k = 1, d = 0, conf = 0;
     char mt[160];
@@ -3263,8 +3272,9 @@ void video_bombear(void) {
   // the last press, live: the other file moves, the picture keeps playing.
   // "Match automatically": the request goes to the converter; its result sets
   // the offset (applied live below).
+  // Audio sync > Scan again: the whole sync once more (subtitles, then audio).
   if (audioext_dopasuj_pedido_consumir()) {
-    if (dtsSessao && extAtivo) dts_playback_external_match(dtsSessao);
+    if (dlOutraTocando()) dl.forcada = 1;
     else audioext_dopasuj_resultado(0, NULL);
   }
   // Polled all along: a second look (another speed) reports on its own.

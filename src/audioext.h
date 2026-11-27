@@ -245,4 +245,14 @@ int audioext_voltou_padrao_consumir(void);
 // is a different cut: the player says once that the sync may drift.
 void audioext_diferenca(int corteSeg, int velocidade);
 int audioext_diferenca_consumir(int *corteSeg, int *velocidade);
+// AUDIO SYNC > SCAN AGAIN: which of this file's audio tracks the match
+// compares, kept per show in audio_match.txt (language, codec, channels;
+// language "" = Auto). io: the data files' read/write (dados_ler/dados_gravar).
+void audioext_match_io(char *(*ler)(const char *), int (*gravar)(const char *, const char *));
+void audioext_match_definir(const char *lingua, const char *codec, int canais);
+// 1 and the pick when this show has one, 0 Auto.
+int  audioext_match_faixa(char *lingua, size_t nl, char *codec, size_t nc, int *canais);
+// The title playing ("tt123:1:2") and its show's key ("tt123", "kitsu:47192").
+const char *audioext_alvo_atual(void);
+int  audioext_serie_chave(const char *alvo, char *o, size_t n);
 #endif

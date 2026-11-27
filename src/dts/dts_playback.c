@@ -84,6 +84,7 @@ struct DtsPlayback {
   int ext_offset_live;   /* the pending offset applies without a seek */
   int ext_offset_quiet;  /* ...at a quiet moment (an automatic check while playing) */
   int match_req, match_result;   /* "Match automatically" (2: the automatic one, asked by the app) */
+  int match_track, match_track_dirty;   /* this file's track for the match (Scan again), -1 Auto */
   double prefetch_req;           /* a coming jump target (dts_playback_prefetch) */
   DtsMatchInfo match_info;
   int ext_speed_ppm, ext_now_speed;   /* other version's speed (from a match) */
@@ -664,7 +665,10 @@ static void *run(void *user) {
     { double pf; pthread_mutex_lock(&p->lock); pf = p->prefetch_req; p->prefetch_req = 0; pthread_mutex_unlock(&p->lock);
       if (pf > 0) dts_engine_prefetch(p->engine, pf);
       dts_engine_prefetch_tidy(p->engine); }
-    { int req; pthread_mutex_lock(&p->lock); req = p->match_req; p->match_req = 0; pthread_mutex_unlock(&p->lock);
+    { int req, mt = -2; pthread_mutex_lock(&p->lock); req = p->match_req; p->match_req = 0;
+      if (p->match_track_dirty) { p->match_track_dirty = 0; mt = p->match_track; }
+      pthread_mutex_unlock(&p->lock);
+      if (mt != -2) dts_engine_external_match_track(p->engine, mt);
       if (req == 2) dts_engine_external_match_auto(p->engine);
       else if (req && dts_engine_external_match_arm(p->engine) < 0) {
         pthread_mutex_lock(&p->lock); p->match_result = -1; pthread_mutex_unlock(&p->lock);
@@ -1247,7 +1251,12 @@ void dts_playback_external_match_auto(DtsPlayback *p) {
   p->match_req = 2; p->match_result = 0;
   pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
 }
-
+void dts_playback_external_match_track(DtsPlayback *p, int stream) {
+  if (!p || !p->external) return;
+  pthread_mutex_lock(&p->lock);
+  p->match_track = stream < 0 ? -1 : stream; p->match_track_dirty = 1;
+  pthread_mutex_unlock(&p->lock);
+}
 int dts_playback_external_match_result(DtsPlayback *p, DtsMatchInfo *out) {
   int r;
   memset(out, 0, sizeof *out);
