@@ -2286,6 +2286,7 @@
   T("Fica nesta TV e no seu perfil da conta, em todo aparelho onde você entrar.", "Lieka šiame televizoriuje ir jūsų paskyros profilyje, kiekviename įrenginyje, kuriame prisijungsite."),
   T("Ficam em Ajustes › Conteúdo › Live TV, e dá para mudar à mão depois.", "Jie yra Nustatymai › Turinys › Live TV, ir vėliau juos galite pakeisti rankiniu būdu."),
   T("Ficam em Ajustes › TV ao vivo › Se o canal não abre, e dá para mudar à mão depois.", "Jie lieka Nustatymai › Tiesioginė TV › Jei kanalas neatsidaro, vėliau galite juos pakeisti rankiniu būdu."),
+  T("Ficar nesta parte", "Likti šioje dalyje"),
   T("Ficar nos créditos", "Likti titruose"),
   T("Ficha de produção", "Gamybos faktai"),
   T("Ficha do título em paralelo", "Pavadinimo informacija lygiagrečiai"),

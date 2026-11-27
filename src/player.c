@@ -44,6 +44,7 @@
 #include "idioma.h"
 #include "fontesonda.h"
 #include "posplay.h"
+#include "partescartao.h"
 #include "extras.h"
 #include "video.h"
 #include "player_dts_notice.h"
@@ -1989,6 +1990,7 @@ void player_abrir(int indiceCatalogo, const char *url) {
     if (canalSessao) { guia_carregar(); epg_iniciar(); } }
   tocando = 1; pausaPessoa = 0; retomandoSalto = 0; visivel = 1; anim = 0.0f; entrada = 0.0f; soBarra = 0; cheio = 1.0f; fileira = 1.0f;
   pedFontes = erroFonte = pedFaixas = pedProxT = pedProxE = trocaEpisodio = 0; inicioImagem = 0;
+  partescartao_zerar();
   durFonteAvisada = durFontePulou = pedProximaFonte = durFonteCurta = durFonteForaCache = 0;
   durFonteAcaoAte = 0; durFonteSkipEm = 0; durFonteManter = 0;
   abrindoExp = 0; abrindoT = 0.0f; abrindoDesde = 0;
@@ -4484,6 +4486,8 @@ void player_evento(const SDL_Event *e) {
     if (r != DVT_EV_NADA) return;
   }
   if (reacao_evento(e, visivel)) return;
+  { int r = partescartao_evento(e);
+    if (r) { if (r == 2) acordar(); return; } }
   { int r = posplay_evento(e);
     if (r) { if (r == 2) acordar(); return; } }
   if (!aberto || saindo || e->type != SDL_KEYDOWN) return;
@@ -5513,6 +5517,9 @@ void player_atualizar(float dt, Uint32 agora) {
   // O painel de pos-reproducao tambem toma o rodape para si. BAIXO devolve os
   // controles (posplay_evento responde 2), que e a saida documentada.
   if (posplay_visivel()) visivel = 0;
+  // A contagem das partes (partescartao.h) tambem.
+  partescartao_atualizar(dt, agora);
+  if (partescartao_visivel()) { visivel = 0; ultimoInput = agora; }
 
   anim = anim_mola(anim, visivel ? 1.0f : 0.0f, dt,
                    visivel ? NV_MOLA_FOCO : NV_MOLA_DESFOCO);
@@ -7153,6 +7160,7 @@ void player_desenhar(Uint32 agora) {
   // se abriu. Ancorar acima da barra desperdicaria a faixa que o recuo existe
   // para criar.
   posplay_desenhar(agora, NV_VTELA_H - PLR_PAD_Y);   // camada ampliada: tela virtual
+  partescartao_desenhar(agora);
   // Acima do pos-reproducao quando ele esta no ar (posplay_topo), senao na
   // mesma margem inferior.
   // "O que achou?" na margem de 96 (mockup) ou acima do pos-reproducao.

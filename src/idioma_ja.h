@@ -2286,6 +2286,7 @@
   T("Fica nesta TV e no seu perfil da conta, em todo aparelho onde você entrar.", "このテレビとアカウントのプロフィールに保存され、ログインしたすべての端末で使えます。"),
   T("Ficam em Ajustes › Conteúdo › Live TV, e dá para mudar à mão depois.", "設定 › コンテンツ › Live TV にあり、あとから手動で変更できます。"),
   T("Ficam em Ajustes › TV ao vivo › Se o canal não abre, e dá para mudar à mão depois.", "設定 › ライブ TV › チャンネルが開かないとき に残り、あとで手動で変更できます。"),
+  T("Ficar nesta parte", "このパートを見続ける"),
   T("Ficar nos créditos", "クレジットに残る"),
   T("Ficha de produção", "制作情報"),
   T("Ficha do título em paralelo", "作品詳細を並行して取得"),

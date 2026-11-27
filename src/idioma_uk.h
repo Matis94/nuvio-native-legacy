@@ -2285,6 +2285,7 @@
   T("Fica nesta TV e no seu perfil da conta, em todo aparelho onde você entrar.", "Зберігається на цьому телевізорі та в профілі вашого облікового запису, на кожному пристрої, де ви ввійдете."),
   T("Ficam em Ajustes › Conteúdo › Live TV, e dá para mudar à mão depois.", "Вони в Налаштування › Вміст › Live TV, і пізніше їх можна змінити вручну."),
   T("Ficam em Ajustes › TV ao vivo › Se o canal não abre, e dá para mudar à mão depois.", "Вони в Налаштування › ТБ наживо › Якщо канал не відкривається, і їх можна змінити вручну пізніше."),
+  T("Ficar nesta parte", "Залишитися на цій частині"),
   T("Ficar nos créditos", "Залишитися на титрах"),
   T("Ficha de produção", "Дані про виробництво"),
   T("Ficha do título em paralelo", "Подробиці про назву паралельно"),

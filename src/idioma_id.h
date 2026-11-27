@@ -2286,6 +2286,7 @@
   T("Fica nesta TV e no seu perfil da conta, em todo aparelho onde você entrar.", "Tersimpan di TV ini dan di profil akunmu, di setiap perangkat tempat kamu masuk."),
   T("Ficam em Ajustes › Conteúdo › Live TV, e dá para mudar à mão depois.", "Ada di Pengaturan › Konten › Live TV, dan bisa diubah manual nanti."),
   T("Ficam em Ajustes › TV ao vivo › Se o canal não abre, e dá para mudar à mão depois.", "Tersimpan di Pengaturan › TV langsung › Jika saluran tidak terbuka, dan bisa diubah manual nanti."),
+  T("Ficar nesta parte", "Tetap di bagian ini"),
   T("Ficar nos créditos", "Tetap di kredit"),
   T("Ficha de produção", "Fakta produksi"),
   T("Ficha do título em paralelo", "Detail judul secara paralel"),

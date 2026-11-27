@@ -2286,6 +2286,7 @@
   T("Fica nesta TV e no seu perfil da conta, em todo aparelho onde você entrar.", "Sparas på den här tv:n och i profilen på ditt konto, på varje enhet där du loggar in."),
   T("Ficam em Ajustes › Conteúdo › Live TV, e dá para mudar à mão depois.", "De finns under Inställningar › Innehåll › Live TV, och du kan ändra dem för hand senare."),
   T("Ficam em Ajustes › TV ao vivo › Se o canal não abre, e dá para mudar à mão depois.", "De hamnar under Inställningar › Live-tv › Om kanalen inte öppnas, och kan ändras för hand senare."),
+  T("Ficar nesta parte", "Stanna på den här delen"),
   T("Ficar nos créditos", "Stanna kvar i eftertexterna"),
   T("Ficha de produção", "Produktionsfakta"),
   T("Ficha do título em paralelo", "Titeluppgifter parallellt"),

@@ -2286,6 +2286,7 @@
   T("Fica nesta TV e no seu perfil da conta, em todo aparelho onde você entrar.", "Ezen a tévén és a fiókod profiljában marad, minden eszközön, ahol bejelentkezel."),
   T("Ficam em Ajustes › Conteúdo › Live TV, e dá para mudar à mão depois.", "A Beállítások › Tartalom › Live TV alatt vannak, és később kézzel is módosíthatod őket."),
   T("Ficam em Ajustes › TV ao vivo › Se o canal não abre, e dá para mudar à mão depois.", "A Beállítások › Élő TV › Ha a csatorna nem indul alatt maradnak, később kézzel is módosíthatod őket."),
+  T("Ficar nesta parte", "Maradás ennél a résznél"),
   T("Ficar nos créditos", "Maradás a stáblistánál"),
   T("Ficha de produção", "Gyártási tények"),
   T("Ficha do título em paralelo", "Cím részletei párhuzamosan"),

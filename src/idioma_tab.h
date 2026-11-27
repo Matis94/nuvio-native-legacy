@@ -2285,6 +2285,7 @@
   { "Fica nesta TV e no seu perfil da conta, em todo aparelho onde você entrar.", "Kept on this TV and in your account profile, on every device you sign in to." },
   { "Ficam em Ajustes › Conteúdo › Live TV, e dá para mudar à mão depois.", "They live in Settings › Content › Live TV, and you can change them by hand later." },
   { "Ficam em Ajustes › TV ao vivo › Se o canal não abre, e dá para mudar à mão depois.", "They stay in Settings › Live TV › If the channel won't open, and you can change them by hand later." },
+  { "Ficar nesta parte", "Stay on this part" },
   { "Ficar nos créditos", "Stay in the credits" },
   { "Ficha de produção", "Production facts" },
   { "Ficha do título em paralelo", "Title details in parallel" },

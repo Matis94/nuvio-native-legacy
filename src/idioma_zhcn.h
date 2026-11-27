@@ -2286,6 +2286,7 @@
   T("Fica nesta TV e no seu perfil da conta, em todo aparelho onde você entrar.", "保存在这台电视和你账号的个人资料中，在你登录的每台设备上都能看到。"),
   T("Ficam em Ajustes › Conteúdo › Live TV, e dá para mudar à mão depois.", "它们位于 设置 › 内容 › Live TV，之后可以手动更改。"),
   T("Ficam em Ajustes › TV ao vivo › Se o canal não abre, e dá para mudar à mão depois.", "保存在 设置 › 电视直播 › 频道打不开时，之后可手动修改。"),
+  T("Ficar nesta parte", "留在这一部分"),
   T("Ficar nos créditos", "停留在片尾"),
   T("Ficha de produção", "制作信息"),
   T("Ficha do título em paralelo", "并行获取作品详情"),

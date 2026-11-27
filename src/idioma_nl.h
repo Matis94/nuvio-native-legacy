@@ -2286,6 +2286,7 @@
   T("Fica nesta TV e no seu perfil da conta, em todo aparelho onde você entrar.", "Blijft op deze tv en in het profiel van je account, op elk apparaat waarop je inlogt."),
   T("Ficam em Ajustes › Conteúdo › Live TV, e dá para mudar à mão depois.", "Ze staan onder Instellingen › Inhoud › Live TV en je kunt ze later met de hand wijzigen."),
   T("Ficam em Ajustes › TV ao vivo › Se o canal não abre, e dá para mudar à mão depois.", "Ze staan in Instellingen › Live-tv › Als het kanaal niet opent, en je kunt ze later met de hand wijzigen."),
+  T("Ficar nesta parte", "Bij dit deel blijven"),
   T("Ficar nos créditos", "Bij de aftiteling blijven"),
   T("Ficha de produção", "Productiegegevens"),
   T("Ficha do título em paralelo", "Titeldetails parallel"),

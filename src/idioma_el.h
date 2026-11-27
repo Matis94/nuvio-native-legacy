@@ -2286,6 +2286,7 @@
   T("Fica nesta TV e no seu perfil da conta, em todo aparelho onde você entrar.", "Μένει σε αυτήν την τηλεόραση και στο προφίλ του λογαριασμού σου, σε κάθε συσκευή όπου συνδέεσαι."),
   T("Ficam em Ajustes › Conteúdo › Live TV, e dá para mudar à mão depois.", "Βρίσκονται στις Ρυθμίσεις › Περιεχόμενο › Live TV και μπορείς να τις αλλάξεις με το χέρι αργότερα."),
   T("Ficam em Ajustes › TV ao vivo › Se o canal não abre, e dá para mudar à mão depois.", "Μένουν στις Ρυθμίσεις › Ζωντανή TV › Αν δεν ανοίγει το κανάλι και μπορείτε να τα αλλάξετε με το χέρι αργότερα."),
+  T("Ficar nesta parte", "Μείνε σε αυτό το μέρος"),
   T("Ficar nos créditos", "Μείνε στους τίτλους"),
   T("Ficha de produção", "Στοιχεία παραγωγής"),
   T("Ficha do título em paralelo", "Λεπτομέρειες τίτλου παράλληλα"),

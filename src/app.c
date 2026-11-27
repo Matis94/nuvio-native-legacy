@@ -869,6 +869,8 @@ static int iniciarPoliticaFonte(int preferida, int manual) {
 #include "segurar.h"
 #include "servidores.h"
 #include "partes.h"
+#include "partescartao.h"
+#include "intro.h"
 #include "logrede.h"
 #include <stdio.h>
 
@@ -2790,6 +2792,8 @@ static int parteAutoEsperando;
 static int parteProx = -1, parteProxFase;   // 0 nada, 1 pedido, 2 pronto, 3 falhou, 4 ultima tentativa
 static Uint32 parteProxDesde, parteProxProntoEm;
 static char parteProxUrl[NV_MEDIA_URL_MAX];
+static int parteContagemFeita;         // a contagem desta parte ja subiu
+static int parteForcar;                // "Comecar agora" / fim da contagem: troca ja
 
 static void parteAviso(int k) {
   const PartesLista *l = partes_sessao_lista();
@@ -2804,9 +2808,35 @@ static int nomeMp4(const char *nome) {
 }
 static void parteZerar(void) {
   parteFase = PF_NADA; parteRetomada = 0; partePos = -1; parteRenovou = 0; parteArqK = -1;
+  parteForcar = 0; parteContagemFeita = 0;
+  partescartao_fechar();
   parteUrl[0] = 0; parteProx = -1; parteProxFase = 0; parteProxUrl[0] = 0;
   partes_link_cancelar();
   partes_arquivo_limpar();
+}
+// O fim de verdade da parte: o fluxo acabou PERTO do fim do arquivo. Um fim
+// de fluxo no meio e queda de rede, que a reconexao do video cuida.
+static int parteNoFim(double d, double pos) {
+  return video_terminou() && !(d > 120 && pos < d - 90);
+}
+// Troca pedida antes do fim ("Comecar agora" ou o fim da contagem) sem link
+// para a seguinte: a parte ainda toca, entao fica nela e tenta de novo no fim
+// de verdade. 1 = e o caso (quem chama nao derruba a sessao). Namer, 96d1e51ad.
+static int parteForcarSegue(double d, double pos) {
+  if (!parteForcar || parteNoFim(d, pos)) return 0;
+  parteForcar = 0;
+  printf("[partes] next part: no link yet, the current part keeps playing\n");
+  fflush(stdout);
+  return 1;
+}
+// ONDE OS CREDITOS DESTA PARTE COMECAM: capitulo do proprio arquivo, ou
+// AniSkip (anime). O TheIntroDB e o do FILME inteiro e nao vale para uma
+// parte. Fora da janela (antes da metade, mais de 15 min, colado no fim): 0.
+static double parteCreditos(double d) {
+  double c = video_creditos();
+  if (c <= 1.0 && intro_creditos_aniskip()) c = intro_creditos_seg();
+  if (!(c > 1.0) || !(d > 120.0) || c < d * 0.5 || d - c > 900.0 || c >= d - 3.0) return 0;
+  return c;
 }
 // Entrega o link ao player: sempre sem o ponto do catalogo (ele e o do FILME
 // inteiro, partes_virtual), com o ponto DENTRO do arquivo quando ha.
@@ -2823,6 +2853,8 @@ static void parteTocar(const char *url, double pos) {
 #endif
   parteFase = PF_ABRINDO; parteDesde = SDL_GetTicks(); parteGuardouEm = 0;
   parteProx = -1; parteProxFase = 0; parteProxUrl[0] = 0;
+  parteForcar = 0; parteContagemFeita = 0;
+  partescartao_fechar();
   // O arquivo que toca: a saida do player guarda o ponto dele (partes.h).
   if (parteArqK >= 0 && parteArqK < parteArqLista.n) {
     char a[64];
@@ -3088,9 +3120,14 @@ static void vigiarPartes(void) {
     int k = partes_sessao_indice(), prox = partes_seguinte(sl, k);
     double d = video_duracao(), pos = video_pos();
     if (prox < 0) return;   // ultima parte: o fim e o do filme
-    if (parteProx != prox) { parteProx = prox; parteProxFase = 0; parteProxUrl[0] = 0; }
-    // O link da seguinte sai 60 s antes do fim, para a troca nao esperar rede.
-    if (parteProxFase == 0 && d > 120 && pos > d - 60) {
+    if (parteProx != prox) {
+      parteProx = prox; parteProxFase = 0; parteProxUrl[0] = 0;
+      parteContagemFeita = 0; partescartao_fechar();
+    }
+    // O link da seguinte sai 60 s antes do fim, para a troca nao esperar rede;
+    // com marcador de creditos, ja na contagem (o "Comecar agora" nao espera).
+    if (parteProxFase == 0 && d > 120 &&
+        (pos > d - 60 || (parteCreditos(d) > 0 && pos > parteCreditos(d) - 30.0))) {
       partes_link_pedir(sl->usenet, sl->item, sl->arq[prox].id, 0);
       parteProxFase = 1; parteProxDesde = SDL_GetTicks();
     }
@@ -3106,13 +3143,30 @@ static void vigiarPartes(void) {
       r = partes_link_estado(parteProxUrl, sizeof parteProxUrl, NULL);
       if (r == 1) { parteProxFase = 2; parteProxProntoEm = SDL_GetTicks(); }
       else if (r == -1 || r == -2) {
-        if (parteProxFase == 4) { parteFalhou("no link for the next part"); return; }
+        if (parteProxFase == 4 && !parteForcarSegue(d, pos)) { parteFalhou("no link for the next part"); return; }
         parteProxFase = 3;
       }
     }
-    // Fim de verdade: o fluxo acabou PERTO do fim do arquivo. Um fim de fluxo
-    // no meio e queda de rede, que a reconexao do video cuida.
-    if (!video_terminou() || (d > 120 && pos < d - 90)) return;
+    // CONTAGEM NOS CREDITOS DA PARTE (capitulo do arquivo ou AniSkip; o
+    // TheIntroDB descreve o filme inteiro, nao a parte). Sem marcador, nada:
+    // a troca e no fim. Vem da 2.0.9 do Namer (97f22a3f2).
+    { double cred = parteCreditos(d);
+      int resp = partescartao_pedido();
+      if (resp == PC_PEDIDO_AGORA) parteForcar = 1;
+      if (cred > 0 && pos < cred - 5.0) {
+        // Voltou para antes dos creditos: a contagem pode voltar.
+        if (partescartao_modo_contagem()) partescartao_fechar();
+        parteContagemFeita = 0;
+      } else if (cred > 0 && !parteContagemFeita && !parteForcar && pos >= cred && pos < d - 3.0 &&
+                 parteFase == PF_TOCANDO && video_pronto() && !player_carregando()) {
+        parteContagemFeita = 1;
+        partescartao_contagem(partes_numero(sl, prox), partes_principais(sl), SDL_GetTicks(),
+                              ajustes_proximo_contagem());
+        printf("[partes] part %d credits at %.0f s of %.0f s: countdown to part %d\n",
+               partes_numero(sl, k), cred, d, partes_numero(sl, prox));
+        fflush(stdout);
+      } }
+    if (!parteForcar && !parteNoFim(d, pos)) return;
     if (parteProxFase == 0 || parteProxFase == 3) {
       // Fim sem o link (fluxo curto, ou o pedido falhou): pede agora, uma vez.
       if (parteProxFase == 3) {
@@ -3126,13 +3180,13 @@ static void vigiarPartes(void) {
     if (parteProxFase == 1 || parteProxFase == 4) {
       if (SDL_GetTicks() - parteProxDesde > 30000u) {
         parteProxFase = 0;
-        parteFalhou("no link for the next part");
+        if (!parteForcarSegue(d, pos)) parteFalhou("no link for the next part");
       }
       return;
     }
     // parteProxFase == 2: troca para a parte seguinte.
-    printf("[partes] part %d ended: playing part %d of %d\n", partes_numero(sl, k),
-           partes_numero(sl, prox), partes_principais(sl));
+    printf("[partes] part %d ended (%s): playing part %d of %d\n", partes_numero(sl, k),
+           parteForcar ? "countdown" : "end of stream", partes_numero(sl, prox), partes_principais(sl));
     fflush(stdout);
     { char u[NV_MEDIA_URL_MAX];
       PartesPonto pt = { sl->usenet, sl->item, sl->arq[prox].id, 0 };

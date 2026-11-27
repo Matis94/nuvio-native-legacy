@@ -2286,6 +2286,7 @@
   T("Fica nesta TV e no seu perfil da conta, em todo aparelho onde você entrar.", "Resta su questa TV e nel profilo del tuo account, su ogni dispositivo in cui accedi."),
   T("Ficam em Ajustes › Conteúdo › Live TV, e dá para mudar à mão depois.", "Si trovano in Impostazioni › Contenuto › Live TV e puoi cambiarle a mano in seguito."),
   T("Ficam em Ajustes › TV ao vivo › Se o canal não abre, e dá para mudar à mão depois.", "Restano in Impostazioni › TV in diretta › Se il canale non si apre, e puoi cambiarli a mano dopo."),
+  T("Ficar nesta parte", "Resta su questa parte"),
   T("Ficar nos créditos", "Resta sui titoli di coda"),
   T("Ficha de produção", "Scheda tecnica di produzione"),
   T("Ficha do título em paralelo", "Dettagli del titolo in parallelo"),

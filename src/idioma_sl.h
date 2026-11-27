@@ -2286,6 +2286,7 @@
   T("Fica nesta TV e no seu perfil da conta, em todo aparelho onde você entrar.", "Ostane na tem televizorju in v profilu vašega računa, na vsaki napravi, kjer se prijavite."),
   T("Ficam em Ajustes › Conteúdo › Live TV, e dá para mudar à mão depois.", "Najdete jih v Nastavitve › Vsebina › Live TV in jih lahko pozneje spremenite ročno."),
   T("Ficam em Ajustes › TV ao vivo › Se o canal não abre, e dá para mudar à mão depois.", "Ostanejo v Nastavitve › TV v živo › Če se kanal ne odpre, pozneje jih lahko spremenite ročno."),
+  T("Ficar nesta parte", "Ostani pri tem delu"),
   T("Ficar nos créditos", "Ostani pri odjavni špici"),
   T("Ficha de produção", "Dejstva o produkciji"),
   T("Ficha do título em paralelo", "Podrobnosti naslova vzporedno"),

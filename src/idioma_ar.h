@@ -2286,6 +2286,7 @@
   T("Fica nesta TV e no seu perfil da conta, em todo aparelho onde você entrar.", "يُحفظ على هذا التلفاز وفي ملف حسابك الشخصي، على كل جهاز تسجّل الدخول إليه."),
   T("Ficam em Ajustes › Conteúdo › Live TV, e dá para mudar à mão depois.", "تقع في الإعدادات › المحتوى › التلفاز المباشر، ويمكنك تغييرها يدويًا لاحقًا."),
   T("Ficam em Ajustes › TV ao vivo › Se o canal não abre, e dá para mudar à mão depois.", "تبقى في الإعدادات › التلفاز المباشر › إذا لم تُفتح القناة، ويمكنك تغييرها يدويًا لاحقًا."),
+  T("Ficar nesta parte", "البقاء في هذا الجزء"),
   T("Ficar nos créditos", "البقاء في الشارة الختامية"),
   T("Ficha de produção", "حقائق الإنتاج"),
   T("Ficha do título em paralelo", "تفاصيل العنوان بالتوازي"),

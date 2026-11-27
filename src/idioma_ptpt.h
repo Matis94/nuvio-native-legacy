@@ -2286,6 +2286,7 @@
   T("Fica nesta TV e no seu perfil da conta, em todo aparelho onde você entrar.", "Fica nesta TV e no perfil da tua conta, em todos os aparelhos onde entrares."),
   T("Ficam em Ajustes › Conteúdo › Live TV, e dá para mudar à mão depois.", "Ficam em Definições › Conteúdo › Live TV, e podes mudá-las à mão depois."),
   T("Ficam em Ajustes › TV ao vivo › Se o canal não abre, e dá para mudar à mão depois.", "Ficam em Definições › TV em direto › Se o canal não abre, e dá para mudar à mão depois."),
+  T("Ficar nesta parte", "Ficar nesta parte"),
   T("Ficar nos créditos", "Ficar nos créditos"),
   T("Ficha de produção", "Ficha de produção"),
   T("Ficha do título em paralelo", "Ficha do título em paralelo"),

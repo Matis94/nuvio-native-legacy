@@ -2286,6 +2286,7 @@
   T("Fica nesta TV e no seu perfil da conta, em todo aparelho onde você entrar.", "Bu TV'de ve hesabının profilinde, giriş yaptığın her cihazda kalır."),
   T("Ficam em Ajustes › Conteúdo › Live TV, e dá para mudar à mão depois.", "Ayarlar › İçerik › Live TV altında bulunurlar; sonradan elle değiştirebilirsin."),
   T("Ficam em Ajustes › TV ao vivo › Se o canal não abre, e dá para mudar à mão depois.", "Ayarlar › Canlı TV › Kanal açılmazsa altında kalır; sonra elle değiştirebilirsiniz."),
+  T("Ficar nesta parte", "Bu kısımda kal"),
   T("Ficar nos créditos", "Jenerikte kal"),
   T("Ficha de produção", "Yapım bilgileri"),
   T("Ficha do título em paralelo", "Başlık ayrıntıları paralel"),

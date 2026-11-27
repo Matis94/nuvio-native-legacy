@@ -2286,6 +2286,7 @@
   T("Fica nesta TV e no seu perfil da conta, em todo aparelho onde você entrar.", "Được lưu trên TV này và trong hồ sơ tài khoản của bạn, trên mọi thiết bị bạn đăng nhập."),
   T("Ficam em Ajustes › Conteúdo › Live TV, e dá para mudar à mão depois.", "Chúng nằm trong Cài đặt › Nội dung › Live TV, và bạn có thể tự đổi sau."),
   T("Ficam em Ajustes › TV ao vivo › Se o canal não abre, e dá para mudar à mão depois.", "Nằm ở Cài đặt › TV trực tiếp › Nếu kênh không mở, và có thể đổi thủ công sau."),
+  T("Ficar nesta parte", "Ở lại phần này"),
   T("Ficar nos créditos", "Ở lại phần danh đề"),
   T("Ficha de produção", "Thông tin sản xuất"),
   T("Ficha do título em paralelo", "Chi tiết tựa phim song song"),

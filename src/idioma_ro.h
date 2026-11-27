@@ -2285,6 +2285,7 @@
   T("Fica nesta TV e no seu perfil da conta, em todo aparelho onde você entrar.", "Rămâne pe acest televizor și în profilul contului tău, pe orice dispozitiv pe care te conectezi."),
   T("Ficam em Ajustes › Conteúdo › Live TV, e dá para mudar à mão depois.", "Se găsesc în Setări › Conținut › Live TV și le poți schimba manual mai târziu."),
   T("Ficam em Ajustes › TV ao vivo › Se o canal não abre, e dá para mudar à mão depois.", "Rămân în Setări › TV live › Dacă canalul nu pornește și le poți schimba manual mai târziu."),
+  T("Ficar nesta parte", "Rămâi la această parte"),
   T("Ficar nos créditos", "Rămâi la generic"),
   T("Ficha de produção", "Date despre producție"),
   T("Ficha do título em paralelo", "Detaliile titlului în paralel"),
