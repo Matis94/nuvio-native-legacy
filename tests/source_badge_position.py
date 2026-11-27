@@ -24,6 +24,8 @@ fixture = r'''
 #include <stdio.h>
 typedef struct {int nv,nl;} TextoAddon;
 typedef struct {int tracks;} Stream;
+static int off;   /* badge pack "Off" (selospacote_desligado) */
+static int selospacote_desligado(void){return off;}
 @DEFINES@
 @LAYOUT@
 int main(void){
@@ -41,8 +43,16 @@ int main(void){
   assert(badges[0]==base && title[0]==base+FOLHA_ADDON_SELOS);
   assert(title[1]==base && badges[1]>=body[1]+content);
   assert(body[0]-body[1]==FOLHA_ADDON_SELOS);
+  // Off: no badge row, the card is FOLHA_ADDON_SELOS shorter (alturaLinha).
+  off=1;
+  for(int bottom=0;bottom<2;bottom++){
+   addonPosicoes(&t,&s,base,bottom,&title[bottom],&body[bottom],&badges[bottom]);
+   assert(title[bottom]==base && body[bottom]==base+FOLHA_ADDON_TITULO);
+   assert(body[bottom]+content<=budget-FOLHA_ADDON_SELOS);
+  }
+  off=0;
  }
- puts("PASS: Top/Bottom with 0..96 wrapped lines, with or without language data and marked cards fits the identical height budget");
+ puts("PASS: Top/Bottom with 0..96 wrapped lines, with or without language data and marked cards fits the identical height budget; Off drops the badge row");
 }
 '''.replace("@DEFINES@", defines).replace("@LAYOUT@", draw[start:end])
 with tempfile.TemporaryDirectory(prefix="nuvio-badge-position-") as directory:

@@ -34,6 +34,7 @@ static int selected, fonteVODRetentou, vodRenovou;
 static int stream_atual(void) { return selected; }
 static const Stream *stream_item(int i) { return i==0 ? &current : NULL; }
 static void provaZerar(void) {}
+static void tbabrir_procurar_cedo(const Stream *s, const char *porque) { (void)s; (void)porque; }   /* debrid early lookup (tbabrir.c): no network here */
 static AudioCand tracks[] = {
  {"pl","AC3","Polish AC3 2.0",2,0,1,0},
  {"pl","AC3","Polish AC3 2.0",2,0,1,1}
