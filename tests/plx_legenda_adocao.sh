@@ -9,6 +9,7 @@ dir=$(mktemp -d "$TMPDIR/nuvio-plx-adocao.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
 flags=()
 if [ "$(uname -s)" != Darwin ]; then flags+=(-pthread -lm); fi
+flags+=(-lz)   # mkvass.c inflates zlib-compressed MKV subtitle blocks
 cc tests/plx_legenda_adocao.c src/legenda.c src/assrender.c src/dados.c src/pgs.c src/imgsub.c \
   -Isrc -O1 -g -Wno-deprecated-declarations "${flags[@]}" -o "$dir/test"
 "$dir/test"
