@@ -54,6 +54,8 @@ static const NovItem ITENS_2091[] = {
     .frase = "The badge pack choice has Off: the source list shows no badges, and the formatter cards lose their badge row.", .linhas = 5 },
   { .icone = "aj_funnel", .nome = "Sources sheet",
     .frase = "The filter buttons are icons in every language, and Hold OK: source options is translated everywhere.", .linhas = 5 },
+  { .icone = "aj_hard-drive", .nome = "TV storage",
+    .frase = "Closing the app or putting the TV to sleep no longer leaves crash dump files that fill the storage; old ones are removed.", .linhas = 6, .plataformas = NOV_LG | NOV_OUTRAS },
   { .icone = "aj_link", .nome = "Debrid files",
     .frase = "A TorBox, AllDebrid or Real-Debrid file that shows no picture is checked, added again and reopened at the same point before the next source is tried.", .linhas = 7 },
   { .icone = "aj_puzzle", .nome = "Autoplay",
