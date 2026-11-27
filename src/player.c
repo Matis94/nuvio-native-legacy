@@ -1026,6 +1026,14 @@ static void erroEscolher(int i) {
 #endif
 }
 void player_definir_tentativa(int n, int max) { tentativaN = n; tentativaM = max; }
+#ifdef NV_WEBOS
+// Saida e volta do app na LG (video.c): o pipeline e solto na saida e a mesma
+// fonte reabre no ponto, pausada, na volta; 1 = reabrindo, 2 = desistiu.
+int  video_webos_fundo(double alvoPlayer, const char *porque);
+void video_webos_voltou(const char *porque);
+int  video_webos_retomada_evento(void);
+void glem_aviso_curto(const char *texto);   // guialembrete.c
+#endif
 #ifdef NV_TPK
 int video_tpk_convertendo(void);   // video_tpk.c
 int video_tpk_aviso_busca(void);   // video_tpk.c (mkvfix.h)
@@ -3179,6 +3187,40 @@ void player_ciclo_evento(Uint32 tipo) {
     player_descartar_retido(); retomamorna_cancelar();
   }
 }
+
+#ifdef NV_WEBOS
+// SAIDA E VOLTA DO APP NA LG (2.0.9 do Namer, c8c58eebd).
+static void acordar(void);
+// Aviso da reabertura depois da volta (video.c): 1 = reabrindo, controles
+// pausados no ponto. 2 = a reabertura desistiu: fecha como no Voltar
+// (progresso gravado na saida).
+static void fundoRetomadaEvento(int ev) {
+  if (ev == 1 && aberto) {
+    tocando = 0; acordar();
+  } else if (ev == 2 && aberto && !saindo) {
+    printf("[player] resume after background gave up: closing the player at %.1f s\n", video_pos());
+    fflush(stdout);
+    saindo = 1; pediuSair = 1;
+    glem_aviso_curto(i18n("Não deu para retomar o vídeo. Play continua de onde você parou"));
+  }
+}
+// main.c: o app saiu da tela (janela escondida/minimizada, app no fundo) ou
+// voltou (janela visivel, foco, restaurada, uma tecla). Perder so o foco (a
+// barra da Home ou o menu da TV por cima do video) NAO chega aqui.
+void player_webos_janela(int saiu, const char *porque) {
+  if (!saiu) { video_webos_voltou(porque); return; }
+  if (!aberto || retido || !comVideo || ehCanal()) return;
+  // O seek em voo da LG mora no video.c (seekAlvo); daqui so o comeco de um
+  // scrub, que ainda nao virou seek.
+  if (video_webos_fundo(scrubbing ? scrubInicio : -1.0, porque)) {
+    // A sessao do video e dona do alvo agora: sem scrub.
+    if (scrubbing) { scrubbing = scrubToque = scrubTocava = 0; scrubPassos = 0; scrubInicio = 0.0; }
+    tocando = 0;
+  }
+}
+// A cada quadro (app.c): os avisos da reabertura.
+void player_webos_fundo_passo(void) { fundoRetomadaEvento(video_webos_retomada_evento()); }
+#endif
 
 void player_validar_retido(Uint32 agora) {
   const char *por = NULL;

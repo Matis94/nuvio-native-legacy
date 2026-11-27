@@ -223,6 +223,12 @@ void player_encerrar_fonte(void);
 void player_preparar_retencao(void);
 int  player_suspender(void);
 int  player_retido(void);
+#ifdef NV_WEBOS
+// Saida/volta do app na LG: main.c avisa (saiu=1 escondido, 0 de volta) e
+// app.c chama o passo a cada quadro.
+void player_webos_janela(int saiu, const char *porque);
+void player_webos_fundo_passo(void);
+#endif
 // 1 = retida so ate o voo da saida pousar (Android, sem "Manter o video
 // pronto ao sair"); player_validar_retido solta em PLR_RETIDO_VOO_MS.
 int  player_retido_so_voo(void);
