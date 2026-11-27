@@ -40,6 +40,7 @@ static float anim=1;
 static unsigned version=7, listaGeracao=1, selosPedVer, selosPedGer;
 static pthread_mutex_t verTrava=PTHREAD_MUTEX_INITIALIZER;
 int selospacote_ativo(void){return pack;}
+int selospacote_desligado(void){return 0;}   /* badges Off: covered by fontes_formatter */
 unsigned selospacote_versao(void){return version;}
 int selospacote_embutidos_ok(void){return available;}
 void selospacote_colorido(int c){(void)c;}
@@ -89,7 +90,7 @@ enum {TXT_PG_FIM};
 static TxtLinha txt_linha_corta(int e,const char *p,int r,int g,int b,int a,float w){(void)e;(void)p;(void)r;(void)g;(void)b;(void)a;(void)w;return (TxtLinha){0,0};}
 static void txt_desenhar_alpha(TxtLinha l,float x,float y,float a){(void)l;(void)x;(void)y;(void)a;}
 // From addon rows: the badge block of desenharCartaoAddon.
-static void drawRowAddon(Stream *s){float tx=0,y=0,bw=800,anim=1;int sel=1;
+static void drawRowAddon(Stream *s){float tx=0,y=0,bw=800,anim=1;int sel=1,semSelos=selospacote_desligado();
 @DRAW@
 }
 // From Nuvio rows (the default view): the badge block of corpoFolha, in its own locals.
@@ -178,11 +179,11 @@ fixture = fixture.replace("@IMAGES@", function("static int selosImagensProntas("
 view_start=source.index("enum { SELOS_VISTA_PENDENTE")
 view_end=source.index("static float desenharSelosPacote(",view_start)
 fixture=fixture.replace("@VIEW@",source[view_start:view_end])
-start = draw.index("  int badgeView=selosVistaDa(")
+start = draw.index("  int badgeView=")
 end = draw.index("  y=r.y+addonPixel(titleY,pixels);", start)
 fixture = fixture.replace("@DRAW@", draw[start:end])
 # The same scenario runs once per row that draws badges.
-start = source.index("      int selosView = selosVistaDa(")
+start = source.index("      // Badges off (owner 27/11)")
 end = source.index("      if(ehMp4){ txt_desenhar_alpha(mp,", start)
 fixture = fixture.replace("@NUVIO@", source[start:end])
 with tempfile.TemporaryDirectory(prefix="nuvio-badge-ready-") as directory:

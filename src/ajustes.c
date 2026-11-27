@@ -780,7 +780,7 @@ static const char *V_PROVEDORES_ESCOPO[] = { "Compartilhada neste aparelho", "Se
 static const char *V_HDR_UI[] = { "Automático", "Desligado" };
 static const char *V_LEG_MOSTRAR[] = { "Só meus idiomas", "Todas" };
 static const char *V_SOURCE_BADGE_POSITION[] = { "Top", "Bottom" };
-static const char *V_SELOS_PACOTE[] = { "Do Nuvio", "Pacote 1", "Pacote 2", "Pacote 3" };
+static const char *V_SELOS_PACOTE[] = { "Do Nuvio", "Pacote 1", "Pacote 2", "Pacote 3", "Desligado" };
 
 // Selo de assistido: a ordem e a do disco (0 = Ligado do V_LIGA antigo vira Icone,
 // 1 = Desligado continua), entao o que ja foi gravado nao precisa migrar.
@@ -1708,7 +1708,7 @@ static const Opcao OPCOES[AJ_N] = {
   ACAO("Ver o registro na tela"),
   ESC("Medidor de desempenho",           V_MEDIDOR, 4),       // local: medidorFormaLocal
   ACAO("Guia de uso"),
-  ESC("Pacote de selos",                 V_SELOS_PACOTE, 4),   // por perfil: selospacote.c
+  ESC("Pacote de selos",                 V_SELOS_PACOTE, 5),   // por perfil: selospacote.c; last = Off
   ACAO("Adicionar pacote de selos"),
   ACAO("Remover pacote"),
   ESC("Tamanho da interface",            V_TAMANHO_UI, 9),    // local: tamanhoUiLocal
@@ -4914,7 +4914,10 @@ static void spAdicionar(const char *url) {
   spFioVivo = 1;
 }
 // Espelho da escolha: o valor da linha e selospacote_ativo() + 1.
-static void spEspelhar(void) { valor[AJ_SELOS_PACOTE] = selospacote_ativo() + 1; }
+// "Off" (owner 27/11) is the value after the packs: 1 + selospacote_n().
+static void spEspelhar(void) {
+  valor[AJ_SELOS_PACOTE] = selospacote_desligado() ? 1 + selospacote_n() : selospacote_ativo() + 1;
+}
 static void spRecolher(void) {
   if (spFioVivo && atomic_load_explicit(&spEstado, memory_order_acquire) == 3) {
     pthread_join(spFio, NULL);
@@ -10152,7 +10155,10 @@ static int definirValorDireto(int op, int novo) {
   if (op == AJ_RESOLUCAO && novo == RES_AUTO) dados_apagar(RES_ARQ_AUTO);
   if (op == AJ_ENQUETES) enquete_definir_optout(novo != 0);
   if (op == AJ_ADDONS_PRINCIPAL) sync_iniciar();
-  if (op == AJ_SELOS_PACOTE) { selospacote_escolher(novo - 1); spEspelhar(); }
+  if (op == AJ_SELOS_PACOTE) {
+    if (novo > selospacote_n()) selospacote_desligar(); else selospacote_escolher(novo - 1);
+    spEspelhar();
+  }
   if (op == AJ_PLAYER_EXTERNO || op == AJ_PLAYER_ANIME) {
     int b = novo - ppBase(op) - 3, k = op == AJ_PLAYER_ANIME;
     ppPkg[k][0] = 0;
@@ -10739,7 +10745,7 @@ static int nValores(int op) {
   if(op==AJ_IPTV_CONTA){int n=iptv_contas(NULL,0);return n>0?n:1;}
   if (op == AJ_LEG_LINGUA || op == AJ_LEG_LINGUA2 || op == AJ_AUD_LINGUA || op == AJ_AUD_LINGUA2) return nLingua > 0 ? nLingua : 1;
   if (op == AJ_TRAILER_AUDIO) return nTrAud > 0 ? nTrAud : 1;
-  if (op == AJ_SELOS_PACOTE) return 1 + selospacote_n();
+  if (op == AJ_SELOS_PACOTE) return 2 + selospacote_n();   // Do Nuvio, the packs, Off
   if (op == AJ_PLAYER_EXTERNO) return 3 + ppN();
   if (op == AJ_PLAYER_ANIME) return 4 + ppN();
   if (op == AJ_URL_LISTA) return 1 + urlN;
@@ -10814,6 +10820,7 @@ static const char *textoValor(int op) {
   if (op == AJ_PLAYER_EXTERNO || op == AJ_PLAYER_ANIME) return ppNome(op, valor[op]);
   if (op == AJ_SELOS_PACOTE) {
     int v = valor[op];
+    if (v == 1 + selospacote_n()) return "Desligado";
     return v > 0 && v <= selospacote_n() ? selospacote_nome(v - 1) : "Do Nuvio";
   }
   if (op == AJ_URL_LISTA) return urlNomeValor(valor[op]);

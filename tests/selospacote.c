@@ -195,6 +195,16 @@ int main(int argc,char **argv) {
   reiniciarPerfil(2); reiniciarPerfil(1);
   assert(selospacote_ativo() == -1 && selospacote_n() == 1);   // "Do Nuvio" lembrado
   { const char *c[] = { ARQ }; unsigned short ids[4]; assert(selospacote_casar(c, 1, ids, 4) == 0); }
+  // "Off" (owner 27/11): no badges, remembered per profile, and picking a
+  // pack (or Do Nuvio) turns it back on.
+  assert(!selospacote_desligado());
+  selospacote_desligar();
+  assert(selospacote_desligado() && selospacote_ativo() == -1);
+  reiniciarPerfil(2); assert(!selospacote_desligado());
+  reiniciarPerfil(1); assert(selospacote_desligado() && selospacote_n() == 1);
+  selospacote_escolher(0); assert(!selospacote_desligado() && selospacote_ativo() == 0);
+  reiniciarPerfil(2); reiniciarPerfil(1); assert(!selospacote_desligado() && selospacote_ativo() == 0);
+  selospacote_escolher(-1);
 
   // ---- blob da conta: o JSON do pacote DENTRO de uma string ----
   perfil = 3;

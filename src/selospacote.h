@@ -74,6 +74,12 @@ int  selospacote_da_tv(int i);                  // 1 = adicionado nesta TV (remo
 int  selospacote_n_filtros(int i);              // filtros validos e ativos
 int  selospacote_ativo(void);                   // -1 = "Do Nuvio" (o embutido)
 void selospacote_escolher(int i);               // -1 ou 0..n-1, guarda no perfil
+// "Off" in the badge pack choice (owner 27/11): the source list draws no
+// badges at all (not the built-in pack, not the old detection, not a user
+// pack) and the formatter cards drop their badge row. Per profile;
+// selospacote_escolher() turns it back on.
+int  selospacote_desligado(void);
+void selospacote_desligar(void);
 unsigned selospacote_versao(void);              // sobe a cada mudanca de lista/escolha
 
 // Acrescenta o(s) pacote(s) do texto baixado de `origem` (a URL). Aceita as 3

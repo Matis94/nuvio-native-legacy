@@ -73,6 +73,10 @@ static void addonPosicoes(const TextoAddon *t, const Stream *s, float base, int 
                            float *title, float *body, float *badges) {
   float bodyHeight = t->nv * FOLHA_ADDON_LD;
   (void)s;   // the app's Audio/Subtitles rows are not drawn in From addon
+  if (selospacote_desligado()) {   // badges off: no badge row (alturaLinha agrees)
+    *title = base; *body = *title + FOLHA_ADDON_TITULO; *badges = base;
+    return;
+  }
   *title = base + (bottom ? 0 : FOLHA_ADDON_SELOS);
   *body = *title + FOLHA_ADDON_TITULO;
   *badges = bottom ? *body + bodyHeight + (FOLHA_ADDON_SELOS - FOLHA_SELO_H) * .5f : base;
@@ -106,14 +110,15 @@ static void desenharCartaoAddon(int i,int row,GfxRect r,float tx,float tr,
   // Badges live in their own full-width row and do not compete with filename,
   // language flags or the addon identity for horizontal space.
   float tamanhoW=0;
-  if(!s->descricao[0] && s->tamanhoMB>0) {
+  int semSelos=selospacote_desligado();
+  if(!semSelos && !s->descricao[0] && s->tamanhoMB>0) {
     char gb[40];snprintf(gb,sizeof gb,"%.1f GB",s->tamanhoMB/1024.0);plrui_decimal(gb);
     tamanhoW=badge_largura(gb);
     if(tamanhoW<largura*.4f)badge_desenhar(tr-tamanhoW,y,gb,BADGE_NEUTRO,anim);
     else tamanhoW=0;
   }
   float bw=fmaxf(40,largura-(tamanhoW>0 ? tamanhoW+12 : 0));
-  int badgeView=selosVistaDa((Stream *)s,0);
+  int badgeView=semSelos?SELOS_VISTA_VAZIO:selosVistaDa((Stream *)s,0);
   if(badgeView==SELOS_VISTA_PACOTE)
     desenharSelosPacote(s,tx,y,bw,FOLHA_SELO_H,anim*(sel || selospacote_ativo()>=0?1:.85f),sel?1:.85f,0);
   else if(badgeView==SELOS_VISTA_LEGADO) {

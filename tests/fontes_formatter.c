@@ -280,7 +280,7 @@ static void completeCards(const char *dir,int pixels) {
     }
     assert(t->nv>=linhasAddonContar(&lista[ordem[row]]));
     heights[row]=linhaAltura(row);tops[row]=linhaTopo(row);
-    float body=FOLHA_ADDON_TOPO+FOLHA_ADDON_SELOS+FOLHA_ADDON_TITULO+
+    float body=FOLHA_ADDON_TOPO+(selospacote_desligado()?0:FOLHA_ADDON_SELOS)+FOLHA_ADDON_TITULO+
       (temMarca(ordem[row],automaticaDaFolha())?FOLHA_ADDON_MARCA:0);
     assert(body+t->nv*FOLHA_ADDON_LD+FOLHA_ADDON_BASE==heights[row]);
   }
@@ -641,7 +641,12 @@ int main(int argc,char **argv) {
   for(int k=0;k<arq->n;k++){assert(arq->off[k]==end);end+=arq->tam[k];}
   assert(end==strlen(longname) && arq->n>1);
   assert(arquivoAltura(longname)==arq->n*FOLHA_ARQ_H);
-  for(badgesBottom=0;badgesBottom<=1;badgesBottom++) {
+  // Badge row Top, Bottom, and Off (owner 27/11: the badge pack choice can
+  // turn the badges off; the card loses its badge row and scrolling must agree).
+  for(int mode=0;mode<=2;mode++) {
+    badgesBottom=mode==1;
+    if(mode==2)selospacote_desligar();else selospacote_escolher(-1);
+    assert(selospacote_desligado()==(mode==2));
     setting(dir,1);assert(ajustes_selos_embaixo()==badgesBottom);
     parserAndCache(dir);geometry(dir);measuredScrollGeometry(dir);
     completeCards(dir,!logicOnly);screenshotCards(dir,!logicOnly);
@@ -649,10 +654,13 @@ int main(int argc,char **argv) {
 #ifdef NV_SOURCE_PERF_DIAG
     if(!logicOnly)sourceTimingIntegration(dir);
 #endif
-    printf("PASS: complete 2000-source formatter suite with badge position %s\n",badgesBottom?"Bottom":"Top");
+    printf("PASS: complete 2000-source formatter suite with badges %s\n",mode==2?"Off":badgesBottom?"Bottom":"Top");
   }
   txt_encerrar();stream_definir_lista(NULL,0);
   if(gl)SDL_GL_DeleteContext(gl);if(win)SDL_DestroyWindow(win);IMG_Quit();SDL_Quit();
-  char path[512];snprintf(path,sizeof path,"%s/ajustes.txt",dir);unlink(path);rmdir(dir);
+  selospacote_escolher(-1);
+  char path[512];snprintf(path,sizeof path,"%s/ajustes.txt",dir);unlink(path);
+  { char sel[512];snprintf(sel,sizeof sel,"%s/selos-p0.txt",dir);unlink(sel); }
+  rmdir(dir);
   return 0;
 }

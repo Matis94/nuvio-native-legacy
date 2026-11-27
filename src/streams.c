@@ -4515,7 +4515,8 @@ static float alturaLinha(int i, int automatica, float abertura) {
     // Focus changes color/outline only. Every visible addon card retains its
     // complete formatter, including metadata below a wrapped filename.
     float vis=(float)addonLinhasVisuais(i);
-    h=FOLHA_ADDON_TOPO+FOLHA_ADDON_SELOS+FOLHA_ADDON_TITULO+vis*FOLHA_ADDON_LD+FOLHA_ADDON_BASE+
+    // Badges off (selospacote_desligado): no badge row in the card.
+    h=FOLHA_ADDON_TOPO+(selospacote_desligado()?0:FOLHA_ADDON_SELOS)+FOLHA_ADDON_TITULO+vis*FOLHA_ADDON_LD+FOLHA_ADDON_BASE+
       (temMarca(i,automatica)?FOLHA_ADDON_MARCA:0);
     // No app "Audio:" / "Subtitles:" rows here: the addon's formatter writes
     // the languages itself (as in Namer03's NuvioLN-prebuilds 7a689ad).
@@ -7024,7 +7025,8 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       // SELOS COLORIDOS (Ajustes, #198): o dono manteve a opcao (03/10). Ligada,
       // cada selo na peca da cor do seu grupo; desligada (o padrao do Glass
       // UI), todos na mesma tinta branca.
-      int selosView = selosVistaDa((Stream *)s, 1);
+      // Badges off (owner 27/11): no logos; MP4, language and the rest stay.
+      int selosView = selospacote_desligado() ? SELOS_VISTA_VAZIO : selosVistaDa((Stream *)s, 1);
       if(selosView == SELOS_VISTA_PACOTE && selosPacoteVisiveis((Stream *)s)) {
         lw=desenharSelosPacote(s,tx0,cy,txtW0-mpW,FOLHA_SELO_H,
                                ajustes_selos_coloridos() && selospacote_ativo()<0?anim*(sel?1.0f:.85f):anim,t,1);

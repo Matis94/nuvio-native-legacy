@@ -348,6 +348,7 @@ static int nPac;
 static int ativo = -1;
 static int escolhaExplicita;         // 0 = ainda nao escolheu: vale o ativo da conta
 static char escolhaUrl[512];         // "" = "Do Nuvio" escolhido de proposito
+static int desligado;                // "Off" (owner 27/11): no badges in the source list; file says "off"
 static unsigned versao = 1;
 
 // O CASAMENTO RODA NUM FIO DE FUNDO (streams.c): sao centenas de regex por
@@ -534,7 +535,7 @@ static void gravarEscolha(int perfil) {
   char nome[48];
   snprintf(nome, sizeof nome, "selos-p%d.txt", perfil);
   if (!escolhaExplicita) { dados_apagar(nome); return; }
-  dados_gravar(nome, escolhaUrl[0] ? escolhaUrl : "-");
+  dados_gravar(nome, desligado ? "off" : escolhaUrl[0] ? escolhaUrl : "-");
 }
 static void gravarConta(int perfil) {
   char nome[48]; char *s;
@@ -574,7 +575,7 @@ static void selospacote_iniciar_i(void) {
   if (perfil == perfilLido) return;
   perfilLido = perfil;
   loteLiberar(&conta); loteLiberar(&tv);
-  escolhaExplicita = 0; escolhaUrl[0] = 0;
+  escolhaExplicita = 0; escolhaUrl[0] = 0; desligado = 0;
   nomeArq(nome, sizeof nome, "selos-acct-p%d.json", perfil, 0);
   if ((t = dados_ler(nome))) {
     J *j = jParse(t, strlen(t));
@@ -594,12 +595,14 @@ static void selospacote_iniciar_i(void) {
     size_t n = strlen(t);
     while (n && (t[n - 1] == '\n' || t[n - 1] == '\r' || t[n - 1] == ' ')) t[--n] = 0;
     escolhaExplicita = n > 0;
-    snprintf(escolhaUrl, sizeof escolhaUrl, "%s", strcmp(t, "-") ? t : "");
+    desligado = !strcmp(t, "off");
+    snprintf(escolhaUrl, sizeof escolhaUrl, "%s", strcmp(t, "-") && !desligado ? t : "");
     free(t);
   }
   reconstruir();
-  printf("[selos] perfil %d: %d pacote(s)%s%s\n", perfil, nPac, ativo >= 0 ? ", ativo: " : ", ativo: Do Nuvio",
-         ativo >= 0 ? pac[ativo].nome : "");
+  printf("[selos] perfil %d: %d pacote(s)%s%s\n", perfil, nPac,
+         desligado ? ", badges off" : ativo >= 0 ? ", ativo: " : ", ativo: Do Nuvio",
+         !desligado && ativo >= 0 ? pac[ativo].nome : "");
   fflush(stdout);
 }
 void selospacote_iniciar(void) { if (perfis_ativo() == perfilLido) return; travar(); selospacote_iniciar_i(); soltar(); }
@@ -643,13 +646,22 @@ unsigned selospacote_versao(void) { return versao; }
 static void selospacote_escolher_i(int i) {
   selospacote_iniciar();
   if (i < 0 || i >= nPac) i = -1;
-  escolhaExplicita = 1;
+  escolhaExplicita = 1; desligado = 0;
   snprintf(escolhaUrl, sizeof escolhaUrl, "%s", i >= 0 ? pac[i].raw->url : "");
   gravarEscolha(perfilLido);
   ativo = i >= 0 && pac[i].nc ? i : -1;
   versao++;
 }
 void selospacote_escolher(int i) { travar(); selospacote_escolher_i(i); soltar(); }
+int selospacote_desligado(void) { selospacote_iniciar(); return desligado; }
+static void selospacote_desligar_i(void) {
+  selospacote_iniciar();
+  escolhaExplicita = 1; desligado = 1; escolhaUrl[0] = 0;
+  gravarEscolha(perfilLido);
+  ativo = -1;
+  versao++;
+}
+void selospacote_desligar(void) { travar(); selospacote_desligar_i(); soltar(); }
 
 static int selospacote_adicionar_i(const char *json, const char *origem) {
   J *raiz;
