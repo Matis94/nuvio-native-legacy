@@ -11673,6 +11673,14 @@ void ajustes_teste_ux_captura(int cenario) {
     focarOpcao(AJ_EXT_AUDIO);
     if (cenario == 40) eaAbrir();
   }
+  // 42/43: the badge pack row in Polish with no pack on hand ("From Nuvio",
+  // "Off"), and its editor (43).
+  if (cenario == 42 || cenario == 43) {
+    frAberta = 0;
+    valor[AJ_IDIOMA] = IDIOMA_PL + 1;
+    focarOpcao(AJ_SELOS_PACOTE);
+    if (cenario == 43) uxAbrirEditor(AJ_SELOS_PACOTE);
+  }
 }
 
 // O numero da opcao pela chave do disco/da conta ("idioma", "tmdb_language"): as

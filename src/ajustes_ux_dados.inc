@@ -135,7 +135,7 @@ static void uxValorTexto(int op, int v, char *buf, size_t tam) {
   } else if (op == AJ_PLAYER_EXTERNO || op == AJ_PLAYER_ANIME) {
     texto = i18n(ppNome(op, v));
   } else if (op == AJ_SELOS_PACOTE) {
-    texto = v > 0 && v <= selospacote_n() ? selospacote_nome(v - 1) : i18n("Do Nuvio");
+    texto = v == 1 + selospacote_n() ? i18n("Desligado") : v > 0 && v <= selospacote_n() ? selospacote_nome(v - 1) : i18n("Do Nuvio");
   } else if (op == AJ_TEX_MB && v > 0 && v < o->n && texAcima(v)) {
     char t[160];
     texValorTexto(v, t, sizeof t);
