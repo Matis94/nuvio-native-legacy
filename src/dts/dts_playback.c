@@ -83,7 +83,7 @@ struct DtsPlayback {
   int ext_swap, ext_swap_now, ext_swap_track, ext_swap_only, ext_failed_said;
   int ext_offset_live;   /* the pending offset applies without a seek */
   int ext_offset_quiet;  /* ...at a quiet moment (an automatic check while playing) */
-  int match_req, match_result;   /* "Match automatically" */
+  int match_req, match_result;   /* "Match automatically" (2: the automatic one, asked by the app) */
   double prefetch_req;           /* a coming jump target (dts_playback_prefetch) */
   DtsMatchInfo match_info;
   int ext_speed_ppm, ext_now_speed;   /* other version's speed (from a match) */
@@ -665,7 +665,8 @@ static void *run(void *user) {
       if (pf > 0) dts_engine_prefetch(p->engine, pf);
       dts_engine_prefetch_tidy(p->engine); }
     { int req; pthread_mutex_lock(&p->lock); req = p->match_req; p->match_req = 0; pthread_mutex_unlock(&p->lock);
-      if (req && dts_engine_external_match_arm(p->engine) < 0) {
+      if (req == 2) dts_engine_external_match_auto(p->engine);
+      else if (req && dts_engine_external_match_arm(p->engine) < 0) {
         pthread_mutex_lock(&p->lock); p->match_result = -1; pthread_mutex_unlock(&p->lock);
       } }
     { int fs = 0, fo = 0, fk = dts_engine_external_follow_poll(p->engine, &fs, &fo);
@@ -1240,6 +1241,13 @@ void dts_playback_external_match(DtsPlayback *p) {
   p->match_req = 1; p->match_result = 0;
   pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
 }
+void dts_playback_external_match_auto(DtsPlayback *p) {
+  if (!p || !p->external) return;
+  pthread_mutex_lock(&p->lock);
+  p->match_req = 2; p->match_result = 0;
+  pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
+}
+
 int dts_playback_external_match_result(DtsPlayback *p, DtsMatchInfo *out) {
   int r;
   memset(out, 0, sizeof *out);

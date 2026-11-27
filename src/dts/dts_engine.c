@@ -102,6 +102,9 @@ int dts_engine_external_shift(DtsEngine *e,int o) { (void)e;(void)o; return -1; 
 int dts_engine_external_shift_quiet(DtsEngine *e,int o) { (void)e;(void)o; return -1; }
 int dts_engine_probe_audio(const char *u,const char *h,DtsTrack *t,int m) { (void)u;(void)h;(void)t;(void)m; return -1; }
 int dts_engine_external_match_arm(DtsEngine *e) { (void)e; return -1; }
+void dts_engine_external_match_auto(DtsEngine *e) { (void)e; }
+void dts_engine_set_external_open_hook(void (*f)(void *,void *,int)) { (void)f; }
+void dts_engine_external_open_notify(void *m,void *d,int h) { (void)m;(void)d;(void)h; }
 int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) { (void)e; memset(o,0,sizeof *o); return -1; }
 void dts_engine_external_speed(DtsEngine *e,int p) { (void)e;(void)p; }
 int dts_engine_prefetch(DtsEngine *e,double s) { (void)e;(void)s; return -1; }
@@ -2437,6 +2440,7 @@ static int configure_external(DtsEngine *e,double start) {
   }
   e->ext_base_ns=(e->fmt->start_time!=AV_NOPTS_VALUE?av_rescale_q(e->fmt->start_time,AV_TIME_BASE_Q,NS):0)
                  -(x->fmt->start_time!=AV_NOPTS_VALUE?av_rescale_q(x->fmt->start_time,AV_TIME_BASE_Q,NS):0);
+  dts_engine_external_open_notify(e->fmt,x->fmt,0);   /* the subtitle match reads both indexes */
   AVStream *as=x->fmt->streams[k]; AVCodecParameters *ap=as->codecpar;
   e->ext_stream=k; e->ext_have=e->ext_eof=0; e->ext_clock_ns=INT64_MIN;
   e->ext_last_end_ns=e->ext_floor_ns=INT64_MIN;
@@ -4014,6 +4018,16 @@ static int follow_fill_conv(DtsEngine *e) {
 }
 void dts_engine_external_follow(DtsEngine *e,int on) { if(e) e->fw_on=!!on; }
 void dts_engine_external_automatch(DtsEngine *e,int on) { if(e) e->ext_automatch=!!on; }
+/* The automatic match, asked by the app (after the subtitle match): it starts
+ * at the next picture packet, reported as automatic. */
+void dts_engine_external_match_auto(DtsEngine *e) { if(e && e->ext) e->fw_autoarm=1; }
+/* Both files of an external session open (the converter here, the HLS remux
+ * in dts_remux.c): the app's hook reads their indexes (doador_webos.c). */
+static void (*g_ext_open_hook)(void *,void *,int);
+void dts_engine_set_external_open_hook(void (*fn)(void *,void *,int)) { g_ext_open_hook=fn; }
+void dts_engine_external_open_notify(void *main_fmt,void *donor_fmt,int hls) {
+  if(g_ext_open_hook && main_fmt && donor_fmt) g_ext_open_hook(main_fmt,donor_fmt,hls);
+}
 int dts_engine_external_follow_poll(DtsEngine *e,int *state,int *offset_ms) {
   int k=e?e->fw_event:0;
   *state=e?e->fw_state:0; *offset_ms=e?e->fw_event_ms:0;

@@ -99,6 +99,7 @@ int dts_engine_external_active(DtsEngine *e) { return e->external; }
 int64_t dts_engine_external_bytes(DtsEngine *e,int64_t *t) { (void)e; if(t) *t=-1; return 0; }
 int dts_engine_external_stream(DtsEngine *e) { (void)e; return -1; }
 void dts_engine_subtitle_only(DtsEngine *e,int s) { (void)e; (void)s; }
+void dts_engine_external_match_auto(DtsEngine *e) { (void)e; }
 static int ext_wakes, ext_failed_fixture, ext_replace_fail;
 int dts_engine_external_wake(DtsEngine *e) { (void)e; pthread_mutex_lock(&fixture); ext_wakes++; pthread_mutex_unlock(&fixture); return 1; }
 int dts_engine_external_woken(DtsEngine *e) { (void)e; return 0; }

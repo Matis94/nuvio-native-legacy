@@ -61,6 +61,17 @@ int esmaecer_segura_protetor_tv(void) { return 0; }
 void esmaecer_protetor_publicador(void (*publicar)(void)) { publicar(); }
 char *dados_ler(const char *nome) { (void)nome; return NULL; }
 int dados_gravar(const char *nome, const char *conteudo) { (void)nome; (void)conteudo; return 1; }
+int dados_gravar_leve(const char *nome, const char *conteudo) { (void)nome; (void)conteudo; return 1; }
+/* Audio from another source: the subtitle match at start (doadorleg.c,
+ * doador_webos.c) and the converter calls it makes. */
+void doaw_fontes_abertas(void *m, void *d, int h) { (void)m; (void)d; (void)h; }
+unsigned doaw_geracao(void) { return 0; }
+int doaw_ms(double k, double d, int *ms) { (void)k; (void)d; (void)ms; return 0; }
+int doaw_faixa_si(const char *l, const char *c, int n) { (void)l; (void)c; (void)n; return -1; }
+void doadorleg_iniciar(double pos) { (void)pos; }
+void doadorleg_cancelar(void) {}
+int doadorleg_resultado(double *k, double *d, double *c, char *m, size_t n) { (void)k; (void)d; (void)c; (void)m; (void)n; return 0; }
+void dts_engine_set_external_open_hook(void (*f)(void *, void *, int)) { (void)f; }
 void marco(const char *name) { (void)name; }
 const char *i18n(const char *s) { return s; }
 const char *rede_url_publica(const char *url,char *dst,unsigned n) { snprintf(dst,n,"%s",url);return dst; }

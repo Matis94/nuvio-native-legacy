@@ -67,6 +67,9 @@ void dts_playback_external_offset_quiet(DtsPlayback *p, int offset_ms);
  * trusted or failed (details in DtsMatchInfo, dts_engine.h). A find can also
  * come later on its own: the second look (how 5) measured another speed. */
 void dts_playback_external_match(DtsPlayback *p);
+/* The automatic match, asked by the app after the subtitle match: starts at
+ * the next picture, its result comes back as automatic. */
+void dts_playback_external_match_auto(DtsPlayback *p);
 int dts_playback_external_match_result(DtsPlayback *p, DtsMatchInfo *out);
 /* Main thread: the other version's speed for the next swap (a match's
  * ratio_ppm; 0 the same speed). And before a start, consumed by it. */

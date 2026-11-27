@@ -191,6 +191,14 @@ void dts_engine_external_track_hint(DtsEngine *, int stream, const char *lang, c
  * other version plays (Settings, owner 08/11); results come back with
  * DtsMatchInfo.automatic set. */
 void dts_engine_external_automatch(DtsEngine *, int on);
+/* Worker only, on an open external session: start the automatic match now
+ * (at the next picture packet; the app asks it after the subtitle match). */
+void dts_engine_external_match_auto(DtsEngine *);
+/* Both files of an external session opened (the converter, or the HLS remux
+ * with hls 1): fn gets their AVFormatContexts on the worker thread
+ * (doador_webos.c reads their subtitle indexes and audio tracks). */
+void dts_engine_set_external_open_hook(void (*fn)(void *main_fmt, void *donor_fmt, int hls));
+void dts_engine_external_open_notify(void *main_fmt, void *donor_fmt, int hls);
 int dts_engine_external_follow_poll(DtsEngine *, int *state, int *offset_ms);
 /* Worker only, on an open external session: replace the other version (new
  * file, track, offset, audio-only mode) at `target` seconds without reopening
