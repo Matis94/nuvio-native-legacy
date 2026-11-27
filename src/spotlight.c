@@ -1658,10 +1658,11 @@ static void desenhaCampo(float dy, float a, Uint32 agora) {
       xMax -= w + 30.0f;
     }
   }
+  float cursorX = tx - 3.0f;
   if (nConsulta) {
     TxtLinha l = txt_linha_corta(TXT_CALLOUT, consulta, SP_TINTA, 255, xMax - tx - 10.0f);
     txt_desenhar_alpha(l, tx, ty - l.h * 0.5f, a);
-    tx += l.w + 2.0f;
+    cursorX = tx + l.w + 5.0f;
   } else {
     const char *ph = ouve ? i18n(st_estado() == ST_PERMISSAO ? "Permita o microfone para falar…" : "Ouvindo…")
                    : av[0] ? i18n(av)
@@ -1673,11 +1674,10 @@ static void desenhaCampo(float dy, float a, Uint32 agora) {
                      : txt_linha_corta(TXT_CALLOUT, ph, SP_TINTA, 255, xMax - tx - 10.0f);
     txt_desenhar_alpha(l, tx, ty - l.h * 0.5f, (amb ? 0.95f : 0.45f) * a);
   }
-  // Cursor: 2 x 30 no acento (o do mockup), com o foco no campo ou com o
-  // teclado do sistema aberto para ele.
-  if ((painel == P_CAMPO || painel == P_TECLADO || digitandoSis()) && (agora / 500) % 2 == 0 &&
-      (nConsulta > 0 || digitandoSis()))
-    gfx_cor((GfxRect){ tx, ty - 15.0f, 2.0f, 30.0f }, 0.5f, ar, ag, ab, 0.95f * a);
+  // The cursor (ajustes_ui_cursor), with the focus on the field or with the
+  // system keyboard open for it.
+  if ((painel == P_CAMPO || painel == P_TECLADO || digitandoSis()) && (nConsulta > 0 || digitandoSis()))
+    ajustes_ui_cursor(cursorX, ty, 30.0f, agora, a);
   // MICROFONE: botao focavel a direita, so onde ha voz (nao se promete o que a
   // TV nao faz). Ouvindo, acende na cor do tema e um anel cresce com o som.
   if (comMic) {

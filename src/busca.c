@@ -1671,18 +1671,19 @@ static void desenhaCampo(Uint32 agora) {
       float maxW = fim - tx - 14.0f;
       if (buUmaColuna()) gfx_recorte(tx - 8.0f, c.y + 4.0f, fim - tx, c.h - 8.0f);
       const char *av = st_dono() == ST_BUSCA ? st_aviso() : "";
+      float cursorX = nConsulta ? tx + 5.0f : tx - 5.0f;
       if (nConsulta && !av[0]) {
         TxtLinha l = txt_linha_corta(estilo, consulta, BU_TX, maxW);
         txt_desenhar(l, tx, c.y + (c.h - l.h) * 0.5f);
-        tx += (buUmaColuna() ? fminf((float)l.w, maxW) : (float)l.w) + 2.0f;
+        cursorX = tx + (buUmaColuna() ? fminf((float)l.w, maxW) : (float)l.w) + 5.0f;
       } else {
         const char *ph = vozBusca() ? i18n("Ouvindo…") : av[0] ? i18n(av) : "Buscar filmes e séries";
         TxtLinha l = txt_linha_corta(estilo, ph, 255, av[0] && !vozBusca() ? 200 : 243,
                                      av[0] && !vozBusca() ? 140 : 239, 255, maxW);
         txt_desenhar_alpha(l, tx, c.y + (c.h - l.h) * 0.5f, av[0] ? 0.9f : 0.42f);
       }
-      if (painel == 0 && (nConsulta > 0 || campoFoco == 1) && (agora / 500) % 2 == 0)
-        gfx_cor((GfxRect){ nConsulta ? tx + 2.0f : tx - 6.0f, c.y + (c.h - 30.0f) * 0.5f, 2.0f, 30.0f }, 0.5f, ar, ag, ab, 1.0f);
+      if (painel == 0 && (nConsulta > 0 || campoFoco == 1))
+        ajustes_ui_cursor(cursorX, c.y + c.h * 0.5f, 30.0f, agora, 1.0f);
       if (buUmaColuna()) gfx_sem_recorte();
     }
   }

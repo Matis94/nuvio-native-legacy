@@ -2446,6 +2446,25 @@ float ajustes_ui_dicas(const char *const *teclas, const char *const *rotulos, in
 }
 void ajustes_ui_neutro(GfxRect r, float raioPx, float vidA) { ajNeutro(r, raioPx, vidA, 0.106f, 0.110f, 0.129f, 1); }
 void ajustes_ui_foco_linha(GfxRect r, float raioPx) { ajFocoLinha(r, raioPx, 1, 1); }
+// TEXT CURSOR of the fields (Search, Spotlight, the modal keyboard). The old
+// one (2 px, a hard blink half the time off) was a dot: gfx_cor's radius is a
+// share of the HEIGHT, and 0.5 on a thin bar rounded it all away; and the
+// default accent is WHITE like the text. Now: 3 px in the accent, taller than
+// the letters, over a dark 7 px gap; LIT while x changes (typing) and, still
+// for 700 ms, it pulses softly between 100% and 25%, never gone.
+void ajustes_ui_cursor(float x, float cy, float h, Uint32 agora, float a) {
+  static float ultX = -1e9f;
+  static Uint32 desde;
+  float ar, ag, ab, op = 1.0f;
+  h += 12.0f;
+  if (fabsf(x - ultX) > 0.5f) { ultX = x; desde = agora; }
+  if (!ajustes_animacoes_reduzidas() && agora - desde > 700)
+    op = 0.625f + 0.375f * cosf((float)((agora - desde - 700) % 1000) * 0.0062831853f);
+  ajustes_acento(&ar, &ag, &ab);
+  // A round end is half the WIDTH (the radius is a share of the height).
+  gfx_cor((GfxRect){ x - 3.5f, cy - h * 0.5f - 2.0f, 7.0f, h + 4.0f }, 3.5f / (h + 4.0f), 0.06f, 0.06f, 0.07f, 0.85f * a);
+  gfx_cor((GfxRect){ x - 1.5f, cy - h * 0.5f, 3.0f, h }, 1.5f / h, ar, ag, ab, op * a);
+}
 // "Rotulo ........ a → b unidade" com a barra de cada valor na mesma escala.
 float ajustes_ui_antes_depois(const char *rot, int a, int b, const char *unid, int max,
                               float x, float y, float w, int compacto, float cr, float cg, float cb) {
