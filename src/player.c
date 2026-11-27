@@ -7633,10 +7633,16 @@ static void bufferDadosDesenhar(float direita,float y,float alpha) {
 // OK num capitulo (tecla, clique ou dedo): busca o comeco dele e fecha a fileira.
 static void capituloPular(const MkvCap *c, int i) {
   double de = posSeg, alvo = c[i].inicio;
-  if (scrubbing) terminarSalto();
   posSeg = (float)alvo;
-  recuarAutomatico(de, alvo);
-  if (comVideo) buscarUsuario(alvo);
+  if (scrubbing) {
+    // The scrub ends AT the chapter: terminarSalto makes the only seek (two in
+    // a row are what webOS refuses with "seek Failure", #246).
+    if (!scrubToque) recuarAutomatico(scrubInicio, alvo);
+    terminarSalto();
+  } else {
+    recuarAutomatico(de, alvo);
+    if (comVideo) buscarUsuario(alvo);
+  }
   printf("[seg] capitulo %d \"%s\" em %.1fs\n", i, c[i].nome, alvo); fflush(stdout);
   capFoco = 0;
 }
