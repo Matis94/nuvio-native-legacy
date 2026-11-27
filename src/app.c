@@ -2788,7 +2788,7 @@ static int parteArqK = -1;
 static char parteAutoUrl[NV_MEDIA_URL_MAX];
 static int parteAutoEsperando;
 static int parteProx = -1, parteProxFase;   // 0 nada, 1 pedido, 2 pronto, 3 falhou, 4 ultima tentativa
-static Uint32 parteProxDesde;
+static Uint32 parteProxDesde, parteProxProntoEm;
 static char parteProxUrl[NV_MEDIA_URL_MAX];
 
 static void parteAviso(int k) {
@@ -3094,9 +3094,17 @@ static void vigiarPartes(void) {
       partes_link_pedir(sl->usenet, sl->item, sl->arq[prox].id, 0);
       parteProxFase = 1; parteProxDesde = SDL_GetTicks();
     }
+    // Um link pronto ha mais de 20 min (pausa nos creditos, por exemplo) pode
+    // ter vencido no debrid: pede de novo antes de trocar.
+    if (parteProxFase == 2 && SDL_GetTicks() - parteProxProntoEm > 20u * 60000u) {
+      printf("[partes] next part: the link is over 20 min old, asking again\n");
+      fflush(stdout);
+      partes_link_pedir(sl->usenet, sl->item, sl->arq[prox].id, 0);
+      parteProxFase = 1; parteProxDesde = SDL_GetTicks(); parteProxUrl[0] = 0;
+    }
     if (parteProxFase == 1 || parteProxFase == 4) {
       r = partes_link_estado(parteProxUrl, sizeof parteProxUrl, NULL);
-      if (r == 1) parteProxFase = 2;
+      if (r == 1) { parteProxFase = 2; parteProxProntoEm = SDL_GetTicks(); }
       else if (r == -1 || r == -2) {
         if (parteProxFase == 4) { parteFalhou("no link for the next part"); return; }
         parteProxFase = 3;
