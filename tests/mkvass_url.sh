@@ -12,6 +12,6 @@ ${FFMPEG:-/opt/homebrew/bin/ffmpeg} -v error -y \
   -i tests/fixtures/ass/simples.ass -map 0:v -map 1:s \
   -c:v libx264 -c:s ass "$DIR/test.mkv"
 cc -Isrc -O1 -g tests/mkvass_url.c src/mkvass.c src/imgsub.c src/pgs.c src/legenda.c tests/mkvass_i18n.c src/assrender.c src/dados.c \
-  -o "$DIR/test"
+  -o "$DIR/test" -lz -lm
 mkdir "$DIR/dados"
 NUVIO_DADOS="$DIR/dados" "$DIR/test" "$DIR/test.mkv"
