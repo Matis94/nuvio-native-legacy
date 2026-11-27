@@ -497,6 +497,7 @@ static int volFoco;
 enum { SED_OFFSET, SED_PASSO, SED_KAND, SED_DICA, SED_SCAN, SED_ZERAR };
 #define SED_MAXL 8
 static int sincEd, sincFoco, sincRep, sincPasso = 1, sincOrig;
+static unsigned sincAutoVisto;
 // SCAN AGAIN'S PICKER: OK on "Scan again" opens a small overlay over the
 // editor with Auto and the file's own audio tracks; OK on one keeps it for
 // this show (audioext) and runs the whole sync again with it. Back closes it.
@@ -1447,8 +1448,20 @@ static int sincLinhas(int *tipo, int *arg) {
 static void sincFmt(int ms, char *v, unsigned tam) {
   audioext_formatar_offset(ms, v, tam, i18n("%c%u.%03u s"), i18n("%c%u min %u.%03u s"));
 }
+// An automatic result while the editor is open (the audio match landing
+// after the subtitles): it becomes what Cancel goes back to.
+static void sincSeguirAuto(void) {
+  unsigned g = audioext_auto_geracao();
+  if (g == sincAutoVisto) return;
+  sincAutoVisto = g;
+  if (sincEd && audioext_offset_ms() != sincOrig) {
+    printf("[ext-audio] sync editor: an automatic result landed, Cancel now goes back to %d ms (was %d)\n", audioext_offset_ms(), sincOrig);
+    fflush(stdout);
+    sincOrig = audioext_offset_ms();
+  }
+}
 static void sincAbrir(void) {
-  sincEd = 1; sincFoco = 0; sincRep = 0; sincOrig = audioext_offset_ms();
+  sincEd = 1; sincFoco = 0; sincRep = 0; sincOrig = audioext_offset_ms(); sincAutoVisto = audioext_auto_geracao();
   printf("[ext-audio] sync editor: open at %d ms\n", sincOrig); fflush(stdout);
 }
 static void scanRotulo(int i, char *nome, size_t nn, char *val, size_t nv) {
@@ -1498,6 +1511,7 @@ static void sincTecla(SDL_Keycode k, int repeat) {
   char v[48];
   if (scanPag) { scanTecla(k); return; }
   if (sincFoco >= n) sincFoco = n - 1;
+  sincSeguirAuto();
   if (k == SDLK_AC_BACK || k == SDLK_ESCAPE || k == SDLK_BACKSPACE) {
     // Cancel: the offset of before comes back.
     if (audioext_offset_ms() != sincOrig) {
@@ -2698,6 +2712,7 @@ static void corpoSinc(GfxRect c, float a) {
   float ar, ag, ab;
   ajustes_acento(&ar, &ag, &ab);
   audioext_kandydatos(km, kp, 3);
+  sincSeguirAuto();
   if (sincFoco >= n) sincFoco = n - 1;
   { TxtLinha t = txt_linha(TXT_ILHA_PERGUNTA, i18n("Audio sync"), 243, 242, 239, 255);
     txt_desenhar_alpha(t, x0 + 10.0f, y, a);

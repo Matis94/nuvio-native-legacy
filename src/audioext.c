@@ -38,6 +38,7 @@ static uint64_t relogioPadrao(void) {
 static uint64_t (*relogio)(void) = relogioPadrao;
 void audioext_definir_relogio(uint64_t (*fn)(void)) { relogio = fn ? fn : relogioPadrao; }
 static unsigned pedidoGeracao;
+static unsigned autoGeracao;
 static int prefSoAudio, prefSerie = 1;
 // SAFETY NET (owner, 07/11): a start with this mark began and the other
 // version's audio never played (it failed, hung, or the person backed out
@@ -531,7 +532,11 @@ void audioext_dopasuj_resultado(int ok, const AudioExtDopasuj *r) {
   }
   dopasujInfo.ms = offsetMs;
   dopasujAviso = ok ? 1 : -1;
+  if (ok) autoGeracao++;
 }
+// Bumped by every match result applied: the sync editor's Cancel goes back to
+// the newest automatic offset, not to one from before it.
+unsigned audioext_auto_geracao(void) { return autoGeracao; }
 int audioext_dopasuj_aviso_consumir(AudioExtDopasuj *out) {
   int a = dopasujAviso;
   dopasujAviso = 0;
