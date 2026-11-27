@@ -193,13 +193,49 @@ static int mp4_single_p8(DtsEngine *e) {
   printf("[mp4-bd-test] verified single-track P8.1: video=%d; RPU passthrough; reserved=16 MiB\n",base);fflush(stdout);
   return 1;
 }
+/* "Dolby Vision P7 to P8.1" off (owner 27/11): a Dolby Vision MP4 the TV
+ * refuses still plays, as HDR10. A dual-track Blu-ray MP4 gives only its base
+ * track (the P7 enhancement track is never read); any other layout goes on to
+ * the base-layer-only path in the open (dv_strip). Nothing is re-encoded. */
+static int mp4_hdr10_base(DtsEngine *e) {
+  int base=-1,el=-1,videos=0,inband=0;
+  for(unsigned i=0;i<e->fmt->nb_streams;i++) {
+    AVCodecParameters *p=e->fmt->streams[i]->codecpar;
+    if(p->codec_type!=AVMEDIA_TYPE_VIDEO || (e->fmt->streams[i]->disposition&AV_DISPOSITION_ATTACHED_PIC))continue;
+    videos++;
+    const AVPacketSideData *d=av_packet_side_data_get(p->coded_side_data,p->nb_coded_side_data,AV_PKT_DATA_DOVI_CONF);
+    if(d && d->size>=sizeof(AVDOVIDecoderConfigurationRecord)) {
+      const AVDOVIDecoderConfigurationRecord *c=(const AVDOVIDecoderConfigurationRecord *)d->data;
+      if(c->dv_profile==7 && !c->bl_present_flag && c->el_present_flag && el<0)el=(int)i;
+      else if(c->dv_profile==7 && c->bl_present_flag && p->codec_id==AV_CODEC_ID_HEVC)inband=1;
+    } else if(p->codec_id==AV_CODEC_ID_HEVC && base<0) base=(int)i;
+  }
+  if(videos==1 && inband) {
+    /* One P7 track with the EL in band: the open drops RPU, EL and the
+     * nonzero layers from every picture (dv_strip). */
+    e->hdr10_base=1;
+    puts("[mp4-bd-test] P7 conversion off: HDR10 from the in-band base layer");fflush(stdout);
+    return 0;
+  }
+  if(videos!=2 || base<0 || el<0)return fail(e,"MP4 P7 conversion unavailable",0);
+  if(mp4_restore_hdr(e,base,0)<0)return -1;
+  e->hdr10_base=1;
+  e->info.video_stream=base;
+  e->fmt->streams[el]->discard=AVDISCARD_ALL;
+  {
+    AVCodecParameters *bp=e->fmt->streams[base]->codecpar;
+    printf("[mp4-bd-test] P7 conversion off: HDR10 base track=%d %dx%d trc=%d, enhancement track=%d not read\n",
+           base,bp->width,bp->height,bp->color_trc,el);fflush(stdout);
+  }
+  return 0;
+}
 static int mp4_configure(DtsEngine *e) {
   if(!e->allow_mp4)return 0;
   if(!e->dv ||
      !e->fmt->iformat || !strstr(e->fmt->iformat->name,"mov"))
     return fail(e,"MP4 test requires a Dolby Vision MP4",0);
   int single=mp4_single_p8(e);if(single)return single<0?-1:0;
-  if(!e->allow_p7 || !nv_dv7_available())return fail(e,"MP4 P7 conversion unavailable",0);
+  if(!e->allow_p7 || !nv_dv7_available())return mp4_hdr10_base(e);
   int base=-1,el=-1,videos=0;
   for(unsigned i=0;i<e->fmt->nb_streams;i++) {
     AVCodecParameters *p=e->fmt->streams[i]->codecpar;

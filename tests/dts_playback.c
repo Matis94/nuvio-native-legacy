@@ -76,6 +76,7 @@ void dts_engine_allow_p7(DtsEngine *e,int on) { (void)e; (void)on;
 }
 void dts_engine_dv(DtsEngine *e,int on) { (void)e; last_dv=on; }
 void dts_engine_mp4_test(DtsEngine *e,int on) { (void)e;assert(on==mp4_fixture); }
+int dts_engine_hdr10_base(DtsEngine *e) { (void)e; return 0; }   /* the HDR10 base route is covered by mp4_bd_engine/mp4_p8_engine */
 void dts_engine_dv_audio(DtsEngine *e,int mode) { e->dv_audio=mode; }
 static void fixedInfo(DtsEngine *e) {
  if(e->dv_audio) {

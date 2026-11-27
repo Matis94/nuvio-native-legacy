@@ -20,7 +20,7 @@ int main(int argc,char **argv) {
   snprintf(rpu,sizeof rpu,"%s/%s-output.nal",argv[1],argv[2]);
   const char *good[]={"p81","p81-inband-nocolr","p8-unknown","p8-zero-inband"};
   const char *bad[]={"p84","p8-compat2","p81-extra-video","p81-with-el","p81-no-bl",
-    "p81-bad-rpu","p81-p7-rpu","p81-sdr","p5","dual","p8-zero-nosps",
+    "p81-bad-rpu","p81-p7-rpu","p81-sdr","p5","p8-zero-nosps",
     "p8-zero-sdr","p8-zero-hlg","p8-zero-colr-sdr","p8-zero-colr-hlg",
     "p8-zero-bad-rpu","p8-zero-p7-rpu","p8-zero-no-rpu","p8-zero-extra-video",
     "p8-zero-with-el","p8-zero-no-bl"};
@@ -55,6 +55,16 @@ int main(int argc,char **argv) {
       if(strstr(bad[i],"colr-sdr") || strstr(bad[i],"colr-hlg"))
         assert(strstr(dts_engine_error(e),"does not confirm HDR10"));
     }
+    // Dual-track P7 with the P7 conversion off: HDR10 from its base track
+    // (owner 27/11), never Dolby Vision and never the enhancement track.
+    snprintf(path,sizeof path,"%s/%s-dual.mp4",argv[1],argv[2]);
+    check(e,dts_engine_open(e,path,"",-1,0,0));
+    assert(dts_engine_hdr10_base(e) && !dts_engine_info(e)->dovi_profile);
+    { DtsFrame f;int r,v=0;while((r=dts_engine_next(e,&f))>0)if(f.kind==DTS_VIDEO){
+        size_t pre,at=nv_dv7_start(f.data,f.size,0,&pre);v++;
+        while(at<(size_t)f.size){size_t b=at+pre,np,en=nv_dv7_start(f.data,f.size,b,&np);
+          int t=(f.data[b]>>1)&63;assert(t!=62 && t!=63 && !(f.data[b]&1) && !(f.data[b+1]>>3));at=en;pre=np;}}
+      check(e,r);assert(v==20); }
     snprintf(path,sizeof path,"%s/%s-p81.mp4",argv[1],argv[2]);
     dts_engine_mp4_test(e,0);check(e,dts_engine_open(e,path,"",-1,0,0));
     assert(drain_split(e,rpu,NULL)==20);
@@ -65,6 +75,6 @@ int main(int argc,char **argv) {
     dts_engine_cancel(e);DtsFrame f;assert(dts_engine_next(e,&f)<0);dts_engine_destroy(e);
   }
   dts_engine_set_ahead_mib(0);
-  puts("PASS verified P8.1 compat0/1: actual SPS proof, unchanged RPU, no P7 converter, presets64/128/256, seeks, resume, audio, OFF isolation; missing SPS, SDR/HLG including false HDR10 container tags, corrupt/missing/P7 RPU and unsupported layouts refused");
+  puts("PASS verified P8.1 compat0/1: actual SPS proof, unchanged RPU, no P7 converter, presets64/128/256, seeks, resume, audio, OFF isolation; missing SPS, SDR/HLG including false HDR10 container tags, corrupt/missing/P7 RPU and unsupported layouts refused; dual-track P7 as HDR10 base");
   return 0;
 }

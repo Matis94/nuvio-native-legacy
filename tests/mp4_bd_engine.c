@@ -25,6 +25,24 @@ static int drain_split(DtsEngine *e,const char *rpu_path,FILE *pictures) {
   }
   check(e,result);assert(videos>0 && audios>0);return videos;
 }
+/* "Dolby Vision P7 to P8.1" off: the dual-track MP4 plays its base track as
+ * HDR10, with no RPU, EL or nonzero-layer NAL in any picture. */
+static int drain_hdr10(DtsEngine *e) {
+  DtsFrame f;int result,videos=0;int64_t last=INT64_MIN;
+  assert(dts_engine_hdr10_base(e) && !dts_engine_info(e)->dovi_profile);
+  while((result=dts_engine_next(e,&f))>0) {
+    if(f.kind!=DTS_VIDEO)continue;
+    assert(f.dts_ns>=last);last=f.dts_ns;videos++;
+    size_t pre,at=nv_dv7_start(f.data,f.size,0,&pre);
+    while(at<(size_t)f.size) {
+      size_t begin=at+pre,nextpre,end=nv_dv7_start(f.data,f.size,begin,&nextpre);
+      assert(end-begin>=2);int type=(f.data[begin]>>1)&63;
+      assert(type!=62 && type!=63 && !(f.data[begin]&1) && !(f.data[begin+1]>>3));
+      at=end;pre=nextpre;
+    }
+  }
+  check(e,result);return videos;
+}
 #ifndef MP4_BD_MAIN
 #define MP4_BD_MAIN main
 #endif
@@ -85,12 +103,21 @@ int MP4_BD_MAIN(int argc,char **argv) {
     assert(strstr(dts_engine_error(e),"not HDR10"));
     assert(dts_engine_open(e,argv[16],"",-1,0,0)<0);
     assert(strstr(dts_engine_error(e),"colour conflict"));
+    // P7 conversion off with the MP4 recovery on: HDR10 from the base track.
+    dts_engine_allow_p7(e,0);check(e,dts_engine_open(e,argv[4],"",-1,0,0));
+    assert(dts_engine_info(e)->video_stream==0);
+    { const DtsMediaInfo *m=dts_engine_info(e);assert(m->color_transfer==16 && !strcmp(m->hdr,"PQ")); }
+    assert(drain_hdr10(e)==20);
+    check(e,dts_engine_seek(e,.4));assert(drain_hdr10(e)>0);
+    check(e,dts_engine_open(e,argv[8],"",-1,0,0));
+    assert(dts_engine_info(e)->video_stream==1);assert(drain_hdr10(e)==20);
+    dts_engine_allow_p7(e,1);
     // Turning the per-engine experiment off restores the baseline path.
     dts_engine_mp4_test(e,0);check(e,dts_engine_open(e,argv[4],"",-1,0,0));
     assert(!dts_engine_info(e)->dovi_profile);
     dts_engine_cancel(e);DtsFrame f;assert(dts_engine_next(e,&f)<0);dts_engine_destroy(e);
   }
   dts_engine_set_ahead_mib(0);
-  puts("PASS real dual-track MEL/FEL MP4: P8.1 RPU on each base picture, in-band/hvcC SPS HDR10 recovery without colr, B-frames, seeks, audio changes, OFF baseline, MKV/P8 isolation, bounded cache, missing SPS, SDR refusal, corrupt/missing/mismatched RPU and cancellation");
+  puts("PASS real dual-track MEL/FEL MP4: P8.1 RPU on each base picture, in-band/hvcC SPS HDR10 recovery without colr, B-frames, seeks, audio changes, OFF baseline, HDR10 base track with P7 off, MKV/P8 isolation, bounded cache, missing SPS, SDR refusal, corrupt/missing/mismatched RPU and cancellation");
   return 0;
 }

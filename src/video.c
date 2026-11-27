@@ -3224,7 +3224,10 @@ static int tocarFonte(const char *url, int modoTrailer) {
     nv_dvaudio_sem_dts = dtsDesligado;
     dtsHabilitado = conversao && !dtsDesligado;
 #ifdef NV_MP4_BD_TEST
-    mp4TestEnabled=ajustes_mp4_bd_test() && conversao;
+    /* Always on with the converter (owner 27/11): "Dolby Vision P7 to P8.1"
+     * decides only how a refused Dolby Vision MP4 plays: P8.1, or HDR10 from
+     * its base layer when that setting is off. */
+    mp4TestEnabled=conversao;
 #endif
   }
 #ifdef NV_MP4_BD_TEST
@@ -4649,7 +4652,7 @@ static int iniciarDts(int stream) {
   dts_playback_next_p7_mapping(ajustes_dv7_mapping());
 #endif
 #ifdef NV_MP4_BD_TEST
-  dts_playback_next_p7(ajustes_dv7() || mp4TestPending);
+  dts_playback_next_p7(ajustes_dv7());
   dts_playback_next_mp4_test(mp4TestPending);
 #else
   dts_playback_next_p7(ajustes_dv7());
@@ -4953,6 +4956,14 @@ static void sincronizarRotaDts(const DtsMediaInfo *info) {
     printf("[audio-route] event=prepared-dv profile=%d compat=%d controllerDv=1\n",
       info->dovi_profile,info->dovi_bl_compatibility_id);fflush(stdout);
   }
+#ifdef NV_MP4_BD_TEST
+  /* Dolby Vision MP4 with "Dolby Vision P7 to P8.1" off: the worker plays the
+   * HDR10 base layer, so the overlay, seek and audio policy leave the DV route. */
+  if (info && dtsModoDv && mp4TestStarted && info->width > 0 && info->video_codec[0] && !info->dovi_profile) {
+    dtsModoDv=0;
+    printf("[audio-route] event=mp4-hdr10-base controllerDv=0\n");fflush(stdout);
+  }
+#endif
 }
 static void bombearDts(void) {
   DtsPlaybackStatus st;

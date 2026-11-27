@@ -169,11 +169,11 @@ int main(void) {
   valor[AJ_DV_AUDIO_FIXO]=1;assert(ajustes_dv_audio_fixo()==0 && foraDestaPlataforma(AJ_DV_AUDIO_FIXO));
   valor[AJ_DV_AUDIO_FIXO]=0;
 #ifdef NV_MP4_BD_TEST
-  // Dolby Vision MP4 follows "Dolby Vision P7 to P8.1" (one switch, owner 27/11).
+  // Dolby Vision MP4 recovery is always on (owner 27/11); no row of its own.
   assert(foraDestaPlataforma(AJ_MP4_BD_TEST));
   { int antes=valor[AJ_DV7];
-    valor[AJ_MP4_BD_TEST]=0;valor[AJ_DV7]=1;assert(!ajustes_mp4_bd_test());
-    valor[AJ_MP4_BD_TEST]=1;valor[AJ_DV7]=0;assert(ajustes_mp4_bd_test());
+    valor[AJ_DV7]=1;assert(ajustes_mp4_bd_test());
+    valor[AJ_DV7]=0;assert(ajustes_mp4_bd_test());
     valor[AJ_DV7]=antes; }
 #endif
   // A failed immediate save restores the visible and live toggle state.

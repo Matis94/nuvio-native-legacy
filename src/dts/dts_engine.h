@@ -69,6 +69,9 @@ void dts_engine_p7_mapping(DtsEngine *, int enabled);
 /* Strict experimental dual-track P7 MP4 open; never enabled for MKV or native
  * P5/P8 playback. Only the test build implements this device-local opt-in. */
 void dts_engine_mp4_test(DtsEngine *, int enabled);
+/* 1 when a Dolby Vision MP4 opened with the P7 conversion off plays as HDR10
+ * (base layer only): the playback leaves its Dolby Vision route. */
+int  dts_engine_hdr10_base(DtsEngine *);
 /* Open and seek return 0 on success, negative on error. */
 int dts_engine_open(DtsEngine *, const char *url, const char *headers,
                     int audio_stream, int core_only, double start_seconds);

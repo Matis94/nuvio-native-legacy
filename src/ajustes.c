@@ -3489,9 +3489,9 @@ int ajustes_dv7_mapping(void) {
 }
 int ajustes_mp4_bd_test(void) {
 #if defined(NV_MP4_BD_TEST) && defined(NV_WEBOS) && defined(NV_DV7_CONVERSION)
-  // Dolby Vision MP4 is part of "Dolby Vision P7 to P8.1" now (owner 27/11):
-  // one switch for MKV and MP4; the old MP4 row is gone.
-  return ajustes_dv7();
+  // Always on with the converter (owner 27/11): the old MP4 row is gone and
+  // "Dolby Vision P7 to P8.1" decides P8.1 or HDR10 (video.c, dts_mp4_dual.inc).
+  return 1;
 #else
   return 0;
 #endif

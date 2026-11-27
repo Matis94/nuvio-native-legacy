@@ -294,6 +294,12 @@ static int prepareModePrimed(DtsPlayback *p, int stream, int core, double target
     p->dv=1;dts_engine_dv(p->engine,1);
     nativeEvent(p,"{\"dtsStage\":{\"name\":\"prepared-dv-route\"}}");
   }
+  /* Dolby Vision MP4 with "Dolby Vision P7 to P8.1" off: the engine plays the
+   * HDR10 base layer, so the native load is a plain HEVC HDR10 one. */
+  if(p->dv && info && dts_engine_hdr10_base(p->engine)) {
+    p->dv=0;dts_engine_dv(p->engine,0);
+    nativeEvent(p,"{\"dtsStage\":{\"name\":\"prepared-hdr10-base-route\"}}");
+  }
   int pct_resume=p->resume_pct>0;
   if(pct_resume) {
     double pct=p->resume_pct;p->resume_pct=0;

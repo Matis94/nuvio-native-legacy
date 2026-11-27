@@ -70,6 +70,7 @@ void dts_engine_dv_audio(DtsEngine *e,int mode) { (void)e;(void)mode; }
 void dts_engine_allow_p7(DtsEngine *e, int enabled) { (void)e; (void)enabled; }
 void dts_engine_p7_mapping(DtsEngine *e,int enabled) { (void)e;(void)enabled; }
 void dts_engine_mp4_test(DtsEngine *e,int enabled) { (void)e;(void)enabled; }
+int dts_engine_hdr10_base(DtsEngine *e) { (void)e; return 0; }
 void dts_engine_metrics(DtsEngine *e,DtsEngineMetrics *out) { (void)e; if(out) memset(out,0,sizeof(*out)); }
 int dts_engine_open(DtsEngine *e,const char *u,const char *h,int a,int c,double s) {
   (void)e;(void)u;(void)h;(void)a;(void)c;(void)s; return -1;
@@ -276,6 +277,7 @@ struct DtsEngine {
   unsigned dv7_capacity;
 #ifdef NV_MP4_BD_TEST
   int allow_mp4, mp4_p8_compat_verified;
+  int hdr10_base;            /* DV MP4 with the P7 conversion off: played as HDR10 */
   NvMp4Pair *mp4;
 #endif
   AVFrame *decoded, *encoded;
@@ -1682,7 +1684,7 @@ static void close_media(DtsEngine *e) {
   nv_hevc_annexb_close(&e->hevc_annexb);
   av_freep(&e->dv7_buffer); e->dv7_capacity=0; e->dv7=0; e->mapping_reported=0;
 #ifdef NV_MP4_BD_TEST
-  e->mp4_p8_compat_verified=0;
+  e->mp4_p8_compat_verified=0; e->hdr10_base=0;
   if(e->mp4) {
     for(int i=0;i<MP4_BASE_QUEUE;i++)av_packet_free(&e->mp4->base[i]);
     av_freep(&e->mp4);
@@ -1847,6 +1849,13 @@ void dts_engine_mp4_test(DtsEngine *e,int enabled) {
   if(e)e->allow_mp4=!!enabled;
 #else
   (void)e;(void)enabled;
+#endif
+}
+int dts_engine_hdr10_base(DtsEngine *e) {
+#ifdef NV_MP4_BD_TEST
+  return e && e->hdr10_base && !e->info.dovi_profile;
+#else
+  (void)e; return 0;
 #endif
 }
 int dts_engine_available(void) {
@@ -2661,13 +2670,17 @@ int dts_engine_open(DtsEngine *e,const char *url,const char *headers,int audio,i
         !nv_dv7_profile(conf->dv_profile,conf->el_present_flag,
                        e->info.dovi_bl_present,conf->rpu_present_flag) || vp->codec_id!=AV_CODEC_ID_HEVC;
     int compat=conf->dv_bl_signal_compatibility_id;
-    if (unsupported && external && vp->codec_id==AV_CODEC_ID_HEVC && e->info.dovi_bl_present &&
+    int base_ok=external;
+#ifdef NV_MP4_BD_TEST
+    if(e->hdr10_base)base_ok=1;   /* DV MP4, P7 conversion off: HDR10 base layer */
+#endif
+    if (unsupported && base_ok && vp->codec_id==AV_CODEC_ID_HEVC && e->info.dovi_bl_present &&
         (compat==1 || compat==2 || compat==4 || compat==6)) {
       /* External audio needs this path, the Dolby Vision layer cannot take it
        * (P7 with the P7 conversion off): play the HDR10/SDR/HLG base layer,
        * enhancement layer and RPU dropped from every picture. */
-      printf("[ext-audio] Dolby Vision profile %d not converted here: base layer only (compatibility %d)\n",
-        conf->dv_profile,compat);
+      printf("[%s] Dolby Vision profile %d not converted here: base layer only (compatibility %d)\n",
+        external?"ext-audio":"mp4-bd-test",conf->dv_profile,compat);
       fflush(stdout);
       e->dv_strip=1; e->info.dovi_profile=e->info.dovi_level=0;
       e->info.dovi_rpu_present=e->info.dovi_el_present=e->info.dovi_bl_present=0;
