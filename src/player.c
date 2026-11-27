@@ -3956,9 +3956,20 @@ static void esconderControles(void) { barraFoco = 0; capFoco = 0; visivel = 0; u
 // Os capitulos do arquivo como o Nuvio TV os mostra (PlayerChapters.normalize):
 // em ordem, um por inicio, e so com dois ou mais — "Chapter 1" sozinho no 0 nao
 // tem para onde pular. Com o ajuste desligado, nenhum.
+// The setting is a set of kinds (2.0.9 do Namer): movies 1, shows 2, anime 4.
+// Anime is anime whether it is a show or a film (artehero_eh_anime).
+static int capitulosLigadosAqui(void) {
+  const CatItem *it = item();
+  int tipos = ajustes_capitulos(), bit;
+  if (!tipos) return 0;
+  if (it && artehero_eh_anime(it)) bit = 4;
+  else if ((it && !strcmp(it->tipo, "series")) || epE > 0) bit = 2;
+  else bit = 1;
+  return (tipos & bit) != 0;
+}
 static int capitulosDoArquivo(MkvCap *c, int max) {
   int n, i, j, k = 0;
-  if (!ajustes_capitulos() || ehCanal() || max <= 0) return 0;
+  if (!capitulosLigadosAqui() || ehCanal() || max <= 0) return 0;
   n = capmkv_lista(c, max);
   for (i = 1; i < n; i++)
     for (j = i; j > 0 && c[j].inicio < c[j - 1].inicio; j--) { MkvCap t = c[j]; c[j] = c[j - 1]; c[j - 1] = t; }
