@@ -325,6 +325,7 @@
   T("A Samsung informa a porcentagem, não os segundos", "Samsung повідомляє відсоток, а не секунди"),
   T("A TV decodifica cartazes e fundos por conta própria, já no tamanho certo. Antes um fundo 4K travava a tela por segundos.", "Телевізор сам декодує постери й фони одразу в потрібному розмірі. Раніше 4K-фон зависав екран на кілька секунд."),
   T("A TV está sem conexão", "Телевізор без з’єднання"),
+  T("A TV faz as miniaturas enquanto o vídeo toca: primeiro onde você procura, depois perto da posição atual e então o filme todo. Pausa sozinha se faltar memória.", "Телевізор створює мініатюри під час відтворення: спершу там, де ви шукаєте, потім біля поточної позиції, а далі для всього фільму. Сам призупиняється, якщо бракує пам'яті."),
   T("A TV não conseguiu tocar o formato desta fonte.", "The TV couldn't play this source's format."),
   T("A TV não deixou o app usar o player de vídeo", "Телевізор не дозволив застосунку використати відеоплеєр"),
   T("A TV não diz quantas conexões o player abre", "Телевізор не каже, скільки з'єднань відкриває плеєр"),

@@ -326,6 +326,7 @@
   T("A Samsung informa a porcentagem, não os segundos", "Η Samsung αναφέρει ποσοστό, όχι δευτερόλεπτα"),
   T("A TV decodifica cartazes e fundos por conta própria, já no tamanho certo. Antes um fundo 4K travava a tela por segundos.", "Η τηλεόραση αποκωδικοποιεί μόνη της αφίσες και φόντα, ήδη στο σωστό μέγεθος. Ένα φόντο 4K πάγωνε παλιά την οθόνη για δευτερόλεπτα."),
   T("A TV está sem conexão", "Η τηλεόραση δεν έχει σύνδεση"),
+  T("A TV faz as miniaturas enquanto o vídeo toca: primeiro onde você procura, depois perto da posição atual e então o filme todo. Pausa sozinha se faltar memória.", "Η τηλεόραση φτιάχνει τις μικρογραφίες ενώ παίζει το βίντεο: πρώτα εκεί που ψάχνετε, μετά γύρω από την τρέχουσα θέση και μετά για όλη την ταινία. Σταματά μόνη της αν η μνήμη δεν φτάνει."),
   T("A TV não conseguiu tocar o formato desta fonte.", "The TV couldn't play this source's format."),
   T("A TV não deixou o app usar o player de vídeo", "Η τηλεόραση δεν άφησε την εφαρμογή να χρησιμοποιήσει το πρόγραμμα αναπαραγωγής βίντεο"),
   T("A TV não diz quantas conexões o player abre", "Η τηλεόραση δεν λέει πόσες συνδέσεις ανοίγει η εφαρμογή"),

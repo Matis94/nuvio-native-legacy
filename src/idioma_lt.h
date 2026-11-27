@@ -326,6 +326,7 @@
   T("A Samsung informa a porcentagem, não os segundos", "Samsung praneša procentą, ne sekundes"),
   T("A TV decodifica cartazes e fundos por conta própria, já no tamanho certo. Antes um fundo 4K travava a tela por segundos.", "Televizorius pats dekoduoja plakatus ir fonus jau tinkamo dydžio. Anksčiau 4K fonas kelioms sekundėms užšaldydavo ekraną."),
   T("A TV está sem conexão", "Televizorius neprisijungęs"),
+  T("A TV faz as miniaturas enquanto o vídeo toca: primeiro onde você procura, depois perto da posição atual e então o filme todo. Pausa sozinha se faltar memória.", "Televizorius kuria miniatiūras, kol leidžiamas vaizdo įrašas: pirmiausia ten, kur ieškote, tada aplink dabartinę padėtį, o paskui visam filmui. Jei trūksta atminties, sustoja pats."),
   T("A TV não conseguiu tocar o formato desta fonte.", "The TV couldn't play this source's format."),
   T("A TV não deixou o app usar o player de vídeo", "Televizorius neleido programai naudoti vaizdo grotuvo"),
   T("A TV não diz quantas conexões o player abre", "Televizorius nesako, kiek ryšių atidaro grotuvas"),

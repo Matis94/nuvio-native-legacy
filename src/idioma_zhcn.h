@@ -326,6 +326,7 @@
   T("A Samsung informa a porcentagem, não os segundos", "三星报告的是百分比，而不是秒数"),
   T("A TV decodifica cartazes e fundos por conta própria, já no tamanho certo. Antes um fundo 4K travava a tela por segundos.", "电视自行以合适的尺寸解码海报和背景图。以前 4K 背景图会让画面卡住数秒。"),
   T("A TV está sem conexão", "电视未联网"),
+  T("A TV faz as miniaturas enquanto o vídeo toca: primeiro onde você procura, depois perto da posição atual e então o filme todo. Pausa sozinha se faltar memória.", "电视会在视频播放时制作缩略图：先是你拖动的位置，然后是当前位置附近，最后是整部影片。内存不足时会自动暂停。"),
   T("A TV não conseguiu tocar o formato desta fonte.", "The TV couldn't play this source's format."),
   T("A TV não deixou o app usar o player de vídeo", "电视未允许应用使用视频播放器"),
   T("A TV não diz quantas conexões o player abre", "电视不报告播放器打开的连接数"),

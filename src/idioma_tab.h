@@ -325,6 +325,7 @@
   { "A Samsung informa a porcentagem, não os segundos", "Samsung reports the percentage, not the seconds" },
   { "A TV decodifica cartazes e fundos por conta própria, já no tamanho certo. Antes um fundo 4K travava a tela por segundos.", "The TV decodes posters and backdrops itself, already at the right size. A 4K backdrop used to freeze the screen for seconds." },
   { "A TV está sem conexão", "The TV is offline" },
+  { "A TV faz as miniaturas enquanto o vídeo toca: primeiro onde você procura, depois perto da posição atual e então o filme todo. Pausa sozinha se faltar memória.", "The TV makes the thumbnails while the video plays: first where you scrub, then around the current position, then the whole film. It pauses by itself if memory runs low." },
   { "A TV não conseguiu tocar o formato desta fonte.", "The TV couldn't play this source's format." },
   { "A TV não deixou o app usar o player de vídeo", "The TV didn't let the app use the video player" },
   { "A TV não diz quantas conexões o player abre", "The TV does not say how many connections the player opens" },

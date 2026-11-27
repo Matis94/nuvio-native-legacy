@@ -326,6 +326,7 @@
   T("A Samsung informa a porcentagem, não os segundos", "Samsung は秒ではなく割合を報告します"),
   T("A TV decodifica cartazes e fundos por conta própria, já no tamanho certo. Antes um fundo 4K travava a tela por segundos.", "テレビが最適なサイズでポスターと背景画像を自分でデコードします。以前は 4K の背景画像で画面が数秒固まっていました。"),
   T("A TV está sem conexão", "テレビがオフラインです"),
+  T("A TV faz as miniaturas enquanto o vídeo toca: primeiro onde você procura, depois perto da posição atual e então o filme todo. Pausa sozinha se faltar memória.", "テレビは再生中にサムネイルを作成します。まず探している位置、次に現在の位置の周辺、そして作品全体です。メモリが不足すると自動的に一時停止します。"),
   T("A TV não conseguiu tocar o formato desta fonte.", "The TV couldn't play this source's format."),
   T("A TV não deixou o app usar o player de vídeo", "テレビがアプリにビデオプレーヤーの使用を許可しませんでした"),
   T("A TV não diz quantas conexões o player abre", "テレビはプレーヤーの接続数を教えません"),

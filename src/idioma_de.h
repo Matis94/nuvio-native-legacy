@@ -325,6 +325,7 @@
   T("A Samsung informa a porcentagem, não os segundos", "Samsung meldet den Prozentsatz, nicht die Sekunden"),
   T("A TV decodifica cartazes e fundos por conta própria, já no tamanho certo. Antes um fundo 4K travava a tela por segundos.", "Der Fernseher dekodiert Poster und Hintergründe selbst, gleich in der richtigen Größe. Früher hat ein 4K-Hintergrund den Bildschirm sekundenlang eingefroren."),
   T("A TV está sem conexão", "Der Fernseher ist offline"),
+  T("A TV faz as miniaturas enquanto o vídeo toca: primeiro onde você procura, depois perto da posição atual e então o filme todo. Pausa sozinha se faltar memória.", "Der Fernseher erstellt die Vorschaubilder während der Wiedergabe: zuerst dort, wo du suchst, dann rund um die aktuelle Position, dann für den ganzen Film. Bei knappem Speicher pausiert er von selbst."),
   T("A TV não conseguiu tocar o formato desta fonte.", "The TV couldn't play this source's format."),
   T("A TV não deixou o app usar o player de vídeo", "Der Fernseher hat der App den Videoplayer nicht erlaubt"),
   T("A TV não diz quantas conexões o player abre", "Der Fernseher sagt nicht, wie viele Verbindungen der Player öffnet"),

@@ -2976,7 +2976,11 @@ static void desenhaFolhaHeroCat(void);
 static char seekrChave[96];
 static int lig(int op) {
   if (op == AJ_FALHA_PROVEDORES || op == AJ_FALHA_ADDONS) return ajFalhaValor(op) == 0;
+#ifdef NV_MINIATURAS
+  return valor[op] == 0;   // thumbnails made on the TV: no Seekr key
+#else
   return valor[op] == 0 && (op != AJ_SEEKR_LIGADO || seekrChave[0]);
+#endif
 }
 // #311: "Buscar no Cinemeta" so governa a BUSCA (o add-on Cinemeta e a reserva
 // do catalogo do Nuvio). Sem o add-on instalado e com o ajuste no padrao ele nao
@@ -7055,6 +7059,10 @@ static int foraDestaPlataforma(int op) {
 #ifndef NV_TPK
   if (op == AJ_TRAILER_ZOOM_TPK || op == AJ_AUDIO_OFFSET) return 1;
 #endif
+#ifdef NV_MINIATURAS
+  // Thumbnails made on the device from the file itself: no key, no test, no sync offset.
+  if (op == AJ_SEEKR_CHAVE || op == AJ_SEEKR_TESTAR || op == AJ_SEEKR_AJUSTE) return 1;
+#endif
   // Botao de microfone das buscas: so onde ha o teclado da Samsung por tras
   // (.tpk de release e .wgt; o NuvioTpk40 do Tizen 4/5 nao tem o host dele).
 #if !(defined(NV_TPK) || defined(__EMSCRIPTEN__)) || defined(NV_TPK40)
@@ -8511,7 +8519,12 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_TMDB_CW: return "Usa o TMDB para preencher os cartazes da fileira de retomada.";
     case AJ_MDB_LIGADO: return "O MDBList junta notas de várias fontes na página do título. Desligar esconde a fileira inteira.";
     case AJ_MDB_CHAVE: return "A chave vem da sua conta Nuvio ou do arquivo do pacote. Não dá para digitar nesta TV.";
+#ifdef NV_MINIATURAS
+    case AJ_SEEKR_LIGADO:
+      return "A TV faz as miniaturas enquanto o vídeo toca: primeiro onde você procura, depois perto da posição atual e então o filme todo. Pausa sozinha se faltar memória.";
+#else
     case AJ_SEEKR_LIGADO: case AJ_SEEKR_CHAVE: return seekrAjuda(op);
+#endif
     case AJ_SEEKR_FITA: return "Mostra o quadro anterior e o seguinte ao lado da miniatura, com o tempo de cada um. Deixa claro que há um quadro a cada 10 segundos.";
     case AJ_SEEKR_AJUSTE: return "Use quando a miniatura mostra sempre a cena de alguns segundos antes ou depois. Acontece quando a sua versão do título é diferente da usada pelo Seekr (outro corte, abertura mais longa). Vale para todos os títulos; volte a 0 ao trocar de filme.";
     case AJ_SEEKR_TESTAR: return seekrAjuda(op);
@@ -10063,10 +10076,12 @@ static int definirValorDireto(int op, int novo) {
     if(ok && op==AJ_IPTV_ATIVA)guia_recarregar(1);
     return ok;
   }
+#ifndef NV_MINIATURAS
   if (op == AJ_SEEKR_LIGADO && novo == 0 && !seekrChave[0]) {
     uxNotificar(seekrPedirChave());
     return 0;
   }
+#endif
   if (op == AJ_XTREAM_CONEXOES) {
     xtream_definir_conexoes_modo(novo);
     valor[op] = xtream_conexoes_modo();
@@ -10766,7 +10781,9 @@ static const char *textoValor(int op) {
   }
   const Opcao *o = &OPCOES[op];
   if (o->tipo == OP_LEITURA || o->tipo == OP_ACAO) return textoLeitura(op);
+#ifndef NV_MINIATURAS
   if (op == AJ_SEEKR_LIGADO && !seekrChave[0]) return i18n("Desligado");
+#endif
   if (op == AJ_HERO_TRAILER_ESPERA) {
     // Decimos de segundo: 22 le "2,2 s".
     int v = valor[op];

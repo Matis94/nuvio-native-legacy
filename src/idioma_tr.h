@@ -326,6 +326,7 @@
   T("A Samsung informa a porcentagem, não os segundos", "Samsung yüzdeyi bildirir, saniyeyi değil"),
   T("A TV decodifica cartazes e fundos por conta própria, já no tamanho certo. Antes um fundo 4K travava a tela por segundos.", "TV, afişleri ve arka planları kendisi çözüyor, üstelik doğru boyutta. 4K bir arka plan eskiden ekranı saniyelerce donduruyordu."),
   T("A TV está sem conexão", "TV’nin bağlantısı yok"),
+  T("A TV faz as miniaturas enquanto o vídeo toca: primeiro onde você procura, depois perto da posição atual e então o filme todo. Pausa sozinha se faltar memória.", "TV, video oynarken küçük resimleri oluşturur: önce aradığınız yerde, sonra mevcut konumun çevresinde, ardından tüm film için. Bellek azalırsa kendiliğinden duraklar."),
   T("A TV não conseguiu tocar o formato desta fonte.", "The TV couldn't play this source's format."),
   T("A TV não deixou o app usar o player de vídeo", "TV, uygulamanın video oynatıcıyı kullanmasına izin vermedi"),
   T("A TV não diz quantas conexões o player abre", "TV, oynatıcının kaç bağlantı açtığını söylemiyor"),

@@ -326,6 +326,7 @@
   T("A Samsung informa a porcentagem, não os segundos", "A Samsung százalékot jelez, nem másodpercet"),
   T("A TV decodifica cartazes e fundos por conta própria, já no tamanho certo. Antes um fundo 4K travava a tela por segundos.", "A TV maga dekódolja a posztereket és háttereket, már a megfelelő méretben. A 4K háttér korábban másodpercekre lefagyasztotta a képernyőt."),
   T("A TV está sem conexão", "A TV nem csatlakozik"),
+  T("A TV faz as miniaturas enquanto o vídeo toca: primeiro onde você procura, depois perto da posição atual e então o filme todo. Pausa sozinha se faltar memória.", "A tévé lejátszás közben készíti a bélyegképeket: először ott, ahol keresel, aztán az aktuális pozíció körül, majd az egész filmre. Ha fogy a memória, magától szünetel."),
   T("A TV não conseguiu tocar o formato desta fonte.", "The TV couldn't play this source's format."),
   T("A TV não deixou o app usar o player de vídeo", "A TV nem engedte, hogy az app használja a videolejátszót"),
   T("A TV não diz quantas conexões o player abre", "A TV nem jelzi, hány kapcsolatot nyit a lejátszó"),

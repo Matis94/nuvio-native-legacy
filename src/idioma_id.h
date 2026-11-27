@@ -326,6 +326,7 @@
   T("A Samsung informa a porcentagem, não os segundos", "Samsung melaporkan persentase, bukan detik"),
   T("A TV decodifica cartazes e fundos por conta própria, já no tamanho certo. Antes um fundo 4K travava a tela por segundos.", "TV mendekode poster dan backdrop sendiri, langsung dalam ukuran yang tepat. Dulu backdrop 4K membuat layar membeku beberapa detik."),
   T("A TV está sem conexão", "TV tidak terhubung"),
+  T("A TV faz as miniaturas enquanto o vídeo toca: primeiro onde você procura, depois perto da posição atual e então o filme todo. Pausa sozinha se faltar memória.", "TV membuat thumbnail saat video diputar: pertama di tempat Anda mencari, lalu di sekitar posisi saat ini, kemudian seluruh film. Otomatis berhenti sejenak jika memori menipis."),
   T("A TV não conseguiu tocar o formato desta fonte.", "The TV couldn't play this source's format."),
   T("A TV não deixou o app usar o player de vídeo", "TV tidak mengizinkan aplikasi memakai pemutar video"),
   T("A TV não diz quantas conexões o player abre", "TV tidak memberi tahu berapa koneksi yang dibuka pemutar"),

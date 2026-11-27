@@ -326,6 +326,7 @@
   T("A Samsung informa a porcentagem, não os segundos", "تُبلغ Samsung عن النسبة المئوية، لا عن الثواني"),
   T("A TV decodifica cartazes e fundos por conta própria, já no tamanho certo. Antes um fundo 4K travava a tela por segundos.", "يفك التلفاز ترميز الملصقات والخلفيات بنفسه، بالحجم الصحيح مباشرة. كانت خلفية 4K تجمّد الشاشة لثوانٍ."),
   T("A TV está sem conexão", "التلفاز غير متصل بالإنترنت"),
+  T("A TV faz as miniaturas enquanto o vídeo toca: primeiro onde você procura, depois perto da posição atual e então o filme todo. Pausa sozinha se faltar memória.", "ينشئ التلفاز الصور المصغّرة أثناء تشغيل الفيديو: أولًا حيث تبحث، ثم حول الموضع الحالي، ثم للفيلم كله. يتوقف مؤقتًا من تلقاء نفسه إذا قلّت الذاكرة."),
   T("A TV não conseguiu tocar o formato desta fonte.", "لم يستطع التلفاز تشغيل صيغة هذا المصدر."),
   T("A TV não deixou o app usar o player de vídeo", "لم يسمح التلفاز للتطبيق باستخدام مشغّل الفيديو"),
   T("A TV não diz quantas conexões o player abre", "لا يُبلغ التلفاز عن عدد الاتصالات التي يفتحها المشغّل"),

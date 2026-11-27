@@ -326,6 +326,7 @@
   T("A Samsung informa a porcentagem, não os segundos", "Samsung prijavljuje procenat, ne sekunde"),
   T("A TV decodifica cartazes e fundos por conta própria, já no tamanho certo. Antes um fundo 4K travava a tela por segundos.", "TV sam dekodira postere i pozadine, već u pravoj veličini. 4K pozadina je ranije znala zamrznuti ekran na nekoliko sekundi."),
   T("A TV está sem conexão", "TV nema vezu"),
+  T("A TV faz as miniaturas enquanto o vídeo toca: primeiro onde você procura, depois perto da posição atual e então o filme todo. Pausa sozinha se faltar memória.", "TV pravi sličice dok se video reproducira: prvo tamo gdje tražite, zatim oko trenutne pozicije, a onda za cijeli film. Sam se pauzira ako ponestane memorije."),
   T("A TV não conseguiu tocar o formato desta fonte.", "The TV couldn't play this source's format."),
   T("A TV não deixou o app usar o player de vídeo", "TV nije dozvolio aplikaciji da koristi video plejer"),
   T("A TV não diz quantas conexões o player abre", "TV ne kaže koliko veza plejer otvara"),

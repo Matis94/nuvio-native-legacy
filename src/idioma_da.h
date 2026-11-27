@@ -326,6 +326,7 @@
   T("A Samsung informa a porcentagem, não os segundos", "Samsung rapporterer procenten, ikke sekunderne"),
   T("A TV decodifica cartazes e fundos por conta própria, já no tamanho certo. Antes um fundo 4K travava a tela por segundos.", "Tv'et afkoder plakater og baggrunde selv, allerede i den rette størrelse. Før kunne en 4K-baggrund fryse skærmen i flere sekunder."),
   T("A TV está sem conexão", "Tv’et er offline"),
+  T("A TV faz as miniaturas enquanto o vídeo toca: primeiro onde você procura, depois perto da posição atual e então o filme todo. Pausa sozinha se faltar memória.", "Tv'et laver miniaturerne, mens videoen afspilles: først der, hvor du søger, så omkring den aktuelle position og derefter hele filmen. Det holder selv pause, hvis hukommelsen slipper op."),
   T("A TV não conseguiu tocar o formato desta fonte.", "The TV couldn't play this source's format."),
   T("A TV não deixou o app usar o player de vídeo", "Tv'et lod ikke appen bruge videoafspilleren"),
   T("A TV não diz quantas conexões o player abre", "Tv'et oplyser ikke, hvor mange forbindelser afspilleren åbner"),

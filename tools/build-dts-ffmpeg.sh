@@ -22,6 +22,8 @@ DECODERS=dca,dvdsub,pgssub,ass,ssa,subrip,movtext,webvtt
 MUXERS=
 PARSERS=dca,h264,hevc,aac
 BSFS=h264_mp4toannexb,hevc_mp4toannexb,dca_core
+ENCODERS=aac,ac3
+DEMUXERS=matroska,mov
 # zlib on every target: Matroska subtitle tracks are usually stored
 # zlib-compressed (mkvmerge's default for PGS/VobSub). Without it they arrive
 # still compressed, the PGS decoder skips every segment and converted playback
@@ -46,6 +48,12 @@ if [ "$TARGET" = tpk ]; then
       --cross-prefix=arm-linux-gnueabi-
   fi
 else
+  # LG webOS: seek-bar thumbnails made on the TV (src/miniatura*.c): h264/hevc
+  # decoders (keyframes only, one at a time), the mjpeg encoder (320x180
+  # tiles) and the mpegts demuxer (.m2ts / .ts remuxes).
+  DECODERS=$DECODERS,h264,hevc
+  ENCODERS=$ENCODERS,mjpeg
+  DEMUXERS=$DEMUXERS,mpegts
   if [ "${NUVIO_WEBOS_HLS:-0}" = 1 ]; then
     MUXERS=mpegts,mp4
     PARSERS=$PARSERS,ac3
@@ -85,8 +93,8 @@ fi
   --disable-programs --disable-doc --disable-debug --disable-network \
   --disable-avdevice --disable-avfilter --disable-swscale --disable-postproc \
   --enable-avcodec --enable-avformat --enable-avutil --enable-swresample \
-  --enable-decoder="$DECODERS" --enable-encoder=aac,ac3 \
-  --enable-demuxer="${DEMUXERS:-matroska,mov}" --enable-parser="$PARSERS" \
+  --enable-decoder="$DECODERS" --enable-encoder="$ENCODERS" \
+  --enable-demuxer="$DEMUXERS" --enable-parser="$PARSERS" \
   --enable-bsf="$BSFS" \
   --extra-cflags="${CFLAGS:--O2}"
 make -j"${NUVIO_DTS_JOBS:-2}"
