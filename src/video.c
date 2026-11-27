@@ -839,7 +839,7 @@ static int dtsTvDts(void) { return __atomic_load_n(&edidDts, __ATOMIC_ACQUIRE) =
 int video_tv_dts(void) { return dtsTvDts(); }
 static int dtsHabilitado, dtsTentou, dtsRevisao, dtsLoadRevisao, dtsFalhaLogada;
 #ifdef NV_MP4_BD_TEST
-static int mp4TestEnabled,mp4TestPending,mp4TestStarted;
+static int mp4TestEnabled,mp4TestPending,mp4TestStarted,mp4Hdr10Base;
 #endif
 static int modoLoad;   // video_modo_live_consumir do load em curso
 enum { VIDEO_TRAILERIO_HLS = 3, VIDEO_TRAILERIO_MP4 = 4 };
@@ -3231,7 +3231,7 @@ static int tocarFonte(const char *url, int modoTrailer) {
 #endif
   }
 #ifdef NV_MP4_BD_TEST
-  mp4TestPending=mp4TestStarted=0;
+  mp4TestPending=mp4TestStarted=mp4Hdr10Base=0;
 #endif
   printf("[dts] fallback %s%s tvDts=%d\n", dtsHabilitado ? "available" : "unavailable", dtsDesligado ? " (DTS off in settings)" : "",
          __atomic_load_n(&edidDts, __ATOMIC_ACQUIRE));
@@ -4116,7 +4116,7 @@ static int carregarNativo(const char *url,const char *loadUrl,int ownBuffer,
 void video_parar(void) {
   fundoZerar();
 #ifdef NV_MP4_BD_TEST
-  mp4TestPending=mp4TestStarted=0;
+  mp4TestPending=mp4TestStarted=mp4Hdr10Base=0;
 #endif
   nv_recon_zerar(&recon);
   reconErroPend = 0;
@@ -4366,7 +4366,7 @@ static int dvPronto(void) {
 static void dtsVoltarNativo(const char *motivo) {
   char lu[sizeof legUrlAtual];
 #ifdef NV_MP4_BD_TEST
-  mp4TestStarted=0;
+  mp4TestStarted=mp4Hdr10Base=0;
 #endif
   dtsEstado = VIDEO_DTS_FALHOU;
   printf("[dts] conversao falhou (%s): volta ao player nativo em %.1fs\n", motivo, posSeg);
@@ -4647,13 +4647,21 @@ static int iniciarDts(int stream) {
   dts_engine_set_conversion_stream(ajustes_buffer_conversion_stream());
   dts_engine_set_ahead_mib(cacheboost_backend_buffer_mb());   // #338: Settings > Buffer size
   dts_engine_set_external_ring_mib(ajustes_audio_externo_bufor_mib());   // Other version buffer
+#ifdef NV_MP4_BD_TEST
+  /* A Dolby Vision MP4 recovered by the converter stays on that recovery for
+   * every later start of the session (audio from another source, owner's log
+   * 27/11: "Dolby Vision configuration absent or unsupported"); its HDR10
+   * base layer opens as Dolby Vision again so the audio policy is the same. */
+  dts_playback_next_dv(dtsModoDv || mp4Hdr10Base);
+#else
   dts_playback_next_dv(dtsModoDv);
+#endif
 #ifdef NV_DV7_MAPPING_TEST
   dts_playback_next_p7_mapping(ajustes_dv7_mapping());
 #endif
 #ifdef NV_MP4_BD_TEST
   dts_playback_next_p7(ajustes_dv7());
-  dts_playback_next_mp4_test(mp4TestPending);
+  dts_playback_next_mp4_test(mp4TestPending || mp4TestStarted);
 #else
   dts_playback_next_p7(ajustes_dv7());
 #endif
@@ -4960,7 +4968,7 @@ static void sincronizarRotaDts(const DtsMediaInfo *info) {
   /* Dolby Vision MP4 with "Dolby Vision P7 to P8.1" off: the worker plays the
    * HDR10 base layer, so the overlay, seek and audio policy leave the DV route. */
   if (info && dtsModoDv && mp4TestStarted && info->width > 0 && info->video_codec[0] && !info->dovi_profile) {
-    dtsModoDv=0;
+    dtsModoDv=0;mp4Hdr10Base=1;
     printf("[audio-route] event=mp4-hdr10-base controllerDv=0\n");fflush(stdout);
   }
 #endif
