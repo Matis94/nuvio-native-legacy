@@ -26,6 +26,8 @@ static const NovItem ITENS_2091[] = {
     .frase = "MKV chapters are read like NuvioTV, with intro, recap, credits and post-credits skips from IntroDB, Anime-Skip and AniSkip.", .linhas = 6 },
   { .icone = "aj_search", .nome = "Search cursor",
     .frase = "The text cursor in Search, Spotlight and the keyboard is easier to see.", .linhas = 4 },
+  { .icone = "aj_download", .nome = "P2P engine 0.1.7",
+    .frase = "The built-in P2P uses the engine NuvioTV ships: torrents start faster and stall less on slow peers.", .linhas = 5 },
   { .grupo = "Fixes", .icone = "aj_captions", .nome = "Subtitles",
     .frase = "Every embedded PGS track keeps its own entry, and compressed Matroska subtitles play with the conversion.", .linhas = 5, .plataformas = NOV_LG | NOV_OUTRAS },
   { .icone = "aj_monitor-play", .nome = "MP4 with another audio",
