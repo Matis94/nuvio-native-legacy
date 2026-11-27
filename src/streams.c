@@ -6205,6 +6205,9 @@ static void chipFolha(GfxRect r, const char *rot, float rotW, const char *icone,
 //      kicker explica o que ele faz em qualquer caso.
 // No degrau 2 o filtro ligado continua no acento, entao "qual esta ativo" se
 // le sem foco. Se nem os discos couberem (titulo enorme), o titulo e cortado.
+// Owner 27/11: the filters are ALWAYS icon discs (step 2), in every language,
+// as in Polish. Before, short English/German labels fitted and showed as text
+// pills ("MP4 only", "Cached") while longer languages got icons.
 static float bwCab[BT_N], rotWCab[BT_N], titMaxCab, gapCab;
 static const char *rotCab[BT_N], *icoCab[BT_N];
 static int nivelCab;
@@ -6217,7 +6220,7 @@ static void medirCabecalho(void) {
   float tit = (float)txt_linha(TXT_ILHA_TITULO, "Fontes", 255, 255, 255, 255).w;
   float livre = rw - FOLHA_TXT - tit - 24.0f, soma = 0;
   int nbt = nBotoes();
-  for (nivelCab = 0; nivelCab < 3; nivelCab++) {
+  for (nivelCab = 2; nivelCab < 3; nivelCab++) {
     float pad = nivelCab == 0 ? 20.0f : 14.0f;
     gapCab = nivelCab < 2 ? FOLHA_CHIP_GAP : 8.0f;
     soma = (nbt - 1) * gapCab;
@@ -6250,8 +6253,10 @@ static void medirCabecalho(void) {
     soma = (nbt - 1) * gapCab;
     for (int i = 0; i < nbt; i++) { bwCab[i] = disco; soma += disco; }
   }
-  // Degrau 2: o filtro em foco abre o rotulo no espaco que sobrou.
-  if (nivelCab == 2 && grupo == -1 && foco >= 0 && foco < nbt && !iconeBotao(botaoDe(foco))) {
+  // Degrau 2: o filtro em foco abria o rotulo no espaco que sobrou. Owner
+  // 27/11: icons only in every language (the kicker line still says what the
+  // focused filter does), so this stays off.
+  if (0 && nivelCab == 2 && grupo == -1 && foco >= 0 && foco < nbt && !iconeBotao(botaoDe(foco))) {
     float g = FOLHA_CHIP_H * .42f, w, antes = bwCab[foco];
     rotCab[foco] = rotuloBotao(botaoDe(foco));
     w = (float)txt_linha(TXT_HERO_META, rotCab[foco], 255, 255, 255, 255).w + 1.0f;
@@ -6672,7 +6677,7 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,"Buscando mais fontes…",ai,(int)(ag*255),(int)(ab*255),255,rw-360-cw),tx+cw,oy+72,anim);
     } else if (grupo == 1 && fonteSegurarAceita(filtrado(foco)) && rw-360-cw > 80) {
       // O GESTO NAO SE ADIVINHA: a dica fica no lugar do "Buscando mais fontes".
-      const char *dica = fonteAceitaAudio(filtrado(foco)) ? "Hold OK: source options" : "Segure OK: todos os arquivos";
+      const char *dica = fonteAceitaAudio(filtrado(foco)) ? "Segure OK: opções da fonte" : "Segure OK: todos os arquivos";
       if (cw > 0) gfx_cor((GfxRect){tx+cw-13.5f,oy+74+ch*.5f-2.5f,5,5},.5f,.5f,.5f,.49f,anim);
       txt_desenhar_alpha(txt_linha_corta(TXT_HERO_META,dica,130,130,128,255,rw-360-cw),tx+cw,oy+72,anim);
     } }
