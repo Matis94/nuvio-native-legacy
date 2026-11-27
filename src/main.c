@@ -2717,6 +2717,9 @@ int main(int argc, char **argv) {
 #ifdef NV_SINAL_TERMINAR
   if (sinalTerminou) alarm(NV_SAIDA_FOLGA_S);   // saida normal em curso: mais folga que os 4 s do laco
 #endif
+#ifdef NV_WEBOS
+  sync_encerrar();   // the account sync workers stop before teardown (curl cancelled, joined)
+#endif
   if (perftv_enabled) {
     char line[320];
     if (perftv_flush(&perfTv, line, sizeof line)) { puts(line); fflush(stdout); }

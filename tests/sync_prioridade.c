@@ -7,7 +7,48 @@
 #define colfileiras_sincronizar fixture_colfileiras_sincronizar
 #define nuvem_freio_ativo fixture_nuvem_freio_ativo
 #define addons_definir_lista fixture_addons_definir_lista
+/* This branch's older fixture supplies defaults that this test overrides. */
+#define debrid_conta_iniciar fixture_debrid_conta_iniciar
+#define debrid_conta_definir fixture_debrid_conta_definir
+#define debrid_aplicar_chaves_conta fixture_debrid_aplicar_chaves_conta
+#define perfis_sessao_geracao fixture_perfis_sessao_geracao
+#define perfis_sessao_atual fixture_perfis_sessao_atual
+#define perfis_sessao_travar fixture_perfis_sessao_travar
+#define perfis_sessao_destravar fixture_perfis_sessao_destravar
+#define sessao_identidade_local_copiar fixture_sessao_identidade_local_copiar
+#define sessao_token_copiar fixture_sessao_token_copiar
+#define sessao_token_recusado fixture_sessao_token_recusado
+#define nuvem_rpc_com fixture_nuvem_rpc_com
+#define nuvem_tabela fixture_nuvem_tabela
+#define perfis_puxar_sessao fixture_perfis_puxar_sessao
+#define syncprog_puxar_sessao fixture_syncprog_puxar_sessao
+#define syncprog_empurrar_sessao fixture_syncprog_empurrar_sessao
+#define desc_sessao_preparada fixture_desc_sessao_preparada
+#define desc_sessao_passo fixture_desc_sessao_passo
+#define ajustes_perfil_padrao fixture_ajustes_perfil_padrao
+#define extras_abrir_sessao fixture_extras_abrir_sessao
+#define desc_abrir_sessao fixture_desc_abrir_sessao
 #include "syncordem.c"
+#undef debrid_conta_iniciar
+#undef debrid_conta_definir
+#undef debrid_aplicar_chaves_conta
+#undef perfis_sessao_geracao
+#undef perfis_sessao_atual
+#undef perfis_sessao_travar
+#undef perfis_sessao_destravar
+#undef sessao_identidade_local_copiar
+#undef sessao_token_copiar
+#undef sessao_token_recusado
+#undef nuvem_rpc_com
+#undef nuvem_tabela
+#undef perfis_puxar_sessao
+#undef syncprog_puxar_sessao
+#undef syncprog_empurrar_sessao
+#undef desc_sessao_preparada
+#undef desc_sessao_passo
+#undef ajustes_perfil_padrao
+#undef extras_abrir_sessao
+#undef desc_abrir_sessao
 #undef main
 #undef sessao_rpc
 #undef syncprog_aplicar
@@ -30,6 +71,24 @@ static pthread_mutex_t epochLock;
 static NvPerfilSessao mailbox;
 static int failProgressThread, pullCount=1;
 static atomic_int threadsStarted;
+#ifdef NV_WEBOS
+static int testarSaida;
+static _Thread_local const int *paradaFio;
+static atomic_int perfisIniciados, perfisPararam, pontoIniciado, pontoParou, chamadasAposPerfis;
+void rede_cancelamento_fio(const int *parando) { paradaFio = parando; }
+static void esperarSaida(atomic_int *iniciou, atomic_int *parou) {
+  assert(paradaFio);
+  atomic_store(iniciou, 1);
+  for (int i = 0; i < 3000; i++) {
+    if (__atomic_load_n(paradaFio, __ATOMIC_ACQUIRE)) {
+      atomic_store(parou, 1);
+      return;
+    }
+    usleep(1000);
+  }
+  assert(!"shutdown signal did not reach the worker");
+}
+#endif
 int sync_teste_criar(pthread_t *t, const pthread_attr_t *a, void *(*f)(void *), void *u) {
   int n = atomic_fetch_add(&threadsStarted, 1) + 1;
   if (failProgressThread && n == 2) return EAGAIN;
@@ -51,6 +110,7 @@ int sessao_identidade_local_copiar(char *u, size_t nu, char *t, size_t nt) {
 }
 int sessao_token_copiar(char *t, size_t nt) { snprintf(t, nt, "fixture-token"); return 1; }
 void sessao_token_recusado(const char *t) { (void)t; }
+void segfontes_animeskip_id_conta(const char *id) { (void)id; }   /* Anime-Skip Client ID from the account (segfontes.c) */
 char *nuvem_rpc_com(const char *n, const char *b, const char *t, int *s) {
   assert(!strcmp(t, "fixture-token"));
   if (!strcmp(n, "sync_pull_provider_credentials")) atomic_store(&credentialsEntered, 1);
@@ -59,6 +119,9 @@ char *nuvem_rpc_com(const char *n, const char *b, const char *t, int *s) {
   return r;
 }
 char *nuvem_tabela(const char *n, const char *q, const char *t, int *s) {
+#ifdef NV_WEBOS
+  if (testarSaida) atomic_fetch_add(&chamadasAposPerfis, 1);
+#endif
   assert(!strcmp(t, "fixture-token"));
   if (!strcmp(n, "addons")) {
     *s = 200;
@@ -71,6 +134,12 @@ int addons_definir_lista(const AddonRemoto *l, int n) {
   atomic_fetch_add(&addonsApplied, 1); return 1;
 }
 int perfis_puxar_sessao(uint64_t s, const char *u, const char *t) {
+#ifdef NV_WEBOS
+  if (testarSaida) {
+    esperarSaida(&perfisIniciados, &perfisPararam);
+    return 0;
+  }
+#endif
   (void)u; (void)t; return perfis_sessao_atual(s) ? perfis_puxar() : 0;
 }
 int syncprog_puxar_sessao(int p, uint64_t s) {
@@ -90,6 +159,12 @@ int syncprog_aplicar(int *c) {
   return n;
 }
 int syncprog_empurrar_sessao(int p, uint64_t s) {
+#ifdef NV_WEBOS
+  if (testarSaida) {
+    esperarSaida(&pontoIniciado, &pontoParou);
+    return -1;
+  }
+#endif
   assert(p == 1 && perfis_sessao_atual(s));
   assert(atomic_load(&progressRelease));
   atomic_fetch_add(&pushes, 1); return 0;
@@ -103,6 +178,9 @@ int debrid_aplicar_chaves_conta(const DebridConta *d, uint64_t s) { (void)d; ret
 void desc_sessao_preparada(void) {}
 void desc_sessao_passo(void) {}
 void ajustes_perfil_padrao(void) {}
+int ajustes_edicao_perfil(void) { return 0; }
+void ajustes_edicao_encerrar(void) {}
+int ajustes_migrar_escopo(void) { return 0; }
 void extras_abrir_sessao(void) {}
 void desc_abrir_sessao(void) {}
 static void awaitFlag(atomic_int *f) {
@@ -115,6 +193,28 @@ int main(int argc, char **argv) {
   pthread_mutex_init(&epochLock, &a); pthread_mutexattr_destroy(&a);
   setvbuf(stdout, NULL, _IOLBF, 0);
   escolhido = 1; ativo = 1;
+#ifdef NV_WEBOS
+  if (argc > 1 && !strcmp(argv[1], "shutdown")) {
+    atomic_store(&progressRelease, 1);
+    sync_iniciar();
+    for (int i = 0; !sync_perfil_pronto() && i < 500; i++) quadros(1);
+    assert(sync_perfil_pronto() && atomic_load(&addonsApplied) == 1);
+    int fiosAntes = atomic_load(&threadsStarted);
+    testarSaida = 1;
+    sync_iniciar();
+    awaitFlag(&perfisIniciados);
+    sync_sujar_progresso();
+    awaitFlag(&pontoIniciado);
+    sync_encerrar();
+    assert(atomic_load(&perfisPararam) && atomic_load(&pontoParou));
+    sync_encerrar();
+    sync_iniciar();
+    sync_sujar_progresso();
+    assert(atomic_load(&threadsStarted) == fiosAntes + 2 && !atomic_load(&chamadasAposPerfis));
+    puts("sync_shutdown: normal sync applied, both workers drained and new work blocked");
+    return 0;
+  }
+#endif
   int stale = argc > 1 && !strcmp(argv[1], "stale");
   int empty = argc > 1 && !strcmp(argv[1], "empty");
   int failed = argc > 1 && !strcmp(argv[1], "failed");

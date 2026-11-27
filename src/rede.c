@@ -1286,6 +1286,33 @@ static int   (*curl_getinfo)(void *, int, ...);
 static void  (*curl_reset)(void *);
 static time_t (*curl_getdate_fn)(const char *, const time_t *);
 
+#ifdef NV_WEBOS
+static _Thread_local const int *paradaFio;
+
+void rede_cancelamento_fio(const int *parando) {
+  paradaFio = parando;
+}
+
+static int pararFio(void) {
+  if (!paradaFio || !__atomic_load_n(paradaFio, __ATOMIC_ACQUIRE)) return 0;
+  redeCancelouLocal = 1;
+  return 1;
+}
+
+static int vigiarParadaFio(void *u, long long dlTotal, long long dlAgora,
+                           long long ulTotal, long long ulAgora) {
+  (void)u; (void)dlTotal; (void)dlAgora; (void)ulTotal; (void)ulAgora;
+  return pararFio();
+}
+
+static int performComRastro(void *c) {
+  if (pararFio()) return 42;   // CURLE_ABORTED_BY_CALLBACK, before entering curl.
+  return curl_perform(c);
+}
+#else
+#define performComRastro curl_perform
+#endif
+
 #ifdef NV_TPK
 static void *dnsShare;
 static pthread_mutex_t dnsTrava = PTHREAD_MUTEX_INITIALIZER;
@@ -1341,13 +1368,13 @@ static int tmdbFallback(void *c, int r, const char *pedido) {
   if (curl_getinfo(c, INFO_RESPONSE_CODE, &http) || http ||
       curl_getinfo(c, INFO_URL_FINAL, &url) || !(alias = tmdbUrl(url))) return r;
   if (!curl_setopt_f(c, OPT_URL, alias)) {
-    r = curl_perform(c); /* uma unica tentativa, sem recursao */
+    r = performComRastro(c); /* uma unica tentativa, sem recursao */
     if (!r) tmdbLigou();
   }
   free(alias);
   return r;
 }
-static int performTmdb(void *c, const char *url) { return tmdbFallback(c, curl_perform(c), url); }
+static int performTmdb(void *c, const char *url) { return tmdbFallback(c, performComRastro(c), url); }
 
 static int retrySegundos(const char *s, size_t n) {
   char b[128], *fim;
@@ -1643,6 +1670,12 @@ static void opcoesComuns(void *c, unsigned long prazoMs) {
 #endif
   curl_setopt(c, OPT_TIMEOUT_MS, (long)prazoMs);
   curl_setopt(c, OPT_CONNECTTIMEOUT_MS, (long)conexaoMs(prazoMs));
+#ifdef NV_WEBOS
+  if (paradaFio) {
+    curl_setopt(c, OPT_XFERINFOFUNCTION, vigiarParadaFio);
+    curl_setopt(c, OPT_NOPROGRESS, (long)0);
+  }
+#endif
   // O app roda com fios; sem NOSIGNAL a libcurl usa alarmes para o timeout de
   // DNS e pode derrubar o processo inteiro a partir de um fio secundario.
   curl_setopt(c, OPT_NOSIGNAL, (long)1);
@@ -1691,6 +1724,9 @@ static int vigiar(void *u, long long dlTotal, long long dlAgora,
   Vigia *v = (Vigia *)u;
   unsigned long agora = redeAgoraMs();
   (void)dlTotal; (void)ulTotal; (void)ulAgora;
+#ifdef NV_WEBOS
+  if (pararFio()) return 1;
+#endif
   if (redeCancelLocal && *redeCancelLocal) { redeCancelouLocal = 1; return 1; }
   if (dlAgora > v->visto) { v->visto = dlAgora; v->ultimoMs = agora; return 0; }
   if (v->visto > 0 && v->paradoMs && agora - v->ultimoMs > v->paradoMs) {
@@ -2359,6 +2395,9 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
   if (retry) *retry = 0;
   if (etag && tamEtag) etag[0] = 0;
   if (status) *status = 0;
+#ifdef NV_WEBOS
+  if (pararFio()) return NULL;
+#endif
   if (!url || !*url) return NULL;
   // Endereco de API de metadados que ja respondeu "nao existe" (ou host em
   // recuo por timeout): nao pede de novo — ver negcache.h.
@@ -2404,13 +2443,13 @@ static char *rede_baixar_interno3(const char *url, int segundos, long *tam,
         primeira = 0;
         snprintf(m, sizeof m, "begin https-1 %s", rede_url_publica(url, seg, sizeof seg));
         nv_tpk40_etapa(m);
-        r = curl_perform(c);
+        r = performComRastro(c);
         { long http = 0; if (curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &http);
           snprintf(m, sizeof m, "ok https-1 curl=%d http=%ld", r, http); }
         nv_tpk40_etapa(m);
-      } else r = curl_perform(c); }
+      } else r = performComRastro(c); }
 #else
-    r = curl_perform(c);
+    r = performComRastro(c);
 #endif
     { long novas = -1;
       if (curl_getinfo) curl_getinfo(c, INFO_NUM_CONNECTS, &novas);
@@ -2759,7 +2798,7 @@ int rede_baixar_fluxo(const char *url, int segundos, const char *const *cab,
     for (k = 0; cab[k]; k++) lista = slist_append(lista, cab[k]);
     if (lista) curl_setopt(c, OPT_HTTPHEADER, lista);
   }
-  r = curl_perform(c);
+  r = performComRastro(c);
   if (r == 42 && vigia.parou) r = 28;
   if (curl_getinfo) curl_getinfo(c, INFO_RESPONSE_CODE, &http);
   if (status) *status = (int)http;
@@ -2796,6 +2835,9 @@ static char *postarNativo(const char *url, int segundos, const char *const *cab,
   if (status) *status = 0;
   redeCurlLocal = 0;
   anotarErro(0);
+#ifdef NV_WEBOS
+  if (pararFio()) return NULL;
+#endif
   if (!url || !*url) { anotarErro(3); return NULL; }
   if (!abrir()) { anotarErro(2); return NULL; }
   c = seguro ? curl_init() : pegarHandle(url);

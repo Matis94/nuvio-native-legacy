@@ -9,6 +9,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef NV_WEBOS
+/* Bind a worker's GET/POST cancellation to a flag written with atomic stores.
+ * The flag must outlive the worker. Other threads keep their own policy. */
+void rede_cancelamento_fio(const int *parando);
+#endif
+
 /* API aditiva para workers/plugins. Nao usa o estado por fio dos wrappers.
  * O pedido BLOQUEIA; executa-lo fora do desenho. Strings, corpo e callback
  * ficam validos ate retornar. rede_resposta_limpar libera as duas alocacoes.
