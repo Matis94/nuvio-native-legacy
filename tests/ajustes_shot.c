@@ -540,6 +540,8 @@ int main(int argc, char **argv) {
   if (getenv("NUVIO_SHOT_EA")) {
     ajustes_teste_ux_captura(41); snprintf(nome, sizeof nome, "%s-ea-lista.png", saida); captura(nome, w);
     ajustes_teste_ux_captura(40); snprintf(nome, sizeof nome, "%s-ea-folha.png", saida); captura(nome, w);
+    ajustes_teste_ux_captura(42); snprintf(nome, sizeof nome, "%s-selos-pacote.png", saida); captura(nome, w);
+    ajustes_teste_ux_captura(43); snprintf(nome, sizeof nome, "%s-selos-pacote-editor.png", saida); captura(nome, w);
     goto fim_capturas;
   }
   // NUVIO_SHOT_PERFIL=1 (2.1): so as capturas de ajustes por perfil. Use com

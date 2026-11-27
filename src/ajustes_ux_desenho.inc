@@ -452,6 +452,13 @@ static const char *ajRotSeg(int op, int i) {
     static const char *const nomes[] = { "Original", "AAC 2.0", "DD 5.1" };
     return nomes[i];
   }
+  if (op == AJ_SELOS_PACOTE) {
+    /* Badge packs: the row's values are Nuvio's, the packs on hand and Off
+     * (with no pack it is "From Nuvio | Off", never the table's "Pack 1"). */
+    int n = selospacote_n();
+    snprintf(b[i % 3], sizeof b[0], "%s", i == 0 ? i18n("Do Nuvio") : i == 1 + n ? i18n("Desligado") : selospacote_nome(i - 1));
+    return b[i % 3];
+  }
   snprintf(b[i % 3], sizeof b[0], "%s", i18n(OPCOES[op].valores[i]));
   p = strstr(b[i % 3], " (");
   if (p && p != b[i % 3] && op != AJ_AMPLIAR_UI) *p = 0;
