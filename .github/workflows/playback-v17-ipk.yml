@@ -34,8 +34,8 @@ jobs:
       # NUVIO_VERSION is the version the app shows (Settings, updater); the
       # webOS package keeps the three-part 2.0.9 of appinfo.json.
       NUVIO_VERSION: 2.0.9.1
-      NUVIO_BUILD_LABEL: "27.11.2026 thumbnails, chapter row, debrid, DV P7"
-      NUVIO_BUILD_SLUG: 27.11.2026-test4
+      NUVIO_BUILD_LABEL: "27.11.2026 DV MP4 in HDR10 when P7 off"
+      NUVIO_BUILD_SLUG: 27.11.2026-test5
       NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST -DNV_HEVC_SEI_TEST -DNV_WEBOS_HLS_TEST
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
