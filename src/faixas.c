@@ -1396,7 +1396,6 @@ static void extUsar(const AudioExtCand *c, const AudioExtFaixa *faixa) {
   const AudioExtEntrada *en = c ? extEntIdx(c->indice) : NULL;
   char t[224];
   if (!st || !en) return;
-  legsync_audio_trocou();
   // The pick first: the series memory takes the series from the mark it sets
   // (the first pick of an episode had none, and nothing was remembered).
   const char *idioma = faixa && ling_tem_nome(faixa->idioma) ? faixa->idioma : c->idioma;
@@ -1447,7 +1446,6 @@ static void aplicar(void) {
   // this title's own tracks.
   if (coluna == 0 && extMenu() && audioext_tocando()) {
     if (foco[0] != video_audio_atual()) {
-      legsync_audio_trocou();
       video_escolher_audio(foco[0]);
       player_toast(i18n("Loading the audio of the other version…"), 2500);
     }

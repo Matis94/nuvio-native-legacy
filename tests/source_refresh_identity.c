@@ -64,6 +64,8 @@ static void origemFontes(const CatItem *p){(void)p;}
 static void aquecerAoAbrirTitulo(void){}
 static void addons_buscar_legendas(const char *a,const char *b){(void)a;(void)b;}
 static int detail_aberto(void){return 1;}
+/* The episode a source sheet was opened for (app.c); no sheet open here. */
+static int folhaTocarT = -1, folhaTocarE;
 #include "source_refresh_target.inc"
 
 #include "source_refresh_watch.inc"
