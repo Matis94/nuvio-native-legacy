@@ -37,8 +37,19 @@ void ajustes_leg_contorno_rgb(int *r, int *g, int *b) { *r = *g = *b = 0; }
 int video_n_legenda(void) { return nEmb; }
 const VideoFaixa *video_legenda(int i) { return i >= 0 && i < nEmb ? &emb[i] : NULL; }
 const char *player_id_canal(void) { return ""; }
+// The real list bumps a counter on every change; the tests edit add[] in
+// place, so the stub version is a fingerprint of what a copy would return.
+static int copias;
+unsigned addons_legendas_versao(void) {
+  const unsigned char *b = (const unsigned char *)add;
+  size_t k, n = (size_t)(nAdd > 0 ? nAdd : 0) * sizeof *add;
+  unsigned h = 2166136261u ^ (unsigned)nAdd;
+  for (k = 0; k < n; k++) h = (h ^ b[k]) * 16777619u;
+  return h;
+}
 int addons_legendas_copiar(Legenda *d, int max, unsigned *g, int *p) {
   int i, n = nAdd < max ? nAdd : max;
+  copias++;
   for (i = 0; i < n; i++) d[i] = add[i];
   if (g) *g = 1;
   if (p) *p = 1;
@@ -182,6 +193,14 @@ int main(void) {
   assert(!strcmp(linhas[foco].chave, "rec|p"));
   subDe("rec|p", sub, sizeof sub);
   assert(strstr(sub, "Embutida") && strstr(sub, "Legenda completa"));
+  // Every frame rebuilds the rows; the list is copied again only when it changed.
+  { int c0 = copias;
+    montarLinhas(); montarLinhas();
+    assert(copias == c0);
+    snprintf(add[5].url, sizeof add[5].url, "https://h.invalid/6b");   // a revision in place
+    montarLinhas(); assert(copias == c0 + 1);
+    snprintf(add[5].url, sizeof add[5].url, "https://h.invalid/6");
+    montarLinhas(); assert(copias == c0 + 2); }
 
   // --- #287: forced / SDH / full, each its own row with its own label ---
   { LegUiCand c[8]; const VideoFaixa *pe[4]; int n, k;

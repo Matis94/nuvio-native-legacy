@@ -149,16 +149,34 @@ static LegUiCand cand[LEGUI_MAX_CAND];
 static int nCand;
 
 static int nEmbVivo(void) { int n = video_n_legenda(); return n > NV_FAIXA_MAX ? NV_FAIXA_MAX : n < 0 ? 0 : n; }
+// montarLinhas runs every frame. The list is copied and rebuilt only when it
+// changes: the add-on subtitle list's version (addons_legendas_versao), the
+// live channel or the embedded tracks (a fingerprint of the fields
+// legendasui_montar reads, the track number included). Before, every frame
+// copied up to LEG_MAX subtitles (256 x 1.5 KB) and rebuilt them all.
+static Legenda capturaAdd[LEG_MAX];
+static int capOk, capCanal, candSujo = 1;
+static unsigned capVersao;
+static uint64_t capEmb;
+static uint64_t capHash(uint64_t h, const char *s) { while (s && *s) h = (h ^ (unsigned char)*s++) * 1099511628211ull; return h * 1099511628211ull; }
 static void capturar(void) {
   const VideoFaixa *emb[NV_FAIXA_MAX];
-  Legenda *add = NULL;
-  int nE = nEmbVivo(), nA = 0, i;
-  for (i = 0; i < nE; i++) emb[i] = video_legenda(i);
+  int nE = nEmbVivo(), nA = 0, i, canal = player_id_canal()[0] != 0;
+  unsigned versao = canal ? 0 : addons_legendas_versao();
+  uint64_t h = 1469598103934665603ull ^ (uint64_t)nE;
+  for (i = 0; i < nE; i++) {
+    const VideoFaixa *f = emb[i] = video_legenda(i);
+    if (!f) { h = (h ^ 0xffu) * 1099511628211ull; continue; }
+    h = (h ^ (uint64_t)(f->letreiro ? 1 : 0) ^ ((uint64_t)f->tipoLeg << 1)) * 1099511628211ull;
+    h = (h ^ (uint64_t)(unsigned)f->numero) * 1099511628211ull;
+    h = capHash(h, f->idioma); h = capHash(h, f->rotulo); h = capHash(h, f->nome); h = capHash(h, f->codec);
+  }
+  if (capOk && versao == capVersao && canal == capCanal && h == capEmb) return;
   // Live channels have no addon subtitles (faixas.c, tests/faixas_canal).
-  if (!player_id_canal()[0] && (add = malloc(sizeof *add * LEG_MAX)))
-    nA = addons_legendas_copiar(add, LEG_MAX, NULL, NULL);
-  nCand = legendasui_montar(emb, nE, add, nA, cand, LEGUI_MAX_CAND);
-  free(add);
+  if (!canal) nA = addons_legendas_copiar(capturaAdd, LEG_MAX, NULL, NULL);
+  nCand = legendasui_montar(emb, nE, capturaAdd, nA, cand, LEGUI_MAX_CAND);
+  capOk = 1; capVersao = versao; capCanal = canal; capEmb = h;
+  candSujo = 1;
 }
 
 static void idPrimario(char out[24]) {
@@ -280,21 +298,25 @@ static int recomendada(const char *pref, int secundaria) {
 // mesmo resultado. Cache por assinatura dos candidatos (e das entradas que
 // entram na decisao: preferencias, idiomas, tipos e a fonte atual).
 static uint64_t recHashStr(uint64_t h, const char *s) { while (*s) h = h * 33u + (unsigned char)*s++; return h; }
+static uint64_t candAssin;   // the candidates' part, recomputed only after capturar rebuilt them
 static uint64_t recAssinatura(void) {
   uint64_t h = 5381u;
   int i;
   h = recHashStr(h, prefLinha(0)); h = recHashStr(h, prefLinha(1));
   h = recHashStr(h, legauto_midia(video_url_atual()));
-  h = h * 33u + (uint64_t)nCand;
-  for (i = 0; i < nCand; i++) {
-    h = h * 33u + (uint64_t)(cand[i].embutida ? 1 : 0) * 3u + (uint64_t)(cand[i].tipo + 1);
-    h = recHashStr(h, cand[i].idioma); h = recHashStr(h, cand[i].id);
-    if (!cand[i].embutida) {
-      h = recHashStr(h, cand[i].leg.url); h = recHashStr(h, cand[i].leg.arquivo);
-      h = recHashStr(h, cand[i].formato);
+  if (candSujo) {
+    uint64_t c = (uint64_t)nCand;
+    for (i = 0; i < nCand; i++) {
+      c = c * 33u + (uint64_t)(cand[i].embutida ? 1 : 0) * 3u + (uint64_t)(cand[i].tipo + 1);
+      c = recHashStr(c, cand[i].idioma); c = recHashStr(c, cand[i].id);
+      if (!cand[i].embutida) {
+        c = recHashStr(c, cand[i].leg.url); c = recHashStr(c, cand[i].leg.arquivo);
+        c = recHashStr(c, cand[i].formato);
+      }
     }
+    candAssin = c; candSujo = 0;
   }
-  return h;
+  return h * 33u + candAssin;
 }
 static int recP = -2, recQ = -2;   // cache de montarLinhas; -2 = nunca calculado
 static uint64_t recAssin;
