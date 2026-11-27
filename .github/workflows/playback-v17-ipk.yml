@@ -374,7 +374,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .build-p2p
-          key: custom207-p2p-amd64-${{ hashFiles('tools/p2p-motor/build-arm.sh', 'tools/p2p-motor/pasta.sh', 'tools/p2p-motor/janela-334.patch') }}
+          key: custom207-p2p-amd64-${{ hashFiles('tools/p2p-motor/build-arm.sh', 'tools/p2p-motor/pasta.sh') }}
       - name: Build official pinned P2P engine for ARM
         run: |
           export NUVIO_P2P_MOTOR="$GITHUB_WORKSPACE/.build-p2p"
@@ -400,7 +400,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .build-p2p
-          key: custom207-p2p-amd64-${{ hashFiles('tools/p2p-motor/build-arm.sh', 'tools/p2p-motor/pasta.sh', 'tools/p2p-motor/janela-334.patch') }}
+          key: custom207-p2p-amd64-${{ hashFiles('tools/p2p-motor/build-arm.sh', 'tools/p2p-motor/pasta.sh') }}
       - name: Compile and package integrated webOS application
         run: |
           export RUSTUP_HOME="$HOME/.rustup"
