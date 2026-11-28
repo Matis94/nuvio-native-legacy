@@ -161,6 +161,15 @@ extj = bursts(27, 215, 1500, 1.0)
 render(sys.argv[1] + '/fj_ext.wav', 315, [(extj, lambda at: at if at < 60 else at + 100), (bursts(28, 100, 650, 1.0), lambda t: t + 60)])
 render(sys.argv[1] + '/fj_th.wav', 215, [(extj, lambda t: t), (bursts(29, 215, 215, 0.25), lambda t: t)])
 render(sys.argv[1] + '/fl_th.wav', 300, [(extl, lambda t: t), (bursts(26, 300, 300, 0.25), lambda t: t)])
+# A jump into a scene the other version lacks (owner's log 28/11, build3):
+# 50 s at 60 s, then 220 s at 170 s (extended timeline). After a jump to
+# 330 s the first captures fall in the second one; the shared scenes come
+# back at 390 s, where the offset has grown to 270 s, ~165 s behind the place
+# the follow's own lookahead waits at.
+extk = bursts(30, 300, 2100, 1.0)
+render(sys.argv[1] + '/fk_ext.wav', 570, [(extk, lambda at: at if at < 60 else at + 50 if at < 120 else at + 270),
+                                          (bursts(31, 50, 330, 1.0), lambda t: t + 60), (bursts(32, 220, 1500, 1.0), lambda t: t + 170)])
+render(sys.argv[1] + '/fk_th.wav', 300, [(extk, lambda t: t), (bursts(33, 300, 300, 0.25), lambda t: t)])
 # The same cut in other languages (owner's log 08/11, The Godfather): this
 # file has a Russian dub (default) over the same effects and its English
 # original; the other version is a Polish voice-over on the original (quiet)
@@ -267,6 +276,10 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=16x16:rate=25:durati
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a ac3 -ar 48000 -b:a 64k -metadata:s:a:0 language=eng -shortest "$TMP/follow_jump_ext.mkv"
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=16x16:rate=25:duration=215' -i "$TMP/fj_th.wav" \
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a eac3 -ar 48000 -b:a 64k -metadata:s:a:0 language=eng -shortest "$TMP/follow_jump_th.mkv"
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=16x16:rate=25:duration=570' -i "$TMP/fk_ext.wav" \
+  -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a ac3 -ar 48000 -b:a 64k -metadata:s:a:0 language=eng -shortest "$TMP/fill_jump_ext.mkv"
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=16x16:rate=25:duration=300' -i "$TMP/fk_th.wav" \
+  -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a eac3 -ar 48000 -b:a 64k -metadata:s:a:0 language=eng -shortest "$TMP/fill_jump_th.mkv"
 # Two English tracks (owner 09/11): the series memory keeps the chosen one.
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=32x32:rate=25:duration=20' -i "$TMP/x_en.wav" -i "$TMP/x_ru.wav" \
   -map 0:v -map 1:a -map 2:a -t 20 -c:v libx264 -bf 0 -g 25 -c:a ac3 -ac 2 -ar 48000 -b:a 96k \
@@ -278,4 +291,4 @@ ffmpeg -hide_banner -loglevel error -i "$TMP/follow_th.mkv" -map 0 -c copy -meta
   "$TMP/main60.mkv" "$TMP/long.mkv" "$TMP/long_nocues.mkv" "$TMP/match_main.mkv" "$TMP/match_dub.mkv" \
   "$TMP/main.avi" "$TMP/other.avi" "$TMP/other.ts" "$TMP/xvid.avi" "$TMP/film.mkv" \
   "$TMP/cut_main.mkv" "$TMP/cut_dub.mkv" "$TMP/pal_dub.mkv" "$TMP/pair_dub.mkv" \
-  "$TMP/follow_ext.mkv" "$TMP/follow_th.mkv" "$TMP/lang_main.mkv" "$TMP/lang_pl.mkv" "$TMP/dub_ru.mkv" "$TMP/dub_pl.mkv" "$TMP/follow_ext_ru.mkv" "$TMP/follow_th_pl.mkv" "$TMP/shift_main.mkv" "$TMP/shift_dub.mkv" "$TMP/gap_main.mkv" "$TMP/gap_dub.mkv" "$TMP/two_en.mkv" "$TMP/step_main.mkv" "$TMP/step_dub.mkv" "$TMP/stereo_main.mkv" "$TMP/und_dub.mkv" "$TMP/follow_long_ext.mkv" "$TMP/follow_long_th.mkv" "$TMP/follow_jump_ext.mkv" "$TMP/follow_jump_th.mkv"
+  "$TMP/follow_ext.mkv" "$TMP/follow_th.mkv" "$TMP/lang_main.mkv" "$TMP/lang_pl.mkv" "$TMP/dub_ru.mkv" "$TMP/dub_pl.mkv" "$TMP/follow_ext_ru.mkv" "$TMP/follow_th_pl.mkv" "$TMP/shift_main.mkv" "$TMP/shift_dub.mkv" "$TMP/gap_main.mkv" "$TMP/gap_dub.mkv" "$TMP/two_en.mkv" "$TMP/step_main.mkv" "$TMP/step_dub.mkv" "$TMP/stereo_main.mkv" "$TMP/und_dub.mkv" "$TMP/follow_long_ext.mkv" "$TMP/follow_long_th.mkv" "$TMP/follow_jump_ext.mkv" "$TMP/follow_jump_th.mkv" "$TMP/fill_jump_ext.mkv" "$TMP/fill_jump_th.mkv"

@@ -345,6 +345,16 @@ struct DtsEngine {
   int mt_main_force;     /* this file's track picked in Audio sync > Scan again, +1 (0: Auto) */
   int ext_automatch;     /* Settings: "Match automatically" by itself when the other version starts */
   int mt_retry;          /* automatic captures started again after a jump cut them short */
+  /* A JUMP INTO A SCENE THE OTHER VERSION LACKS (owner's log 28/11, The
+   * Fellowship of the Ring, build3: two captures in a row fell in scenes only
+   * the extended cut has, each wider search read 1.5 GB for nothing, and the
+   * next capture came only when the person pressed Scan again). While the
+   * follow plays this file's audio, captures go on by themselves; a search
+   * flat everywhere the offset map allows ends there and the next capture
+   * starts at once. */
+  int mt_quick;          /* the capture in progress is one of those: nothing found is not reported */
+  int fill_flat;         /* such searches in a row that found nothing */
+  double fill_rearm_at;  /* this file's time (s) the next one starts; 0 none */
   struct Follow *fw;
   int fw_event, fw_event_ms;   /* last event for the app: 1 own audio, 2 resumed, 3 gave up, 4 small shift corrected */
   double ext_fps_ratio;  /* other version's frame rate / this one's (0: unknown) */
@@ -2545,7 +2555,7 @@ static int configure_external(DtsEngine *e,double start) {
   printf("[ext-audio] ready codec=%s ch=%d rate=%d stream=%d%s\n",e->info.audio_codec,e->info.channels,
     e->info.sample_rate,k,follow?" (following another cut)":"");
   e->fw_autoarm=follow || e->ext_automatch; e->mt_main_pref=0; e->mt_retry=0;
-  e->anc_n=0;
+  e->anc_n=0; e->mt_quick=0; e->fill_flat=0; e->fill_rearm_at=0;
   fflush(stdout);
   return start>0?dts_engine_seek(e,start):0;
 }
@@ -3017,9 +3027,15 @@ typedef struct {
   DtsMatchEnv ev; int64_t t0_ns; int cap;
   float *env[DTS_MATCH_BANDS];
 } MatchSide;
+/* The follow's states (struct Follow below). */
+enum { FW_OFF=0, FW_SYNC=1, FW_FILL=2, FW_GAVEUP=3 };
 /* s[2]: a second track of this file captured with the first when the two
- * files share no language (alt_stream, -1 none); the better one is kept. */
-struct MatchCap { int main_stream, donor_stream, alt_stream, alt_same, early; MatchSide s[3]; };
+ * files share no language (alt_stream, -1 none); the better one is kept.
+ * no_donor: armed while the follow plays this file's audio; the other
+ * version's packets are not waited for (the search reads its own), so the
+ * capture never stalls on them (owner's log 28/11: past the end of the other
+ * version, the capture never filled and was dropped every 90 s). */
+struct MatchCap { int main_stream, donor_stream, alt_stream, alt_same, early, no_donor; MatchSide s[3]; };
 struct MatchJob {
   pthread_t th; pthread_mutex_t lock; int started, done, cancel;
   DtsEngine *holder;                       /* the capture in progress, to cancel its reads */
@@ -3029,6 +3045,8 @@ struct MatchJob {
   int found, how, heavy; double off, ratio, score;    /* result (raw offset, s) */
   int ncand; double cand[DTS_MATCH_CAND], cand_sc[DTS_MATCH_CAND];   /* best places, raw */
   int anc_n; double anc_t[ANC_MAX], anc_o[ANC_MAX];                 /* the offset map (a copy) */
+  int quick, flat;   /* a capture in a missing scene: ends after the map if all of it is flat (then flat=1) */
+  double spent;      /* MB of the other version read */
 };
 /* The best places over several searches, 0.5 s apart, best first. */
 static void match_cand_add(int *n,double *off,double *sc,double o,double v) {
@@ -3181,6 +3199,15 @@ static int match_capture(struct MatchJob *j,double from,double seconds,MatchSide
   dts_engine_destroy(h);   /* and its reader c */
   return r;
 }
+#define MATCH_FLAT 0.20
+static int match_job_flat(struct MatchJob *j,int nmap,int map_read,double best) {
+  if(!j->quick || nmap<=0 || map_read<nmap || best>=MATCH_FLAT) return 0;
+  j->flat=1;
+  printf("[ext-audio] match: flat everywhere the offset map allows (best %.2f): a scene the other version lacks, "
+         "the next capture starts now\n",best);
+  fflush(stdout);
+  return 1;
+}
 static void *match_job_run(void *arg) {
   struct MatchJob *j=arg;
   /* Below the interface and the playback threads: the menu keeps its frames
@@ -3194,6 +3221,7 @@ static void *match_job_run(void *arg) {
   const double bps=j->donor_total>0 && j->donor_dur>0?j->donor_total/j->donor_dur:0;
   double ks[2]={j->k0,j->kf}; int nk=j->kf>0 && fabs(j->kf-j->k0)>0.0005?2:1;
   struct { double c, r, cap_mb; int how; } st[28]; int n=0;
+  int nmap=0, map_read=0; double map_best=0;   /* the offset map's windows (the first nmap), read, best score */
   const double pad=DTS_MATCH_WIN_S/2.0+5.0;   /* the window, and the two halves of the check */
   double spent=0;
   /* The lengths suggest where the extra minutes are: all at the start
@@ -3251,7 +3279,7 @@ static void *match_job_run(void *arg) {
         down=!down;
         st[n].c=c; st[n].r=rr; st[n].cap_mb=310; st[n++].how=4;
       }
-      map_lo=a; map_hi=b;
+      map_lo=a; map_hi=b; nmap=n;
     }
   }
   if(known) {
@@ -3295,6 +3323,10 @@ static void *match_job_run(void *arg) {
   if(!known) { st[n].c=j->center; st[n].r=60; st[n].cap_mb=300; st[n++].how=3; }
   if(!far) { st[n].c=j->center; st[n].r=300; st[n].cap_mb=300; st[n++].how=4; }
   for(int i=0;i<n && !__atomic_load_n(&j->cancel,__ATOMIC_RELAXED) && !j->found;i++) {
+    /* A capture in a missing scene: all the offset map allows read and flat
+     * (owner's log 28/11: 0.05-0.08 there, 0.54-0.61 where it matched) is a
+     * scene the other version lacks; the next capture tries again. */
+    if(i==nmap && match_job_flat(j,nmap,map_read,map_best)) break;
     if(st[i].how==2 && fabs(st[i].c-j->center)<10) continue;   /* the first search covered it */
     double lo=1e18, hi=-1e18;
     for(int q=0;q<nk;q++) {
@@ -3335,13 +3367,17 @@ static void *match_job_run(void *arg) {
           j->found=1; j->how=st[i].how; j->off=r.offset_s; j->ratio=ks[q]; j->score=r.score;
         }
         if(got && ks[q]==j->k0) for(int c=0;c<r.ncand;c++) match_cand_add(&j->ncand,j->cand,j->cand_sc,r.cand_off[c],r.cand_score[c]);
+        if(got && i<nmap && r.score>map_best) map_best=r.score;
         printf("[ext-audio] match: ratio %.5f around %.1f s: offset %.3f s score %.2f margin %.2f%s\n",ks[q],st[i].c-j->base,
           r.offset_s-j->base,r.score,r.margin,r.confident?" (trusted)":"");
         fflush(stdout);
       }
+      if(i<nmap) map_read++;
     }
     match_side_free(&side);
   }
+  if(!j->found && !j->flat && n==nmap) match_job_flat(j,nmap,map_read,map_best);
+  j->spent=spent;
   pthread_mutex_lock(&j->lock); j->done=1; pthread_mutex_unlock(&j->lock);
   return NULL;
 }
@@ -3467,6 +3503,7 @@ static void match_second_look(DtsEngine *e,const DtsMatchSig *sm,const DtsMatchS
   double c=t2-(t2-r.offset_s)*k;
   match_report(e,c,k,r.score,5);
 }
+static void fill_next(DtsEngine *e,int flat,double spent);
 static void match_finish(DtsEngine *e) {
   struct MatchCap *mc=e->mt;
   DtsMatchSig sm, sd;
@@ -3503,7 +3540,7 @@ static void match_finish(DtsEngine *e) {
   double ks[2]={k0,e->ext_fps_ratio}; int nk=e->ext_fps_ratio>0 && fabs(e->ext_fps_ratio-k0)>0.0005?2:1;
   DtsMatchResult best={0}; double bk=k0; int found=0;
   e->mt_ncand=0;
-  for(int q=0;q<nk;q++) {
+  for(int q=0;q<nk && !mc->no_donor;q++) {
     DtsMatchResult r;
     int got=dts_match_search(&sm,&sd,ks[q],center,10.0,&r);
     if(got && !r.confident) match_try_verify(&sm,&sd,ks[q],&r);
@@ -3540,10 +3577,11 @@ static void match_finish(DtsEngine *e) {
     j->donor_total=e->ext->total;
     j->anc_n=e->anc_n;
     memcpy(j->anc_t,e->anc_t,sizeof(double)*(size_t)e->anc_n); memcpy(j->anc_o,e->anc_o,sizeof(double)*(size_t)e->anc_n);
+    j->quick=e->mt_quick;
     if(ok && pthread_create(&j->th,NULL,match_job_run,j)==0) { j->started=1; e->mj=j; }
     else match_job_free(j);
   }
-  if(!e->mj) match_fail(e,0);
+  if(!e->mj) { if(e->mt_quick) fill_next(e,0,0); else match_fail(e,0); }
   match_disarm(e);
 }
 /* A first look at 25 s of the 40 (owner 16/11: after a new episode or the
@@ -3576,7 +3614,7 @@ static int match_early(DtsEngine *e) {
 }
 static void match_feed(DtsEngine *e,int side,AVPacket *pkt,AVRational tb) {
   struct MatchCap *mc=e->mt;
-  if(!mc || match_side_full(&mc->s[side])) return;
+  if(!mc || match_side_full(&mc->s[side]) || (side==1 && mc->no_donor)) return;
   if(match_side_feed(&mc->s[side],pkt,tb)<0) { mc->s[side].ev.max=mc->s[side].ev.n=1; }
   if(!mc->early && !e->mt_check && (mc->alt_stream<0 || mc->alt_same) && abs(e->ext_cut_s)<=10 &&
      mc->s[0].ev.n>=MATCH_EARLY_S*DTS_MATCH_HZ && mc->s[1].ev.n>=MATCH_EARLY_S*DTS_MATCH_HZ &&
@@ -3584,7 +3622,8 @@ static void match_feed(DtsEngine *e,int side,AVPacket *pkt,AVRational tb) {
     mc->early=1;
     if(match_early(e)) return;
   }
-  if(match_side_full(&mc->s[0]) && match_side_full(&mc->s[1]) && (mc->alt_stream<0 || match_side_full(&mc->s[2])))
+  if(match_side_full(&mc->s[0]) && (mc->no_donor || match_side_full(&mc->s[1])) &&
+     (mc->alt_stream<0 || match_side_full(&mc->s[2])))
     match_finish(e);
 }
 /* An interrupted capture (seek, live offset) is not used; a search already
@@ -3761,10 +3800,11 @@ static int match_arm(DtsEngine *e,int check) {
   struct MatchCap *mc=av_mallocz(sizeof *mc);
   if(!mc) return -1;
   mc->main_stream=best; mc->donor_stream=donor; mc->alt_stream=-1; e->mt=mc;
+  mc->no_donor=!check && e->fw && e->fw_state==FW_FILL;
   if(match_side_open(&mc->s[0],e->fmt->streams[best],DTS_MATCH_MAX)<0 ||
      match_side_open(&mc->s[1],e->ext->fmt->streams[donor],DTS_MATCH_MAX)<0) { match_disarm(e); return -1; }
   e->fmt->streams[best]->discard=AVDISCARD_DEFAULT;
-  if(shared && !check && !e->mt_main_pref && !e->mt_main_force) {
+  if(shared && !check && !mc->no_donor && !e->mt_main_pref && !e->mt_main_force) {
     int a=match_alt_same(e,best);
     if(a>=0 && match_side_open(&mc->s[2],e->fmt->streams[a],DTS_MATCH_MAX)==0) {
       char la[16]="";
@@ -3774,7 +3814,7 @@ static int match_arm(DtsEngine *e,int check) {
              avcodec_get_name(e->fmt->streams[a]->codecpar->codec_id),la[0]?la:"-");
     }
   }
-  if(!shared && !check && !e->mt_main_pref && !e->mt_main_force) {
+  if(!shared && !check && !mc->no_donor && !e->mt_main_pref && !e->mt_main_force) {
     int a=match_alt(e,best), same=0;
     /* No other language in this file (owner's log 21/11: a Polish AVI with
      * no language tag against a 4K file with three English tracks): another
@@ -3788,7 +3828,7 @@ static int match_arm(DtsEngine *e,int check) {
              avcodec_get_name(e->fmt->streams[a]->codecpar->codec_id),la[0]?la:"no language",same?", the same language":"");
     }
   }
-  if(donor!=e->ext_stream) e->ext->fmt->streams[donor]->discard=AVDISCARD_DEFAULT;
+  if(donor!=e->ext_stream && !mc->no_donor) e->ext->fmt->streams[donor]->discard=AVDISCARD_DEFAULT;
   e->mt_check=check;
   { char lm[16]="", ld[16]="";
     copy_metadata(lm,sizeof lm,e->fmt->streams[best]->metadata,"language");
@@ -3796,13 +3836,13 @@ static int match_arm(DtsEngine *e,int check) {
     printf("[ext-audio] match: %scapturing %d s of this file's track %d (%s %s) and the other version's track %d (%s %s%s)\n",
       check?"second look, ":"",DTS_MATCH_SECONDS,best,avcodec_get_name(e->fmt->streams[best]->codecpar->codec_id),lm[0]?lm:"-",
       donor,avcodec_get_name(e->ext->fmt->streams[donor]->codecpar->codec_id),ld[0]?ld:"-",
-      donor!=e->ext_stream?", compared only":""); }
+      mc->no_donor?", searched by its own reader":donor!=e->ext_stream?", compared only":""); }
   fflush(stdout);
   return 0;
 }
 int dts_engine_external_match_arm(DtsEngine *e) {
   if(!e) return -1;
-  match_job_stop(e); e->mt_t1=-1; e->mt_auto=0;   /* a click; the automatic callers set it after */
+  match_job_stop(e); e->mt_t1=-1; e->mt_auto=0; e->mt_quick=0;   /* a click; the automatic callers set them after */
   e->mt_heavy=e->mt_hint_ms=e->mt_how=e->mt_ncand=0;
   if(match_arm(e,0)<0) { match_fail(e,0); return -1; }
   e->mt_state=1; e->mt_started_ms=clock_ns(CLOCK_MONOTONIC)/1000000u;
@@ -3829,7 +3869,8 @@ int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) {
         match_report(e,j->off,j->ratio==1.0?0:j->ratio,j->score,j->how);
         if(j->ratio==1.0) { e->mt_t1=j->mt0+j->mn/2.0/DTS_MATCH_HZ; e->mt_o1=j->off; anchor_add(e,e->mt_t1,j->off);
                             e->mt_o1_user_ns=(int64_t)e->mt_offset_ms*1000000; }
-      } else match_fail(e,j->heavy);
+      } else if(j->quick) fill_next(e,j->flat,j->spent);
+      else match_fail(e,j->heavy);
       match_set_cands(e,j->ncand,j->cand,j->cand_sc);
       printf("[ext-audio] match: wider search %s\n",j->found?"found it":"found nothing trusted");
       for(int c=0;c<e->mt_ncand;c++) printf("[ext-audio] match: candidate %d: %d ms (score %d)\n",c+1,e->mt_cand_ms[c],e->mt_cand_sc[c]);
@@ -3875,7 +3916,6 @@ int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) {
 #define FW_LOOK_S 40
 #define FW_LOOK_MAX_S 150
 #define FW_WAIT_MAX_S 1200
-enum { FW_OFF=0, FW_SYNC=1, FW_FILL=2, FW_GAVEUP=3 };
 struct Follow {
   int mstream, dstream;
   MatchSide m, d;          /* this file (rolling 60 s); the other version (rolling, or the lookahead in FILL) */
@@ -3902,6 +3942,27 @@ static void follow_event(DtsEngine *e,int kind,int ms) {
   printf("[ext-audio] follow: %s\n",kind==1?"a scene the other version lacks: this file's own audio":
          kind==2?"shared scenes again: the other version resumes":
          kind==4?"a small shift (a shorter or longer gap in one version): sync adjusted":"lost it: use Match automatically");
+  fflush(stdout);
+}
+/* A capture in a missing scene found nothing: no result for the app (no
+ * toast each time); while the follow still plays this file's audio the next
+ * capture starts at once when the search was flat and read little, else 60 s
+ * later, at most 4 times in a row (a wide offset map: up to 1.5 GB each). */
+static void fill_next(DtsEngine *e,int flat,double spent) {
+  e->mt_state=0; e->mt_auto=0; e->mt_quick=0;
+  if(e->fw_state!=FW_FILL || !e->fw) return;
+  e->fill_flat++;
+  int cheap=flat && spent<=700.0;
+  if(!cheap && e->fill_flat>4) {
+    printf("[ext-audio] match: %d searches in this missing scene found nothing: no more by itself (Scan again still works)\n",
+           e->fill_flat);
+    fflush(stdout); return;
+  }
+  double now=e->ext_clock_ns!=INT64_MIN?e->ext_clock_ns/1e9:e->target_ns/1e9;
+  e->fill_rearm_at=now+(cheap?0.5:60.0);
+  if(e->fill_rearm_at<=0) e->fill_rearm_at=0.001;
+  printf("[ext-audio] match: nothing here yet (search %d in this missing scene), the next capture %s\n",e->fill_flat,
+         cheap?"starts now":"in 60 s");
   fflush(stdout);
 }
 static void follow_side_reset(MatchSide *m) {
@@ -4036,6 +4097,7 @@ static void follow_resume(DtsEngine *e,int64_t offset_ns) {
     }
   }
   e->fw_state=FW_SYNC;
+  e->fill_rearm_at=0; e->fill_flat=0;
   anchor_add(e,from/1e9,(offset_ns+e->ext_base_ns)/1e9);
   printf("[ext-audio] follow: the other version resumes at %.1fs, offset %lld ms\n",from/1e9,(long long)(offset_ns/1000000)); fflush(stdout);
   follow_event(e,2,(int)(offset_ns/1000000));
@@ -4136,7 +4198,8 @@ static void follow_check(DtsEngine *e) {
        * old offset and starts no wider search). */
       follow_enter_fill(e,tend-8.0);
       if(e->mt && e->mt_check) match_disarm(e);
-      if(!e->mt && !e->mj) { dts_engine_external_match_arm(e); e->mt_auto=1; }
+      e->fill_flat=0;
+      if(!e->mt && !e->mj) { dts_engine_external_match_arm(e); e->mt_auto=1; e->mt_quick=1; }
       return;
     }
     follow_enter_fill(e,f->t_good);
@@ -4196,7 +4259,7 @@ static void follow_read_ahead(DtsEngine *e) {
   struct Follow *f=e->fw;
   for(int i=0;i<16 && !e->ext_demux_eof;i++) {
     double have=f->d.t0_ns!=INT64_MIN?f->d.t0_ns/1e9+(double)f->d.ev.n/DTS_MATCH_HZ:0;
-    int cap=e->mt && !match_side_full(&e->mt->s[1]);
+    int cap=e->mt && !e->mt->no_donor && !match_side_full(&e->mt->s[1]);
     if(f->d.t0_ns!=INT64_MIN && have>=f->d_pause+f->look_s && !cap) return;
     if(match_side_full(&f->d) && !cap) return;
     if(e->ext_woken || e->ext_failed) return;
@@ -4242,10 +4305,10 @@ void dts_engine_external_match_auto(DtsEngine *e) { if(e && e->ext) e->fw_autoar
  * wider search reading on its own end here, with no result to report. The
  * follow and the checks while playing go on. */
 void dts_engine_external_match_stop(DtsEngine *e) {
-  if(!e || (!e->mt && !e->mj && !e->fw_autoarm)) return;
+  if(!e || (!e->mt && !e->mj && !e->fw_autoarm && e->fill_rearm_at<=0)) return;
   int check=e->mt_check;
   match_job_stop(e); match_disarm(e);
-  e->fw_autoarm=0; e->mt_auto=0; e->mt_retry=0;
+  e->fw_autoarm=0; e->mt_auto=0; e->mt_retry=0; e->mt_quick=0; e->fill_rearm_at=0;
   if(!check) { e->mt_state=0; e->mt_ncand=0; }
   printf("[ext-audio] match: stopped by the person\n"); fflush(stdout);
 }
@@ -4497,6 +4560,7 @@ static int ext_seek(DtsEngine *e,double seconds) {
   uint64_t t0=clock_ns(CLOCK_MONOTONIC);
   int64_t b0=(int64_t)e->ext->metrics.range_bytes;
   match_cancel(e);
+  e->fill_rearm_at=0;
   ext_unwake(e);
   quiet_reset(e->qs);
   if(e->ext_failed) return ext_reset_chain(e);   /* given up: the app goes back to its own audio */
@@ -4747,6 +4811,12 @@ static int next_frame_passthrough(DtsEngine *e,DtsFrame *f) {
       if(e->mt_t1>=0) match_second_look_due(e,ns(e->in->pts!=AV_NOPTS_VALUE?e->in->pts:e->in->dts,tb));
       /* Follow on, another cut: the first match starts by itself. */
       if(e->fw_autoarm && !e->mt && !e->mj) { e->fw_autoarm=0; dts_engine_external_match_arm(e); e->mt_auto=1; }
+      /* In a missing scene: the next capture (fill_next). */
+      if(e->fill_rearm_at>0 && !e->mt && !e->mj && e->fw_state==FW_FILL && e->in->pts!=AV_NOPTS_VALUE &&
+         ns(e->in->pts,tb)/1e9>=e->fill_rearm_at) {
+        e->fill_rearm_at=0;
+        if(dts_engine_external_match_arm(e)==0) { e->mt_auto=1; e->mt_quick=1; }
+      }
       if(!e->bsf) {
         if(e->hevc_annexb.sets && (r=hevc_annexb_packet(e))<0) { av_packet_unref(e->in); return fail(e,"Compressed video output",r); }
         av_packet_move_ref(e->out,e->in); return ext_video_out(e,f,tb);

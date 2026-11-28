@@ -230,7 +230,7 @@ static void *wake_when_waiting(void *arg) {
   return NULL;
 }
 int main(int argc, char **argv) {
-  assert(argc == 42);
+  assert(argc == 44);
   const char *main_file = argv[1], *other = argv[2], *dts_only = argv[3], *short_clip = argv[4], *mp4 = argv[5];
   const char *aac44 = argv[6], *main60 = argv[7], *long_idx = argv[8], *long_noidx = argv[9];
   const char *match_main = argv[10], *match_dub = argv[11];
@@ -243,6 +243,7 @@ int main(int argc, char **argv) {
   const char *stereo_main = argv[36], *und_dub = argv[37];
   const char *follow_long_ext = argv[38], *follow_long_th = argv[39];
   const char *follow_jump_ext = argv[40], *follow_jump_th = argv[41];
+  const char *fill_jump_ext = argv[42], *fill_jump_th = argv[43];
   dts_engine_set_lang_match(lang_match);
   load_refs(other, "pol");
 
@@ -852,6 +853,36 @@ int main(int argc, char **argv) {
             got, got < 0 ? dts_engine_error(e) : "", found, found_ms, resumed, resume_ms, resume_at / 1e9);
     assert(found && found_ms > 99500 && found_ms < 100500);
     assert(resumed && resume_ms > 99500 && resume_ms < 100500 && resume_at > 170e9 && resume_at < 300e9); }
+  dts_engine_destroy(e);
+  /* A jump into a scene the other version lacks (owner's log 28/11, build3:
+   * captures there matched nothing, and the next one came only with Scan
+   * again). The searches there report nothing, the captures go on by
+   * themselves, and the one after the shared scenes come back finds the
+   * grown offset; the other version resumes with no click. */
+  e = dts_engine_create();
+  dts_engine_external_follow(e, 1);
+  dts_engine_external_audio(e, fill_jump_th, HEADERS, "en", 0);
+  assert(dts_engine_open(e, fill_jump_ext, HEADERS, -1, 0, 0) == 0);
+  { DtsFrame f; int got, jumped = 0, found = 0, found_ms = 0, resumed = 0, resume_ms = 0, state, ms, fails = 0, before = 0;
+    int64_t last = INT64_MIN, resume_at = 0; DtsMatchInfo mi;
+    while ((got = dts_engine_next(e, &f)) == 1) {
+      if (f.kind == DTS_AUDIO) last = f.pts_ns;
+      int r = dts_engine_external_match_poll(e, &mi), k = dts_engine_external_follow_poll(e, &state, &ms);
+      if (r < 0 && jumped) fails++;
+      if (r == 1 && jumped) {   /* the app applies a find (audioext), live */
+        found = 1; found_ms = mi.offset_ms;
+        assert(dts_engine_external_shift(e, mi.offset_ms) == 0);
+      }
+      if (k == 2 && !jumped) before = ms;
+      if (k == 2 && jumped && !resumed) { resumed = 1; resume_ms = ms; resume_at = last; }
+      if (!jumped && before && last > 135e9) { jumped = 1; assert(dts_engine_seek(e, 330.0) == 0); last = INT64_MIN; }
+      if (resumed && last > resume_at + 10e9) break;
+    }
+    fprintf(stderr, "follow, jump into a missing scene: got %d (%s), first gap %d ms, found %d (%d ms), failures %d, resumed %d with %d ms at %.1f s\n",
+            got, got < 0 ? dts_engine_error(e) : "", before, found, found_ms, fails, resumed, resume_ms, resume_at / 1e9);
+    assert(before > 49500 && before < 50500);
+    assert(found && found_ms > 269500 && found_ms < 270500 && !fails);
+    assert(resumed && resume_ms > 269500 && resume_ms < 270500 && resume_at > 390e9 && resume_at < 530e9); }
   dts_engine_destroy(e);
   /* Following, the same cut in other languages: this file's Russian dub
    * (default) and English original against a Polish voice-over on the
