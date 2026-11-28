@@ -1790,6 +1790,13 @@ static int sincLinhas(int *tipo, int *arg) {
   tipo[n] = SED_ZERAR; arg[n++] = 0;
   return n;
 }
+// Reset: 0 ms; with another cut, where the last match put it (owner's log
+// 28/11, The Fellowship of the Ring: 0 ms is never right 50 min apart, and
+// it lost the sync until a search by hand).
+static int sincZerarAlvo(void) {
+  int ms = 0;
+  return audioext_outro_corte() && audioext_ultimo_automatico(&ms) ? ms : 0;
+}
 static void sincFmt(int ms, char *v, unsigned tam) {
   audioext_formatar_offset(ms, v, tam, i18n("%c%u.%03u s"), i18n("%c%u min %u.%03u s"));
 }
@@ -1906,8 +1913,11 @@ static void sincTecla(SDL_Keycode k, int repeat) {
       return;
     }
     if (t == SED_ZERAR) {
-      audioext_offset_definir(0);
-      printf("[ext-audio] sync editor: reset\n"); fflush(stdout);
+      int ms = sincZerarAlvo();
+      audioext_offset_definir(ms);
+      if (ms) printf("[ext-audio] sync editor: reset to the last match, %d ms (another cut)\n", ms);
+      else printf("[ext-audio] sync editor: reset\n");
+      fflush(stdout);
       sincFoco = 0; return;
     }
     if (t == SED_SCAN) {
@@ -3253,7 +3263,11 @@ static void corpoSinc(GfxRect c, float a) {
         else if (audioext_match_faixa(l, sizeof l, cd, sizeof cd, &ch)) snprintf(val, sizeof val, i18n("Against: %s"), i18n(ling_nome(l)));
         else snprintf(val, sizeof val, "%s", i18n("Subtitles + audio"));
         icone = "aj_rotate-cw"; pagina = 1; break; }
-      default: snprintf(nome, sizeof nome, "%s", i18n("Reset")); icone = "pl_rotate-ccw"; marca = !o; break;
+      default: {
+        int z = sincZerarAlvo();
+        snprintf(nome, sizeof nome, "%s", i18n("Reset"));
+        if (z) sincFmt(z, val, sizeof val);   // another cut: back to the last match, shown
+        icone = "pl_rotate-ccw"; marca = o == z; break; }
     }
     if (sel) plrui_linha_foco(r, 18.0f, a);
     if (icone) gfx_icone((GfxRect){ r.x + 18.0f, r.y + (SED_LN_H - 24.0f) * 0.5f, 24.0f, 24.0f }, icone, 1, 1, 1, (sel ? 1.0f : 0.7f) * a);
