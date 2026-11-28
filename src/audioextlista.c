@@ -14,7 +14,7 @@ static int casa(const char *a, const char *b) {
 // (DTS only while DTS conversion is on).
 static int codecUsavel(int c, int semDts) { return !(semDts && c == AEXT_DTS); }
 
-typedef struct { AudioExtCand c; int cache, canais, codec, ordemAddon; uint64_t bytes; } Item;
+typedef struct { AudioExtCand c; int corte, cache, canais, codec, ordemAddon; uint64_t bytes; } Item;
 static int ordemDoAddon;   // AudioExtOpcoes.ordemAddon, for cmpItem
 
 // 5.1 or more first, then channels not declared (add-ons often leave them out
@@ -30,6 +30,7 @@ static int cmpItem(const void *pa, const void *pb) {
     if (a->ordemAddon != b->ordemAddon) return a->ordemAddon - b->ordemAddon;
     return a->c.indice - b->c.indice;
   }
+  if (a->corte != b->corte) return a->corte - b->corte;
   if (a->cache != b->cache) return b->cache - a->cache;
   if (nivelCanais(a->canais) != nivelCanais(b->canais)) return nivelCanais(a->canais) - nivelCanais(b->canais);
   if (a->codec != b->codec) return a->codec - b->codec;
@@ -83,6 +84,7 @@ int audioext_lista(const AudioExtEntrada *e, int n, const AudioExtOpcoes *o, Aud
     memset(&it[m], 0, sizeof it[m]);
     it[m].c.indice = i; it[m].c.grupo = g;
     if (g != AEXT_G_SEM) snprintf(it[m].c.idioma, sizeof it[m].c.idioma, "%s", s->idiomas[l]);
+    it[m].corte = s->corte < 0 ? -1 : s->corte > 0 ? 1 : 0;
     it[m].cache = s->cache; it[m].canais = s->canais; it[m].codec = s->codec; it[m].bytes = s->bytes;
     it[m].ordemAddon = s->ordemAddon;
     m++;

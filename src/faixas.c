@@ -695,7 +695,7 @@ static uint32_t extImpressaoDe(const Stream *s) {
     for (size_t k = 0; k < sizeof v / sizeof *v; k++) h = (h ^ (uint32_t)v[k]) * 16777619u; }
   return h ? h : 1;
 }
-static unsigned extGeracao, extRevisao, extAddonsVer;
+static unsigned extGeracao, extRevisao, extAddonsVer, extVersoesVer;
 static int extListaN = -1;
 // The episode whose versions the pages list (faixas_fonte.inc): 0 = the one
 // on screen, from the player's own source list; another one, from its own
@@ -712,6 +712,19 @@ static int extMenu(void) {
   return 0;
 #endif
 }
+// The version's cut against the picture playing: -1 the same length
+// (measured this session), 1 another cut (measured, or a cut name the
+// picture does not share), 0 unknown. *seg: the measured difference.
+static int extCorte(const Stream *st, int *seg) {
+  int c = 0;
+  if (seg) *seg = 0;
+  if (!st) return 0;
+  if (exEpN <= 0 && audioext_versao_corte(video_url_atual(), st->url, &c)) {
+    if (seg) *seg = c;
+    return c > 10 || c < -10 ? 1 : -1;
+  }
+  return stream_outro_corte(st, stream_item(stream_atual())) ? 1 : 0;
+}
 static void extMontar(int forcar) {
   int n, atual = exEpN > 0 ? -1 : stream_atual();
   const char *urlVideo = exEpN > 0 ? "" : video_url_atual();
@@ -722,8 +735,10 @@ static void extMontar(int forcar) {
   // A source's state changed too (marked not cached after a debrid
   // placeholder), or Settings > Addons.
   if (!forcar && extGeracao == stream_lista_geracao() && extListaN == n && extRevisao == stream_revisao() &&
-      extAddonsVer == audioext_addons_versao() && extEpVisto == exEpN && extEpGerVisto == audioextep_geracao()) return;
+      extAddonsVer == audioext_addons_versao() && extEpVisto == exEpN && extEpGerVisto == audioextep_geracao() &&
+      extVersoesVer == audioext_versoes_geracao()) return;
   extGeracao = stream_lista_geracao(); extRevisao = stream_revisao(); extAddonsVer = audioext_addons_versao();
+  extVersoesVer = audioext_versoes_geracao();
   extEpVisto = exEpN; extEpGerVisto = audioextep_geracao();
   extListaN = n; extAllN = 0;
   if (n <= 0) { exReconstruir(); return; }
@@ -757,6 +772,7 @@ static void extMontar(int forcar) {
       } }
     extEnt[i].atual = i == atual || (st && urlVideo && urlVideo[0] && !strcmp(st->url, urlVideo));
     extEnt[i].foraFiltro = st && !audioext_addon_ligado(st->addonChave);
+    extEnt[i].corte = extCorte(st, NULL);
   }
   memset(&o, 0, sizeof o);
   // The audio language of the account/TV; without one ("All", free), the
@@ -2339,7 +2355,15 @@ static void extDetalhes(int indice, const char *idioma, char *sub, size_t tam, i
   sub[0] = 0;
   if (dim) *dim = 0;
   if (!en) return;
-  if (st && stream_outro_corte(st, stream_item(stream_atual()))) extJuntar(sub, tam, i18n("Another cut"));
+  // Another cut, with its difference once measured ("Another cut (−50 min)").
+  { int seg = 0;
+    if (extCorte(st, &seg) > 0) {
+      char c[64];
+      if (seg) snprintf(c, sizeof c, "%s (%s%d min)", i18n("Another cut"), seg < 0 ? "\xe2\x88\x92" : "+",
+                        (abs(seg) + 30) / 60);
+      else snprintf(c, sizeof c, "%s", i18n("Another cut"));
+      extJuntar(sub, tam, c);
+    } }
   audioext_codec_texto(en->codec, en->canais, codec, sizeof codec);
   // DTS, TrueHD and the others reach the TV as AC-3 5.1 or AAC stereo; DTS
   // as it is when conversion is off and the TV decodes DTS.

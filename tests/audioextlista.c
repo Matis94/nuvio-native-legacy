@@ -163,6 +163,20 @@ int main(void) {
     for (int i = 1; i < k; i++) runs += strcasecmp(c[i - 1].idioma, c[i].idioma) != 0;
     assert(runs == 2 && !strcmp(c[0].idioma, "de") && !strcmp(c[2].idioma, "de") && !strcmp(c[3].idioma, "es")); }
 
+  // The same cut first, another cut last (owner's log 28/11, The Fellowship
+  // of the Ring): a measured same-length version, then the unknown ones, then
+  // another cut, even a cached 5.1 one.
+  n = 0;
+  e[n] = fonte("pl", AEXT_DDP, 6, 1, 1); e[n++].corte = 1;     // theatrical, cached
+  e[n] = fonte("pl", AEXT_AAC, 2, 0, 1); e[n++].corte = 0;     // unknown
+  e[n] = fonte("pl", AEXT_AAC, 2, -1, 2); e[n++].corte = -1;   // extended, measured, not cached
+  o = opc("pl", "en");
+  k = audioext_lista(e, n, &o, c, 64);
+  assert(k == 3 && c[0].indice == 2 && c[1].indice == 1 && c[2].indice == 0);
+  o.ordemAddon = 1;   // "Sort like the addons" keeps the add-ons' order
+  k = audioext_lista(e, n, &o, c, 64);
+  assert(k == 3 && c[0].indice == 0);
+
   assert(audioext_converte(AEXT_DTS) && audioext_converte(AEXT_TRUEHD) && !audioext_converte(AEXT_DDP));
   char t[32];
   audioext_codec_texto(AEXT_DDP, 6, t, sizeof t); assert(!strcmp(t, "DD+ 5.1"));

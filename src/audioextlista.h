@@ -17,7 +17,11 @@
 //  - grouped by language: the preferred audio language first, then the
 //    second one, then the sources that declare no language (often the
 //    original, untagged English of a movie), then the others alphabetically;
-//  - inside a language: in the debrid cache first, then unknown, then not
+//  - inside a language: the same cut as the picture first (its length
+//    measured this session, or no cut name that differs), another cut last
+//    (owner's log 28/11, The Fellowship of the Ring: the theatrical Polish
+//    audio sat above the extended one);
+//    then in the debrid cache first, then unknown, then not
 //    cached (or hidden); 5.1 or more, then undeclared channels, then stereo;
 //    DD+, DD, AAC, undeclared, then the converted ones (DTS, TrueHD, other);
 //    smaller files first (size unknown last); then the list's own order;
@@ -46,6 +50,7 @@ typedef struct AudioExtEntradaS {
   char ident[64];                   // the file itself (hash, torrent:file); "" unknown
   int foraFiltro;                   // its add-on switched off in Settings > Addons
   int ordemAddon;                   // the add-on's place (Stream.addonOrdem), for "Sort like the addons"
+  int corte;                        // -1 the same cut (measured), 0 unknown, 1 another cut (measured or by name)
 } AudioExtEntrada;
 
 typedef struct {
