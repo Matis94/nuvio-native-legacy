@@ -1,7 +1,7 @@
-name: Build webOS 2.0.9.1
+name: Build webOS 2.0.9.2
 on:
   push:
-    branches: [Nuvio_webOS_2.0.9.1, Nuvio_webOS_2.0.9.1_libass]
+    branches: [Nuvio_webOS_2.0.9.2]
   workflow_dispatch:
     inputs:
       full_regression:
@@ -30,12 +30,12 @@ jobs:
       NUVIO_RUST_MKVCORE: '1'
       NUVIO_REQUIRE_ALL: '1'
       NUVIO_WEBOS_HLS: '1'
-      # Build name: "Nuvio Legacy 2.0.9.1 (<label>)" and the .ipk file name.
+      # Build name: "Nuvio Legacy 2.0.9.2 (<label>)" and the .ipk file name.
       # NUVIO_VERSION is the version the app shows (Settings, updater); the
       # webOS package keeps the three-part 2.0.9 of appinfo.json.
-      NUVIO_VERSION: 2.0.9.1
+      NUVIO_VERSION: 2.0.9.2
       NUVIO_BUILD_LABEL: "28.11 stable build"
-      NUVIO_BUILD_SLUG: 28.11-stable-libass
+      NUVIO_BUILD_SLUG: 28.11-stable
       NUVIO_EXTRA_CFLAGS: -DNV_HTTP_BUFFER_DIAG -DNV_BUFFER_SEEK_TEST -DNV_NATIVE_SEEK_TEST -DNV_DV_TRUEHD_TEST -DNV_DV_FIXED_AUDIO_TEST -DNV_MP4_BD_TEST -DNV_PLAYBACK_TEST_BUILD=24 -DNV_DV7_MAPPING_TEST -DNV_HEVC_SEI_TEST -DNV_WEBOS_HLS_TEST
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -418,8 +418,8 @@ jobs:
           # webOS requires a three-component technical version. Keep 2.0.9
           # and expose the custom release revision in the install label.
           label = os.environ["NUVIO_BUILD_LABEL"]
-          data["title"] = f"Nuvio Legacy 2.0.9.1 ({label})"
-          data["appDescription"] = f"Nuvio webOS 2.0.9.1 ({label})"
+          data["title"] = f"Nuvio Legacy 2.0.9.2 ({label})"
+          data["appDescription"] = f"Nuvio webOS 2.0.9.2 ({label})"
           p.write_text(json.dumps(data, indent=2)+"\n")
           PY
           python3 - <<'PY'
@@ -432,7 +432,7 @@ jobs:
           PY
           bash tools/arm.sh --ipk --build
           git checkout -- tools/arm.sh
-          mv output/space.nuvio.native.legacy_2.0.9_arm.ipk "output/space.nuvio.native.legacy_2.0.9.1_arm-$NUVIO_BUILD_SLUG.ipk"
+          mv output/space.nuvio.native.legacy_2.0.9_arm.ipk "output/space.nuvio.native.legacy_2.0.9.2_arm-$NUVIO_BUILD_SLUG.ipk"
       - name: Check ARM dynamic dependencies
         run: |
           readelf -h nuvio-proto.arm | grep 'Machine:.*ARM'
@@ -448,7 +448,7 @@ jobs:
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
-          name: nuvio-webos-2.0.9.1-${{ env.NUVIO_BUILD_SLUG }}-arm-ipk
+          name: nuvio-webos-2.0.9.2-${{ env.NUVIO_BUILD_SLUG }}-arm-ipk
           path: output/*.ipk
           if-no-files-found: error
           retention-days: 14
