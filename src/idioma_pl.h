@@ -2047,6 +2047,8 @@
   T("Erros e reconexões", "Błędy i ponowne połączenia"),
   T("Escala", "Skala"),
   T("Escala de texto e componentes", "Text and component scale"),
+  T("Escaneamento parado: o deslocamento atual fica", "Skanowanie przerwane: obecne przesunięcie zostaje"),
+  T("Escaneando… OK para parar", "Skanowanie… OK, aby przerwać"),
   T("Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "Wybierz kategorię i wejdź do niej. Góra i dół przełączają między kategoriami, a nie wiersz po wierszu."),
   T("Escolha a estrutura e a fonte do destaque.", "Wybierz strukturę i źródło spotlight."),
   T("Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "Wybierz, od jakiej części odcinek staje się obejrzany, a wznawianie przechodzi do następnego."),

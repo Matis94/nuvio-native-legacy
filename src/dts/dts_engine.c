@@ -104,6 +104,7 @@ int dts_engine_external_shift(DtsEngine *e,int o) { (void)e;(void)o; return -1; 
 int dts_engine_external_shift_quiet(DtsEngine *e,int o) { (void)e;(void)o; return -1; }
 int dts_engine_probe_audio(const char *u,const char *h,DtsTrack *t,int m) { (void)u;(void)h;(void)t;(void)m; return -1; }
 int dts_engine_external_match_arm(DtsEngine *e) { (void)e; return -1; }
+void dts_engine_external_match_stop(DtsEngine *e) { (void)e; }
 void dts_engine_external_match_auto(DtsEngine *e) { (void)e; }
 void dts_engine_external_match_track(DtsEngine *e,int s) { (void)e;(void)s; }
 void dts_engine_set_external_open_hook(void (*f)(void *,void *,int)) { (void)f; }
@@ -4160,6 +4161,18 @@ void dts_engine_external_automatch(DtsEngine *e,int on) { if(e) e->ext_automatch
 /* The automatic match, asked by the app (after the subtitle match): it starts
  * at the next picture packet, reported as automatic. */
 void dts_engine_external_match_auto(DtsEngine *e) { if(e && e->ext) e->fw_autoarm=1; }
+/* Stopped by the person (owner 28/11: a scan that would not end could not be
+ * stopped, and Scan again only said it was still scanning): the capture and a
+ * wider search reading on its own end here, with no result to report. The
+ * follow and the checks while playing go on. */
+void dts_engine_external_match_stop(DtsEngine *e) {
+  if(!e || (!e->mt && !e->mj && !e->fw_autoarm)) return;
+  int check=e->mt_check;
+  match_job_stop(e); match_disarm(e);
+  e->fw_autoarm=0; e->mt_auto=0; e->mt_retry=0;
+  if(!check) { e->mt_state=0; e->mt_ncand=0; }
+  printf("[ext-audio] match: stopped by the person\n"); fflush(stdout);
+}
 void dts_engine_external_match_track(DtsEngine *e,int stream) { if(e) e->mt_main_force=stream>=0?stream+1:0; }
 /* Both files of an external session open (the converter here, the HLS remux
  * in dts_remux.c): the app's hook reads their indexes (doador_webos.c). */

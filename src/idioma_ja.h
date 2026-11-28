@@ -2047,6 +2047,8 @@
   T("Erros e reconexões", "エラーと再接続"),
   T("Escala", "拡大率"),
   T("Escala de texto e componentes", "Text and component scale"),
+  T("Escaneamento parado: o deslocamento atual fica", "スキャンを停止しました。現在のずれのままです"),
+  T("Escaneando… OK para parar", "スキャン中… OK で停止"),
   T("Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "カテゴリを選んで中に入ります。上下キーは 1 行ずつではなく、カテゴリ単位で移動します。"),
   T("Escolha a estrutura e a fonte do destaque.", "注目の構成とソースを選びます。"),
   T("Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "エピソードのどこまで見たら視聴済みにし、続きを次へ進めるかを選びます。"),

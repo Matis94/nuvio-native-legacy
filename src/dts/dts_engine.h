@@ -167,6 +167,8 @@ typedef struct {
   int cand_ms[3], cand_score[3];
 } DtsMatchInfo;
 int dts_engine_external_match_arm(DtsEngine *);
+/* Stops a match in progress (the capture and a wider search), nothing reported. */
+void dts_engine_external_match_stop(DtsEngine *);
 int dts_engine_external_match_poll(DtsEngine *, DtsMatchInfo *out);
 /* Before open (or replace): play the other version at this speed
  * (ratio_ppm from a match). Not 0: its audio is decoded, resampled to the

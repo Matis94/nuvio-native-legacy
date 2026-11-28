@@ -2047,6 +2047,8 @@
   T("Erros e reconexões", "Galat dan sambung ulang"),
   T("Escala", "Skala"),
   T("Escala de texto e componentes", "Text and component scale"),
+  T("Escaneamento parado: o deslocamento atual fica", "Pemindaian dihentikan: pergeseran saat ini tetap"),
+  T("Escaneando… OK para parar", "Memindai… OK untuk berhenti"),
   T("Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "Pilih kategori lalu masuk. Atas dan bawah berpindah antarkategori, bukan baris per baris."),
   T("Escolha a estrutura e a fonte do destaque.", "Pilih struktur dan sumber spotlight."),
   T("Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "Pilih seberapa jauh episode dianggap sudah ditonton dan kapan lanjutan pindah ke berikutnya."),

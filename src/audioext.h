@@ -178,6 +178,9 @@ int audioext_carregando(void);
 // offset replaces the current one (applied live like CH+/CH-).
 void audioext_dopasuj_pedir(void);
 int audioext_dopasuj_pedido_consumir(void);
+// The scan in progress stopped by the person; the player stops the match.
+void audioext_dopasuj_parar(void);
+int audioext_dopasuj_parar_consumir(void);
 int audioext_dopasuj_ativo(void);
 // The outcome (dts_engine.h DtsMatchInfo, in the app's words): ms the offset
 // (found), ppm the other version's speed, como how it was found (1 near,

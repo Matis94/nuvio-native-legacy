@@ -2047,6 +2047,8 @@
   T("Erros e reconexões", "Erros e religações"),
   T("Escala", "Escala"),
   T("Escala de texto e componentes", "Escala de texto e componentes"),
+  T("Escaneamento parado: o deslocamento atual fica", "Análise parada: o desvio atual mantém-se"),
+  T("Escaneando… OK para parar", "A analisar… OK para parar"),
   T("Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "Escolhe a categoria e entra nela. Cima e baixo mudam de categoria em vez de linha a linha."),
   T("Escolha a estrutura e a fonte do destaque.", "Escolhe a estrutura e a fonte do destaque."),
   T("Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "Escolha a partir de quanto do episódio ele passa a visto e a retoma passa ao próximo."),

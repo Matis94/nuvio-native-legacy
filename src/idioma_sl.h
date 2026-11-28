@@ -2047,6 +2047,8 @@
   T("Erros e reconexões", "Napake in ponovne povezave"),
   T("Escala", "Merilo"),
   T("Escala de texto e componentes", "Text and component scale"),
+  T("Escaneamento parado: o deslocamento atual fica", "Pregledovanje ustavljeno: trenutni zamik ostane"),
+  T("Escaneando… OK para parar", "Pregledovanje… OK za ustavitev"),
   T("Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "Izberite kategorijo in vstopite vanjo. Gor in dol se premikate med kategorijami, ne po vrstici."),
   T("Escolha a estrutura e a fonte do destaque.", "Izberite strukturo in vir za Spotlight."),
   T("Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "Izberi, od katerega dela epizoda šteje kot ogledana in nadaljevanje preide na naslednjo."),

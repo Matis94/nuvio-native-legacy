@@ -2047,6 +2047,8 @@
   T("Erros e reconexões", "Chyby a obnovení připojení"),
   T("Escala", "Měřítko"),
   T("Escala de texto e componentes", "Text and component scale"),
+  T("Escaneamento parado: o deslocamento atual fica", "Prohledávání zastaveno: aktuální posun zůstává"),
+  T("Escaneando… OK para parar", "Prohledávání… OK pro zastavení"),
   T("Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "Vyberte kategorii a vstupte do ní. Nahoru a dolů se přesouvají mezi kategoriemi, ne po řádcích."),
   T("Escolha a estrutura e a fonte do destaque.", "Zvolte strukturu a zdroj Spotlight."),
   T("Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "Vyber, od jaké části díl počítá jako zhlédnutý a pokračování přejde na další."),

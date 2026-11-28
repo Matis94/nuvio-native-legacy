@@ -70,6 +70,8 @@ void dts_playback_external_match(DtsPlayback *p);
 /* The automatic match, asked by the app after the subtitle match: starts at
  * the next picture, its result comes back as automatic. */
 void dts_playback_external_match_auto(DtsPlayback *p);
+/* The person stopped the scan: the match in progress ends, nothing reported. */
+void dts_playback_external_match_stop(DtsPlayback *p);
 /* This file's track the next matches compare (Audio sync > Scan again),
  * -1 Auto. */
 void dts_playback_external_match_track(DtsPlayback *p, int stream);

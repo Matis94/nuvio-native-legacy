@@ -2047,6 +2047,8 @@
   T("Erros e reconexões", "Fouten en herverbindingen"),
   T("Escala", "Schaal"),
   T("Escala de texto e componentes", "Text and component scale"),
+  T("Escaneamento parado: o deslocamento atual fica", "Scannen gestopt: de huidige verschuiving blijft"),
+  T("Escaneando… OK para parar", "Scannen… OK om te stoppen"),
   T("Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "Kies een categorie en ga erin. Omhoog en omlaag springen tussen categorieën in plaats van regel voor regel."),
   T("Escolha a estrutura e a fonte do destaque.", "Kies de structuur en de spotlightbron."),
   T("Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "Kies vanaf welk deel van de aflevering die bekeken is en hervatten naar de volgende gaat."),

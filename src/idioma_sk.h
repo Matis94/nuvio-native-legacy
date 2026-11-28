@@ -2047,6 +2047,8 @@
   T("Erros e reconexões", "Chyby a obnovenia pripojenia"),
   T("Escala", "Mierka"),
   T("Escala de texto e componentes", "Text and component scale"),
+  T("Escaneamento parado: o deslocamento atual fica", "Prehľadávanie zastavené: aktuálny posun zostáva"),
+  T("Escaneando… OK para parar", "Prehľadávanie… OK na zastavenie"),
   T("Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "Vyberte kategóriu a vstúpte do nej. Hore a dole sa presúvate medzi kategóriami, nie po riadkoch."),
   T("Escolha a estrutura e a fonte do destaque.", "Zvoľte štruktúru a zdroj Spotlight."),
   T("Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "Vyber, od akej časti sa diel počíta ako pozretý a pokračovanie prejde na ďalší."),

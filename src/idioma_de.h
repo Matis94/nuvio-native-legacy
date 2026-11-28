@@ -2046,6 +2046,8 @@
   T("Erros e reconexões", "Fehler und Neuverbindungen"),
   T("Escala", "Skalierung"),
   T("Escala de texto e componentes", "Text- und Komponentengröße"),
+  T("Escaneamento parado: o deslocamento atual fica", "Suche gestoppt: der aktuelle Versatz bleibt"),
+  T("Escaneando… OK para parar", "Suche läuft… OK zum Stoppen"),
   T("Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "Wähle die Kategorie und gehe hinein. Oben und unten wechseln zwischen Kategorien statt Zeile für Zeile."),
   T("Escolha a estrutura e a fonte do destaque.", "Wähle die Struktur und die Quelle des Highlights."),
   T("Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "Wähle, ab welchem Anteil die Folge als gesehen gilt und das Fortsetzen zur nächsten springt."),

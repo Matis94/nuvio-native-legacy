@@ -85,6 +85,7 @@ struct DtsPlayback {
   int ext_offset_live;   /* the pending offset applies without a seek */
   int ext_offset_quiet;  /* ...at a quiet moment (an automatic check while playing) */
   int match_req, match_result;   /* "Match automatically" (2: the automatic one, asked by the app) */
+  int match_stop;                /* the person stopped the scan */
   int match_track, match_track_dirty;   /* this file's track for the match (Scan again), -1 Auto */
   double prefetch_req;           /* a coming jump target (dts_playback_prefetch) */
   DtsMatchInfo match_info;
@@ -675,9 +676,11 @@ static void *run(void *user) {
     { double pf; pthread_mutex_lock(&p->lock); pf = p->prefetch_req; p->prefetch_req = 0; pthread_mutex_unlock(&p->lock);
       if (pf > 0) dts_engine_prefetch(p->engine, pf);
       dts_engine_prefetch_tidy(p->engine); }
-    { int req, mt = -2; pthread_mutex_lock(&p->lock); req = p->match_req; p->match_req = 0;
+    { int req, mt = -2, st; pthread_mutex_lock(&p->lock); req = p->match_req; p->match_req = 0;
+      st = p->match_stop; p->match_stop = 0;
       if (p->match_track_dirty) { p->match_track_dirty = 0; mt = p->match_track; }
       pthread_mutex_unlock(&p->lock);
+      if (st) dts_engine_external_match_stop(p->engine);   /* before a new request of the same tick */
       if (mt != -2) dts_engine_external_match_track(p->engine, mt);
       if (req == 2) dts_engine_external_match_auto(p->engine);
       else if (req && dts_engine_external_match_arm(p->engine) < 0) {
@@ -1253,6 +1256,12 @@ void dts_playback_external_match(DtsPlayback *p) {
   if (!p || !p->external) return;
   pthread_mutex_lock(&p->lock);
   p->match_req = 1; p->match_result = 0;
+  pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
+}
+void dts_playback_external_match_stop(DtsPlayback *p) {
+  if (!p || !p->external) return;
+  pthread_mutex_lock(&p->lock);
+  p->match_stop = 1; p->match_req = 0; p->match_result = 0;
   pthread_cond_signal(&p->wake); pthread_mutex_unlock(&p->lock);
 }
 void dts_playback_external_match_auto(DtsPlayback *p) {

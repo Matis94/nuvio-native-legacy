@@ -2046,6 +2046,8 @@
   T("Erros e reconexões", "Помилки і перепідключення"),
   T("Escala", "Масштаб"),
   T("Escala de texto e componentes", "Text and component scale"),
+  T("Escaneamento parado: o deslocamento atual fica", "Сканування зупинено: поточний зсув лишається"),
+  T("Escaneando… OK para parar", "Сканування… OK — зупинити"),
   T("Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "Оберіть категорію та увійдіть до неї. Вгору й вниз перемикають категорії, а не рядок за рядком."),
   T("Escolha a estrutura e a fonte do destaque.", "Оберіть структуру й джерело головного банера."),
   T("Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "Виберіть, з якої частки серія вважається переглянутою і продовження переходить до наступної."),

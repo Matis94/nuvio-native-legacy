@@ -2047,6 +2047,8 @@
   T("Erros e reconexões", "Грешки и повторни връзки"),
   T("Escala", "Мащаб"),
   T("Escala de texto e componentes", "Text and component scale"),
+  T("Escaneamento parado: o deslocamento atual fica", "Сканирането е спряно: текущото отместване остава"),
+  T("Escaneando… OK para parar", "Сканиране… OK за спиране"),
   T("Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "Изберете категория и влезте в нея. Нагоре и надолу се движи между категориите, а не ред по ред."),
   T("Escolha a estrutura e a fonte do destaque.", "Изберете структурата и източника за Spotlight."),
   T("Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "Изберете от каква част епизодът става гледан и продължението минава към следващия."),

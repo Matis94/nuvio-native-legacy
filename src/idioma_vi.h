@@ -2047,6 +2047,8 @@
   T("Erros e reconexões", "Lỗi và kết nối lại"),
   T("Escala", "Tỷ lệ"),
   T("Escala de texto e componentes", "Text and component scale"),
+  T("Escaneamento parado: o deslocamento atual fica", "Đã dừng quét: giữ độ lệch hiện tại"),
+  T("Escaneando… OK para parar", "Đang quét… OK để dừng"),
   T("Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "Chọn một danh mục rồi vào trong. Lên và xuống di chuyển giữa các danh mục thay vì từng dòng."),
   T("Escolha a estrutura e a fonte do destaque.", "Chọn cấu trúc và nguồn của spotlight."),
   T("Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "Chọn xem bao nhiêu phần thì tập được tính là đã xem và xem tiếp chuyển sang tập sau."),

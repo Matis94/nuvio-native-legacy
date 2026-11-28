@@ -2047,6 +2047,8 @@
   T("Erros e reconexões", "Hatalar ve yeniden bağlanmalar"),
   T("Escala", "Ölçek"),
   T("Escala de texto e componentes", "Text and component scale"),
+  T("Escaneamento parado: o deslocamento atual fica", "Tarama durduruldu: mevcut kayma kalıyor"),
+  T("Escaneando… OK para parar", "Taranıyor… durdurmak için Tamam"),
   T("Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "Bir kategori seç ve içine gir. Yukarı ve aşağı, satır satır değil kategoriler arasında geçer."),
   T("Escolha a estrutura e a fonte do destaque.", "Yapıyı ve spotlight kaynağını seç."),
   T("Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "Bölümün ne kadarından sonra izlenmiş sayılacağını ve devam etmenin sonrakine geçeceğini seç."),

@@ -1863,7 +1863,8 @@ static void scanTecla(SDL_Keycode k) {
   else audioext_match_definir(scanF[scanFoco - 1].lingua, scanF[scanFoco - 1].codec, scanF[scanFoco - 1].canais);
   printf("[ext-audio] sync editor: scan again from %d ms, matching against row %d\n", audioext_offset_ms(), scanFoco); fflush(stdout);
   scanPag = 0;
-  if (audioext_dopasuj_ativo()) { player_toast(i18n("The sync is already scanning…"), 2500); return; }
+  // A scan in progress gives way to this one (owner 28/11: it could not be stopped).
+  if (audioext_dopasuj_ativo()) audioext_dopasuj_parar();
   audioext_dopasuj_pedir();
   player_toast(i18n("Scanning the sync again: subtitles, then about 40 s of audio"), 4000);
   sincEd = 0; aberta = 0;
@@ -1922,7 +1923,12 @@ static void sincTecla(SDL_Keycode k, int repeat) {
     }
     if (t == SED_SCAN) {
       // Its picker overlay: which audio to match against (Auto or one of the file's tracks).
-      if (audioext_dopasuj_ativo()) { player_toast(i18n("The sync is already scanning…"), 2500); return; }
+      // Scanning: OK stops it; the offset playing stays (owner 28/11).
+      if (audioext_dopasuj_ativo()) {
+        audioext_dopasuj_parar();
+        player_toast(i18n("Escaneamento parado: o deslocamento atual fica"), 2500);
+        return;
+      }
       scanAbrir();
       return;
     }
@@ -3259,10 +3265,10 @@ static void corpoSinc(GfxRect c, float a) {
         char l[16], cd[24];
         int ch = 0;
         snprintf(nome, sizeof nome, "%s", i18n("Scan again"));
-        if (audioext_dopasuj_ativo()) snprintf(val, sizeof val, "%s", i18n("Scanning…"));
+        if (audioext_dopasuj_ativo()) { snprintf(val, sizeof val, "%s", i18n("Escaneando… OK para parar")); pagina = 0; }
         else if (audioext_match_faixa(l, sizeof l, cd, sizeof cd, &ch)) snprintf(val, sizeof val, i18n("Against: %s"), i18n(ling_nome(l)));
         else snprintf(val, sizeof val, "%s", i18n("Subtitles + audio"));
-        icone = "aj_rotate-cw"; pagina = 1; break; }
+        icone = "aj_rotate-cw"; pagina = !audioext_dopasuj_ativo(); break; }
       default: {
         int z = sincZerarAlvo();
         snprintf(nome, sizeof nome, "%s", i18n("Reset"));

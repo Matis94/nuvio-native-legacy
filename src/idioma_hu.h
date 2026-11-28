@@ -2047,6 +2047,8 @@
   T("Erros e reconexões", "Hibák és újracsatlakozások"),
   T("Escala", "Méret"),
   T("Escala de texto e componentes", "Text and component scale"),
+  T("Escaneamento parado: o deslocamento atual fica", "Keresés leállítva: a jelenlegi eltolás marad"),
+  T("Escaneando… OK para parar", "Keresés… OK a leállításhoz"),
   T("Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "Válassz egy kategóriát, és lépj be. A fel és le a kategóriák között mozog, nem soronként."),
   T("Escolha a estrutura e a fonte do destaque.", "Válaszd ki a szerkezetet és a Spotlight forrását."),
   T("Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "Válaszd ki, a rész mekkora hányada után számít megnézettnek, és mikor lép a folytatás a következőre."),

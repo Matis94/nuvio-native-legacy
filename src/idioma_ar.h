@@ -2047,6 +2047,8 @@
   T("Erros e reconexões", "الأخطاء وإعادة الاتصال"),
   T("Escala", "المقياس"),
   T("Escala de texto e componentes", "مقياس النص والعناصر"),
+  T("Escaneamento parado: o deslocamento atual fica", "توقف الفحص: تبقى الإزاحة الحالية"),
+  T("Escaneando… OK para parar", "جارٍ الفحص… OK للإيقاف"),
   T("Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "اختر فئة وادخلها. أعلى وأسفل ينتقلان بين الفئات بدلًا من سطر بسطر."),
   T("Escolha a estrutura e a fonte do destaque.", "اختر البنية ومصدر الأضواء."),
   T("Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "اختر النسبة من الحلقة التي تجعلها مشاهَدة ومتى ينتقل الاستئناف إلى التالية."),

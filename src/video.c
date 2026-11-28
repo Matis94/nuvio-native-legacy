@@ -3668,6 +3668,12 @@ void video_bombear(void) {
   // "Match automatically": the request goes to the converter; its result sets
   // the offset (applied live below).
   // Audio sync > Scan again: the whole sync once more (subtitles, then audio).
+  // Stopped by the person: the subtitle step and the converter's match end.
+  if (audioext_dopasuj_parar_consumir()) {
+    if (dl.legEstado == 1) doadorleg_cancelar();
+    dl.legEstado = 0; dl.audioPend = 0; dl.forcada = 0;
+    if (dtsSessao) dts_playback_external_match_stop(dtsSessao);
+  }
   if (audioext_dopasuj_pedido_consumir()) {
     if (dlOutraTocando()) dl.forcada = 1;
     else audioext_dopasuj_resultado(0, NULL);

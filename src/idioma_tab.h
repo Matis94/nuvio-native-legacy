@@ -2046,6 +2046,8 @@
   { "Erros e reconexões", "Errors and reconnections" },
   { "Escala", "Scale" },
   { "Escala de texto e componentes", "Text and component scale" },
+  { "Escaneamento parado: o deslocamento atual fica", "Scan stopped: the current offset stays" },
+  { "Escaneando… OK para parar", "Scanning… OK to stop" },
   { "Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "Pick a category and go into it. Up and down move between categories instead of line by line." },
   { "Escolha a estrutura e a fonte do destaque.", "Choose the structure and the spotlight source." },
   { "Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "Choose how much of the episode makes it watched and when resume moves on to the next one." },

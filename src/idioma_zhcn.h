@@ -2047,6 +2047,8 @@
   T("Erros e reconexões", "错误与重连"),
   T("Escala", "缩放"),
   T("Escala de texto e componentes", "Text and component scale"),
+  T("Escaneamento parado: o deslocamento atual fica", "已停止扫描：保留当前偏移"),
+  T("Escaneando… OK para parar", "正在扫描… 按确定停止"),
   T("Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "选择一个分类并进入。上下键在分类之间切换，而不是逐行移动。"),
   T("Escolha a estrutura e a fonte do destaque.", "选择精选的结构和来源。"),
   T("Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "选择看到多少时这一集算作已观看，并让继续观看跳到下一集。"),

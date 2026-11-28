@@ -2047,6 +2047,8 @@
   T("Erros e reconexões", "Σφάλματα και επανασυνδέσεις"),
   T("Escala", "Κλίμακα"),
   T("Escala de texto e componentes", "Text and component scale"),
+  T("Escaneamento parado: o deslocamento atual fica", "Η σάρωση σταμάτησε: η τρέχουσα μετατόπιση μένει"),
+  T("Escaneando… OK para parar", "Σάρωση… OK για διακοπή"),
   T("Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "Διάλεξε μια κατηγορία και μπες σε αυτήν. Το πάνω και το κάτω κινούνται ανάμεσα σε κατηγορίες αντί για γραμμή γραμμή."),
   T("Escolha a estrutura e a fonte do destaque.", "Διάλεξε τη δομή και την πηγή του spotlight."),
   T("Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "Επιλέξτε από ποιο σημείο ένα επεισόδιο θεωρείται προβληθέν και η συνέχεια περνά στο επόμενο."),

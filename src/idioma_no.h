@@ -2047,6 +2047,8 @@
   T("Erros e reconexões", "Feil og gjenoppkoblinger"),
   T("Escala", "Skala"),
   T("Escala de texto e componentes", "Text and component scale"),
+  T("Escaneamento parado: o deslocamento atual fica", "Skanning stoppet: nåværende forskyvning beholdes"),
+  T("Escaneando… OK para parar", "Skanner… OK for å stoppe"),
   T("Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "Velg kategorien og gå inn i den. Opp og ned bytter mellom kategorier i stedet for rad for rad."),
   T("Escolha a estrutura e a fonte do destaque.", "Velg strukturen og kilden for hovedbanneret."),
   T("Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "Velg hvor mye av episoden som gjør den sett, og når gjenopptakelsen går videre til neste."),

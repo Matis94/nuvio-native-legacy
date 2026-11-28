@@ -531,6 +531,15 @@ int main(void) {
     assert(audioext_offset_ms() == 0 && !audioext_ultimo_automatico(&ms));
     audioext_escolher("https://v/library.mkv", "", "Library 1080p", "pl");
     assert(audioext_offset_ms() == 632241);
+    // A scan stopped by the person: nothing applied, a new one can start.
+    audioext_dopasuj_pedir();
+    assert(audioext_dopasuj_ativo() && audioext_dopasuj_pedido_consumir());
+    audioext_dopasuj_parar();
+    assert(!audioext_dopasuj_ativo() && audioext_dopasuj_parar_consumir() && !audioext_dopasuj_parar_consumir());
+    assert(audioext_offset_ms() == 632241);
+    audioext_dopasuj_pedir();
+    assert(audioext_dopasuj_ativo());
+    audioext_dopasuj_parar(); (void)audioext_dopasuj_parar_consumir();
     audioext_alvo("tt0167261");                        // another title: nothing carried over
     audioext_escolher("https://v/library.mkv", "", "Library 1080p", "pl");
     assert(audioext_offset_ms() == 0);

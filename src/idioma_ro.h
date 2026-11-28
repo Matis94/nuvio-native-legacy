@@ -2046,6 +2046,8 @@
   T("Erros e reconexões", "Erori și reconectări"),
   T("Escala", "Scară"),
   T("Escala de texto e componentes", "Text and component scale"),
+  T("Escaneamento parado: o deslocamento atual fica", "Scanare oprită: decalajul actual rămâne"),
+  T("Escaneando… OK para parar", "Se scanează… OK pentru oprire"),
   T("Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "Alege categoria și intră în ea. Sus și jos schimbă categoria, nu rând cu rând."),
   T("Escolha a estrutura e a fonte do destaque.", "Alege structura și sursa bannerului principal."),
   T("Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "Alege de la ce parte a episodului devine vizionat și reluarea trece la următorul."),

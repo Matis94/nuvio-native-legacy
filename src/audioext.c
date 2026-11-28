@@ -50,6 +50,7 @@ static int carregando;   // the other version's audio is being opened (player ca
 // "Match automatically": requested (for the player), working, and the outcome
 // for one toast: 1 found (offset applied), -1 not trusted.
 static int dopasujPedido, dopasujAtivo, dopasujAviso;
+static int dopasujParar;   // the person stopped the scan (consumed by the player)
 static AudioExtDopasuj dopasujInfo;
 // The other version's speed from a match (ppm; 0 the same), with the offset.
 static int velocidadePpm;
@@ -568,6 +569,14 @@ void audioext_dopasuj_pedir(void) {
   printf("[ext-audio] match automatically: requested\n"); fflush(stdout);
 }
 int audioext_dopasuj_pedido_consumir(void) { int p = dopasujPedido; dopasujPedido = 0; return p; }
+// Stop the scan in progress (owner 28/11): nothing is applied, the offset
+// playing stays, and a new scan or a candidate can be picked at once.
+void audioext_dopasuj_parar(void) {
+  if (!dopasujAtivo && !dopasujPedido) return;
+  dopasujAtivo = 0; dopasujPedido = 0; dopasujParar = 1;
+  printf("[ext-audio] scan stopped by the person (offset stays %d ms)\n", offsetMs); fflush(stdout);
+}
+int audioext_dopasuj_parar_consumir(void) { int p = dopasujParar; dopasujParar = 0; return p; }
 int audioext_dopasuj_ativo(void) { return dopasujAtivo; }
 void audioext_dopasuj_resultado(int ok, const AudioExtDopasuj *r) {
   AudioExtDopasuj z = { 0 };

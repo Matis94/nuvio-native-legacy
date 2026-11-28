@@ -2047,6 +2047,8 @@
   T("Erros e reconexões", "Klaidos ir pakartotiniai prisijungimai"),
   T("Escala", "Mastelis"),
   T("Escala de texto e componentes", "Text and component scale"),
+  T("Escaneamento parado: o deslocamento atual fica", "Skenavimas sustabdytas: dabartinis poslinkis lieka"),
+  T("Escaneando… OK para parar", "Skenuojama… OK – sustabdyti"),
   T("Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "Pasirinkite kategoriją ir įeikite į ją. Aukštyn ir žemyn juda tarp kategorijų, o ne eilutė po eilutės."),
   T("Escolha a estrutura e a fonte do destaque.", "Pasirinkite struktūrą ir Spotlight šaltinį."),
   T("Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "Pasirink, nuo kokios dalies serija laikoma peržiūrėta ir tęsimas pereina prie kitos."),

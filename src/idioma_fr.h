@@ -2046,6 +2046,8 @@
   T("Erros e reconexões", "Erreurs et reconnexions"),
   T("Escala", "Échelle"),
   T("Escala de texto e componentes", "Échelle du texte et des composants"),
+  T("Escaneamento parado: o deslocamento atual fica", "Analyse arrêtée : le décalage actuel reste"),
+  T("Escaneando… OK para parar", "Analyse… OK pour arrêter"),
   T("Escolha a categoria e entre nela. Cima e baixo trocam de categoria em vez de linha em linha.", "Choisissez la catégorie et entrez-y. Haut et bas passent de catégorie en catégorie plutôt que ligne par ligne."),
   T("Escolha a estrutura e a fonte do destaque.", "Choisissez la structure et la source de la une."),
   T("Escolha a partir de quanto do episódio ele vira assistido e a retomada passa ao próximo.", "Choisissez à partir de quelle part de l’épisode il devient vu et la reprise passe au suivant."),
