@@ -230,7 +230,7 @@ static void *wake_when_waiting(void *arg) {
   return NULL;
 }
 int main(int argc, char **argv) {
-  assert(argc == 38);
+  assert(argc == 40);
   const char *main_file = argv[1], *other = argv[2], *dts_only = argv[3], *short_clip = argv[4], *mp4 = argv[5];
   const char *aac44 = argv[6], *main60 = argv[7], *long_idx = argv[8], *long_noidx = argv[9];
   const char *match_main = argv[10], *match_dub = argv[11];
@@ -241,6 +241,7 @@ int main(int argc, char **argv) {
   const char *shift_main = argv[29], *shift_dub = argv[30], *gap_main = argv[31], *gap_dub = argv[32], *two_en = argv[33];
   const char *step_main = argv[34], *step_dub = argv[35];
   const char *stereo_main = argv[36], *und_dub = argv[37];
+  const char *follow_long_ext = argv[38], *follow_long_th = argv[39];
   dts_engine_set_lang_match(lang_match);
   load_refs(other, "pol");
 
@@ -799,6 +800,30 @@ int main(int argc, char **argv) {
     assert(resume_at > 85e9 && resume_at < 110e9);
     assert(resume_ms > 24900 && resume_ms < 25100);
     assert(last > 118e9 && worst_gap < 200000000LL); }
+  dts_engine_destroy(e);
+  /* Following another cut, a long missing scene (owner's log 28/11, The
+   * Fellowship of the Ring: 448 s between two shared scenes): 260 s at 60 s.
+   * The other version still resumes by itself, 260 s on, instead of giving
+   * up after 3.5 min. */
+  e = dts_engine_create();
+  dts_engine_external_follow(e, 1);
+  dts_engine_external_audio(e, follow_long_th, HEADERS, "en", 0);
+  assert(dts_engine_open(e, follow_long_ext, HEADERS, -1, 0, 0) == 0);
+  { DtsFrame f; int got, fill = 0, resumed = 0, resume_ms = 0, gaveup = 0, state, ms;
+    int64_t last = INT64_MIN, fill_at = 0, resume_at = 0;
+    while ((got = dts_engine_next(e, &f)) == 1) {
+      if (f.kind == DTS_AUDIO) { assert(last == INT64_MIN || f.pts_ns > last); last = f.pts_ns; }
+      int k = dts_engine_external_follow_poll(e, &state, &ms);
+      if (k == 1 && !fill) { fill = 1; fill_at = last; }
+      if (k == 2 && !resumed) { resumed = 1; resume_ms = ms; resume_at = last; }
+      if (k == 3) gaveup = 1;
+    }
+    assert(got == 0);
+    fprintf(stderr, "follow, long scene: own audio at %.1f s, resumed %d at %.1f s with %d ms, gave up %d, last audio %.1f s\n",
+            fill_at / 1e9, resumed, resume_at / 1e9, resume_ms, gaveup, last / 1e9);
+    assert(fill && fill_at > 60e9 && fill_at < 75e9);
+    assert(resumed && !gaveup && resume_at > 320e9 && resume_at < 350e9);
+    assert(resume_ms > 259900 && resume_ms < 260100); }
   dts_engine_destroy(e);
   /* Following, the same cut in other languages: this file's Russian dub
    * (default) and English original against a Polish voice-over on the

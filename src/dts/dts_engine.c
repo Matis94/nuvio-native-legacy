@@ -3788,10 +3788,17 @@ int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) {
  * waits where it stopped; when the latest 10 s of this file show up in the
  * other version again (read ahead up to 2.5 min), it resumes from there with
  * the new offset. Needs the conversion path: the encoder switches source
- * without a reload. */
+ * without a reload.
+ * A scene the other version lacks can run for minutes (owner's log 28/11,
+ * The Fellowship of the Ring extended against the theatrical audio: 448 s
+ * between two shared scenes). The other version waits where it stopped, so
+ * the place it resumes from is already read: the comparison goes on for up
+ * to FW_WAIT_MAX_S (it used to give up after 3.5 min and leave this file's
+ * own audio until a match by hand). */
 #define FW_MAIN_S 60
 #define FW_LOOK_S 40
 #define FW_LOOK_MAX_S 150
+#define FW_WAIT_MAX_S 1200
 enum { FW_OFF=0, FW_SYNC=1, FW_FILL=2, FW_GAVEUP=3 };
 struct Follow {
   int mstream, dstream;
@@ -3807,6 +3814,7 @@ struct Follow {
   double t_good;           /* this file's time of the last check in sync (s) */
   double d_pause;          /* FILL: the other version's time its content stopped matching (raw, s) */
   double fill_since;       /* FILL: this file's time it began (s) */
+  double fill_logged;      /* FILL: the last "still waiting" line (s since it began) */
   int look_s;
   SwrContext *pcm;         /* this file's audio to the encoder's format */
 };
@@ -3924,7 +3932,7 @@ static void follow_enter_fill(DtsEngine *e,double t_good) {
   e->sample_pts=av_rescale_q(out-e->ext_offset_ns-e->ext_base_ns,NS,e->enc->time_base);
   e->ext_floor_ns=out;
   follow_side_reset(&f->d);
-  f->look_s=FW_LOOK_S; f->fill_since=out/1e9; f->bad=0; f->fill_off_ns=e->ext_offset_ns;
+  f->look_s=FW_LOOK_S; f->fill_since=out/1e9; f->fill_logged=0; f->bad=0; f->fill_off_ns=e->ext_offset_ns;
   e->fw_state=FW_FILL;
   printf("[ext-audio] follow: own audio from %.1fs, the other version waits at %.1fs\n",out/1e9,f->d_pause); fflush(stdout);
   follow_event(e,1,(int)(e->ext_offset_ns/1000000));
@@ -4060,9 +4068,18 @@ static void follow_check(DtsEngine *e) {
     return;
   }
   if(sd.n>=(f->look_s-2)*DTS_MATCH_HZ && f->look_s<FW_LOOK_MAX_S) f->look_s+=20;   /* not there yet: read further */
-  if(tend-f->fill_since>FW_LOOK_MAX_S+60.0) {
+  /* A long scene of this file only: the place the other version resumes
+   * from stays in the window (its start), so the comparison keeps going. */
+  if(tend-f->fill_since-f->fill_logged>=60.0) {
+    f->fill_logged=floor(tend-f->fill_since);
+    printf("[ext-audio] follow: own audio for %.0f s, the other version still waits at %.1fs\n",tend-f->fill_since,f->d_pause);
+    fflush(stdout);
+  }
+  if(tend-f->fill_since>FW_WAIT_MAX_S) {
     e->fw_state=FW_GAVEUP;
     follow_event(e,3,(int)(e->ext_offset_ns/1000000));
+    /* Not back after 20 min: the place is unknown, a wider search finds it. */
+    if(!e->mt && !e->mj) { dts_engine_external_match_arm(e); e->mt_auto=1; }
   }
 }
 /* This file's track the follow compares (from the demux loop). */
