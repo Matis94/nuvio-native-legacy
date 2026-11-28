@@ -329,6 +329,13 @@ struct DtsEngine {
   double ext_ratio;      /* other version's speed (0 or 1: the same; dts_engine_external_speed) */
   /* FOLLOW ANOTHER CUT (Settings, off by default): struct Follow below. */
   int fw_on, fw_state, fw_autoarm, mt_auto;
+  /* OFFSET MAP of another cut (owner's log 28/11, The Fellowship of the
+   * Ring): this file's time and the raw offset of every trusted find and
+   * follow move this session. Another cut only ever adds scenes on one side,
+   * so the offset after a jump lies between those of the nearest points
+   * before and after it; the wider search looks there first. */
+#define ANC_MAX 32
+  double anc_t[ANC_MAX], anc_o[ANC_MAX]; int anc_n;
   /* The follow started by itself for versions whose gaps differ (mt_watch):
    * small shifts only, each made at a pause; never this file's own audio,
    * so it needs no conversion path (owner 16/11: checks minutes apart left
@@ -2537,6 +2544,7 @@ static int configure_external(DtsEngine *e,double start) {
   printf("[ext-audio] ready codec=%s ch=%d rate=%d stream=%d%s\n",e->info.audio_codec,e->info.channels,
     e->info.sample_rate,k,follow?" (following another cut)":"");
   e->fw_autoarm=follow || e->ext_automatch; e->mt_main_pref=0; e->mt_retry=0;
+  e->anc_n=0;
   fflush(stdout);
   return start>0?dts_engine_seek(e,start):0;
 }
@@ -3019,6 +3027,7 @@ struct MatchJob {
   double center, base, k0, kf, main_dur, donor_dur; int cut_s; int64_t donor_total;
   int found, how, heavy; double off, ratio, score;    /* result (raw offset, s) */
   int ncand; double cand[DTS_MATCH_CAND], cand_sc[DTS_MATCH_CAND];   /* best places, raw */
+  int anc_n; double anc_t[ANC_MAX], anc_o[ANC_MAX];                 /* the offset map (a copy) */
 };
 /* The best places over several searches, 0.5 s apart, best first. */
 static void match_cand_add(int *n,double *off,double *sc,double o,double v) {
@@ -3209,6 +3218,41 @@ static void *match_job_run(void *arg) {
     }
     if(rr<30) rr=30;
   }
+  /* The offset map: between the nearest known points before and after this
+   * place (the offset only moves one way through another cut). Searched
+   * first, in windows from the middle outwards; the windows around the
+   * offset playing then skip what it covered. */
+  double map_lo=0, map_hi=-1;
+  if(abs(j->cut_s)>10 && j->anc_n>0) {
+    double dir=j->cut_s<0?1.0:-1.0, a=-1e18, b=1e18;
+    double edge0=j->base, edge1=j->base-j->cut_s;   /* no extra scene yet / all of them */
+    for(int i=0;i<j->anc_n;i++) {
+      if(j->anc_t[i]<=tm) { if(dir>0) a=j->anc_o[i]; else b=j->anc_o[i]; }
+      else if(dir>0 ? b>=1e17 : a<=-1e17) { if(dir>0) b=j->anc_o[i]; else a=j->anc_o[i]; }
+    }
+    if(a<=-1e17) a=dir>0?edge0:edge1;
+    if(b>=1e17) b=dir>0?edge1:edge0;
+    if(a>b) { double t=a; a=b; b=t; }
+    if(b>tm) b=tm;   /* the other version starts at 0 */
+    if(j->donor_dur>0 && a<tm-j->donor_dur) a=tm-j->donor_dur;
+    a-=5.0; b+=5.0;
+    if(b>a) {
+      printf("[ext-audio] match: the offset map puts it between %.0f and %.0f s (%d point(s))\n",a-j->base,b-j->base,j->anc_n);
+      fflush(stdout);
+      double mid=(a+b)/2.0, dlo, dhi;
+      int down=1;
+      if(b-a<=2.0*rr) { st[n].c=mid; st[n].r=(b-a)/2.0; st[n].cap_mb=310; st[n++].how=4; dlo=a; dhi=b; }
+      else { st[n].c=mid; st[n].r=rr; st[n].cap_mb=310; st[n++].how=4; dlo=mid-rr; dhi=mid+rr; }
+      while(n<12 && (dlo>a || dhi<b)) {
+        double c;
+        if((down && dlo>a) || dhi>=b) { c=dlo-rr; if(c-rr<a) c=a+rr; dlo=c-rr; }
+        else { c=dhi+rr; if(c+rr>b) c=b-rr; dhi=c+rr; }
+        down=!down;
+        st[n].c=c; st[n].r=rr; st[n].cap_mb=310; st[n++].how=4;
+      }
+      map_lo=a; map_hi=b;
+    }
+  }
   if(known) {
     double dir=j->cut_s<0?1.0:-1.0;
     st[n].c=j->center; st[n].r=60; st[n].cap_mb=300; st[n++].how=3;
@@ -3242,6 +3286,7 @@ static void *match_job_run(void *arg) {
         else { c=dhi+rr; if(c+rr>b) c=b-rr; dhi=c+rr; }
         down=!down;
         if(c-rr>=cov_lo && c+rr<=cov_hi) continue;   /* searched first, around the offset playing */
+        if(c-rr>=map_lo && c+rr<=map_hi) continue;   /* searched first, the offset map */
         st[n].c=c; st[n].r=rr; st[n].cap_mb=310; st[n++].how=4;
       }
     }
@@ -3270,7 +3315,7 @@ static void *match_job_run(void *arg) {
       fflush(stdout); j->heavy=1; continue;
     }
     spent+=mb;
-    if(far && st[i].how==4)
+    if(st[i].how==4 && (far || (st[i].c-st[i].r>=map_lo-1.0 && st[i].c+st[i].r<=map_hi+1.0)))
       printf("[ext-audio] match: another cut, searching %.0f..%.0f s, reading %.0f s of the other version (about %.0f MB)\n",
         st[i].c-st[i].r-j->base,st[i].c+st[i].r-j->base,hi-lo,mb);
     else
@@ -3300,6 +3345,22 @@ static void *match_job_run(void *arg) {
   return NULL;
 }
 static void match_fail(DtsEngine *e,int heavy);
+/* A point of the offset map: this file's time t (s), raw offset o (s). A
+ * point within 20 s of another replaces it; full, the nearest pair merges. */
+static void anchor_add(DtsEngine *e,double t,double o) {
+  if(!e || !isfinite(t) || !isfinite(o) || abs(e->ext_cut_s)<=10) return;
+  for(int i=0;i<e->anc_n;i++) if(fabs(e->anc_t[i]-t)<20.0) { e->anc_t[i]=t; e->anc_o[i]=o; return; }
+  if(e->anc_n>=ANC_MAX) {   /* drop the one closest to a neighbour */
+    int w=1; double best=1e18;
+    for(int i=1;i<e->anc_n;i++) { double d=e->anc_t[i]-e->anc_t[i-1]; if(d<best) { best=d; w=i; } }
+    memmove(&e->anc_t[w],&e->anc_t[w+1],sizeof(double)*(size_t)(e->anc_n-w-1));
+    memmove(&e->anc_o[w],&e->anc_o[w+1],sizeof(double)*(size_t)(e->anc_n-w-1));
+    e->anc_n--;
+  }
+  int k=e->anc_n;
+  while(k>0 && e->anc_t[k-1]>t) { e->anc_t[k]=e->anc_t[k-1]; e->anc_o[k]=e->anc_o[k-1]; k--; }
+  e->anc_t[k]=t; e->anc_o[k]=o; e->anc_n++;
+}
 static void match_report(DtsEngine *e,double off_raw,double ratio,double score,int how) {
   int64_t user=llrint((off_raw*1e9-e->ext_base_ns)/1e6);
   /* Beyond the sync's reach: never clipped and applied (owner's log 07/11:
@@ -3444,7 +3505,7 @@ static void match_finish(DtsEngine *e) {
   if(found) {
     match_report(e,best.offset_s,bk==1.0?0:bk,best.score,1);
     if(bk==1.0) { e->mt_t1=sm.t0+sm.n/2.0/DTS_MATCH_HZ; e->mt_o1=best.offset_s;
-                  e->mt_o1_user_ns=(int64_t)e->mt_offset_ms*1000000; }
+                  e->mt_o1_user_ns=(int64_t)e->mt_offset_ms*1000000; anchor_add(e,e->mt_t1,best.offset_s); }
     match_disarm(e); return;
   }
   /* Not near: a reader of its own tries further. */
@@ -3465,6 +3526,8 @@ static void match_finish(DtsEngine *e) {
     j->main_dur=e->fmt->duration>0?e->fmt->duration/1e6:0;
     j->donor_dur=e->ext->fmt && e->ext->fmt->duration>0?e->ext->fmt->duration/1e6:0;
     j->donor_total=e->ext->total;
+    j->anc_n=e->anc_n;
+    memcpy(j->anc_t,e->anc_t,sizeof(double)*(size_t)e->anc_n); memcpy(j->anc_o,e->anc_o,sizeof(double)*(size_t)e->anc_n);
     if(ok && pthread_create(&j->th,NULL,match_job_run,j)==0) { j->started=1; e->mj=j; }
     else match_job_free(j);
   }
@@ -3494,7 +3557,7 @@ static int match_early(DtsEngine *e) {
   if(!ok) return 0;
   e->mt_ncand=0;
   match_report(e,r.offset_s,k0==1.0?0:k0,r.score,1);
-  if(k0==1.0) { e->mt_t1=sm.t0+sm.n/2.0/DTS_MATCH_HZ; e->mt_o1=r.offset_s;
+  if(k0==1.0) { e->mt_t1=sm.t0+sm.n/2.0/DTS_MATCH_HZ; e->mt_o1=r.offset_s; anchor_add(e,e->mt_t1,r.offset_s);
                 e->mt_o1_user_ns=(int64_t)e->mt_offset_ms*1000000; }
   match_disarm(e);
   return 1;
@@ -3752,7 +3815,7 @@ int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) {
     if(done) {
       if(j->found) {
         match_report(e,j->off,j->ratio==1.0?0:j->ratio,j->score,j->how);
-        if(j->ratio==1.0) { e->mt_t1=j->mt0+j->mn/2.0/DTS_MATCH_HZ; e->mt_o1=j->off;
+        if(j->ratio==1.0) { e->mt_t1=j->mt0+j->mn/2.0/DTS_MATCH_HZ; e->mt_o1=j->off; anchor_add(e,e->mt_t1,j->off);
                             e->mt_o1_user_ns=(int64_t)e->mt_offset_ms*1000000; }
       } else match_fail(e,j->heavy);
       match_set_cands(e,j->ncand,j->cand,j->cand_sc);
@@ -3961,6 +4024,7 @@ static void follow_resume(DtsEngine *e,int64_t offset_ns) {
     }
   }
   e->fw_state=FW_SYNC;
+  anchor_add(e,from/1e9,(offset_ns+e->ext_base_ns)/1e9);
   printf("[ext-audio] follow: the other version resumes at %.1fs, offset %lld ms\n",from/1e9,(long long)(offset_ns/1000000)); fflush(stdout);
   follow_event(e,2,(int)(offset_ns/1000000));
 }
