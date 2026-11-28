@@ -3964,10 +3964,15 @@ static void follow_resume(DtsEngine *e,int64_t offset_ns) {
   follow_event(e,2,(int)(offset_ns/1000000));
 }
 /* Every 3 s of this file: still in sync? (SYNC) / back in shared scenes? (FILL) */
-/* A small shift the follow found: at once, or at a pause in small mode.
- * The same aim asked again while waiting goes on waiting. */
+/* A small shift the follow found: at a pause, in steps (owner's log 28/11,
+ * Chicago Fire against a version 58 s longer: each break's gap was 0.5 s
+ * longer there, the shift came a few seconds after the black screen, in the
+ * middle of a line, and a word was heard twice). Following another cut used
+ * to shift at once; now both modes wait for a pause. A missing scene (FILL)
+ * still switches at once. The same aim asked again while waiting goes on
+ * waiting. */
 static int follow_shift(DtsEngine *e,int ms) {
-  if(e->fw_small && e->qs && abs(e->qs_offset_ms-ms)<40) return 1;   /* already on its way: no new event */
+  if(e->qs && abs(e->qs_offset_ms-ms)<40) return 1;   /* already on its way: no new event */
   /* The checks' first find moves with the follow: a shift it made is no
    * drift (owner's log 16/11: a +420 ms shift between two checks read as
    * 1083 ppm, close to 24/23.976, and the other version was reopened at that
@@ -3975,8 +3980,7 @@ static int follow_shift(DtsEngine *e,int ms) {
    * manual-change test in external_offset_set sees it as ours. */
   int from=e->qs?e->qs_offset_ms:(int)(e->ext_offset_ns/1000000);
   if(e->mt_t1>=0) { e->mt_o1+=(ms-from)/1000.0; e->mt_o1_user_ns+=(int64_t)(ms-from)*1000000; }
-  if(e->fw_small) return dts_engine_external_shift_quiet(e,ms);
-  return dts_engine_external_shift(e,ms);
+  return dts_engine_external_shift_quiet(e,ms);
 }
 static void follow_check(DtsEngine *e) {
   struct Follow *f=e->fw;
