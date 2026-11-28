@@ -3157,7 +3157,7 @@ static void *match_job_run(void *arg) {
   const double tm=j->mt0+j->mn/2.0/DTS_MATCH_HZ;   /* centre of this file's window */
   const double bps=j->donor_total>0 && j->donor_dur>0?j->donor_total/j->donor_dur:0;
   double ks[2]={j->k0,j->kf}; int nk=j->kf>0 && fabs(j->kf-j->k0)>0.0005?2:1;
-  struct { double c, r, cap_mb; int how; } st[24]; int n=0;
+  struct { double c, r, cap_mb; int how; } st[28]; int n=0;
   const double pad=DTS_MATCH_WIN_S/2.0+5.0;   /* the window, and the two halves of the check */
   double spent=0;
   /* The lengths suggest where the extra minutes are: all at the start
@@ -3167,6 +3167,29 @@ static void *match_job_run(void *arg) {
    * 07/11): the extra scenes are spread through the film, so only the
    * proportional place makes sense, searched wider; +-5 min is skipped. */
   int far=abs(j->cut_s)>600;
+  /* Another cut far apart with an offset already playing (remembered, or
+   * found earlier in the film): the extra scenes only push it further one
+   * way (a longer picture: the offset grows), a scene at a time. Around it,
+   * then onwards in that direction, before anything else (owner's log
+   * 28/11: 632 s remembered at 5068 s, 660 s at 5616 s, found only by the
+   * third search). */
+  int known=far && fabs(j->center-j->base)>1.0;
+  double cov_lo=0, cov_hi=-1;   /* offsets those two windows cover */
+  double rr=150;
+  if(far) {
+    if(bps>0) {
+      double w=(300.0*1048576.0/bps-2.0*pad-4.0)/2.0/(nk>1?1.002:1.0);
+      if(w<rr) rr=w;
+    }
+    if(rr<30) rr=30;
+  }
+  if(known) {
+    double dir=j->cut_s<0?1.0:-1.0;
+    st[n].c=j->center; st[n].r=60; st[n].cap_mb=300; st[n++].how=3;
+    st[n].c=j->center+dir*(60.0+rr); st[n].r=rr; st[n].cap_mb=310; st[n++].how=4;
+    cov_lo=dir>0?j->center-60.0:j->center-60.0-2.0*rr;
+    cov_hi=dir>0?j->center+60.0+2.0*rr:j->center+60.0;
+  }
   if(abs(j->cut_s)>10) {
     double h1=-j->cut_s+j->base, h2=-j->cut_s*(j->main_dur>0?tm/j->main_dur:0)+j->base;
     if(!far) { st[n].c=h1; st[n].r=10; st[n].cap_mb=1e9; st[n++].how=2; }
@@ -3183,25 +3206,21 @@ static void *match_job_run(void *arg) {
     if(far) {
       double a=j->base<j->base-j->cut_s?j->base:j->base-j->cut_s;
       double b=j->base<j->base-j->cut_s?j->base-j->cut_s:j->base;
-      double rr=150, dlo=h2-60, dhi=h2+60;
+      double dlo=h2-60, dhi=h2+60;
       int down=1;
       if(b>tm) b=tm;   /* the other version starts at 0 */
       if(j->donor_dur>0 && a<tm-j->donor_dur) a=tm-j->donor_dur;
-      if(bps>0) {
-        double w=(300.0*1048576.0/bps-2.0*pad-4.0)/2.0/(nk>1?1.002:1.0);
-        if(w<rr) rr=w;
-      }
-      if(rr<30) rr=30;
-      while(n<20 && (dlo>a || dhi<b)) {
+      while(n<22 && (dlo>a || dhi<b)) {
         double c;
         if((down && dlo>a) || dhi>=b) { c=dlo-rr; if(c-rr<a) c=a+rr; dlo=c-rr; }
         else { c=dhi+rr; if(c+rr>b) c=b-rr; dhi=c+rr; }
-        st[n].c=c; st[n].r=rr; st[n].cap_mb=310; st[n++].how=4;
         down=!down;
+        if(c-rr>=cov_lo && c+rr<=cov_hi) continue;   /* searched first, around the offset playing */
+        st[n].c=c; st[n].r=rr; st[n].cap_mb=310; st[n++].how=4;
       }
     }
   }
-  st[n].c=j->center; st[n].r=60; st[n].cap_mb=300; st[n++].how=3;
+  if(!known) { st[n].c=j->center; st[n].r=60; st[n].cap_mb=300; st[n++].how=3; }
   if(!far) { st[n].c=j->center; st[n].r=300; st[n].cap_mb=300; st[n++].how=4; }
   for(int i=0;i<n && !__atomic_load_n(&j->cancel,__ATOMIC_RELAXED) && !j->found;i++) {
     if(st[i].how==2 && fabs(st[i].c-j->center)<10) continue;   /* the first search covered it */
