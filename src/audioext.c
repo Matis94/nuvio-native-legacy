@@ -98,6 +98,70 @@ static void serieDe(const char *alvo, char *out, size_t tam) {
   const char *c = alvo ? strchr(alvo, ':') : NULL;
   snprintf(out, tam, "%.*s", c ? (int)(c - alvo) : 0, c ? alvo : "");
 }
+static int mesmoAlvo(const char *a, const char *b);
+
+// VERSIONS MET THIS SESSION (owner's log 28/11, The Fellowship of the Ring):
+// per title, picture and version, the last offset that played and the length
+// difference the converter measured. Picking a version again starts from its
+// offset (it began at 0, and another cut needed a 100 s search to find
+// 632 s again), and the version list puts the versions of the same length
+// first and names the other cuts' difference. In memory only.
+#define VER_MAX 32
+typedef struct {
+  char alvo[64];
+  uint32_t video, versao;      // the picture's and the version's links (hashes)
+  int temOffset, offset, velocidade;
+  int temCorte, corte;         // seconds the other version is longer (-) shorter
+  unsigned uso;
+} VerMem;
+static VerMem verTab[VER_MAX];
+static unsigned verUso, verGer;
+static uint32_t videoChave;    // the picture playing (audioext_inicio_reproducao)
+// The offset in use was confirmed: a match, the follow, the person, a memory.
+static int offsetConfirmado;
+// The last offset a match, the follow or a memory gave (the sync editor's
+// Reset with another cut goes back to it).
+static int ultimoAuto, temUltimoAuto;
+static uint32_t chaveDe(const char *t) {
+  uint32_t h = 2166136261u;
+  for (const unsigned char *p = (const unsigned char *)(t ? t : ""); *p; p++) h = (h ^ *p) * 16777619u;
+  return t && *t ? (h ? h : 1) : 0;
+}
+static VerMem *verAchar(const char *alvo, uint32_t video, uint32_t versao, int criar) {
+  int livre = -1, velho = 0;
+  if (!alvo || !alvo[0] || !video || !versao) return NULL;
+  for (int i = 0; i < VER_MAX; i++) {
+    if (!verTab[i].versao) { if (livre < 0) livre = i; continue; }
+    if (verTab[i].video == video && verTab[i].versao == versao && mesmoAlvo(verTab[i].alvo, alvo)) {
+      verTab[i].uso = ++verUso; return &verTab[i];
+    }
+    if (verTab[i].uso < verTab[velho].uso) velho = i;
+  }
+  if (!criar) return NULL;
+  if (livre < 0) livre = velho;
+  memset(&verTab[livre], 0, sizeof verTab[livre]);
+  snprintf(verTab[livre].alvo, sizeof verTab[livre].alvo, "%s", alvo);
+  verTab[livre].video = video; verTab[livre].versao = versao; verTab[livre].uso = ++verUso;
+  return &verTab[livre];
+}
+// The marked version's offset, kept before the mark changes.
+static void verGuardarOffset(void) {
+  VerMem *v;
+  if (!urlMarca[0] || !offsetConfirmado || epOutro) return;
+  v = verAchar(alvoMarca, videoChave, chaveDe(urlMarca), 1);
+  if (!v) return;
+  v->temOffset = 1; v->offset = offsetMs; v->velocidade = velocidadePpm;
+}
+// A version picked again (a new mark): the offset it last played with.
+static void verRestaurarOffset(void) {
+  VerMem *v = verAchar(alvoMarca, videoChave, chaveDe(urlMarca), 0);
+  if (!v || !v->temOffset) return;
+  offsetMs = v->offset; offsetGeracao++; offsetSuave = 0; velocidadePpm = v->velocidade;
+  offsetLembrado = 1; offsetConfirmado = 1; ultimoAuto = offsetMs; temUltimoAuto = 1;
+  printf("[ext-audio] offset %d ms: the one this version last played with (this session)\n", offsetMs);
+  fflush(stdout);
+}
+static void autoConfirmar(void) { offsetConfirmado = 1; ultimoAuto = offsetMs; temUltimoAuto = 1; }
 
 
 // --- saved series memory ------------------------------------------------------
@@ -270,6 +334,8 @@ void audioext_memoria_descarregar(void) { if (serSujo) serGravarAgora(); }
 int audioext_memoria_series(void) { serCarregar(); return serN; }
 
 void audioext_limpar(void) {
+  verGuardarOffset();
+  offsetConfirmado = 0; temUltimoAuto = 0; ultimoAuto = 0;
   resN = resProx = 0;
   tentativas = tentativa = 0; retryEm = 0; preparandoAviso = 0;
   urlMarca[0] = cabMarca[0] = nomeMarca[0] = alvoMarca[0] = idiomaMarca[0] = 0;
@@ -308,6 +374,7 @@ int audioext_alternar(const char *url, const char *cabecalhos, const char *nome)
     printf("[ext-audio] mark cleared by the user\n"); fflush(stdout);
     return 0;
   }
+  verGuardarOffset();
   snprintf(urlMarca, sizeof urlMarca, "%s", url);
   snprintf(cabMarca, sizeof cabMarca, "%s", cabecalhos ? cabecalhos : "");
   snprintf(nomeMarca, sizeof nomeMarca, "%s", nome ? nome : "");
@@ -315,6 +382,8 @@ int audioext_alternar(const char *url, const char *cabecalhos, const char *nome)
   idiomaMarca[0] = 0;
   offsetMs = 0; offsetGeracao++; offsetSuave = 0; posAtual = -1; velocidadePpm = 0; kandN = 0;
   pendente = 0; faixaMarca = -1; dicaAtiva = 0; offsetLembrado = 0; epOutro = 0;
+  offsetConfirmado = 0; temUltimoAuto = 0;
+  verRestaurarOffset();
   // The name is the add-on's label, never the URL (signed links stay out of logs).
   printf("[ext-audio] audio source marked: %.80s (target %s)\n", nomeMarca, alvoMarca);
   fflush(stdout);
@@ -327,12 +396,14 @@ void audioext_escolher(const char *url, const char *cabecalhos, const char *nome
   snprintf(urlPrim, sizeof urlPrim, "%s", url);
   snprintf(cabPrim, sizeof cabPrim, "%s", cabecalhos ? cabecalhos : "");
   if (strcmp(urlMarca, url)) {
+    verGuardarOffset();
     snprintf(urlMarca, sizeof urlMarca, "%s", url);
     snprintf(cabMarca, sizeof cabMarca, "%s", cabecalhos ? cabecalhos : "");
     snprintf(nomeMarca, sizeof nomeMarca, "%s", nome ? nome : "");
     snprintf(alvoMarca, sizeof alvoMarca, "%s", alvoAtual);
-    offsetMs = 0; offsetGeracao++; offsetSuave = 0; posAtual = -1; velocidadePpm = 0; kandN = 0; kandN = 0; velocidadePpm = 0;
-    faixaMarca = -1; dicaAtiva = 0; offsetLembrado = 0;
+    offsetMs = 0; offsetGeracao++; offsetSuave = 0; posAtual = -1; velocidadePpm = 0; kandN = 0;
+    faixaMarca = -1; dicaAtiva = 0; offsetLembrado = 0; offsetConfirmado = 0; temUltimoAuto = 0;
+    verRestaurarOffset();
   }
   epOutro = 0;   // audioext_episodio_outro after the pick, for another episode's version
   // The same file can come from two add-ons under two names: the row picked.
@@ -476,6 +547,7 @@ int audioext_offset_somar(int ms) {
 }
 // +-10 min: another cut can be minutes away (owner, 07/11).
 int audioext_offset_definir(int ms) {
+  offsetConfirmado = 1;
   offsetMs = ms;
   if (offsetMs > AUDIOEXT_OFFSET_MAX) offsetMs = AUDIOEXT_OFFSET_MAX;
   if (offsetMs < -AUDIOEXT_OFFSET_MAX) offsetMs = -AUDIOEXT_OFFSET_MAX;
@@ -532,6 +604,7 @@ void audioext_dopasuj_resultado(int ok, const AudioExtDopasuj *r) {
   }
   dopasujInfo.ms = offsetMs;
   dopasujAviso = ok ? 1 : -1;
+  if (ok && urlMarca[0]) autoConfirmar();
   if (ok) autoGeracao++;
 }
 // Bumped by every match result applied: the sync editor's Cancel goes back to
@@ -584,6 +657,7 @@ void audioext_seguir_evento(int tipo, int ms) {
   if (tipo == 2 || tipo == 4) {   // resumed / a small shift corrected: the converter's new offset
     offsetMs = ms > AUDIOEXT_OFFSET_MAX ? AUDIOEXT_OFFSET_MAX : ms < -AUDIOEXT_OFFSET_MAX ? -AUDIOEXT_OFFSET_MAX : ms;
     offsetGeracao++; offsetSuave = 0;   // the converter already moved: the live apply finds it equal
+    autoConfirmar();
   }
   seguirAviso = tipo; seguirMs = offsetMs;
 }
@@ -604,6 +678,7 @@ int audioext_kandydatos(int *ms, int *pct, int max) {
 }
 int audioext_carregando(void) { return carregando && urlMarca[0]; }
 void audioext_inicio_reproducao(const char *urlVideo) {
+  videoChave = chaveDe(urlVideo);
   if (!audioext_pedido(urlVideo)) return;
   if (pendente) {
     printf("[ext-audio] the last start with \"%.80s\" never played its audio: this file's own audio now\n", nomeMarca);
@@ -617,6 +692,23 @@ void audioext_inicio_reproducao(const char *urlVideo) {
 void audioext_diferenca(int corteSeg, int velocidade) {
   avisoCorte = corteSeg; avisoVelocidade = velocidade;
   avisoPendente = (corteSeg > 10 || corteSeg < -10 || velocidade);
+  if (urlMarca[0] && !epOutro) {
+    VerMem *v = verAchar(alvoMarca, videoChave, chaveDe(urlMarca), 1);
+    if (v && (!v->temCorte || v->corte != corteSeg)) { v->temCorte = 1; v->corte = corteSeg; verGer++; }
+  }
+}
+int audioext_versao_corte(const char *urlVideo, const char *urlVersao, int *corteSeg) {
+  VerMem *v = verAchar(alvoAtual, chaveDe(urlVideo), chaveDe(urlVersao), 0);
+  if (!v || !v->temCorte) return 0;
+  if (corteSeg) *corteSeg = v->corte;
+  return 1;
+}
+unsigned audioext_versoes_geracao(void) { return verGer; }
+int audioext_outro_corte(void) { return urlMarca[0] && (avisoCorte > 10 || avisoCorte < -10); }
+int audioext_ultimo_automatico(int *ms) {
+  if (!urlMarca[0] || !temUltimoAuto) return 0;
+  if (ms) *ms = ultimoAuto;
+  return 1;
 }
 int audioext_diferenca_consumir(int *corteSeg, int *velocidade) {
   if (!avisoPendente) return 0;
@@ -770,6 +862,7 @@ void audioext_serie_achou(const char *url, const char *cabecalhos, const char *n
   snprintf(memo.episodio, sizeof memo.episodio, "%s", alvoAtual);
   offsetMs = memo.offset; offsetGeracao++; offsetSuave = 0; velocidadePpm = memo.velocidade;
   faixaMarca = -1; epOutro = 0;
+  autoConfirmar();
   dicaAtiva = memo.temFaixa; if (dicaAtiva) dica = memo.faixa;
   offsetLembrado = 1;
   memoSalvar();   // used now: the last one to leave a full table
@@ -807,6 +900,7 @@ void audioext_retomar(const char *url, const char *cabecalhos, const char *nome,
   offsetGeracao++; offsetSuave = 0; posAtual = -1; velocidadePpm = velocidade; kandN = 0;
   faixaMarca = faixa >= 0 ? faixa : -1; epOutro = 0; dicaAtiva = 0;
   offsetLembrado = 1;   // a start match that is not sure keeps it, as from the series memory
+  autoConfirmar();
   pendente = 0; voltouPadrao = 0;
   pedidoGeracao++;
   printf("[ext-audio] resumed with the saved source: %.80s lang=%s track=%d offset %d ms (target %s)\n",

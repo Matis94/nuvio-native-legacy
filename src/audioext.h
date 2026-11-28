@@ -247,6 +247,16 @@ int audioext_voltou_padrao_consumir(void);
 // is a different cut: the player says once that the sync may drift.
 void audioext_diferenca(int corteSeg, int velocidade);
 int audioext_diferenca_consumir(int *corteSeg, int *velocidade);
+// Versions met this session (owner's log 28/11): the length difference the
+// converter measured for a version of this title with this picture
+// (seconds, the other version longer > 0); 0 when not known yet. The
+// generation moves with every new measure (the version list sorts again).
+int audioext_versao_corte(const char *urlVideo, const char *urlVersao, int *corteSeg);
+unsigned audioext_versoes_geracao(void);
+// The version playing is another cut (more than 10 s longer or shorter).
+int audioext_outro_corte(void);
+// The last offset a match, the follow or a memory gave the version playing.
+int audioext_ultimo_automatico(int *ms);
 // AUDIO SYNC > SCAN AGAIN: which of this file's audio tracks the match
 // compares, kept per show in audio_match.txt (language, codec, channels;
 // language "" = Auto). io: the data files' read/write (dados_ler/dados_gravar).

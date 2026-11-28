@@ -503,6 +503,38 @@ int main(void) {
     audioext_definir_memoria_arquivo(NULL, NULL, NULL);
     audioext_definir_relogio(NULL);
     audioext_limpar(); }
+  // Versions met this session (owner's log 28/11, The Fellowship of the Ring):
+  // picked again, a version starts from the offset it last played with, and
+  // its measured cut is known to the version list.
+  { AudioExtDopasuj r; int c = 0, ms = 0;
+    unsigned g0 = audioext_versoes_geracao();
+    audioext_alvo("tt0120737");
+    audioext_inicio_reproducao("https://m/extended.mkv");
+    audioext_escolher("https://v/library.mkv", "", "Library 1080p", "pl");
+    audioext_tocando_definir(1);
+    audioext_diferenca(-2998, 0);
+    assert(audioext_outro_corte());
+    assert(audioext_versoes_geracao() != g0);
+    assert(audioext_versao_corte("https://m/extended.mkv", "https://v/library.mkv", &c) && c == -2998);
+    assert(!audioext_versao_corte("https://m/other.mkv", "https://v/library.mkv", &c));   // another picture
+    assert(!audioext_ultimo_automatico(&ms));
+    memset(&r, 0, sizeof r); r.ms = 632234; r.automatico = 1;
+    audioext_dopasuj_resultado(1, &r);
+    assert(audioext_offset_ms() == 632234 && audioext_ultimo_automatico(&ms) && ms == 632234);
+    audioext_offset_definir(0);                        // a Reset by hand: the last match stays known
+    assert(audioext_ultimo_automatico(&ms) && ms == 632234);
+    audioext_offset_definir(632241);
+    audioext_original();                               // back to the file's own audio...
+    audioext_escolher("https://v/library.mkv", "", "Library 1080p", "pl");   // ...and the same version again
+    assert(audioext_offset_ms() == 632241 && audioext_offset_lembrado());
+    audioext_escolher("https://v/torrentio.mkv", "", "Torrentio 1080p", "pl");   // never played: from 0
+    assert(audioext_offset_ms() == 0 && !audioext_ultimo_automatico(&ms));
+    audioext_escolher("https://v/library.mkv", "", "Library 1080p", "pl");
+    assert(audioext_offset_ms() == 632241);
+    audioext_alvo("tt0167261");                        // another title: nothing carried over
+    audioext_escolher("https://v/library.mkv", "", "Library 1080p", "pl");
+    assert(audioext_offset_ms() == 0);
+    audioext_limpar(); }
   puts("audioext: marks, menu requests, offsets, series memory and matching passed");
   return 0;
 }
