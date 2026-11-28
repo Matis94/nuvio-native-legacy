@@ -1681,6 +1681,7 @@ static void quiet_free(DtsEngine *e);
 static void quiet_reset(struct Quiet *q);
 static void quiet_poll(DtsEngine *e);
 static void match_cancel(DtsEngine *e);
+static int match_rank(AVStream *st);
 static void match_stop(DtsEngine *e);
 static void pf_stop(DtsEngine *e);
 static void close_media(DtsEngine *e) {
@@ -3478,6 +3479,17 @@ static void match_finish(DtsEngine *e) {
     int g0=dts_match_search(&sm,&sd,k0,center,10.0,&r0), ga=sa.n>0 && dts_match_search(&sa,&sd,k0,center,10.0,&ra);
     double s0=g0?r0.score+(r0.confident?1.0:0.0):-1.0, sa_=ga?ra.score+(ra.confident?1.0:0.0):-1.0;
     printf("[ext-audio] match: track %d scores %.2f, track %d scores %.2f\n",mc->main_stream,g0?r0.score:0.0,mc->alt_stream,ga?ra.score:0.0);
+    /* A heavier track (TrueHD against AC-3) only when it is trusted and
+     * clearly better (owner's log 28/11: 0.05 against 0.05 moved the
+     * comparison to TrueHD, and with the Dolby Vision conversion and the
+     * other version read at once the TV ran out of CPU, "DTS conversion
+     * exceeds the sustained CPU budget", and playback stopped). */
+    int heavier=match_rank(e->fmt->streams[mc->alt_stream])<match_rank(e->fmt->streams[mc->main_stream]);
+    int main_ok=g0 && r0.confident, alt_ok=ga && ra.confident;
+    if(sa_>s0 && heavier && !(alt_ok && (!main_ok || ra.score>=r0.score+0.15))) {
+      printf("[ext-audio] match: track %d stays (the other is heavier to decode and not clearly better)\n",mc->main_stream);
+      sa_=s0;
+    }
     if(sa_>s0) {
       int fm=-1, fd=-1, old=mc->main_stream;
       follow_streams(e,&fm,&fd);
