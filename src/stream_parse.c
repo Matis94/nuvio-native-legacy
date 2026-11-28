@@ -4,6 +4,7 @@
 #include "js.h"
 #include <ctype.h>
 #include <stdio.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -1006,15 +1007,18 @@ static int boolDoObjeto(const char *obj, const char *chave) {
 // The add-on's own field, whatever its formatter writes in the name:
 // clientResolve.isCached, or AIOStreams' streamData (instances with "provide
 // stream data" on) - the service's cached flag, then a flat one.
-static int cacheDeclarado(const char *p, const char *fim, int *deStreamData) {
+// *origem (diagnostic only): 1 streamData, 2 clientResolve.
+static int cacheDeclarado(const char *p, const char *fim, int *deStreamData, int *origem) {
   int c = boolDoObjeto(objetoRaiz(p, fim, "clientResolve"), "isCached");
   if (deStreamData) *deStreamData = 0;
+  if (origem) *origem = c ? 2 : 0;
   if (!c) {
     const char *sd = objetoRaiz(p, fim, "streamData");
     if (sd) {
       c = boolDoObjeto(objetoRaiz(sd, js_fim(sd), "service"), "cached");
       if (!c) c = boolDoObjeto(sd, "cached");
       if (c && deStreamData) *deStreamData = 1;
+      if (c && origem) *origem = 1;
     }
   }
   return c;
@@ -1154,6 +1158,10 @@ static int lerSemeadores(const char *t, int *qtd) {
 int stream_extrair(const char *json, const char *provedor, Stream **saida) {
   const char *p, *fim;
   int n = 0, cap = 0;
+  // Link-less torrents and who said "not cached" (LG log 27/11/2026): one
+  // line per response, counts only. [0] none, 1 streamData, 2 clientResolve,
+  // 3 behaviorHints, 4 name/description text.
+  int semLink = 0, comCR = 0, emCacheDito = 0, foraDe[5] = {0};
   Stream *v = NULL;
   *saida = NULL;
   if (!json) return 0;
@@ -1243,7 +1251,7 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
         fhd = fhdNoNome(nomeFonte);
       textoRaizLinhas(p, fim, "description", s.descricao, sizeof s.descricao);
       textoRaizLinhas(p, fim, "title", titulo, sizeof titulo);
-      int cacheSD = 0, cache = cacheDeclarado(p, fim, &cacheSD);
+      int cacheSD = 0, origemCache = 0, cache = cacheDeclarado(p, fim, &cacheSD, &origemCache);
       s.emCache = cache > 0 || (cache == 0 && marcaEmCache(p, fim));
       s.cacheNegado = cache < 0;
       metadadosFaixas(p, fim, &s);
@@ -1322,6 +1330,12 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
       // debrid does not have it (whatever icon the formatter uses, or none).
       if (cacheSD && cache < 0) s.foraCache = 1;
       if (s.foraCache) s.emCache = 0;
+      if (s.infoHash[0] && !s.url[0]) {
+        semLink++;
+        if (objetoRaiz(p, fim, "clientResolve")) comCR++;
+        if (s.emCache) emCacheDito++;
+        if (s.foraCache) foraDe[cache < 0 && origemCache ? origemCache : 4]++;
+      }
       if (s.infoHash[0]) s.temSemeadores = lerSemeadores(texto, &s.semeadores);
       s.tamanhoBytes = bytesExatos(p, fim);
       double bytes = js_num(p, fim, "videoSize", 0);
@@ -1347,6 +1361,13 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
     }
     p = js_prox(fim);
   }
+  // Capped per run: background availability probes parse many responses.
+  static _Atomic int linhasSemLink;
+  if (semLink && atomic_fetch_add(&linhasSemLink, 1) < 40)
+    printf("[fonte] %s: %d of %d link-less (clientResolve %d); addon says cached %d, not cached %d "
+           "(streamData %d, clientResolve %d, behaviorHints %d, text %d)\n",
+           provedor ? provedor : "?", semLink, n, comCR, emCacheDito,
+           foraDe[1] + foraDe[2] + foraDe[3] + foraDe[4], foraDe[1], foraDe[2], foraDe[3], foraDe[4]);
   *saida = v;
   return n;
 }
