@@ -90,25 +90,25 @@ static void vindoDa203(void) {
   dados_gravar("novidades-20-guia.txt", "1\n");
   dados_gravar("novidades-203.txt", "1\n");
   quadroHome(1, 0, 0);
-  assert(novcartao_aberto() && !existe("novidades-2091.txt"));
+  assert(novcartao_aberto() && !existe("novidades-2092.txt"));
   tecla(SDLK_ESCAPE);
-  assert(existe("novidades-203.txt") && existe("novidades-2091.txt"));
+  assert(existe("novidades-203.txt") && existe("novidades-2092.txt"));
   novaSessao();
   quadroHome(1, 0, 0);
   assert(!novcartao_aberto());
   puts("PASS: vindo da 2.0.3: marca independente, abre uma vez");
 }
 
-// The 2.0.4 marker must not hide the 2.0.9.1 card.
+// The 2.0.4 marker must not hide the 2.0.9.2 card.
 static void vindoDa204(void) {
   limpar();
   dados_gravar("novidades-20-guia.txt", "1\n");
   dados_gravar("novidades-203.txt", "1\n");
   dados_gravar("novidades-204.txt", "1\n");
   quadroHome(1, 0, 0);
-  assert(novcartao_aberto() && !existe("novidades-2091.txt"));
+  assert(novcartao_aberto() && !existe("novidades-2092.txt"));
   tecla(SDLK_ESCAPE);
-  assert(existe("novidades-204.txt") && existe("novidades-2091.txt"));
+  assert(existe("novidades-204.txt") && existe("novidades-2092.txt"));
   novaSessao();
   quadroHome(1, 0, 0);
   assert(!novcartao_aberto());
@@ -209,10 +209,10 @@ static void plataformas(void) {
   novcartao_teste_plataforma(NOV_ANDROID);
   and = novcartao_itens_visiveis();
   assert(novcartao_cenas() == 4);
-  assert(lg == 28 && tpk == 15 && wgt == 15 && and == 15);
+  assert(lg == 32 && tpk == 15 && wgt == 15 && and == 15);
   assert(novcartao_paginas() >= 3 && novcartao_paginas() <= 24);  // itens e apoio
   novcartao_teste_plataforma(NOV_OUTRAS);
-  assert(novcartao_itens_visiveis() == 28);
+  assert(novcartao_itens_visiveis() == 32);
   assert(novcartao_paginas() >= 2);
   novcartao_teste_plataforma(0);
   printf("PASS: itens por plataforma: LG %d, .tpk %d, .wgt %d, Android %d\n", lg, tpk, wgt, and);
@@ -288,8 +288,8 @@ int main(int argc, char **argv) {
     else espacamento();
     return 0;
   }
-  assert(!strcmp(novcartao_versao(), "2.0.9.1"));
-  assert(!strcmp(novcartao_arquivo(), "novidades-2091.txt"));
+  assert(!strcmp(novcartao_versao(), "2.0.9.2"));
+  assert(!strcmp(novcartao_arquivo(), "novidades-2092.txt"));
   instalacaoNova();
   vindoDa202();
   vindoDa203();
