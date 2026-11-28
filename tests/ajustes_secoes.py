@@ -47,10 +47,20 @@ RETIRADAS = {
     # in "Ordem dos provedores", size/groups in "Filtros de fontes".
     "AJ_FALHA_RD_LIMITE", "AJ_FALHA_TB_LIMITE", "AJ_FALHA_PM_LIMITE", "AJ_FALHA_AD_LIMITE",
     "AJ_FILTRO_TAM_MAX", "AJ_FILTRO_GRUPOS",
-    # External audio test 7: the options of "Audio from another version" live
-    # in its sheet (eaAbrir), opened from that one row.
-    "AJ_EXT_AUDIO_CACHE", "AJ_EXT_AUDIO_PASSO", "AJ_EXT_AUDIO_GRANDE", "AJ_EXT_AUDIO_MODO",
-    "AJ_EXT_AUDIO_SERIE", "AJ_EXT_AUDIO_SEGUIR", "AJ_EXT_AUDIO_AVISO", "AJ_EXT_AUDIO_AUTO", "AJ_EXT_AUDIO_COPIAS", "AJ_EXT_AUDIO_ORDEM", "AJ_EXT_AUDIO_BUFOR",
+    # Audio from another source: one row (AJ_EXT_AUDIO), its options inside
+    # the sheet (uxOpcaoNaTela in ajustes_ux_desenho.inc), like Buffer.
+    "AJ_EXT_AUDIO_CACHE", "AJ_EXT_AUDIO_PASSO", "AJ_EXT_AUDIO_GRANDE",
+    "AJ_EXT_AUDIO_MODO", "AJ_EXT_AUDIO_SERIE", "AJ_EXT_AUDIO_SEGUIR",
+    "AJ_EXT_AUDIO_AVISO", "AJ_EXT_AUDIO_AUTO", "AJ_EXT_AUDIO_COPIAS",
+    "AJ_EXT_AUDIO_ORDEM", "AJ_EXT_AUDIO_BUFOR",
+    # webOS HLS: the old DTS/DV7 switches folded into AJ_WEBOS_HLS_MODE (slots
+    # kept for the saved valor[]); AJ_WEBOS_HLS_TS is learned by the player.
+    "AJ_WEBOS_HLS_DTS", "AJ_WEBOS_HLS_DV7", "AJ_WEBOS_HLS_TS",
+    # TorBox plan: read from TorBox; the "Test TorBox key" result names it.
+    "AJ_TB_PLANO",
+    # Dolby Vision (2.0.9.1): the MP4 switch is part of "P7 to P8.1", the
+    # fixed DV audio output was removed: both slots kept, not on screen.
+    "AJ_DV_AUDIO_FIXO", "AJ_MP4_BD_TEST",
 }
 opcoes = [op for op in opcoes if op not in RETIRADAS]
 
