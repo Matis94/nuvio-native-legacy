@@ -22,7 +22,7 @@ static const NovItem ITENS_2092[] = {
   { .icone = "aj_play", .nome = "Continuar assistindo",
     .frase = "Selos de Novo episódio e Nova temporada, episódios recém-exibidos vão para a frente, e a retomada abre o episódio na hora com a fonte e o áudio dele.", .linhas = 7 },
   { .grupo = "Mais novidades", .icone = "aj_rotate-cw", .nome = "Outra montagem",
-    .frase = "Quando a outra versão é uma montagem diferente, a sincronia começa pelo deslocamento atual e depois procura no arquivo inteiro, por partes. Faixas sem idioma marcado também são comparadas.", .linhas = 8, .plataformas = NOV_LG | NOV_OUTRAS },
+    .frase = "Quando a outra versão é uma montagem diferente, a sincronia começa pelo deslocamento atual, procura no arquivo inteiro por partes, e uma cena longa que falta nela não a interrompe mais. Versões com a mesma duração aparecem primeiro, e uma versão escolhida de novo volta ao último deslocamento.", .linhas = 10, .plataformas = NOV_LG | NOV_OUTRAS },
   { .icone = "aj_play", .nome = "Reprodução automática com debrid",
     .frase = "Torrents que o addon diz fora do cache são perguntados ao TorBox ou ao Premiumize, e a reprodução automática não termina mais em nenhuma fonte funciona. Os que estão no cache sobem na lista.", .linhas = 7, .plataformas = NOV_LG | NOV_OUTRAS },
   { .icone = "aj_link", .nome = "Plano do TorBox",

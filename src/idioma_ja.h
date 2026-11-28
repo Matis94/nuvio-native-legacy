@@ -4656,7 +4656,7 @@
   T("Quando", "いつ"),
   T("Quando a TV para no meio", "テレビが途中で止まったとき"),
   T("Quando a legenda incorporada não serve para sincronizar, acerta a legenda externa pelas falas do áudio. Vale só nesta TV.", "埋め込み字幕で同期できない場合、外部字幕を音声のセリフに合わせます。このテレビのみ有効です。"),
-  T("Quando a outra versão é uma montagem diferente, a sincronia começa pelo deslocamento atual e depois procura no arquivo inteiro, por partes. Faixas sem idioma marcado também são comparadas.", "別バージョンの編集が違う場合、同期は現在のずれから始め、その後ファイル全体を区切って探します。言語タグのないトラックも比較します。"),
+  T("Quando a outra versão é uma montagem diferente, a sincronia começa pelo deslocamento atual, procura no arquivo inteiro por partes, e uma cena longa que falta nela não a interrompe mais. Versões com a mesma duração aparecem primeiro, e uma versão escolhida de novo volta ao último deslocamento.", "別バージョンの編集が違う場合、同期は現在のずれから始めてファイル全体を区切って探し、その版にない長い場面があっても止まらなくなりました。同じ長さのバージョンが先頭に並び、もう一度選んだバージョンは前回のずれから始まります。"),
   T("Quando algo dá errado, mande o registro desta sessão para quem faz o app. Vai sem senhas nem chaves. Na LG, a tecla VERMELHA abre o painel do registro.", "問題が起きたら、このセッションのログをアプリの作者に送ってください。パスワードとキーは含まれません。LG では赤ボタンでログのパネルを開きます。"),
   T("Quando alguém da sua lista te recomendar um filme ou série, ele aparece aqui.", "リストの誰かが映画や番組をおすすめすると、ここに表示されます。"),
   T("Quando alguém pedir sua amizade, aparece aqui e no topo de Encontrar pessoas.", "フレンドリクエストが届くと、ここと「ユーザーを探す」の一番上に表示されます。"),

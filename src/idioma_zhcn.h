@@ -4656,7 +4656,7 @@
   T("Quando", "何时"),
   T("Quando a TV para no meio", "电视中途停住时"),
   T("Quando a legenda incorporada não serve para sincronizar, acerta a legenda externa pelas falas do áudio. Vale só nesta TV.", "内嵌字幕无法用于同步时，按音频中的对白校准外挂字幕。仅对此电视有效。"),
-  T("Quando a outra versão é uma montagem diferente, a sincronia começa pelo deslocamento atual e depois procura no arquivo inteiro, por partes. Faixas sem idioma marcado também são comparadas.", "当另一版本是不同的剪辑时，同步会从当前偏移开始，然后分段搜索整个文件。没有语言标签的音轨也会参与比较。"),
+  T("Quando a outra versão é uma montagem diferente, a sincronia começa pelo deslocamento atual, procura no arquivo inteiro por partes, e uma cena longa que falta nela não a interrompe mais. Versões com a mesma duração aparecem primeiro, e uma versão escolhida de novo volta ao último deslocamento.", "当另一版本是不同的剪辑时，同步会从当前偏移开始，分段搜索整个文件，该版本缺少的长场景也不会再打断同步。时长相同的版本排在最前，再次选择的版本会从上次的偏移开始。"),
   T("Quando algo dá errado, mande o registro desta sessão para quem faz o app. Vai sem senhas nem chaves. Na LG, a tecla VERMELHA abre o painel do registro.", "出现问题时，将本次会话的日志发送给应用作者。日志不含密码和密钥。在 LG 上，红色键打开日志面板。"),
   T("Quando alguém da sua lista te recomendar um filme ou série, ele aparece aqui.", "当你列表里的人向你推荐电影或剧集时，会显示在这里。"),
   T("Quando alguém pedir sua amizade, aparece aqui e no topo de Encontrar pessoas.", "有人向你发送好友请求时，会显示在这里和查找用户的顶部。"),
