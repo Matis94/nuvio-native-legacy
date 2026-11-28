@@ -8133,14 +8133,9 @@ static float fileiraFormato(Uint32 agora, float x, float y, float ac, int medir,
 #undef ENTRADA
   return H;
 }
-// The current chapter's name sits just above the bar, on the right; the
-// height it takes there (0 when it is not drawn), set by desenharCapitulos
-// on the frame before, so the buffer details above the bar go over it.
-static float capRotuloAlto;
 #ifdef NV_HTTP_BUFFER_DIAG
 static void bufferDadosDesenhar(float direita,float y,float alpha) {
   if(!ajustes_buffer_dados())return;
-  y-=capRotuloAlto;
   char b[128];video_buffer_test_text(b,sizeof b);
   TxtLinha l=txt_linha(TXT_G19M,b,210,210,210,210);
   // Episode/title details use the left 60%; leave a gap before this column.
@@ -8216,7 +8211,6 @@ static void desenharCapitulos(Uint32 agora, float bx, float bw, float yBarra, fl
   if (capSel >= n) capSel = n > 0 ? n - 1 : 0;
   if (capSel < 0) capSel = 0;
   capAnim = anim_mola2(&capAnimV, capAnim, capFoco ? 1.0f : 0.0f, dt, 14.0f);   // ~300 ms, no overshoot
-  capRotuloAlto = 0.0f;
   if (n < 2 || a <= 0.002f) return;
   pont = ponteiroNoPlayer() && a > 0.3f;
   for (i = 0; i < n; i++)
@@ -8226,18 +8220,27 @@ static void desenharCapitulos(Uint32 agora, float bx, float bw, float yBarra, fl
   if (atual >= 0 && capAnim < 0.99f) {
     TxtLinha l = txt_linha_corta(TXT_CAPTION2, capituloNome(c, atual, buf, sizeof buf),
                                  243, 242, 239, 200, bw * 0.4f);
-    // Just above the bar (owner 28/11: it sat on the buffer details' line).
-    float lx = bx + bw - (float)l.w, ly = yBarra - 4.0f - (float)l.h;
+    // Just under the bar on the right, clear of the knob (owner 28/11: above
+    // it, it sat on the buffer details' line). With the full OSD the time is
+    // on the button row lower down; with the bar alone the remaining time sits
+    // right under the bar, so the name moves to its left.
+    float lx = bx + bw - (float)l.w, ly = yBarra + 18.0f;
+    if (cheio < 0.99f && !ehCanal()) {
+      char r[32];
+      if (ajustes_seekr_ligado()) plrui_tempo(r, sizeof r, duracaoSeg);
+      else { char f[24]; plrui_tempo(f, sizeof f, duracaoSeg - posSeg); snprintf(r, sizeof r, "\xe2\x88\x92%s", f); }
+      TxtLinha lt = txt_linha(TXT_ILHA_NOME, r, 243, 242, 239, 128);
+      lx -= ((float)lt.w + 24.0f) * (1.0f - cheio);
+    }
     txt_desenhar_alpha(l, lx, ly, ac * (1.0f - capAnim));
-    capRotuloAlto = (float)l.h + 2.0f;
     // Fechada a fileira, o nome e o alvo que a abre (folga para o dedo). Ele e
-    // registrado DEPOIS da barra e ganha onde se sobrepoem: a base fica 4 px
-    // acima do trilho, o mesmo do Magic Remote, para tocar/arrastar no trilho
-    // debaixo do nome continuar buscando no Android Mobile.
+    // registrado DEPOIS da barra e ganha onde se sobrepoem: the target starts
+    // 12 px under the track, so touching/dragging the track above the name
+    // keeps seeking on Android Mobile.
     if (pont && !capFoco) {
       float f = ponteiro_tem_toque() ? 16.0f : 6.0f;
       float y0 = ly - f, y1 = ly + (float)l.h + f;
-      if (y1 > yBarra - 4.0f) y1 = yBarra - 4.0f;
+      if (y0 < yBarra + 12.0f) y0 = yBarra + 12.0f;
       if (y1 > y0)
         ponteiro_alvo(lx - f, y0, (float)l.w + f * 2.0f, y1 - y0, NULL, ponteiroAbrirCapitulos, 0, 0);
     }
