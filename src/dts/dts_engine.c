@@ -4054,8 +4054,11 @@ static void follow_check(DtsEngine *e) {
     if(e->fw_small) { f->bad=0; return; }
     printf("[ext-audio] follow: no longer in sync (score %.2f, needs %.2f)\n",r.score,f->thr); fflush(stdout);
     if(!f->good_since_seek || f->t_good<0) {
-      /* Lost right after a jump: the place is unknown, search it all. */
+      /* Lost right after a jump: the place is unknown, search it all. A
+       * check while playing in progress gives way (it only looks around the
+       * old offset and starts no wider search). */
       follow_enter_fill(e,tend-8.0);
+      if(e->mt && e->mt_check) match_disarm(e);
       if(!e->mt && !e->mj) { dts_engine_external_match_arm(e); e->mt_auto=1; }
       return;
     }
@@ -4105,19 +4108,28 @@ static void follow_feed_donor(DtsEngine *e,AVPacket *pkt,AVRational tb) {
   if(e->fw_state==FW_SYNC && d->ev.max && d->ev.n>=FW_MAIN_S*DTS_MATCH_HZ) follow_roll(d,FW_MAIN_S*DTS_MATCH_HZ*2/3);
   match_side_feed(d,pkt,tb);
 }
-/* FILL: the other version is read ahead for the comparison only. */
+/* FILL: the other version is read ahead for the comparison only. A match
+ * armed meanwhile (the one after a jump, or Scan again) gets the other
+ * version's packets too, past the follow's window if it needs them (owner's
+ * log 28/11, The Fellowship of the Ring: a seek 50 min on, the offset had
+ * grown there, the follow went to this file's audio and stopped reading at
+ * the end of its window; the match never got its 40 s, never failed into the
+ * wider search, and the Polish audio never came back). */
 static void follow_read_ahead(DtsEngine *e) {
   struct Follow *f=e->fw;
   for(int i=0;i<16 && !e->ext_demux_eof;i++) {
     double have=f->d.t0_ns!=INT64_MIN?f->d.t0_ns/1e9+(double)f->d.ev.n/DTS_MATCH_HZ:0;
-    if(f->d.t0_ns!=INT64_MIN && have>=f->d_pause+f->look_s) return;
-    if(match_side_full(&f->d)) return;
+    int cap=e->mt && !match_side_full(&e->mt->s[1]);
+    if(f->d.t0_ns!=INT64_MIN && have>=f->d_pause+f->look_s && !cap) return;
+    if(match_side_full(&f->d) && !cap) return;
     if(e->ext_woken || e->ext_failed) return;
     int r=av_read_frame(e->ext->fmt,e->ext_in);
     if(r<0 && ext_read_stopped(e)) return;
     if(r==AVERROR_EOF) { e->ext_demux_eof=1; return; }
     if(r<0) return;
-    if(e->ext_in->stream_index==f->dstream)
+    if(e->mt && e->ext_in->stream_index==e->mt->donor_stream)
+      match_feed(e,1,e->ext_in,e->ext->fmt->streams[e->ext_in->stream_index]->time_base);
+    if(e->ext_in->stream_index==f->dstream && !match_side_full(&f->d))
       follow_feed_donor(e,e->ext_in,e->ext->fmt->streams[f->dstream]->time_base);
     av_packet_unref(e->ext_in);
   }

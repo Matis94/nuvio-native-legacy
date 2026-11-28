@@ -230,7 +230,7 @@ static void *wake_when_waiting(void *arg) {
   return NULL;
 }
 int main(int argc, char **argv) {
-  assert(argc == 40);
+  assert(argc == 42);
   const char *main_file = argv[1], *other = argv[2], *dts_only = argv[3], *short_clip = argv[4], *mp4 = argv[5];
   const char *aac44 = argv[6], *main60 = argv[7], *long_idx = argv[8], *long_noidx = argv[9];
   const char *match_main = argv[10], *match_dub = argv[11];
@@ -242,6 +242,7 @@ int main(int argc, char **argv) {
   const char *step_main = argv[34], *step_dub = argv[35];
   const char *stereo_main = argv[36], *und_dub = argv[37];
   const char *follow_long_ext = argv[38], *follow_long_th = argv[39];
+  const char *follow_jump_ext = argv[40], *follow_jump_th = argv[41];
   dts_engine_set_lang_match(lang_match);
   load_refs(other, "pol");
 
@@ -824,6 +825,33 @@ int main(int argc, char **argv) {
     assert(fill && fill_at > 60e9 && fill_at < 75e9);
     assert(resumed && !gaveup && resume_at > 320e9 && resume_at < 350e9);
     assert(resume_ms > 259900 && resume_ms < 260100); }
+  dts_engine_destroy(e);
+  /* A jump past a missing scene (owner's log 28/11, The Fellowship of
+   * the Ring: a seek 50 min on, where the offset had grown): the follow
+   * plays this file's audio, the match armed after the jump still gets the
+   * other version's packets, fails at the old offset, the wider search finds
+   * the new one, and the other version resumes there by itself. */
+  e = dts_engine_create();
+  dts_engine_external_follow(e, 1);
+  dts_engine_external_audio(e, follow_jump_th, HEADERS, "en", 0);
+  assert(dts_engine_open(e, follow_jump_ext, HEADERS, -1, 0, 0) == 0);
+  { DtsFrame f; int got, jumped = 0, found = 0, found_ms = 0, resumed = 0, resume_ms = 0, state, ms;
+    int64_t last = INT64_MIN, resume_at = 0; DtsMatchInfo mi;
+    while ((got = dts_engine_next(e, &f)) == 1) {
+      if (f.kind == DTS_AUDIO) last = f.pts_ns;
+      int r = dts_engine_external_match_poll(e, &mi), k = dts_engine_external_follow_poll(e, &state, &ms);
+      if (r == 1 && jumped) {   /* the app applies a find (audioext), live */
+        found = 1; found_ms = mi.offset_ms;
+        assert(dts_engine_external_shift(e, mi.offset_ms) == 0);
+      }
+      if (k == 2 && jumped && !resumed) { resumed = 1; resume_ms = ms; resume_at = last; }
+      if (!jumped && last > 45e9) { jumped = 1; assert(dts_engine_seek(e, 170.0) == 0); last = INT64_MIN; }
+      if (resumed && last > resume_at + 10e9) break;
+    }
+    fprintf(stderr, "follow, jump past a missing scene: got %d (%s), found %d (%d ms), resumed %d with %d ms at %.1f s\n",
+            got, got < 0 ? dts_engine_error(e) : "", found, found_ms, resumed, resume_ms, resume_at / 1e9);
+    assert(found && found_ms > 99500 && found_ms < 100500);
+    assert(resumed && resume_ms > 99500 && resume_ms < 100500 && resume_at > 170e9 && resume_at < 300e9); }
   dts_engine_destroy(e);
   /* Following, the same cut in other languages: this file's Russian dub
    * (default) and English original against a Polish voice-over on the
