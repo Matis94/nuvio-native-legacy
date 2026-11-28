@@ -355,6 +355,7 @@ struct DtsEngine {
   int mt_quick;          /* the capture in progress is one of those: nothing found is not reported */
   int fill_flat;         /* such searches in a row that found nothing */
   double fill_rearm_at;  /* this file's time (s) the next one starts; 0 none */
+  struct DonorEnv *dc;   /* the other version's envelope those searches read (struct DonorEnv) */
   struct Follow *fw;
   int fw_event, fw_event_ms;   /* last event for the app: 1 own audio, 2 resumed, 3 gave up, 4 small shift corrected */
   double ext_fps_ratio;  /* other version's frame rate / this one's (0: unknown) */
@@ -1693,6 +1694,7 @@ static void quiet_poll(DtsEngine *e);
 static void match_cancel(DtsEngine *e);
 static int match_rank(AVStream *st);
 static void match_stop(DtsEngine *e);
+static void dc_free(struct DonorEnv *d);
 static void pf_stop(DtsEngine *e);
 static void close_media(DtsEngine *e) {
 #ifdef NV_HTTP_BUFFER_DIAG
@@ -2556,6 +2558,7 @@ static int configure_external(DtsEngine *e,double start) {
     e->info.sample_rate,k,follow?" (following another cut)":"");
   e->fw_autoarm=follow || e->ext_automatch; e->mt_main_pref=0; e->mt_retry=0;
   e->anc_n=0; e->mt_quick=0; e->fill_flat=0; e->fill_rearm_at=0;
+  dc_free(e->dc); e->dc=NULL;
   fflush(stdout);
   return start>0?dts_engine_seek(e,start):0;
 }
@@ -3036,6 +3039,18 @@ enum { FW_OFF=0, FW_SYNC=1, FW_FILL=2, FW_GAVEUP=3 };
  * capture never stalls on them (owner's log 28/11: past the end of the other
  * version, the capture never filled and was dropped every 90 s). */
 struct MatchCap { int main_stream, donor_stream, alt_stream, alt_same, early, no_donor; MatchSide s[3]; };
+/* THE OTHER VERSION'S ENVELOPE a search in a missing scene read: one
+ * contiguous span of its timeline, kept for the next capture there (owner
+ * 28/11: each capture read the same 300 MB windows again). The next search
+ * reads only what playback moved on since, and drops what fell behind; at
+ * most DC_MAX_S of it (4 bands, 100 values a second: about 1 MB). */
+#define DC_MAX_S 640
+typedef struct DonorEnv { float *env[DTS_MATCH_BANDS]; int n; double t0, k; } DonorEnv;
+static void dc_free(DonorEnv *d) {
+  if(!d) return;
+  for(int b=0;b<DTS_MATCH_BANDS;b++) free(d->env[b]);
+  free(d);
+}
 struct MatchJob {
   pthread_t th; pthread_mutex_t lock; int started, done, cancel;
   DtsEngine *holder;                       /* the capture in progress, to cancel its reads */
@@ -3047,6 +3062,7 @@ struct MatchJob {
   int anc_n; double anc_t[ANC_MAX], anc_o[ANC_MAX];                 /* the offset map (a copy) */
   int quick, flat;   /* a capture in a missing scene: ends after the map if all of it is flat (then flat=1) */
   double spent;      /* MB of the other version read */
+  DonorEnv *dc;      /* in: the engine's kept envelope (moved here); out: the one to keep */
 };
 /* The best places over several searches, 0.5 s apart, best first. */
 static void match_cand_add(int *n,double *off,double *sc,double o,double v) {
@@ -3145,6 +3161,7 @@ static void match_job_free(struct MatchJob *j) {
   if(!j) return;
   free(j->url); free(j->headers);
   for(int b=0;b<DTS_MATCH_BANDS;b++) free(j->menv[b]);
+  dc_free(j->dc);
   pthread_mutex_destroy(&j->lock); free(j);
 }
 static void match_job_stop(DtsEngine *e) {
@@ -3155,12 +3172,14 @@ static void match_job_stop(DtsEngine *e) {
   if(j->holder) { __atomic_store_n(&j->holder->cancelled,1,__ATOMIC_RELAXED); if(j->holder->ext) dts_engine_cancel(j->holder->ext); }
   pthread_mutex_unlock(&j->lock);
   if(j->started) pthread_join(j->th,NULL);
+  if(j->dc) { dc_free(e->dc); e->dc=j->dc; j->dc=NULL; }   /* what it read stays usable */
   match_job_free(j); e->mj=NULL;
 }
 /* Session closed or another version: nothing of the match survives. */
 static void follow_free(DtsEngine *e);
 static void match_stop(DtsEngine *e) {
   match_disarm(e); match_job_stop(e); e->mt_t1=-1; e->mt_later=0;
+  dc_free(e->dc); e->dc=NULL;
   quiet_free(e);
   follow_free(e); e->fw_autoarm=0; e->fw_small=0;
 }
@@ -3198,6 +3217,87 @@ static int match_capture(struct MatchJob *j,double from,double seconds,MatchSide
   pthread_mutex_lock(&j->lock); j->holder=NULL; pthread_mutex_unlock(&j->lock);
   dts_engine_destroy(h);   /* and its reader c */
   return r;
+}
+/* A side's envelope (from `skip` on) into a new DonorEnv, or appended to `d`
+ * at its own time: d's values are kept where both have them (the side's
+ * first second is its filters settling). NULL on a gap or no memory. */
+static DonorEnv *dc_join(DonorEnv *d,const MatchSide *side,double keep_from,double k) {
+  const int hz=DTS_MATCH_HZ;
+  double st0=side->t0_ns/1e9;
+  int drop=0, keep=0, at=0, skip=0;
+  if(d) {
+    drop=(int)floor((keep_from-d->t0)*hz); if(drop<0) drop=0; if(drop>d->n) drop=d->n;
+    keep=d->n-drop;
+    at=(int)lround((st0-(d->t0+(double)drop/hz))*hz);   /* the side's first value in the new one */
+    skip=keep-at;                                        /* the side's values d already has */
+    if(at<0 || skip<hz/2) return NULL;                   /* a gap, or no overlap to hide the settling */
+  }
+  int add=side->ev.n-skip; if(add<0) add=0;
+  int n=keep+add, cut=0;
+  if(n>DC_MAX_S*hz) { cut=n-DC_MAX_S*hz; n=DC_MAX_S*hz; }
+  DonorEnv *nd=calloc(1,sizeof *nd);
+  if(!nd || n<=0) { free(nd); return NULL; }
+  nd->k=k; nd->n=n;
+  nd->t0=d?d->t0+(double)(drop+cut)/hz:st0+(double)cut/hz;
+  for(int b=0;b<DTS_MATCH_BANDS;b++) {
+    if(!side->ev.env[b] || (d && !d->env[b])) continue;
+    if(!(nd->env[b]=malloc(sizeof(float)*(size_t)n))) { dc_free(nd); return NULL; }
+    for(int i=0;i<n;i++) {
+      int src=i+cut;   /* index in [d's kept values | the side's new ones] */
+      nd->env[b][i]=src<keep?d->env[b][drop+src]:side->ev.env[b][skip+src-keep];
+    }
+  }
+  return nd;
+}
+/* The offset map's whole span [a,b] (raw offsets, s) in one contiguous read
+ * of the other version, the part kept from the last search not read again.
+ * 1 searched (j->found set when trusted, *best the score), 0 not possible
+ * here (the windows do it). */
+static int dc_search(struct MatchJob *j,const DtsMatchSig *sm,double tm,double pad,double a,double b,double bps,
+                     double *spent,double *best) {
+  const double k=j->k0;
+  double lo=(tm-pad-b)/k-2.0, hi=(tm+pad-a)/k+2.0;
+  if(lo<0) lo=0;
+  if(j->donor_dur>0 && hi>j->donor_dur) hi=j->donor_dur;
+  if(hi<=lo+5.0 || hi-lo>DC_MAX_S) return 0;
+  DonorEnv *d=j->dc;
+  /* Kept only when it reaches back to `lo` and forward into the span. */
+  if(d && (fabs(d->k-k)>1e-9 || d->t0>lo+0.5 || d->t0+(double)d->n/DTS_MATCH_HZ<lo+10.0)) { dc_free(d); d=j->dc=NULL; }
+  double have=d?d->t0+(double)d->n/DTS_MATCH_HZ:lo, from=d?have-2.0:lo;
+  if(!d || hi>have+3.0) {   /* a few seconds new at least (at the other version's end there is nothing more) */
+    double mb=bps*(hi-from)/1048576.0;
+    if(!d && bps>0 && mb>700.0) return 0;
+    printf("[ext-audio] match: another cut, the offset map's %.0f..%.0f s in one piece, reading %.0f s of the other version "
+           "(about %.0f MB)%s\n",a-j->base,b-j->base,hi-from,mb,d?", the rest kept from the last search":"");
+    fflush(stdout);
+    *spent+=mb;
+    MatchSide side;
+    memset(&side,0,sizeof side);
+    DonorEnv *nd=NULL;
+    if(match_capture(j,from,hi-from,&side)==0) nd=dc_join(d,&side,lo,k);
+    match_side_free(&side);
+    if(!nd && d) {   /* could not be joined: read the whole span once */
+      dc_free(d); j->dc=NULL;
+      return dc_search(j,sm,tm,pad,a,b,bps,spent,best);
+    }
+    if(!nd) return 0;
+    dc_free(d); j->dc=d=nd;
+  } else {
+    printf("[ext-audio] match: another cut, the offset map's %.0f..%.0f s in one piece, all of it kept from the last search\n",
+           a-j->base,b-j->base);
+    fflush(stdout);
+  }
+  DtsMatchSig sd={{d->env[0],d->env[1],d->env[2],d->env[3]},d->n,d->t0};
+  DtsMatchResult r;
+  int got=dts_match_search(sm,&sd,k,(a+b)/2.0,(b-a)/2.0,&r);
+  if(got && !r.confident) match_try_verify(sm,&sd,k,&r);
+  if(got && r.confident) { j->found=1; j->how=4; j->off=r.offset_s; j->ratio=k; j->score=r.score; }
+  if(got) for(int c=0;c<r.ncand;c++) match_cand_add(&j->ncand,j->cand,j->cand_sc,r.cand_off[c],r.cand_score[c]);
+  if(got && r.score>*best) *best=r.score;
+  printf("[ext-audio] match: ratio %.5f over the offset map: offset %.3f s score %.2f margin %.2f%s\n",k,
+         got?r.offset_s-j->base:0.0,got?r.score:0.0,got?r.margin:0.0,got && r.confident?" (trusted)":"");
+  fflush(stdout);
+  return 1;
 }
 #define MATCH_FLAT 0.20
 static int match_job_flat(struct MatchJob *j,int nmap,int map_read,double best) {
@@ -3268,6 +3368,13 @@ static void *match_job_run(void *arg) {
     if(b>a) {
       printf("[ext-audio] match: the offset map puts it between %.0f and %.0f s (%d point(s))\n",a-j->base,b-j->base,j->anc_n);
       fflush(stdout);
+    }
+    /* A capture in a missing scene, the span small enough: one contiguous
+     * read, kept for the next capture (struct DonorEnv). */
+    if(b>a && j->quick && nk==1 && dc_search(j,&sm,tm,pad,a,b,bps,&spent,&map_best)) {
+      map_lo=a; map_hi=b;
+      if(!j->found && match_job_flat(j,1,1,map_best)) goto done;
+    } else if(b>a) {
       double mid=(a+b)/2.0, dlo, dhi;
       int down=1;
       if(b-a<=2.0*rr) { st[n].c=mid; st[n].r=(b-a)/2.0; st[n].cap_mb=310; st[n++].how=4; dlo=a; dhi=b; }
@@ -3377,6 +3484,7 @@ static void *match_job_run(void *arg) {
     match_side_free(&side);
   }
   if(!j->found && !j->flat && n==nmap) match_job_flat(j,nmap,map_read,map_best);
+done:
   j->spent=spent;
   pthread_mutex_lock(&j->lock); j->done=1; pthread_mutex_unlock(&j->lock);
   return NULL;
@@ -3578,6 +3686,7 @@ static void match_finish(DtsEngine *e) {
     j->anc_n=e->anc_n;
     memcpy(j->anc_t,e->anc_t,sizeof(double)*(size_t)e->anc_n); memcpy(j->anc_o,e->anc_o,sizeof(double)*(size_t)e->anc_n);
     j->quick=e->mt_quick;
+    if(j->quick) { j->dc=e->dc; e->dc=NULL; }   /* back when it ends */
     if(ok && pthread_create(&j->th,NULL,match_job_run,j)==0) { j->started=1; e->mj=j; }
     else match_job_free(j);
   }
@@ -3876,6 +3985,7 @@ int dts_engine_external_match_poll(DtsEngine *e,DtsMatchInfo *o) {
       for(int c=0;c<e->mt_ncand;c++) printf("[ext-audio] match: candidate %d: %d ms (score %d)\n",c+1,e->mt_cand_ms[c],e->mt_cand_sc[c]);
       fflush(stdout);
       pthread_join(j->th,NULL); j->started=0;
+      if(j->dc) { dc_free(e->dc); e->dc=j->dc; j->dc=NULL; }
       match_job_free(j); e->mj=NULL;
     } else return 0;
   }

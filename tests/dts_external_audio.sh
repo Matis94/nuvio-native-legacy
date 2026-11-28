@@ -165,11 +165,12 @@ render(sys.argv[1] + '/fl_th.wav', 300, [(extl, lambda t: t), (bursts(26, 300, 3
 # 50 s at 60 s, then 220 s at 170 s (extended timeline). After a jump to
 # 330 s the first captures fall in the second one; the shared scenes come
 # back at 390 s, where the offset has grown to 270 s, ~165 s behind the place
-# the follow's own lookahead waits at.
-extk = bursts(30, 300, 2100, 1.0)
-render(sys.argv[1] + '/fk_ext.wav', 570, [(extk, lambda at: at if at < 60 else at + 50 if at < 120 else at + 270),
+# the follow's own lookahead waits at. The other version is long enough for
+# the next captures to read only what playback moved on (struct DonorEnv).
+extk = bursts(30, 500, 3500, 1.0)
+render(sys.argv[1] + '/fk_ext.wav', 770, [(extk, lambda at: at if at < 60 else at + 50 if at < 120 else at + 270),
                                           (bursts(31, 50, 330, 1.0), lambda t: t + 60), (bursts(32, 220, 1500, 1.0), lambda t: t + 170)])
-render(sys.argv[1] + '/fk_th.wav', 300, [(extk, lambda t: t), (bursts(33, 300, 300, 0.25), lambda t: t)])
+render(sys.argv[1] + '/fk_th.wav', 500, [(extk, lambda t: t), (bursts(33, 500, 500, 0.25), lambda t: t)])
 # The same cut in other languages (owner's log 08/11, The Godfather): this
 # file has a Russian dub (default) over the same effects and its English
 # original; the other version is a Polish voice-over on the original (quiet)
@@ -276,9 +277,9 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=16x16:rate=25:durati
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a ac3 -ar 48000 -b:a 64k -metadata:s:a:0 language=eng -shortest "$TMP/follow_jump_ext.mkv"
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=16x16:rate=25:duration=215' -i "$TMP/fj_th.wav" \
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a eac3 -ar 48000 -b:a 64k -metadata:s:a:0 language=eng -shortest "$TMP/follow_jump_th.mkv"
-ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=16x16:rate=25:duration=570' -i "$TMP/fk_ext.wav" \
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=size=16x16:rate=25:duration=770' -i "$TMP/fk_ext.wav" \
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a ac3 -ar 48000 -b:a 64k -metadata:s:a:0 language=eng -shortest "$TMP/fill_jump_ext.mkv"
-ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=16x16:rate=25:duration=300' -i "$TMP/fk_th.wav" \
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=16x16:rate=25:duration=500' -i "$TMP/fk_th.wav" \
   -map 0:v -map 1:a -c:v libx264 -bf 0 -g 25 -c:a eac3 -ar 48000 -b:a 64k -metadata:s:a:0 language=eng -shortest "$TMP/fill_jump_th.mkv"
 # Two English tracks (owner 09/11): the series memory keeps the chosen one.
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=red:size=32x32:rate=25:duration=20' -i "$TMP/x_en.wav" -i "$TMP/x_ru.wav" \
