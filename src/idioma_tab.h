@@ -410,6 +410,7 @@
   { "A nova folha de Fontes", "The new Sources sheet" },
   { "A ordem da Home é mantida ao trocar de perfil.", "The Home order is kept when switching profiles." },
   { "A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "The order of add-ons and plugins for automatic pick: move each one up or down. Anything outside the order comes after all of them. Only applies when Use the order is on." },
+  { "A outra versão termina aqui: o áudio deste arquivo continua", "The other version ends here: this file's own audio plays on" },
   { "A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "How much of an episode counts as watched, so resuming moves on to the next one." },
   { "A pessoa não é avisada.", "They won't be notified." },
   { "A página não expôs as linhas do log", "The page didn’t expose the log lines" },

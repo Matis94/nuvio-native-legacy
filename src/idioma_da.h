@@ -411,6 +411,7 @@
   T("A nova folha de Fontes", "Det nye Kildeark"),
   T("A ordem da Home é mantida ao trocar de perfil.", "Rækkefølgen på Hjem bevares ved profilskift."),
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Rækkefølgen af add-ons og plugins ved automatisk valg: flyt hver op eller ned. Det, der står uden for rækkefølgen, kommer efter alle andre. Gælder kun, når Brug rækkefølgen er slået til."),
+  T("A outra versão termina aqui: o áudio deste arquivo continua", "Den anden version slutter her: lyden i denne fil fortsætter"),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Hvor meget af et afsnit der tæller som set, så genoptagelse går videre til det næste."),
   T("A pessoa não é avisada.", "Personen får ikke besked."),
   T("A página não expôs as linhas do log", "Siden viste ikke loglinjerne"),

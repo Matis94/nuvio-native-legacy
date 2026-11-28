@@ -411,6 +411,7 @@
   T("A nova folha de Fontes", "Novi list Izvora"),
   T("A ordem da Home é mantida ao trocar de perfil.", "Redoslijed početne stranice ostaje pri promjeni profila."),
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Redoslijed dodataka i plugina pri automatskom izboru: pomjerajte svaki gore ili dolje. Ono što ostane izvan redoslijeda ide poslije svih. Vrijedi samo kad je uključena opcija Koristi redoslijed."),
+  T("A outra versão termina aqui: o áudio deste arquivo continua", "Druga verzija se ovdje završava: nastavlja se zvuk ovog fajla"),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Od kojeg dijela epizoda važi kao odgledana i nastavak prelazi na sljedeću."),
   T("A pessoa não é avisada.", "Osoba neće biti obaviještena."),
   T("A página não expôs as linhas do log", "Stranica nije izložila redove zapisnika"),

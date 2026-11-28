@@ -411,6 +411,7 @@
   T("A nova folha de Fontes", "Naujasis Šaltinių lapas"),
   T("A ordem da Home é mantida ao trocar de perfil.", "Pradžios tvarka išlieka keičiant profilį."),
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Priedų ir įskiepių tvarka automatiniame pasirinkime: kiekvieną kelkite aukštyn ar žemyn. Kas lieka ne tvarkoje, eina po visų. Galioja tik įjungus parinktį Naudoti tvarką."),
+  T("A outra versão termina aqui: o áudio deste arquivo continua", "Kita versija čia baigiasi: toliau skamba šio failo garsas"),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Kiek serijos laikoma peržiūrėta, kad tęsiant būtų pereita prie kitos."),
   T("A pessoa não é avisada.", "Žmogui apie tai nepranešama."),
   T("A página não expôs as linhas do log", "Puslapis nepateikė žurnalo eilučių"),

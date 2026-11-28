@@ -411,6 +411,7 @@
   T("A nova folha de Fontes", "新しいソースのシート"),
   T("A ordem da Home é mantida ao trocar de perfil.", "プロフィールを切り替えてもホームの順序を維持します。"),
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "自動選択でのアドオンとプラグインの順序です。それぞれを上下に動かせます。順序に入っていないものはすべての後になります。「順序を使う」がオンのときだけ有効です。"),
+  T("A outra versão termina aqui: o áudio deste arquivo continua", "もう一方のバージョンはここで終わります。このファイルの音声が続きます"),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "エピソードをどこまで見たら視聴済みとし、続きを次のエピソードへ進めるか。"),
   T("A pessoa não é avisada.", "相手には通知されません。"),
   T("A página não expôs as linhas do log", "ページがログの行を公開していません"),

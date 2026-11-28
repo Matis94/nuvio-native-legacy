@@ -411,6 +411,7 @@
   T("A nova folha de Fontes", "Bảng Nguồn mới"),
   T("A ordem da Home é mantida ao trocar de perfil.", "Thứ tự Trang chủ được giữ khi đổi hồ sơ."),
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Thứ tự add-on và plugin khi chọn tự động: đưa từng mục lên hoặc xuống. Mục còn lại ngoài thứ tự đứng sau tất cả. Chỉ có tác dụng khi bật tùy chọn Dùng thứ tự."),
+  T("A outra versão termina aqui: o áudio deste arquivo continua", "Phiên bản kia kết thúc tại đây: âm thanh của tệp này tiếp tục phát"),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Xem bao nhiêu phần tập thì tính là đã xem và phần xem tiếp chuyển sang tập sau."),
   T("A pessoa não é avisada.", "Người đó sẽ không được thông báo."),
   T("A página não expôs as linhas do log", "Trang không cung cấp các dòng nhật ký"),

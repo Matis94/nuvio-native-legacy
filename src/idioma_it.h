@@ -411,6 +411,7 @@
   T("A nova folha de Fontes", "Il nuovo foglio Fonti"),
   T("A ordem da Home é mantida ao trocar de perfil.", "L’ordine della Home resta invariato al cambio di profilo."),
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "L'ordine di add-on e plugin nella scelta automatica: sposta ciascuno su o giù. Ciò che resta fuori dall'ordine viene dopo tutti. Vale solo con l'opzione Usa l'ordine attiva."),
+  T("A outra versão termina aqui: o áudio deste arquivo continua", "L'altra versione finisce qui: continua l'audio di questo file"),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Da quanto di un episodio conta come visto e la ripresa passa al successivo."),
   T("A pessoa não é avisada.", "La persona non viene avvisata."),
   T("A página não expôs as linhas do log", "La pagina non ha esposto le righe del registro"),

@@ -410,6 +410,7 @@
   T("A nova folha de Fontes", "Новая панель Источников"),
   T("A ordem da Home é mantida ao trocar de perfil.", "Порядок на главной сохраняется при смене профиля."),
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Порядок дополнений и плагинов при автовыборе: поднимайте и опускайте каждый. То, что вне порядка, идёт после всех. Действует, только если включён параметр «Использовать порядок»."),
+  T("A outra versão termina aqui: o áudio deste arquivo continua", "Другая версия здесь заканчивается: дальше звучит звук этого файла"),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Какая часть серии считается просмотренной, чтобы продолжение переходило к следующей."),
   T("A pessoa não é avisada.", "Человек не получит уведомления."),
   T("A página não expôs as linhas do log", "Страница не предоставила строки журнала"),

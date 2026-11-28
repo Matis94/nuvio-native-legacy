@@ -411,6 +411,7 @@
   T("A nova folha de Fontes", "لوحة المصادر الجديدة"),
   T("A ordem da Home é mantida ao trocar de perfil.", "يُحتفظ بترتيب الرئيسية عند تبديل الملفات الشخصية."),
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "ترتيب الإضافات والإضافات البرمجية للاختيار التلقائي: حرّك كلًا منها لأعلى أو لأسفل. أي شيء خارج الترتيب يأتي بعدها جميعًا. ينطبق فقط عند تفعيل استخدام الترتيب."),
+  T("A outra versão termina aqui: o áudio deste arquivo continua", "تنتهي النسخة الأخرى هنا: يستمر صوت هذا الملف"),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "كم من الحلقة يُحسب مشاهدًا، لتنتقل المتابعة إلى الحلقة التالية."),
   T("A pessoa não é avisada.", "لن يتم إشعارهم."),
   T("A página não expôs as linhas do log", "لم تكشف الصفحة أسطر السجل"),

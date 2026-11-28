@@ -411,6 +411,7 @@
   T("A nova folha de Fontes", "Az új Források lap"),
   T("A ordem da Home é mantida ao trocar de perfil.", "A kezdőlap sorrendje profilváltáskor is megmarad."),
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "A bővítmények és pluginek sorrendje az automatikus választásnál: mozgasd mindegyiket felfelé vagy lefelé. Ami a sorrenden kívül marad, mindenki után jön. Csak bekapcsolt Sorrend használata beállításnál érvényes."),
+  T("A outra versão termina aqui: o áudio deste arquivo continua", "A másik változat itt véget ér: ennek a fájlnak a hangja szól tovább"),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Egy epizód mekkora része számít megnézettnek, hogy a folytatás a következőre lépjen."),
   T("A pessoa não é avisada.", "Az illető nem kap értesítést."),
   T("A página não expôs as linhas do log", "Az oldal nem adta át a naplósorokat"),

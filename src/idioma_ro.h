@@ -410,6 +410,7 @@
   T("A nova folha de Fontes", "Noua foaie Surse"),
   T("A ordem da Home é mantida ao trocar de perfil.", "Ordinea din Acasă se păstrează la schimbarea profilului."),
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Ordinea add-on-urilor și a plugin-urilor la alegerea automată: urcă sau coboară fiecare. Ce rămâne în afara ordinii vine după toate. Contează doar cu opțiunea Folosește ordinea activă."),
+  T("A outra versão termina aqui: o áudio deste arquivo continua", "Cealaltă versiune se termină aici: continuă sunetul acestui fișier"),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Cât dintr-un episod contează ca vizionat, astfel încât reluarea trece la următorul."),
   T("A pessoa não é avisada.", "Persoana nu este anunțată."),
   T("A página não expôs as linhas do log", "Pagina nu a expus liniile jurnalului"),

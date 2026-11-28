@@ -356,8 +356,10 @@ struct DtsEngine {
   int fill_flat;         /* such searches in a row that found nothing */
   double fill_rearm_at;  /* this file's time (s) the next one starts; 0 none */
   struct DonorEnv *dc;   /* the other version's envelope those searches read (struct DonorEnv) */
+  int fill_past;         /* at the offset playing, the other version has already ended here */
+  int fill_end;          /* ...and a search found nothing either: told, none by itself any more */
   struct Follow *fw;
-  int fw_event, fw_event_ms;   /* last event for the app: 1 own audio, 2 resumed, 3 gave up, 4 small shift corrected */
+  int fw_event, fw_event_ms;   /* last event for the app: 1 own audio, 2 resumed, 3 gave up, 4 small shift corrected, 5 the other version ended here */
   double ext_fps_ratio;  /* other version's frame rate / this one's (0: unknown) */
   int64_t fx_live_total;   /* stream size from the response headers (rede_fluxo64) */
   /* ext_conv: the donor's audio is decoded and re-encoded (DTS, TrueHD,
@@ -2557,7 +2559,7 @@ static int configure_external(DtsEngine *e,double start) {
   printf("[ext-audio] ready codec=%s ch=%d rate=%d stream=%d%s\n",e->info.audio_codec,e->info.channels,
     e->info.sample_rate,k,follow?" (following another cut)":"");
   e->fw_autoarm=follow || e->ext_automatch; e->mt_main_pref=0; e->mt_retry=0;
-  e->anc_n=0; e->mt_quick=0; e->fill_flat=0; e->fill_rearm_at=0;
+  e->anc_n=0; e->mt_quick=0; e->fill_flat=0; e->fill_rearm_at=0; e->fill_past=e->fill_end=0;
   dc_free(e->dc); e->dc=NULL;
   fflush(stdout);
   return start>0?dts_engine_seek(e,start):0;
@@ -3303,8 +3305,7 @@ static int dc_search(struct MatchJob *j,const DtsMatchSig *sm,double tm,double p
 static int match_job_flat(struct MatchJob *j,int nmap,int map_read,double best) {
   if(!j->quick || nmap<=0 || map_read<nmap || best>=MATCH_FLAT) return 0;
   j->flat=1;
-  printf("[ext-audio] match: flat everywhere the offset map allows (best %.2f): a scene the other version lacks, "
-         "the next capture starts now\n",best);
+  printf("[ext-audio] match: flat everywhere the offset map allows (best %.2f): a scene the other version lacks\n",best);
   fflush(stdout);
   return 1;
 }
@@ -3665,8 +3666,9 @@ static void match_finish(DtsEngine *e) {
                   e->mt_o1_user_ns=(int64_t)e->mt_offset_ms*1000000; anchor_add(e,e->mt_t1,best.offset_s); }
     match_disarm(e); return;
   }
-  /* Not near: a reader of its own tries further. */
-  struct MatchJob *j=e->ext_url && e->ext_stream>=0 && e->ext?calloc(1,sizeof *j):NULL;
+  /* Not near: a reader of its own tries further (not by itself past the
+   * other version's end, follow_end_check). */
+  struct MatchJob *j=e->ext_url && e->ext_stream>=0 && e->ext && !(e->mt_quick && e->fill_end)?calloc(1,sizeof *j):NULL;
   if(j) {
     pthread_mutex_init(&j->lock,NULL);
     j->url=strdup(e->ext_url); j->headers=strdup(e->ext_headers?e->ext_headers:"");
@@ -4051,7 +4053,8 @@ static void follow_event(DtsEngine *e,int kind,int ms) {
   e->fw_event=kind; e->fw_event_ms=ms;
   printf("[ext-audio] follow: %s\n",kind==1?"a scene the other version lacks: this file's own audio":
          kind==2?"shared scenes again: the other version resumes":
-         kind==4?"a small shift (a shorter or longer gap in one version): sync adjusted":"lost it: use Match automatically");
+         kind==4?"a small shift (a shorter or longer gap in one version): sync adjusted":
+         kind==5?"the other version ends here: this file's own audio to its end":"lost it: use Match automatically");
   fflush(stdout);
 }
 /* A capture in a missing scene found nothing: no result for the app (no
@@ -4060,7 +4063,13 @@ static void follow_event(DtsEngine *e,int kind,int ms) {
  * later, at most 4 times in a row (a wide offset map: up to 1.5 GB each). */
 static void fill_next(DtsEngine *e,int flat,double spent) {
   e->mt_state=0; e->mt_auto=0; e->mt_quick=0;
-  if(e->fw_state!=FW_FILL || !e->fw) return;
+  if(e->fw_state!=FW_FILL || !e->fw || e->fill_end) return;
+  if(e->fill_past) {
+    e->fill_end=1;
+    printf("[ext-audio] match: nothing found and the other version has ended at this offset: no more searches by themselves\n");
+    follow_event(e,5,(int)(e->ext_offset_ns/1000000));
+    return;
+  }
   e->fill_flat++;
   int cheap=flat && spent<=700.0;
   if(!cheap && e->fill_flat>4) {
@@ -4180,6 +4189,7 @@ static void follow_enter_fill(DtsEngine *e,double t_good) {
   e->ext_floor_ns=out;
   follow_side_reset(&f->d);
   f->look_s=FW_LOOK_S; f->fill_since=out/1e9; f->fill_logged=0; f->bad=0; f->fill_off_ns=e->ext_offset_ns;
+  e->fill_past=e->fill_end=0;
   e->fw_state=FW_FILL;
   printf("[ext-audio] follow: own audio from %.1fs, the other version waits at %.1fs\n",out/1e9,f->d_pause); fflush(stdout);
   follow_event(e,1,(int)(e->ext_offset_ns/1000000));
@@ -4207,7 +4217,7 @@ static void follow_resume(DtsEngine *e,int64_t offset_ns) {
     }
   }
   e->fw_state=FW_SYNC;
-  e->fill_rearm_at=0; e->fill_flat=0;
+  e->fill_rearm_at=0; e->fill_flat=0; e->fill_past=e->fill_end=0;
   anchor_add(e,from/1e9,(offset_ns+e->ext_base_ns)/1e9);
   printf("[ext-audio] follow: the other version resumes at %.1fs, offset %lld ms\n",from/1e9,(long long)(offset_ns/1000000)); fflush(stdout);
   follow_event(e,2,(int)(offset_ns/1000000));
@@ -4231,10 +4241,26 @@ static int follow_shift(DtsEngine *e,int ms) {
   if(e->mt_t1>=0) { e->mt_o1+=(ms-from)/1000.0; e->mt_o1_user_ns+=(int64_t)(ms-from)*1000000; }
   return dts_engine_external_shift_quiet(e,ms);
 }
+/* FILL: at the offset playing, has the other version already ended here?
+ * (owner's log 28/11, The Fellowship of the Ring: a jump to 11783 s, 3 s
+ * before the other version's end at that offset; captures every 90 s that
+ * could never fill, 3 minutes of nothing.) The offset may still be the one
+ * from before a jump, so the next search runs; when it finds nothing either
+ * (fill_next), the person is told once and no more searches start by
+ * themselves (Scan again still searches all of it). */
+static void follow_end_check(DtsEngine *e,double now) {
+  double dur=e->ext && e->ext->fmt && e->ext->fmt->duration>0?e->ext->fmt->duration/1e6:0;
+  double at=(now-(e->ext_offset_ns+e->ext_base_ns)/1e9)/ext_k(e);
+  if(e->fill_past || dur<=0 || at<dur-1.0) return;
+  e->fill_past=1;
+  printf("[ext-audio] follow: at this offset the other version (%.0f s long) has already ended (%.0f s)\n",dur,at);
+  fflush(stdout);
+}
 static void follow_check(DtsEngine *e) {
   struct Follow *f=e->fw;
   DtsMatchSig sm, sd;
   match_side_sig(&f->m,&sm); match_side_sig(&f->d,&sd);
+  if(e->fw_state==FW_FILL && f->m.t0_ns!=INT64_MIN) follow_end_check(e,sm.t0+(double)sm.n/DTS_MATCH_HZ);
   if(sm.n<11*DTS_MATCH_HZ || f->m.t0_ns==INT64_MIN || f->d.t0_ns==INT64_MIN) return;
   /* In sync: the last 8 s (a quick "lost"); back: the last 10 s (surer). */
   double win=8.0, pos=(sm.n-4.0*DTS_MATCH_HZ)/sm.n, k=ext_k(e), off=(e->ext_offset_ns+e->ext_base_ns)/1e9;
@@ -4670,7 +4696,7 @@ static int ext_seek(DtsEngine *e,double seconds) {
   uint64_t t0=clock_ns(CLOCK_MONOTONIC);
   int64_t b0=(int64_t)e->ext->metrics.range_bytes;
   match_cancel(e);
-  e->fill_rearm_at=0;
+  e->fill_rearm_at=0; e->fill_past=e->fill_end=0;
   ext_unwake(e);
   quiet_reset(e->qs);
   if(e->ext_failed) return ext_reset_chain(e);   /* given up: the app goes back to its own audio */

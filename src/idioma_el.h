@@ -411,6 +411,7 @@
   T("A nova folha de Fontes", "Το νέο φύλλο Πηγών"),
   T("A ordem da Home é mantida ao trocar de perfil.", "Η σειρά στην Αρχική διατηρείται στην αλλαγή προφίλ."),
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Η σειρά των add-on και των plugin στην αυτόματη επιλογή: ανεβάστε ή κατεβάστε το καθένα. Ό,τι μένει εκτός σειράς έρχεται μετά από όλα. Ισχύει μόνο όταν είναι ενεργή η επιλογή Χρήση της σειράς."),
+  T("A outra versão termina aqui: o áudio deste arquivo continua", "Η άλλη έκδοση τελειώνει εδώ: συνεχίζει ο ήχος αυτού του αρχείου"),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Από πόσο ένα επεισόδιο μετράει ως προβεβλημένο και η συνέχεια περνά στο επόμενο."),
   T("A pessoa não é avisada.", "Το άτομο δεν ειδοποιείται."),
   T("A página não expôs as linhas do log", "Η σελίδα δεν έδωσε τις γραμμές καταγραφής"),

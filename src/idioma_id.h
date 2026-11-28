@@ -411,6 +411,7 @@
   T("A nova folha de Fontes", "Lembar Sumber yang baru"),
   T("A ordem da Home é mantida ao trocar de perfil.", "Urutan Beranda tetap sama saat berganti profil."),
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Urutan add-on dan plugin pada pilihan otomatis: naikkan atau turunkan masing-masing. Yang tetap di luar urutan datang setelah semuanya. Hanya berlaku jika opsi Pakai urutan aktif."),
+  T("A outra versão termina aqui: o áudio deste arquivo continua", "Versi lain berakhir di sini: audio file ini terus diputar"),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Mulai seberapa banyak episode dianggap ditonton, sehingga lanjutan pindah ke berikutnya."),
   T("A pessoa não é avisada.", "Orang itu tidak akan diberi tahu."),
   T("A página não expôs as linhas do log", "Halaman tidak menampilkan baris log"),

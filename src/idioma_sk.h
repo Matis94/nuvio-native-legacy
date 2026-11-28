@@ -411,6 +411,7 @@
   T("A nova folha de Fontes", "Nový hárok Zdrojov"),
   T("A ordem da Home é mantida ao trocar de perfil.", "Poradie na úvodnej stránke sa pri zmene profilu zachová."),
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Poradie doplnkov a pluginov pri automatickom výbere: posúvajte každý nahor alebo nadol. Čo zostane mimo poradia, ide po všetkých ostatných. Platí len pri zapnutej voľbe Použiť poradie."),
+  T("A outra versão termina aqui: o áudio deste arquivo continua", "Druhá verzia tu končí: ďalej hrá zvuk tohto súboru"),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Od akej časti sa diel počíta ako pozretý a pokračovanie prejde na ďalší."),
   T("A pessoa não é avisada.", "Osoba nedostane upozornenie."),
   T("A página não expôs as linhas do log", "Stránka nesprístupnila riadky záznamu"),

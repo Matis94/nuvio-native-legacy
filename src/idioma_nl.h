@@ -411,6 +411,7 @@
   T("A nova folha de Fontes", "Het nieuwe Bronnenblad"),
   T("A ordem da Home é mantida ao trocar de perfil.", "De volgorde op Home blijft behouden bij een profielwissel."),
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "De volgorde van add-ons en plugins bij de automatische keuze: verplaats elk omhoog of omlaag. Wat buiten de volgorde blijft, komt na alle andere. Werkt alleen als Volgorde gebruiken aan staat."),
+  T("A outra versão termina aqui: o áudio deste arquivo continua", "De andere versie eindigt hier: het geluid van dit bestand speelt verder"),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Vanaf welk deel een aflevering als bekeken telt, zodat hervatten naar de volgende gaat."),
   T("A pessoa não é avisada.", "De persoon krijgt geen melding."),
   T("A página não expôs as linhas do log", "De pagina gaf de logregels niet door"),

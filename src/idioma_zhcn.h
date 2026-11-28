@@ -411,6 +411,7 @@
   T("A nova folha de Fontes", "全新片源面板"),
   T("A ordem da Home é mantida ao trocar de perfil.", "切换配置文件时保留主页排序。"),
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "自动选择时附加组件和插件的顺序：可逐个上移或下移。不在顺序中的排在所有项之后。仅在开启“使用顺序”时生效。"),
+  T("A outra versão termina aqui: o áudio deste arquivo continua", "另一版本在此结束：继续播放本文件的音频"),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "一集看到多少算已观看，继续观看会跳到下一集。"),
   T("A pessoa não é avisada.", "对方不会收到通知。"),
   T("A página não expôs as linhas do log", "页面没有提供日志行"),

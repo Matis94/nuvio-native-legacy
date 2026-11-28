@@ -411,6 +411,7 @@
   T("A nova folha de Fontes", "Новият панел Източници"),
   T("A ordem da Home é mantida ao trocar de perfil.", "Редът на началния екран се запазва при смяна на профила."),
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Редът на добавките и плъгините при автоматичния избор: местете всяка нагоре или надолу. Каквото остане извън реда, е след всички. Важи само при включена опция Използвай реда."),
+  T("A outra versão termina aqui: o áudio deste arquivo continua", "Другата версия свършва тук: продължава звукът на този файл"),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "От каква част епизодът се брои за гледан и продължението минава към следващия."),
   T("A pessoa não é avisada.", "Човекът няма да бъде уведомен."),
   T("A página não expôs as linhas do log", "Страницата не предостави редовете на журнала"),

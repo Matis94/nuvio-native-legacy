@@ -411,6 +411,7 @@
   T("A nova folha de Fontes", "Det nya Källbladet"),
   T("A ordem da Home é mantida ao trocar de perfil.", "Ordningen på Hem behålls vid profilbyte."),
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Ordningen på tillägg och plugin vid automatiskt val: flytta varje upp eller ner. Det som står utanför ordningen kommer efter alla andra. Gäller bara när Använd ordningen är på."),
+  T("A outra versão termina aqui: o áudio deste arquivo continua", "Den andra versionen slutar här: ljudet i den här filen fortsätter"),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Hur mycket av ett avsnitt som räknas som sett, så att fortsättningen går till nästa."),
   T("A pessoa não é avisada.", "Personen meddelas inte."),
   T("A página não expôs as linhas do log", "Sidan exponerade inte loggraderna"),

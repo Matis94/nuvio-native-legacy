@@ -411,6 +411,7 @@
   T("A nova folha de Fontes", "Yeni Kaynaklar sayfası"),
   T("A ordem da Home é mantida ao trocar de perfil.", "Profil değiştirirken ana sayfa sırası korunuyor."),
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Otomatik seçimde eklenti ve eklenti paketlerinin sırası: her birini yukarı veya aşağı taşıyın. Sıranın dışında kalan hepsinden sonra gelir. Yalnızca Sırayı kullan seçeneği açıkken geçerlidir."),
+  T("A outra versão termina aqui: o áudio deste arquivo continua", "Diğer sürüm burada bitiyor: bu dosyanın sesi devam ediyor"),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Bir bölümün ne kadarı izlenince izlenmiş sayılır ve devam etme sonrakine geçer."),
   T("A pessoa não é avisada.", "Kişiye bildirilmez."),
   T("A página não expôs as linhas do log", "Sayfa günlük satırlarını açmadı"),

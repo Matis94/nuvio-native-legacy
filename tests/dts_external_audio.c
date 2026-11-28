@@ -863,11 +863,22 @@ int main(int argc, char **argv) {
   dts_engine_external_follow(e, 1);
   dts_engine_external_audio(e, fill_jump_th, HEADERS, "en", 0);
   assert(dts_engine_open(e, fill_jump_ext, HEADERS, -1, 0, 0) == 0);
+  /* Then a jump to 15 s before the other version's end at that offset, where
+   * the two endings differ (owner's log 28/11: 3 minutes of captures that
+   * could never fill): one search finds nothing, the person is told once
+   * (event 5), nothing is reported as failed. */
   { DtsFrame f; int got, jumped = 0, found = 0, found_ms = 0, resumed = 0, resume_ms = 0, state, ms, fails = 0, before = 0;
+    int jumped2 = 0, ended = 0, results2 = 0, resumed2 = 0;
     int64_t last = INT64_MIN, resume_at = 0; DtsMatchInfo mi;
     while ((got = dts_engine_next(e, &f)) == 1) {
       if (f.kind == DTS_AUDIO) last = f.pts_ns;
       int r = dts_engine_external_match_poll(e, &mi), k = dts_engine_external_follow_poll(e, &state, &ms);
+      if (jumped2) {
+        if (r != 0) results2++;
+        if (k == 2) resumed2 = 1;
+        if (k == 5) ended++;
+        continue;
+      }
       if (r < 0 && jumped) fails++;
       if (r == 1 && jumped) {   /* the app applies a find (audioext), live */
         found = 1; found_ms = mi.offset_ms;
@@ -876,13 +887,15 @@ int main(int argc, char **argv) {
       if (k == 2 && !jumped) before = ms;
       if (k == 2 && jumped && !resumed) { resumed = 1; resume_ms = ms; resume_at = last; }
       if (!jumped && before && last > 135e9) { jumped = 1; assert(dts_engine_seek(e, 330.0) == 0); last = INT64_MIN; }
-      if (resumed && last > resume_at + 10e9) break;
+      if (resumed && last > resume_at + 10e9) { jumped2 = 1; assert(dts_engine_seek(e, 755.0) == 0); last = INT64_MIN; }
     }
     fprintf(stderr, "follow, jump into a missing scene: got %d (%s), first gap %d ms, found %d (%d ms), failures %d, resumed %d with %d ms at %.1f s\n",
             got, got < 0 ? dts_engine_error(e) : "", before, found, found_ms, fails, resumed, resume_ms, resume_at / 1e9);
+    fprintf(stderr, "follow, jump past the other version's end: told %d, results %d, resumed %d\n", ended, results2, resumed2);
     assert(before > 49500 && before < 50500);
     assert(found && found_ms > 269500 && found_ms < 270500 && !fails);
-    assert(resumed && resume_ms > 269500 && resume_ms < 270500 && resume_at > 390e9 && resume_at < 530e9); }
+    assert(resumed && resume_ms > 269500 && resume_ms < 270500 && resume_at > 390e9 && resume_at < 530e9);
+    assert(got == 0 && jumped2 && ended == 1 && !results2 && !resumed2); }
   dts_engine_destroy(e);
   /* Following, the same cut in other languages: this file's Russian dub
    * (default) and English original against a Polish voice-over on the

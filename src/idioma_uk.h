@@ -410,6 +410,7 @@
   T("A nova folha de Fontes", "Нова панель Джерел"),
   T("A ordem da Home é mantida ao trocar de perfil.", "Порядок на головній зберігається при зміні профілю."),
   T("A ordem dos add-ons e plugins no automático: suba e desça cada um. Quem fica fora da ordem vem depois de todos. Só vale com a opção Usar a ordem ligada.", "Порядок додатків і плагінів в автоматичному виборі: піднімайте й опускайте кожен. Те, що поза порядком, іде після всіх. Діє лише коли параметр «Використовувати порядок» увімкнено."),
+  T("A outra versão termina aqui: o áudio deste arquivo continua", "Інша версія тут закінчується: далі звучить звук цього файлу"),
   T("A partir de quanto do episódio ele conta como assistido e a retomada passa ao próximo.", "Яка частина серії вважається переглянутою, щоб продовження переходило до наступної."),
   T("A pessoa não é avisada.", "Людина не отримає сповіщення."),
   T("A página não expôs as linhas do log", "Сторінка не надала рядки журналу"),
