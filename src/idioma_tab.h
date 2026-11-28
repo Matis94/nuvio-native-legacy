@@ -3721,6 +3721,7 @@
   { "O céu aparece quando o catálogo carregar", "The sky appears once the catalog loads" },
   { "O céu das suas histórias: o que você viu, ligado ao que vem a seguir.", "The sky of your stories: what you watched, linked to what comes next." },
   { "O código tem 6 letras ou números.", "The code has 6 letters or numbers." },
+  { "O debrid ainda está preparando o arquivo: tentando de novo em alguns segundos", "The debrid service is still preparing the file: trying again in a few seconds" },
   { "O decodificador da Samsung não conta quadros", "Samsung's decoder does not count frames" },
   { "O despertador ao lado de assistir marca o próximo episódio. Verde quando está ligado.", "The alarm clock beside the play button marks the next episode. Green when it is on." },
   { "O destaque do topo", "The top spotlight" },

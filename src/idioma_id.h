@@ -3722,6 +3722,7 @@
   T("O céu aparece quando o catálogo carregar", "Langit muncul setelah katalog dimuat"),
   T("O céu das suas histórias: o que você viu, ligado ao que vem a seguir.", "Langit ceritamu: yang sudah kamu tonton, terhubung dengan yang berikutnya."),
   T("O código tem 6 letras ou números.", "Kode terdiri dari 6 huruf atau angka."),
+  T("O debrid ainda está preparando o arquivo: tentando de novo em alguns segundos", "Layanan debrid masih menyiapkan file: mencoba lagi dalam beberapa detik"),
   T("O decodificador da Samsung não conta quadros", "Dekoder Samsung tidak menghitung bingkai"),
   T("O despertador ao lado de assistir marca o próximo episódio. Verde quando está ligado.", "Jam alarm di samping tombol putar menandai episode berikutnya. Hijau saat menyala."),
   T("O destaque do topo", "Sorotan di atas"),

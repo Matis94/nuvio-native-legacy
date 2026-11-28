@@ -3722,6 +3722,7 @@
   T("O céu aparece quando o catálogo carregar", "Bầu trời hiện ra khi danh mục tải xong"),
   T("O céu das suas histórias: o que você viu, ligado ao que vem a seguir.", "Bầu trời những câu chuyện của bạn: những gì bạn đã xem, nối với những gì tiếp theo."),
   T("O código tem 6 letras ou números.", "Mã gồm 6 chữ cái hoặc chữ số."),
+  T("O debrid ainda está preparando o arquivo: tentando de novo em alguns segundos", "Dịch vụ debrid vẫn đang chuẩn bị tệp: thử lại sau vài giây"),
   T("O decodificador da Samsung não conta quadros", "Bộ giải mã của Samsung không đếm khung hình"),
   T("O despertador ao lado de assistir marca o próximo episódio. Verde quando está ligado.", "Chiếc đồng hồ báo thức cạnh nút phát đánh dấu tập kế tiếp. Màu xanh lá khi đang bật."),
   T("O destaque do topo", "Nổi bật ở trên cùng"),

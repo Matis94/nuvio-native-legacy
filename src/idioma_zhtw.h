@@ -3722,6 +3722,7 @@
   T("O céu aparece quando o catálogo carregar", "片庫載入完成後，星空就會出現"),
   T("O céu das suas histórias: o que você viu, ligado ao que vem a seguir.", "你的故事星空：你看過的內容，與接下來的內容相連。"),
   T("O código tem 6 letras ou números.", "代碼是 6 位字母或數字。"),
+  T("O debrid ainda está preparando o arquivo: tentando de novo em alguns segundos", "debrid 仍在準備檔案：幾秒後重試"),
   T("O decodificador da Samsung não conta quadros", "三星解碼器不統計影格"),
   T("O despertador ao lado de assistir marca o próximo episódio. Verde quando está ligado.", "播放按鈕旁的鬧鐘按鈕會為下一集設提醒。開啟時呈綠色。"),
   T("O destaque do topo", "頂部精選"),

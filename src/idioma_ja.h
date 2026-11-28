@@ -3722,6 +3722,7 @@
   T("O céu aparece quando o catálogo carregar", "カタログの読み込みが終わると空が現れます"),
   T("O céu das suas histórias: o que você viu, ligado ao que vem a seguir.", "あなたの物語の空: 観た作品と、次に来る作品がつながります。"),
   T("O código tem 6 letras ou números.", "コードは 6 文字の英数字です。"),
+  T("O debrid ainda está preparando o arquivo: tentando de novo em alguns segundos", "デブリッドがまだファイルを準備しています。数秒後にもう一度試します"),
   T("O decodificador da Samsung não conta quadros", "Samsung のデコーダーはフレームを数えません"),
   T("O despertador ao lado de assistir marca o próximo episódio. Verde quando está ligado.", "再生ボタンの隣にある目覚まし時計ボタンで、次のエピソードを予約します。オンのときは緑になります。"),
   T("O destaque do topo", "上部の注目"),

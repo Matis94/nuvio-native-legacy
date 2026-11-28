@@ -3721,6 +3721,7 @@
   T("O céu aparece quando o catálogo carregar", "Cerul apare când se încarcă catalogul"),
   T("O céu das suas histórias: o que você viu, ligado ao que vem a seguir.", "Cerul poveștilor tale: ce ai vizionat, legat de ce urmează."),
   T("O código tem 6 letras ou números.", "Codul are 6 litere sau cifre."),
+  T("O debrid ainda está preparando o arquivo: tentando de novo em alguns segundos", "Serviciul debrid încă pregătește fișierul: încercăm din nou în câteva secunde"),
   T("O decodificador da Samsung não conta quadros", "Decodorul Samsung nu numără cadrele"),
   T("O despertador ao lado de assistir marca o próximo episódio. Verde quando está ligado.", "Ceasul deșteptător de lângă redare marchează episodul următor. Verde când este activ."),
   T("O destaque do topo", "Evidențierea de sus"),

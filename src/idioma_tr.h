@@ -3722,6 +3722,7 @@
   T("O céu aparece quando o catálogo carregar", "Gökyüzü katalog yüklenince görünür"),
   T("O céu das suas histórias: o que você viu, ligado ao que vem a seguir.", "Hikâyelerinin gökyüzü: izlediklerin, sıradakilere bağlı."),
   T("O código tem 6 letras ou números.", "Kod 6 harf veya rakamdan oluşur."),
+  T("O debrid ainda está preparando o arquivo: tentando de novo em alguns segundos", "Debrid hizmeti dosyayı hâlâ hazırlıyor: birkaç saniye içinde yeniden denenecek"),
   T("O decodificador da Samsung não conta quadros", "Samsung kod çözücüsü kareleri saymıyor"),
   T("O despertador ao lado de assistir marca o próximo episódio. Verde quando está ligado.", "Oynat düğmesinin yanındaki çalar saat sıradaki bölümü işaretler. Açıkken yeşildir."),
   T("O destaque do topo", "Üstteki öne çıkan"),

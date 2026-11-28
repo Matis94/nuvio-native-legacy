@@ -3722,6 +3722,7 @@
   T("O céu aparece quando o catálogo carregar", "تظهر السماء بعد تحميل الكتالوج"),
   T("O céu das suas histórias: o que você viu, ligado ao que vem a seguir.", "سماء قصصك: ما شاهدته، مرتبطًا بما يأتي بعده."),
   T("O código tem 6 letras ou números.", "يتكون الرمز من 6 أحرف أو أرقام."),
+  T("O debrid ainda está preparando o arquivo: tentando de novo em alguns segundos", "ما زالت خدمة debrid تجهّز الملف: ستُعاد المحاولة بعد ثوانٍ"),
   T("O decodificador da Samsung não conta quadros", "مفكك ترميز Samsung لا يعدّ الإطارات"),
   T("O despertador ao lado de assistir marca o próximo episódio. Verde quando está ligado.", "المنبّه بجانب زر التشغيل يعلّم الحلقة التالية. أخضر عندما يكون مفعّلًا."),
   T("O destaque do topo", "الأضواء في الأعلى"),

@@ -471,6 +471,14 @@ static Uint32 canalFonteDesde;            // quando a fonte atual foi pedida
 static int    fonteVODAutomatica;
 static int    fonteVODTentativas;
 static int    fonteVODRetentou;
+// DEBRID FILE NOT READY YET (owner's log 28/11, Chicago Fire 10x17 through
+// Sootio): the add-on's link answered nothing for 15 s, then HTTP 404, and
+// the same link played when picked again ~18 s later. A source that never
+// opened and failed with a 404 is tried once more after VOD_PREPARO_MS
+// before it counts as dead (and its copies with it).
+#define VOD_PREPARO_MS 6000u
+static int    fonteVODPreparo;      // the second try was made for this source
+static Uint32 fonteVODPreparoEm;    // when to make it (0 none)
 // Retomar pela fonte guardada em curso (tocarFonteGuardada); 0 = caminho normal.
 static int    voltaAtiva;
 static Stream voltaFonte;  // fonte aberta fora da lista; vive alem da conferencia
@@ -535,7 +543,7 @@ static void marcarFonteMorta(int indice) {
 }
 // A fonte que vai para o player e outra candidata: a prova recomeca.
 static void definirFonteVOD(const char *url) {
-  fonteVODRetentou = 0;
+  fonteVODRetentou = 0; fonteVODPreparo = 0; fonteVODPreparoEm = 0;
   vodRenovou = 0;
   // Publish the new source before sourceInfo can select remembered audio.
   // Waiting until the next frame can still expose the previous episode's group.
@@ -761,7 +769,7 @@ static void limparFonteVOD(void) {
 #endif
   buscaNextAlvo[0] = 0;
   fonteVODTentativas = 0;
-  fonteVODRetentou = 0;
+  fonteVODRetentou = 0; fonteVODPreparo = 0; fonteVODPreparoEm = 0;
   provaZerar();
   fonteVODDesde = 0;
   fonteManualDesde = 0;
@@ -3654,6 +3662,19 @@ static void tentarProximaFonteVOD(void) {
   int atual, motivo = 0;
   if (!fonteVODAutomatica || player_id_canal()[0] || !player_aberto() ||
       player_quer_sair() || aguardandoFonte != 0 || !fonteVODDesde || tbRec.fase) return;
+  // The second try of a debrid file that was not ready (VOD_PREPARO_MS).
+  if (fonteVODPreparoEm) {
+    if ((Sint32)(SDL_GetTicks() - fonteVODPreparoEm) < 0) return;
+    fonteVODPreparoEm = 0;
+    const Stream *s = stream_item(stream_atual());
+    if (s && s->url[0]) {
+      printf("[fonte] debrid file not ready: second try of %d now\n", stream_atual()); fflush(stdout);
+      player_definir_fonte(s->url);
+      fonteVODDesde = SDL_GetTicks();
+      if (!fonteVODDesde) fonteVODDesde = 1;
+      return;
+    }
+  }
   // Warning clips already stopped their pipeline: never reconnect or retry
   // that provider. Preserve the not-cached card when no alternative remains.
   if (player_fonte_fora_cache()) {
@@ -3727,6 +3748,22 @@ static void tentarProximaFonteVOD(void) {
   }
 
   atual = stream_atual();
+  // Never opened, a 404 from a debrid source: most likely the file is still
+  // being prepared (the link plays seconds later). Once, after a short wait.
+  if (motivo == 1 && atual >= 0 && !fonteVODPreparo && !video_fonte_tocou()) {
+    const Stream *s = stream_item(atual);
+    const char *e = video_erro_texto();
+    if (s && s->url[0] && (s->debridServico > 0 || s->emCache || s->cacheNativo) && e && strstr(e, "404")) {
+      fonteVODPreparo = 1;
+      fonteVODPreparoEm = SDL_GetTicks() + VOD_PREPARO_MS;
+      if (!fonteVODPreparoEm) fonteVODPreparoEm = 1;
+      printf("[fonte] debrid file not ready (%s): source %d tried again in %u s\n", e, atual, VOD_PREPARO_MS / 1000u);
+      fflush(stdout);
+      player_voltar_a_esperar();
+      player_toast(i18n("O debrid ainda está preparando o arquivo: tentando de novo em alguns segundos"), 5000);
+      return;
+    }
+  }
   if ((motivo == 1 || motivo == 2) &&
       tbRecuperarComecar(0, motivo == 2 ? "opening deadline" : video_erro_texto()[0] ? video_erro_texto() : "player error"))
     return;

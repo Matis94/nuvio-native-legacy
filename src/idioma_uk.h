@@ -3721,6 +3721,7 @@
   T("O céu aparece quando o catálogo carregar", "Небо з'явиться, коли завантажиться каталог"),
   T("O céu das suas histórias: o que você viu, ligado ao que vem a seguir.", "Небо ваших історій: що ви дивилися, пов'язане з тим, що далі."),
   T("O código tem 6 letras ou números.", "Код складається з 6 літер або цифр."),
+  T("O debrid ainda está preparando o arquivo: tentando de novo em alguns segundos", "Debrid ще готує файл: повторна спроба за кілька секунд"),
   T("O decodificador da Samsung não conta quadros", "Декодер Samsung не рахує кадри"),
   T("O despertador ao lado de assistir marca o próximo episódio. Verde quando está ligado.", "Будильник поруч із кнопкою відтворення позначає наступний епізод. Зелений, коли ввімкнено."),
   T("O destaque do topo", "Банер угорі"),

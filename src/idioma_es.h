@@ -3721,6 +3721,7 @@
   T("O céu aparece quando o catálogo carregar", "El cielo aparece cuando cargue el catálogo"),
   T("O céu das suas histórias: o que você viu, ligado ao que vem a seguir.", "El cielo de tus historias: lo que viste, conectado con lo que viene después."),
   T("O código tem 6 letras ou números.", "El código tiene 6 letras o números."),
+  T("O debrid ainda está preparando o arquivo: tentando de novo em alguns segundos", "El debrid aún está preparando el archivo: se vuelve a intentar en unos segundos"),
   T("O decodificador da Samsung não conta quadros", "El decodificador de Samsung no cuenta fotogramas"),
   T("O despertador ao lado de assistir marca o próximo episódio. Verde quando está ligado.", "El despertador junto a reproducir marca el próximo episodio. Verde cuando está activado."),
   T("O destaque do topo", "El destacado superior"),

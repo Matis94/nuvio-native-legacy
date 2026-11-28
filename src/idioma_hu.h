@@ -3722,6 +3722,7 @@
   T("O céu aparece quando o catálogo carregar", "Az égbolt a katalógus betöltése után jelenik meg"),
   T("O céu das suas histórias: o que você viu, ligado ao que vem a seguir.", "A történeteid égboltja: amit néztél, összekötve azzal, ami következik."),
   T("O código tem 6 letras ou números.", "A kód 6 betűből vagy számból áll."),
+  T("O debrid ainda está preparando o arquivo: tentando de novo em alguns segundos", "A debrid még készíti a fájlt: néhány másodperc múlva újrapróbálja"),
   T("O decodificador da Samsung não conta quadros", "A Samsung dekódere nem számolja a képkockákat"),
   T("O despertador ao lado de assistir marca o próximo episódio. Verde quando está ligado.", "A lejátszás gomb melletti ébresztőóra a következő epizódot jelöli. Zöld, ha be van kapcsolva."),
   T("O destaque do topo", "A felső kiemelés"),

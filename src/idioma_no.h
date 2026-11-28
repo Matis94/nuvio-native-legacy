@@ -3722,6 +3722,7 @@
   T("O céu aparece quando o catálogo carregar", "Himmelen vises når katalogen er lastet"),
   T("O céu das suas histórias: o que você viu, ligado ao que vem a seguir.", "Himmelen over historiene dine: det du har sett, koblet til det som kommer neste gang."),
   T("O código tem 6 letras ou números.", "Koden har 6 bokstaver eller tall."),
+  T("O debrid ainda está preparando o arquivo: tentando de novo em alguns segundos", "Debrid-tjenesten forbereder fortsatt filen: prøver igjen om noen sekunder"),
   T("O decodificador da Samsung não conta quadros", "Samsungs dekoder teller ikke bilder"),
   T("O despertador ao lado de assistir marca o próximo episódio. Verde quando está ligado.", "Vekkerklokken ved siden av spill av-knappen markerer neste episode. Grønn når den er på."),
   T("O destaque do topo", "Utvalget øverst"),

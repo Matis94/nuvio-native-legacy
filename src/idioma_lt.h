@@ -3722,6 +3722,7 @@
   T("O céu aparece quando o catálogo carregar", "Dangus atsiranda, kai įkeliamas katalogas"),
   T("O céu das suas histórias: o que você viu, ligado ao que vem a seguir.", "Jūsų istorijų dangus: ką žiūrėjote, susieta su tuo, kas seka."),
   T("O código tem 6 letras ou números.", "Kodą sudaro 6 raidės ar skaičiai."),
+  T("O debrid ainda está preparando o arquivo: tentando de novo em alguns segundos", "Debrid vis dar ruošia failą: bandoma dar kartą po kelių sekundžių"),
   T("O decodificador da Samsung não conta quadros", "Samsung dekoderis neskaičiuoja kadrų"),
   T("O despertador ao lado de assistir marca o próximo episódio. Verde quando está ligado.", "Žadintuvas šalia grojimo mygtuko žymi kitą epizodą. Žalias, kai įjungtas."),
   T("O destaque do topo", "Viršutinis išskirtas"),

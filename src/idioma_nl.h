@@ -3722,6 +3722,7 @@
   T("O céu aparece quando o catálogo carregar", "De lucht verschijnt zodra de catalogus geladen is"),
   T("O céu das suas histórias: o que você viu, ligado ao que vem a seguir.", "De lucht van je verhalen: wat je hebt bekeken, verbonden met wat er komt."),
   T("O código tem 6 letras ou números.", "De code bestaat uit 6 letters of cijfers."),
+  T("O debrid ainda está preparando o arquivo: tentando de novo em alguns segundos", "De debrid-dienst bereidt het bestand nog voor: over een paar seconden opnieuw proberen"),
   T("O decodificador da Samsung não conta quadros", "De decoder van Samsung telt geen frames"),
   T("O despertador ao lado de assistir marca o próximo episódio. Verde quando está ligado.", "De wekker naast de afspeelknop markeert de volgende aflevering. Groen als hij aan staat."),
   T("O destaque do topo", "De uitgelichte titel bovenaan"),

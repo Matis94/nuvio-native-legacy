@@ -3722,6 +3722,7 @@
   T("O céu aparece quando o catálogo carregar", "Ο ουρανός εμφανίζεται μόλις φορτώσει ο κατάλογος"),
   T("O céu das suas histórias: o que você viu, ligado ao que vem a seguir.", "Ο ουρανός των ιστοριών σου: ό,τι έχεις δει, συνδεδεμένο με ό,τι έρχεται μετά."),
   T("O código tem 6 letras ou números.", "Ο κωδικός έχει 6 γράμματα ή αριθμούς."),
+  T("O debrid ainda está preparando o arquivo: tentando de novo em alguns segundos", "Η υπηρεσία debrid ετοιμάζει ακόμα το αρχείο: νέα προσπάθεια σε λίγα δευτερόλεπτα"),
   T("O decodificador da Samsung não conta quadros", "Ο αποκωδικοποιητής της Samsung δεν μετρά καρέ"),
   T("O despertador ao lado de assistir marca o próximo episódio. Verde quando está ligado.", "Το ξυπνητήρι δίπλα στο κουμπί αναπαραγωγής σημειώνει το επόμενο επεισόδιο. Πράσινο όταν είναι ενεργό."),
   T("O destaque do topo", "Το προβεβλημένο επάνω"),

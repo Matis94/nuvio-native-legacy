@@ -3722,6 +3722,7 @@
   T("O céu aparece quando o catálogo carregar", "Nebo se prikaže, ko se katalog naloži"),
   T("O céu das suas histórias: o que você viu, ligado ao que vem a seguir.", "Nebo vaših zgodb: kar ste gledali, povezano s tem, kar sledi."),
   T("O código tem 6 letras ou números.", "Koda ima 6 črk ali številk."),
+  T("O debrid ainda está preparando o arquivo: tentando de novo em alguns segundos", "Debrid datoteko še pripravlja: nov poskus čez nekaj sekund"),
   T("O decodificador da Samsung não conta quadros", "Samsungov dekoder ne šteje sličic"),
   T("O despertador ao lado de assistir marca o próximo episódio. Verde quando está ligado.", "Budilka ob gumbu za predvajanje označuje naslednjo epizodo. Zelena, ko je vklopljena."),
   T("O destaque do topo", "Izpostavljeno zgoraj"),

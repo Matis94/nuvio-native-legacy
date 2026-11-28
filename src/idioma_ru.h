@@ -3721,6 +3721,7 @@
   T("O céu aparece quando o catálogo carregar", "Небо появится, когда загрузится каталог"),
   T("O céu das suas histórias: o que você viu, ligado ao que vem a seguir.", "Небо ваших историй: что вы смотрели, связанное с тем, что дальше."),
   T("O código tem 6 letras ou números.", "Код состоит из 6 букв или цифр."),
+  T("O debrid ainda está preparando o arquivo: tentando de novo em alguns segundos", "Debrid ещё готовит файл: повторная попытка через несколько секунд"),
   T("O decodificador da Samsung não conta quadros", "Декодер Samsung не считает кадры"),
   T("O despertador ao lado de assistir marca o próximo episódio. Verde quando está ligado.", "Будильник рядом с кнопкой воспроизведения отмечает следующий эпизод. Зелёный, когда включён."),
   T("O destaque do topo", "Баннер сверху"),
