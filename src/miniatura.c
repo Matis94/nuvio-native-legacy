@@ -445,6 +445,7 @@ static void *trabalhar(void *u) {
   Uint32 reabriuEm = 0;            // last time the player was reconnecting / reopening
   long decLogKB = 0;               // decoder size last logged
   if (!l) goto fim;
+  rede_lateral(1);   // #385: thumbnails are a side read; a host that refused a connection is left alone
   l->j = j;
   snprintf(l->url, sizeof l->url, "%s", w->url);
   snprintf(l->cab, sizeof l->cab, "%s", w->cab);
