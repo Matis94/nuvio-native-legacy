@@ -209,10 +209,10 @@ static void plataformas(void) {
   novcartao_teste_plataforma(NOV_ANDROID);
   and = novcartao_itens_visiveis();
   assert(novcartao_cenas() == 4);
-  assert(lg == 32 && tpk == 15 && wgt == 15 && and == 15);
+  assert(lg == 33 && tpk == 14 && wgt == 14 && and == 14);
   assert(novcartao_paginas() >= 3 && novcartao_paginas() <= 24);  // itens e apoio
   novcartao_teste_plataforma(NOV_OUTRAS);
-  assert(novcartao_itens_visiveis() == 32);
+  assert(novcartao_itens_visiveis() == 33);
   assert(novcartao_paginas() >= 2);
   novcartao_teste_plataforma(0);
   printf("PASS: itens por plataforma: LG %d, .tpk %d, .wgt %d, Android %d\n", lg, tpk, wgt, and);
