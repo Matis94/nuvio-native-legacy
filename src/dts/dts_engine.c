@@ -3606,10 +3606,15 @@ static void match_pair(DtsEngine *e,int alt,int *mains,int *donor,int *shared) {
 static int lang_is_en(const char *l) {
   return l && l[0] && (!strcasecmp(l,"en") || !strcasecmp(l,"eng") || ext_lang_is(l,"en") || ext_lang_is(l,"eng"));
 }
+static int lang_untagged(const char *l) { return !l || !l[0] || !strcasecmp(l,"und"); }
 /* NO SHARED LANGUAGE (owner's log 08/11: The Godfather compared its Russian
  * dub with a Polish voice-over; a voice-over usually sits on the original,
  * often English, track): a second track of this file in another language
- * is captured too, English first, and the better one is kept. -1 none. */
+ * is captured too, English first, and the better one is kept. A track with
+ * no language (or "und") counts as another one, after English (owner's log
+ * 28/11: a 117 GB MP4 compared only its Russian track with a Polish one,
+ * score 0.13, while the same offset scored 0.61 English against English).
+ * -1 none. */
 static int match_alt(DtsEngine *e,int m) {
   AVFormatContext *mf=e->fmt;
   char lm[16]="";
@@ -3621,8 +3626,8 @@ static int match_alt(DtsEngine *e,int m) {
     int r=match_rank(mf->streams[i]);
     if(!r || (int)i==m) continue;
     copy_metadata(l,sizeof l,mf->streams[i]->metadata,"language");
-    if(!l[0] || (lm[0] && (!strcasecmp(l,lm) || ext_lang_is(l,lm)))) continue;   /* another language only */
-    r+=lang_is_en(l)?10:0;
+    if(lang_untagged(l) ? lang_untagged(lm) : (lm[0] && (!strcasecmp(l,lm) || ext_lang_is(l,lm)))) continue;   /* another language only */
+    r+=lang_is_en(l)?10:lang_untagged(l)?5:0;
     if(r>br) { br=r; best=(int)i; }
   }
   return best;
@@ -3685,7 +3690,7 @@ static int match_arm(DtsEngine *e,int check) {
       mc->alt_stream=a; mc->alt_same=same; e->fmt->streams[a]->discard=AVDISCARD_DEFAULT;
       copy_metadata(la,sizeof la,e->fmt->streams[a]->metadata,"language");
       printf("[ext-audio] match: no shared language, also trying this file's track %d (%s %s)%s\n",a,
-             avcodec_get_name(e->fmt->streams[a]->codecpar->codec_id),la,same?", the same language":"");
+             avcodec_get_name(e->fmt->streams[a]->codecpar->codec_id),la[0]?la:"no language",same?", the same language":"");
     }
   }
   if(donor!=e->ext_stream) e->ext->fmt->streams[donor]->discard=AVDISCARD_DEFAULT;
